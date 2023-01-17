@@ -105,7 +105,9 @@ impl FromStr for OutputFormat {
     type Err = ConfigurationError;
 
     fn from_str(format_str: &str) -> Result<OutputFormat, ConfigurationError> {
-        match format_str.to_uppercase().as_str() {
+        let normalized_format = format_str.to_lowercase();
+        let normalized_format = normalized_format.as_str();
+        match normalized_format {
             JSON => Ok(OutputFormat::Json),
             JSON_PRETTY => Ok(OutputFormat::JsonPretty),
             CSV => Ok(OutputFormat::Csv),
@@ -121,7 +123,7 @@ impl FromStr for OutputFormat {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Configuration {
     default_tenant: Option<String>,
     default_format: Option<OutputFormat>,
@@ -286,5 +288,107 @@ impl Configuration {
                 cause: format!("{}", e),
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_output_format_create_default() {
+        let format = OutputFormat::default();
+        assert_eq!(format, OutputFormat::Json);
+    }
+
+    #[test]
+    fn test_output_format_to_string() {
+        assert_eq!(OutputFormat::Csv.to_string(), CSV);
+        assert_eq!(OutputFormat::CsvPretty.to_string(), CSV_PRETTY);
+        assert_eq!(OutputFormat::Json.to_string(), JSON);
+        assert_eq!(OutputFormat::JsonPretty.to_string(), JSON_PRETTY);
+        assert_eq!(OutputFormat::Table.to_string(), TABLE);
+        assert_eq!(OutputFormat::TablePretty.to_string(), TABLE_PRETTY);
+        assert_eq!(OutputFormat::Tree.to_string(), TREE);
+        assert_eq!(OutputFormat::TreePretty.to_string(), TREE_PRETTY);
+    }
+
+    #[test]
+    fn test_format_from_string() {
+        assert_eq!(OutputFormat::from_str(JSON).unwrap(), OutputFormat::Json);
+        assert_eq!(
+            OutputFormat::from_str(JSON_PRETTY).unwrap(),
+            OutputFormat::JsonPretty
+        );
+        assert_eq!(OutputFormat::from_str(CSV).unwrap(), OutputFormat::Csv);
+        assert_eq!(
+            OutputFormat::from_str(CSV_PRETTY).unwrap(),
+            OutputFormat::CsvPretty
+        );
+        assert_eq!(OutputFormat::from_str(TABLE).unwrap(), OutputFormat::Table);
+        assert_eq!(
+            OutputFormat::from_str(TABLE_PRETTY).unwrap(),
+            OutputFormat::TablePretty
+        );
+        assert_eq!(OutputFormat::from_str(TREE).unwrap(), OutputFormat::Tree);
+        assert_eq!(
+            OutputFormat::from_str(TREE_PRETTY).unwrap(),
+            OutputFormat::TreePretty
+        );
+    }
+
+    #[test]
+    fn test_create_default_configuration() {
+        let configuration = Configuration::default();
+        assert_eq!(
+            configuration,
+            Configuration {
+                default_tenant: None,
+                default_format: Some(OutputFormat::Json),
+                tenants: None
+            }
+        );
+    }
+
+    #[test]
+    fn test_write_configuration_file() {
+        use tempfile::NamedTempFile;
+
+        let file = NamedTempFile::new().unwrap();
+        let path = file.into_temp_path();
+        let configuration = Configuration::default();
+        configuration.save_to_file(path.to_path_buf()).unwrap();
+        path.close().unwrap();
+    }
+
+    #[test]
+    fn test_read_configuration_file() {
+        use tempfile::NamedTempFile;
+
+        let file = NamedTempFile::new().unwrap();
+        let path = file.into_temp_path();
+        let mut configuration = Configuration::default();
+        configuration.set_default_tenant(Some("mytenant".to_string()));
+        configuration.save_to_file(path.to_path_buf()).unwrap();
+
+        let configuration2 = Configuration::load_from_file(path.to_path_buf()).unwrap();
+
+        assert_eq!(configuration2, configuration);
+    }
+
+    #[test]
+    fn test_set_default_tenant() {
+        let mut configuration = Configuration::default();
+        let tenant = String::from("mytenant");
+        configuration.set_default_tenant(Some(tenant.clone()));
+        assert_eq!(Some(tenant), configuration.get_default_tenant());
+    }
+
+    #[test]
+    fn test_set_default_output_format() {
+        let mut configuration = Configuration::default();
+        let format = OutputFormat::Csv;
+        configuration.set_default_format(Some(format.clone()));
+        assert_eq!(Some(format), configuration.get_default_format());
     }
 }

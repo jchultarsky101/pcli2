@@ -14,3 +14,4 @@ exitcode = "1.1"
 thiserror = "1.0"
 serde_yaml = "0.9.16"
 serde = { version = "1.0.152", features = ["derive"] }
+tempfile = "3.3.0"

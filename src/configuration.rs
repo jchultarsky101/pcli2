@@ -1,12 +1,11 @@
 use dirs::home_dir;
-use log::trace;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
 
 const DEFAULT_CONFIGURATION_FILE_NAME: &str = ".pcli2.conf";
-const DEFAULT_TENANT: &'static str = "DEFAULT_TENANT";
-const DEFAULT_OUTPUT_FORMAT: &'static str = "DEFAULT_OUTPUT_FORMAT";
+const DEFAULT_TENANT: &'static str = "default_tenant";
+const DEFAULT_OUTPUT_FORMAT: &'static str = "default_output_format";
 
 const JSON: &'static str = "json";
 const JSON_PRETTY: &'static str = "json_pretty";
@@ -35,9 +34,11 @@ pub enum ConfigurationError {
     InvalidOutputFormat { format: String },
     #[error("failed to set property value for property due to: \"{cause:?}\"")]
     FailedToSetValue { cause: String },
+    #[error("missing value for property \"{name:?}\"")]
+    MissingRequiredPropertyValue { name: String },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum ConfigurationPropertyName {
     DefaultTenant,
     DefaultOutputFormat,
@@ -47,7 +48,7 @@ impl FromStr for ConfigurationPropertyName {
     type Err = ConfigurationError;
 
     fn from_str(name: &str) -> Result<ConfigurationPropertyName, ConfigurationError> {
-        match name.to_uppercase().as_str() {
+        match name.to_lowercase().as_str() {
             DEFAULT_TENANT => Ok(ConfigurationPropertyName::DefaultTenant),
             DEFAULT_OUTPUT_FORMAT => Ok(ConfigurationPropertyName::DefaultOutputFormat),
             _ => Err(ConfigurationError::InvalidPropertyName {
@@ -68,8 +69,17 @@ impl std::fmt::Display for ConfigurationPropertyName {
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct TenantConfiguration {
-    cliend_id: String,
+    client_id: String,
     client_secret: String,
+}
+
+impl TenantConfiguration {
+    pub fn new(client_id: String, client_secret: String) -> TenantConfiguration {
+        TenantConfiguration {
+            client_id,
+            client_secret,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -187,14 +197,6 @@ impl Configuration {
     pub fn save_to_file(&self, path: PathBuf) -> Result<(), ConfigurationError> {
         let configuration = self.clone();
 
-        trace!(
-            "Saving the configuration to file {}...",
-            path.clone()
-                .into_os_string()
-                .into_string()
-                .unwrap_or_default()
-        );
-
         let file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -202,10 +204,7 @@ impl Configuration {
 
         match file {
             Ok(file) => match serde_yaml::to_writer(file, configuration) {
-                Ok(()) => {
-                    trace!("Configuration saved.");
-                    Ok(())
-                }
+                Ok(()) => Ok(()),
                 Err(e) => Err(ConfigurationError::FailedToWriteData {
                     cause: e.to_string(),
                 }),
@@ -225,7 +224,6 @@ impl Configuration {
     }
 
     pub fn set_default_tenant(&mut self, default_tenant: Option<String>) {
-        trace!("Setting default_tenant to value of {:?}...", default_tenant);
         self.default_tenant = default_tenant;
     }
 
@@ -247,8 +245,6 @@ impl Configuration {
     }
 
     pub fn get(&self, name: String) -> Option<String> {
-        trace!("Retrieving value for configuration property {:?}...", name);
-
         let name = ConfigurationPropertyName::from_str(name.to_uppercase().as_str());
 
         match name {
@@ -267,8 +263,6 @@ impl Configuration {
     }
 
     pub fn set(&mut self, name: String, value: Option<String>) -> Result<(), ConfigurationError> {
-        trace!("Setting the value for configuration property {:?}...", name);
-
         let name = ConfigurationPropertyName::from_str(name.to_uppercase().as_str());
 
         match name {
@@ -279,8 +273,8 @@ impl Configuration {
                         let format = OutputFormat::from_str(value.as_str())?;
                         Ok(self.set_default_format(Some(format)))
                     }
-                    None => Err(ConfigurationError::InvalidPropertyName {
-                        name: ("".to_string()),
+                    None => Err(ConfigurationError::MissingRequiredPropertyValue {
+                        name: (DEFAULT_OUTPUT_FORMAT.to_string()),
                     }),
                 },
             },
@@ -338,6 +332,12 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_fail_on_invalid_name_for_output_format_from_string() {
+        OutputFormat::from_str("invalid_format_name").unwrap();
+    }
+
+    #[test]
     fn test_create_default_configuration() {
         let configuration = Configuration::default();
         assert_eq!(
@@ -390,5 +390,194 @@ mod tests {
         let format = OutputFormat::Csv;
         configuration.set_default_format(Some(format.clone()));
         assert_eq!(Some(format), configuration.get_default_format());
+    }
+
+    #[test]
+    fn test_debug_on_configuration_property_name() {
+        let name = ConfigurationPropertyName::DefaultTenant;
+        assert_eq!(format!("{:?}", name), "DefaultTenant");
+    }
+
+    #[test]
+    fn test_from_string_for_configuration_property_name() {
+        assert_eq!(
+            ConfigurationPropertyName::from_str(DEFAULT_TENANT).unwrap(),
+            ConfigurationPropertyName::DefaultTenant
+        );
+        assert_eq!(
+            ConfigurationPropertyName::from_str(DEFAULT_OUTPUT_FORMAT).unwrap(),
+            ConfigurationPropertyName::DefaultOutputFormat
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_incorrect_configuration_property_name() {
+        let _ = ConfigurationPropertyName::from_str("invalid_name").unwrap();
+    }
+
+    #[test]
+    fn test_display_for_configuration_property_name() {
+        assert_eq!(
+            format!("{}", ConfigurationPropertyName::DefaultTenant),
+            DEFAULT_TENANT
+        );
+        assert_eq!(
+            format!("{}", ConfigurationPropertyName::DefaultOutputFormat),
+            DEFAULT_OUTPUT_FORMAT
+        );
+    }
+
+    #[test]
+    fn test_get_default_configuration_file_path() {
+        use dirs;
+        let mut default_config_file_path = dirs::home_dir().unwrap();
+        default_config_file_path.push(DEFAULT_CONFIGURATION_FILE_NAME);
+
+        assert_eq!(
+            Configuration::get_default_configuration_file_path().unwrap(),
+            default_config_file_path,
+        );
+    }
+
+    #[test]
+    fn test_load_default_configuration() {
+        // make a copy of the original file
+        let new_configuration = Configuration::default();
+        new_configuration.save_to_default().unwrap();
+        let new_configuration = Configuration::load_default().unwrap();
+        assert_eq!(new_configuration, Configuration::default());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_if_reading_nonexisting_config_file() {
+        Configuration::load_from_file(PathBuf::from("/this/file/does/not/exist")).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_malformed_yaml_file() {
+        use std::fs;
+        use tempfile::NamedTempFile;
+
+        let file = NamedTempFile::new().unwrap();
+        let path = &file.into_temp_path();
+        let yaml = r#"this is not valid YAML content"#;
+        fs::write(path.to_path_buf(), yaml).unwrap();
+
+        Configuration::load_from_file(path.to_path_buf()).unwrap();
+    }
+
+    #[test]
+    fn test_get_all_valid_property_names() {
+        let names = Configuration::get_all_valid_property_names();
+        let known_names = vec![
+            DEFAULT_TENANT.to_string(),
+            DEFAULT_OUTPUT_FORMAT.to_string(),
+        ];
+
+        assert_eq!(names, known_names);
+    }
+
+    #[test]
+    fn test_get_property_value() {
+        let mut configuration = Configuration::default();
+
+        assert_eq!(configuration.get(DEFAULT_TENANT.to_string()), None);
+
+        configuration.set_default_format(None);
+        assert_eq!(configuration.get(DEFAULT_OUTPUT_FORMAT.to_string()), None);
+
+        let my_tenant = "mytenant".to_string();
+        let my_format = OutputFormat::Table;
+        configuration.set_default_tenant(Some(my_tenant.clone()));
+        configuration.set_default_format(Some(my_format.clone()));
+
+        let tenant = configuration.get(DEFAULT_TENANT.to_string()).unwrap();
+        assert_eq!(Some(tenant), Some(my_tenant));
+
+        let format = configuration
+            .get(DEFAULT_OUTPUT_FORMAT.to_string())
+            .unwrap();
+        assert_eq!(Some(format), Some(my_format.to_string()));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_invalid_property_name() {
+        let configuration = Configuration::default();
+
+        configuration
+            .get("invalid property name".to_string())
+            .unwrap();
+    }
+
+    #[test]
+    fn test_set_configuration_value() {
+        let mut configuration = Configuration::default();
+        let my_tenant = "my_tenant".to_string();
+        let my_format = OutputFormat::Table;
+
+        configuration
+            .set(DEFAULT_TENANT.to_string(), Some(my_tenant.clone()))
+            .unwrap();
+        assert_eq!(configuration.get_default_tenant(), Some(my_tenant));
+
+        configuration
+            .set(
+                DEFAULT_OUTPUT_FORMAT.to_string(),
+                Some(my_format.to_string()),
+            )
+            .unwrap();
+        assert_eq!(
+            Some(format!("{}", configuration.get_default_format().unwrap())),
+            Some(format!("{}", my_format))
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_invalid_property_name_for_set() {
+        let mut configuration = Configuration::default();
+        let name = "this is invalid".to_string();
+
+        configuration
+            .set(name, Some("some value".to_string()))
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_empty_format_value_for_set() {
+        let mut configuration = Configuration::default();
+
+        configuration
+            .set(DEFAULT_OUTPUT_FORMAT.to_string(), None)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_new_for_tenant_configuration() {
+        let my_client_id = "my_client_id".to_string();
+        let my_client_secret = "my_client_secret".to_string();
+        let tenant_config_one = TenantConfiguration {
+            client_id: my_client_id.clone(),
+            client_secret: my_client_secret.clone(),
+        };
+        let tenant_config_two =
+            TenantConfiguration::new(my_client_id.clone(), my_client_secret.clone());
+
+        assert_eq!(tenant_config_one, tenant_config_two);
+    }
+
+    #[test]
+    fn test_debug_for_tenant_configuration() {
+        let my_client_id = "my_client_id".to_string();
+        let my_client_secret = "my_client_secret".to_string();
+        let json = r#"TenantConfiguration { client_id: "my_client_id", client_secret: "my_client_secret" }"#;
+
+        let tenant_config = TenantConfiguration::new(my_client_id, my_client_secret);
+        assert_eq!(format!("{:?}", tenant_config), format!("{}", json));
     }
 }

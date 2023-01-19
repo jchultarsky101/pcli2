@@ -1,9 +1,12 @@
-use dirs::home_dir;
+use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
+use url::Url;
 
-const DEFAULT_CONFIGURATION_FILE_NAME: &str = ".pcli2.conf";
+const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
+const DEFAULT_CONFIGURATION_FILE_NAME: &'static str = "config.yml";
+
 const DEFAULT_TENANT: &'static str = "default_tenant";
 const DEFAULT_OUTPUT_FORMAT: &'static str = "default_output_format";
 
@@ -18,8 +21,8 @@ const TREE_PRETTY: &'static str = "tree_pretty";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationError {
-    #[error("failed to determine the user's home directory")]
-    FailedToFindHomeDirectory,
+    #[error("failed to resolve the configuration directory")]
+    FailedToFindConfigurationDirectory,
     // #[error("invalid configuration property name '{name:?}'")]
     // InvalidPropertyName { name: String },
     // #[error("Invalid value '{value:?} for property '{name:?}'")]
@@ -67,15 +70,27 @@ impl std::fmt::Display for ConfigurationPropertyName {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TenantConfiguration {
+    tenant_id: String,
+    api_url: Url,
+    oidc_url: Url,
     client_id: String,
     client_secret: String,
 }
 
 impl TenantConfiguration {
-    pub fn new(client_id: String, client_secret: String) -> TenantConfiguration {
+    pub fn new(
+        tenant_id: String,
+        api_url: Url,
+        oidc_url: Url,
+        client_id: String,
+        client_secret: String,
+    ) -> TenantConfiguration {
         TenantConfiguration {
+            tenant_id,
+            api_url,
+            oidc_url,
             client_id,
             client_secret,
         }
@@ -137,7 +152,7 @@ impl FromStr for OutputFormat {
 pub struct Configuration {
     default_tenant: Option<String>,
     default_format: Option<OutputFormat>,
-    tenants: Option<HashMap<String, TenantConfiguration>>,
+    tenants: HashMap<String, TenantConfiguration>,
 }
 
 impl Default for Configuration {
@@ -145,22 +160,23 @@ impl Default for Configuration {
         Self {
             default_tenant: None,
             default_format: Some(OutputFormat::Json),
-            tenants: None,
+            tenants: HashMap::new(),
         }
     }
 }
 
 impl Configuration {
     pub fn get_default_configuration_file_path() -> Result<PathBuf, ConfigurationError> {
-        let home_directory = home_dir();
-        match home_directory {
-            Some(home_directory) => {
-                let mut default_config_file_path = home_directory;
+        let configuration_directory = config_dir();
+        match configuration_directory {
+            Some(configuration_directory) => {
+                let mut default_config_file_path = configuration_directory;
+                default_config_file_path.push(DEFAULT_APPLICATION_ID);
                 default_config_file_path.push(DEFAULT_CONFIGURATION_FILE_NAME);
 
                 Ok(default_config_file_path)
             }
-            None => Err(ConfigurationError::FailedToFindHomeDirectory),
+            None => Err(ConfigurationError::FailedToFindConfigurationDirectory),
         }
     }
 
@@ -195,8 +211,20 @@ impl Configuration {
     }
 
     pub fn save_to_file(&self, path: PathBuf) -> Result<(), ConfigurationError> {
-        let configuration = self.clone();
+        // first check if the parent directory exists and try to create it if not
+        let configuration_directory = path.parent();
+        match configuration_directory {
+            Some(path) => {
+                // this operation only executes if the directory does not exit
+                match fs::create_dir_all(path) {
+                    Ok(()) => (),
+                    Err(_) => return Err(ConfigurationError::FailedToFindConfigurationDirectory),
+                }
+            }
+            None => return Err(ConfigurationError::FailedToFindConfigurationDirectory),
+        }
 
+        let configuration = self.clone();
         let file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -283,6 +311,47 @@ impl Configuration {
             }),
         }
     }
+
+    pub fn has_tenants(&self) -> bool {
+        !self.tenants.is_empty()
+    }
+
+    pub fn add_tenant(
+        &mut self,
+        tenant_alias: Option<String>,
+        tenant: TenantConfiguration,
+    ) -> Result<(), ConfigurationError> {
+        let alias = match tenant_alias {
+            Some(alias) => alias,
+            None => tenant.tenant_id.clone(),
+        };
+        self.tenants.insert(alias, tenant.clone());
+
+        Ok(())
+    }
+
+    /// Returns an Option of an owned instance of TenantConfiguration
+    /// if one exists, or None
+    pub fn get_tenant(&self, tenant_id: &String) -> Option<TenantConfiguration> {
+        let tenant = self.tenants.get(tenant_id);
+
+        match tenant {
+            Some(tenant) => Some(tenant.clone()),
+            None => None,
+        }
+    }
+
+    pub fn delete_tenant(&mut self, tenant_id: &String) {
+        self.tenants.remove(tenant_id);
+    }
+
+    pub fn delete_all_tenants(&mut self) {
+        self.tenants.clear()
+    }
+
+    pub fn get_all_tenant_aliases(&self) -> Vec<String> {
+        self.tenants.keys().map(|k| k.to_string()).collect()
+    }
 }
 
 #[cfg(test)]
@@ -345,7 +414,7 @@ mod tests {
             Configuration {
                 default_tenant: None,
                 default_format: Some(OutputFormat::Json),
-                tenants: None
+                tenants: HashMap::new(),
             }
         );
     }
@@ -431,7 +500,8 @@ mod tests {
     #[test]
     fn test_get_default_configuration_file_path() {
         use dirs;
-        let mut default_config_file_path = dirs::home_dir().unwrap();
+        let mut default_config_file_path = dirs::config_dir().unwrap();
+        default_config_file_path.push(DEFAULT_APPLICATION_ID);
         default_config_file_path.push(DEFAULT_CONFIGURATION_FILE_NAME);
 
         assert_eq!(
@@ -559,25 +629,230 @@ mod tests {
 
     #[test]
     fn test_new_for_tenant_configuration() {
-        let my_client_id = "my_client_id".to_string();
-        let my_client_secret = "my_client_secret".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
         let tenant_config_one = TenantConfiguration {
-            client_id: my_client_id.clone(),
-            client_secret: my_client_secret.clone(),
+            tenant_id: tenant_id.clone(),
+            api_url: api_url.clone(),
+            oidc_url: oidc_url.clone(),
+            client_id: client_id.clone(),
+            client_secret: client_secret.clone(),
         };
-        let tenant_config_two =
-            TenantConfiguration::new(my_client_id.clone(), my_client_secret.clone());
+        let tenant_config_two = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
 
         assert_eq!(tenant_config_one, tenant_config_two);
     }
 
     #[test]
     fn test_debug_for_tenant_configuration() {
-        let my_client_id = "my_client_id".to_string();
-        let my_client_secret = "my_client_secret".to_string();
-        let json = r#"TenantConfiguration { client_id: "my_client_id", client_secret: "my_client_secret" }"#;
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+        let json = r#"TenantConfiguration { tenant_id: "my_tenant", api_url: Url { scheme: "https", cannot_be_a_base: false, username: "", password: None, host: Some(Domain("my_tenant.physna.com")), port: None, path: "/api/v2", query: None, fragment: None }, oidc_url: Url { scheme: "https", cannot_be_a_base: false, username: "", password: None, host: Some(Domain("authentication.com")), port: None, path: "/", query: None, fragment: None }, client_id: "my_client_id", client_secret: "my_client_secret" }"#;
 
-        let tenant_config = TenantConfiguration::new(my_client_id, my_client_secret);
-        assert_eq!(format!("{:?}", tenant_config), format!("{}", json));
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        assert_eq!(format!("{:?}", tenant), format!("{}", json));
+    }
+
+    #[test]
+    fn test_add_tenant() {
+        let mut configuration = Configuration::default();
+
+        let tenant_alias = "my_alias".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        configuration
+            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .unwrap();
+
+        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        assert_eq!(tenant2, tenant);
+    }
+
+    #[test]
+    fn test_get_tenant() {
+        let mut configuration = Configuration::default();
+
+        let tenant_alias = "my_alias".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        configuration
+            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .unwrap();
+
+        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        assert_eq!(tenant2, tenant);
+
+        let invalid_tenant_id = "invalid ID".to_string();
+        let tenant2 = configuration.get_tenant(&invalid_tenant_id);
+        assert_eq!(tenant2, None);
+    }
+
+    #[test]
+    fn test_delete_tenant() {
+        let mut configuration = Configuration::default();
+
+        let tenant_alias = "my_alias".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        // first add a tenant
+        configuration
+            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .unwrap();
+
+        // check that the tenant was correctly added
+        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        assert_eq!(tenant2, tenant);
+
+        // delete the tenant
+        configuration.delete_tenant(&tenant_alias);
+
+        // make sure that there are no more tenants
+        assert!(!configuration.has_tenants());
+    }
+
+    #[test]
+    fn test_has_tenants() {
+        let configuration = Configuration::default();
+        assert!(!configuration.has_tenants());
+    }
+
+    #[test]
+    fn test_delete_all_tenants() {
+        // create configuration
+        let mut configuration = Configuration::default();
+
+        // create a tenant configuration
+        let tenant_alias = "my_alias".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        // first add the tenant
+        configuration
+            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .unwrap();
+
+        // check that the tenant was correctly added
+        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        assert_eq!(tenant2, tenant);
+
+        // delete the tenant
+        configuration.delete_all_tenants();
+
+        // make sure that there are no more tenants
+        assert!(!configuration.has_tenants());
+    }
+
+    #[test]
+    fn test_get_tenant_ids() {
+        let mut tenant_aliases = vec![
+            "tenant_1".to_string(),
+            "tenant_2".to_string(),
+            "tenant_3".to_string(),
+        ];
+        tenant_aliases.sort();
+
+        let mut configuration = Configuration::default();
+
+        // create a tenant configuration
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        configuration
+            .add_tenant(Some(tenant_aliases[0].clone()), tenant.clone())
+            .unwrap();
+        configuration
+            .add_tenant(Some(tenant_aliases[1].clone()), tenant.clone())
+            .unwrap();
+        configuration
+            .add_tenant(Some(tenant_aliases[2].clone()), tenant.clone())
+            .unwrap();
+
+        let mut produced_ids = configuration.get_all_tenant_aliases();
+        produced_ids.sort();
+        assert_eq!(produced_ids, tenant_aliases);
     }
 }

@@ -1,0 +1,15 @@
+default_tenant: null
+default_format: json
+tenants:
+  mytenant:
+    tenant_id: mytenant
+    api_url: https://mytenant.physna.com/api
+    oidc_url: https://security.com/
+    client_id: myclient
+    client_secret: mysecret
+  another:
+    tenant_id: mytenant
+    api_url: https://mytenant.physna.com/api
+    oidc_url: https://security.com/
+    client_id: myclient
+    client_secret: mysecret2

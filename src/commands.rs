@@ -8,6 +8,10 @@ pub fn create_cli_commands() -> ArgMatches {
         .propagate_version(true)
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(
+            Command::new("login")
+                .about("initiate new session")
+        )
         // working with configuration peroperties
         .subcommand(
             Command::new("config")
@@ -15,6 +19,10 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new("list")
                         .about("shows the list of all configuration properties and their values"),
+                )
+                .subcommand(
+                    Command::new("show-default-location")
+                        .about("shows the path to the default configuration file"),
                 )
                 .subcommand(
                     Command::new("init")
@@ -92,7 +100,66 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .required(true)
                                 .help("deletes a configuration property"),
                         ),
+                )
+                .subcommand(
+                    Command::new("tenant")
+                        .about("working with tenant configuration")
+                        .subcommand(
+                            Command::new("add")
+                                .about("adds new tenant configuration")
+                                .arg(
+                                    Arg::new("alias")
+                                        .long("alias")
+                                        .required(false)
+                                        .help("tenant's alias for this configuration. It is optional. If not provided, the tenant ID will be used instead")
+                                )
+                                .arg(
+                                    Arg::new("id")
+                                        .long("id")
+                                        .required(true)
+                                        .help("tenant's identifier")
+                                )
+                                .arg(
+                                    Arg::new("api-url")
+                                        .long("api-url")
+                                        .required(true)
+                                        .help("tenants API base URL")
+                                )
+                                .arg(
+                                    Arg::new("oidc-url")
+                                        .long("oidc-url")
+                                        .required(true)
+                                        .help("OpenID Connect authorization URL")
+                                )
+                                .arg(
+                                    Arg::new("client-id")
+                                        .long("client-id")
+                                        .required(true)
+                                        .help("OpenID Connect client ID")
+                                )
+                                .arg(
+                                    Arg::new("client-secret")
+                                        .long("client-secret")
+                                        .required(true)
+                                        .help("OpenID Connect client secret")
+                                )
+                        )
+                        .subcommand(
+                            Command::new("delete")
+                                .about("deletes a tenant configuration")
+                                .arg(
+                                    Arg::new("id")
+                                        .long("id")
+                                        .required(true)
+                                        .help("the tenants ID or alias")    
+                                )
+                        )
+                        .subcommand(
+                            Command::new("show-all-aliases")
+                                .about("lists all configured tenants")
+                        )
                 ),
+
         )
         //working with folders
         .subcommand(

@@ -1,12 +1,14 @@
-use dirs::home_dir;
-use log::trace;
+use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
+use url::Url;
 
-const DEFAULT_CONFIGURATION_FILE_NAME: &str = ".pcli2.conf";
-const DEFAULT_TENANT: &'static str = "DEFAULT_TENANT";
-const DEFAULT_OUTPUT_FORMAT: &'static str = "DEFAULT_OUTPUT_FORMAT";
+const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
+const DEFAULT_CONFIGURATION_FILE_NAME: &'static str = "config.yml";
+
+const DEFAULT_TENANT: &'static str = "default_tenant";
+const DEFAULT_OUTPUT_FORMAT: &'static str = "default_output_format";
 
 const JSON: &'static str = "json";
 const JSON_PRETTY: &'static str = "json_pretty";
@@ -19,8 +21,8 @@ const TREE_PRETTY: &'static str = "tree_pretty";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationError {
-    #[error("failed to determine the user's home directory")]
-    FailedToFindHomeDirectory,
+    #[error("failed to resolve the configuration directory")]
+    FailedToFindConfigurationDirectory,
     // #[error("invalid configuration property name '{name:?}'")]
     // InvalidPropertyName { name: String },
     // #[error("Invalid value '{value:?} for property '{name:?}'")]
@@ -35,9 +37,11 @@ pub enum ConfigurationError {
     InvalidOutputFormat { format: String },
     #[error("failed to set property value for property due to: \"{cause:?}\"")]
     FailedToSetValue { cause: String },
+    #[error("missing value for property \"{name:?}\"")]
+    MissingRequiredPropertyValue { name: String },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum ConfigurationPropertyName {
     DefaultTenant,
     DefaultOutputFormat,
@@ -47,7 +51,7 @@ impl FromStr for ConfigurationPropertyName {
     type Err = ConfigurationError;
 
     fn from_str(name: &str) -> Result<ConfigurationPropertyName, ConfigurationError> {
-        match name.to_uppercase().as_str() {
+        match name.to_lowercase().as_str() {
             DEFAULT_TENANT => Ok(ConfigurationPropertyName::DefaultTenant),
             DEFAULT_OUTPUT_FORMAT => Ok(ConfigurationPropertyName::DefaultOutputFormat),
             _ => Err(ConfigurationError::InvalidPropertyName {
@@ -66,10 +70,71 @@ impl std::fmt::Display for ConfigurationPropertyName {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TenantConfiguration {
-    cliend_id: String,
+    tenant_id: String,
+    api_url: Url,
+    oidc_url: Url,
+    client_id: String,
     client_secret: String,
+}
+
+impl TenantConfiguration {
+    pub fn new(
+        tenant_id: String,
+        api_url: Url,
+        oidc_url: Url,
+        client_id: String,
+        client_secret: String,
+    ) -> TenantConfiguration {
+        TenantConfiguration {
+            tenant_id,
+            api_url,
+            oidc_url,
+            client_id,
+            client_secret,
+        }
+    }
+
+    pub fn set_tenant_id(&mut self, tenant_id: String) {
+        self.tenant_id = tenant_id.clone();
+    }
+
+    pub fn get_tenant_id(&self) -> String {
+        self.tenant_id.clone()
+    }
+
+    pub fn set_api_url(&mut self, api_url: Url) {
+        self.api_url = api_url.clone();
+    }
+
+    pub fn get_api_url(&self) -> Url {
+        self.api_url.clone()
+    }
+
+    pub fn set_oidc_url(&mut self, oidc_url: Url) {
+        self.oidc_url = oidc_url.clone();
+    }
+
+    pub fn get_oidc_url(&self) -> Url {
+        self.oidc_url.clone()
+    }
+
+    pub fn set_client_id(&mut self, client_id: String) {
+        self.client_id = client_id.clone();
+    }
+
+    pub fn get_client_id(&self) -> String {
+        self.client_id.clone()
+    }
+
+    pub fn set_client_secret(&mut self, client_secret: String) {
+        self.client_secret = client_secret.clone();
+    }
+
+    pub fn get_client_secret(&self) -> String {
+        self.client_secret.clone()
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,7 +192,7 @@ impl FromStr for OutputFormat {
 pub struct Configuration {
     default_tenant: Option<String>,
     default_format: Option<OutputFormat>,
-    tenants: Option<HashMap<String, TenantConfiguration>>,
+    tenants: HashMap<String, TenantConfiguration>,
 }
 
 impl Default for Configuration {
@@ -135,22 +200,23 @@ impl Default for Configuration {
         Self {
             default_tenant: None,
             default_format: Some(OutputFormat::Json),
-            tenants: None,
+            tenants: HashMap::new(),
         }
     }
 }
 
 impl Configuration {
     pub fn get_default_configuration_file_path() -> Result<PathBuf, ConfigurationError> {
-        let home_directory = home_dir();
-        match home_directory {
-            Some(home_directory) => {
-                let mut default_config_file_path = home_directory;
+        let configuration_directory = config_dir();
+        match configuration_directory {
+            Some(configuration_directory) => {
+                let mut default_config_file_path = configuration_directory;
+                default_config_file_path.push(DEFAULT_APPLICATION_ID);
                 default_config_file_path.push(DEFAULT_CONFIGURATION_FILE_NAME);
 
                 Ok(default_config_file_path)
             }
-            None => Err(ConfigurationError::FailedToFindHomeDirectory),
+            None => Err(ConfigurationError::FailedToFindConfigurationDirectory),
         }
     }
 
@@ -185,16 +251,20 @@ impl Configuration {
     }
 
     pub fn save_to_file(&self, path: PathBuf) -> Result<(), ConfigurationError> {
+        // first check if the parent directory exists and try to create it if not
+        let configuration_directory = path.parent();
+        match configuration_directory {
+            Some(path) => {
+                // this operation only executes if the directory does not exit
+                match fs::create_dir_all(path) {
+                    Ok(()) => (),
+                    Err(_) => return Err(ConfigurationError::FailedToFindConfigurationDirectory),
+                }
+            }
+            None => return Err(ConfigurationError::FailedToFindConfigurationDirectory),
+        }
+
         let configuration = self.clone();
-
-        trace!(
-            "Saving the configuration to file {}...",
-            path.clone()
-                .into_os_string()
-                .into_string()
-                .unwrap_or_default()
-        );
-
         let file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -202,10 +272,7 @@ impl Configuration {
 
         match file {
             Ok(file) => match serde_yaml::to_writer(file, configuration) {
-                Ok(()) => {
-                    trace!("Configuration saved.");
-                    Ok(())
-                }
+                Ok(()) => Ok(()),
                 Err(e) => Err(ConfigurationError::FailedToWriteData {
                     cause: e.to_string(),
                 }),
@@ -225,7 +292,6 @@ impl Configuration {
     }
 
     pub fn set_default_tenant(&mut self, default_tenant: Option<String>) {
-        trace!("Setting default_tenant to value of {:?}...", default_tenant);
         self.default_tenant = default_tenant;
     }
 
@@ -247,8 +313,6 @@ impl Configuration {
     }
 
     pub fn get(&self, name: String) -> Option<String> {
-        trace!("Retrieving value for configuration property {:?}...", name);
-
         let name = ConfigurationPropertyName::from_str(name.to_uppercase().as_str());
 
         match name {
@@ -267,8 +331,6 @@ impl Configuration {
     }
 
     pub fn set(&mut self, name: String, value: Option<String>) -> Result<(), ConfigurationError> {
-        trace!("Setting the value for configuration property {:?}...", name);
-
         let name = ConfigurationPropertyName::from_str(name.to_uppercase().as_str());
 
         match name {
@@ -279,8 +341,8 @@ impl Configuration {
                         let format = OutputFormat::from_str(value.as_str())?;
                         Ok(self.set_default_format(Some(format)))
                     }
-                    None => Err(ConfigurationError::InvalidPropertyName {
-                        name: ("".to_string()),
+                    None => Err(ConfigurationError::MissingRequiredPropertyValue {
+                        name: (DEFAULT_OUTPUT_FORMAT.to_string()),
                     }),
                 },
             },
@@ -288,6 +350,47 @@ impl Configuration {
                 cause: format!("{}", e),
             }),
         }
+    }
+
+    pub fn has_tenants(&self) -> bool {
+        !self.tenants.is_empty()
+    }
+
+    pub fn add_tenant(
+        &mut self,
+        tenant_alias: Option<String>,
+        tenant: TenantConfiguration,
+    ) -> Result<(), ConfigurationError> {
+        let alias = match tenant_alias {
+            Some(alias) => alias,
+            None => tenant.tenant_id.clone(),
+        };
+        self.tenants.insert(alias, tenant.clone());
+
+        Ok(())
+    }
+
+    /// Returns an Option of an owned instance of TenantConfiguration
+    /// if one exists, or None
+    pub fn get_tenant(&self, tenant_id: &String) -> Option<TenantConfiguration> {
+        let tenant = self.tenants.get(tenant_id);
+
+        match tenant {
+            Some(tenant) => Some(tenant.clone()),
+            None => None,
+        }
+    }
+
+    pub fn delete_tenant(&mut self, tenant_id: &String) {
+        self.tenants.remove(tenant_id);
+    }
+
+    pub fn delete_all_tenants(&mut self) {
+        self.tenants.clear()
+    }
+
+    pub fn get_all_tenant_aliases(&self) -> Vec<String> {
+        self.tenants.keys().map(|k| k.to_string()).collect()
     }
 }
 
@@ -338,6 +441,12 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_fail_on_invalid_name_for_output_format_from_string() {
+        OutputFormat::from_str("invalid_format_name").unwrap();
+    }
+
+    #[test]
     fn test_create_default_configuration() {
         let configuration = Configuration::default();
         assert_eq!(
@@ -345,7 +454,7 @@ mod tests {
             Configuration {
                 default_tenant: None,
                 default_format: Some(OutputFormat::Json),
-                tenants: None
+                tenants: HashMap::new(),
             }
         );
     }
@@ -390,5 +499,400 @@ mod tests {
         let format = OutputFormat::Csv;
         configuration.set_default_format(Some(format.clone()));
         assert_eq!(Some(format), configuration.get_default_format());
+    }
+
+    #[test]
+    fn test_debug_on_configuration_property_name() {
+        let name = ConfigurationPropertyName::DefaultTenant;
+        assert_eq!(format!("{:?}", name), "DefaultTenant");
+    }
+
+    #[test]
+    fn test_from_string_for_configuration_property_name() {
+        assert_eq!(
+            ConfigurationPropertyName::from_str(DEFAULT_TENANT).unwrap(),
+            ConfigurationPropertyName::DefaultTenant
+        );
+        assert_eq!(
+            ConfigurationPropertyName::from_str(DEFAULT_OUTPUT_FORMAT).unwrap(),
+            ConfigurationPropertyName::DefaultOutputFormat
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_incorrect_configuration_property_name() {
+        let _ = ConfigurationPropertyName::from_str("invalid_name").unwrap();
+    }
+
+    #[test]
+    fn test_display_for_configuration_property_name() {
+        assert_eq!(
+            format!("{}", ConfigurationPropertyName::DefaultTenant),
+            DEFAULT_TENANT
+        );
+        assert_eq!(
+            format!("{}", ConfigurationPropertyName::DefaultOutputFormat),
+            DEFAULT_OUTPUT_FORMAT
+        );
+    }
+
+    #[test]
+    fn test_get_default_configuration_file_path() {
+        use dirs;
+        let mut default_config_file_path = dirs::config_dir().unwrap();
+        default_config_file_path.push(DEFAULT_APPLICATION_ID);
+        default_config_file_path.push(DEFAULT_CONFIGURATION_FILE_NAME);
+
+        assert_eq!(
+            Configuration::get_default_configuration_file_path().unwrap(),
+            default_config_file_path,
+        );
+    }
+
+    #[test]
+    fn test_load_default_configuration() {
+        // make a copy of the original file
+        let new_configuration = Configuration::default();
+        new_configuration.save_to_default().unwrap();
+        let new_configuration = Configuration::load_default().unwrap();
+        assert_eq!(new_configuration, Configuration::default());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_if_reading_nonexisting_config_file() {
+        Configuration::load_from_file(PathBuf::from("/this/file/does/not/exist")).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_malformed_yaml_file() {
+        use std::fs;
+        use tempfile::NamedTempFile;
+
+        let file = NamedTempFile::new().unwrap();
+        let path = &file.into_temp_path();
+        let yaml = r#"this is not valid YAML content"#;
+        fs::write(path.to_path_buf(), yaml).unwrap();
+
+        Configuration::load_from_file(path.to_path_buf()).unwrap();
+    }
+
+    #[test]
+    fn test_get_all_valid_property_names() {
+        let names = Configuration::get_all_valid_property_names();
+        let known_names = vec![
+            DEFAULT_TENANT.to_string(),
+            DEFAULT_OUTPUT_FORMAT.to_string(),
+        ];
+
+        assert_eq!(names, known_names);
+    }
+
+    #[test]
+    fn test_get_property_value() {
+        let mut configuration = Configuration::default();
+
+        assert_eq!(configuration.get(DEFAULT_TENANT.to_string()), None);
+
+        configuration.set_default_format(None);
+        assert_eq!(configuration.get(DEFAULT_OUTPUT_FORMAT.to_string()), None);
+
+        let my_tenant = "mytenant".to_string();
+        let my_format = OutputFormat::Table;
+        configuration.set_default_tenant(Some(my_tenant.clone()));
+        configuration.set_default_format(Some(my_format.clone()));
+
+        let tenant = configuration.get(DEFAULT_TENANT.to_string()).unwrap();
+        assert_eq!(Some(tenant), Some(my_tenant));
+
+        let format = configuration
+            .get(DEFAULT_OUTPUT_FORMAT.to_string())
+            .unwrap();
+        assert_eq!(Some(format), Some(my_format.to_string()));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_invalid_property_name() {
+        let configuration = Configuration::default();
+
+        configuration
+            .get("invalid property name".to_string())
+            .unwrap();
+    }
+
+    #[test]
+    fn test_set_configuration_value() {
+        let mut configuration = Configuration::default();
+        let my_tenant = "my_tenant".to_string();
+        let my_format = OutputFormat::Table;
+
+        configuration
+            .set(DEFAULT_TENANT.to_string(), Some(my_tenant.clone()))
+            .unwrap();
+        assert_eq!(configuration.get_default_tenant(), Some(my_tenant));
+
+        configuration
+            .set(
+                DEFAULT_OUTPUT_FORMAT.to_string(),
+                Some(my_format.to_string()),
+            )
+            .unwrap();
+        assert_eq!(
+            Some(format!("{}", configuration.get_default_format().unwrap())),
+            Some(format!("{}", my_format))
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_invalid_property_name_for_set() {
+        let mut configuration = Configuration::default();
+        let name = "this is invalid".to_string();
+
+        configuration
+            .set(name, Some("some value".to_string()))
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail_on_empty_format_value_for_set() {
+        let mut configuration = Configuration::default();
+
+        configuration
+            .set(DEFAULT_OUTPUT_FORMAT.to_string(), None)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_new_for_tenant_configuration() {
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+        let tenant_config_one = TenantConfiguration {
+            tenant_id: tenant_id.clone(),
+            api_url: api_url.clone(),
+            oidc_url: oidc_url.clone(),
+            client_id: client_id.clone(),
+            client_secret: client_secret.clone(),
+        };
+        let tenant_config_two = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        assert_eq!(tenant_config_one, tenant_config_two);
+    }
+
+    #[test]
+    fn test_debug_for_tenant_configuration() {
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+        let json = r#"TenantConfiguration { tenant_id: "my_tenant", api_url: Url { scheme: "https", cannot_be_a_base: false, username: "", password: None, host: Some(Domain("my_tenant.physna.com")), port: None, path: "/api/v2", query: None, fragment: None }, oidc_url: Url { scheme: "https", cannot_be_a_base: false, username: "", password: None, host: Some(Domain("authentication.com")), port: None, path: "/", query: None, fragment: None }, client_id: "my_client_id", client_secret: "my_client_secret" }"#;
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        assert_eq!(format!("{:?}", tenant), format!("{}", json));
+    }
+
+    #[test]
+    fn test_add_tenant() {
+        let mut configuration = Configuration::default();
+
+        let tenant_alias = "my_alias".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        configuration
+            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .unwrap();
+
+        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        assert_eq!(tenant2, tenant);
+    }
+
+    #[test]
+    fn test_get_tenant() {
+        let mut configuration = Configuration::default();
+
+        let tenant_alias = "my_alias".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        configuration
+            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .unwrap();
+
+        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        assert_eq!(tenant2, tenant);
+
+        let invalid_tenant_id = "invalid ID".to_string();
+        let tenant2 = configuration.get_tenant(&invalid_tenant_id);
+        assert_eq!(tenant2, None);
+    }
+
+    #[test]
+    fn test_delete_tenant() {
+        let mut configuration = Configuration::default();
+
+        let tenant_alias = "my_alias".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        // first add a tenant
+        configuration
+            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .unwrap();
+
+        // check that the tenant was correctly added
+        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        assert_eq!(tenant2, tenant);
+
+        // delete the tenant
+        configuration.delete_tenant(&tenant_alias);
+
+        // make sure that there are no more tenants
+        assert!(!configuration.has_tenants());
+    }
+
+    #[test]
+    fn test_has_tenants() {
+        let configuration = Configuration::default();
+        assert!(!configuration.has_tenants());
+    }
+
+    #[test]
+    fn test_delete_all_tenants() {
+        // create configuration
+        let mut configuration = Configuration::default();
+
+        // create a tenant configuration
+        let tenant_alias = "my_alias".to_string();
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        // first add the tenant
+        configuration
+            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .unwrap();
+
+        // check that the tenant was correctly added
+        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        assert_eq!(tenant2, tenant);
+
+        // delete the tenant
+        configuration.delete_all_tenants();
+
+        // make sure that there are no more tenants
+        assert!(!configuration.has_tenants());
+    }
+
+    #[test]
+    fn test_get_tenant_ids() {
+        let mut tenant_aliases = vec![
+            "tenant_1".to_string(),
+            "tenant_2".to_string(),
+            "tenant_3".to_string(),
+        ];
+        tenant_aliases.sort();
+
+        let mut configuration = Configuration::default();
+
+        // create a tenant configuration
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let client_secret = "my_client_secret".to_string();
+
+        let tenant = TenantConfiguration::new(
+            tenant_id.clone(),
+            api_url.clone(),
+            oidc_url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+        );
+
+        configuration
+            .add_tenant(Some(tenant_aliases[0].clone()), tenant.clone())
+            .unwrap();
+        configuration
+            .add_tenant(Some(tenant_aliases[1].clone()), tenant.clone())
+            .unwrap();
+        configuration
+            .add_tenant(Some(tenant_aliases[2].clone()), tenant.clone())
+            .unwrap();
+
+        let mut produced_ids = configuration.get_all_tenant_aliases();
+        produced_ids.sort();
+        assert_eq!(produced_ids, tenant_aliases);
     }
 }

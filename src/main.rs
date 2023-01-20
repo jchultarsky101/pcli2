@@ -1,10 +1,13 @@
+mod browser;
 mod commands;
 mod configuration;
+mod security;
 
 use commands::create_cli_commands;
-use configuration::{Configuration, ConfigurationError};
+use configuration::{Configuration, ConfigurationError, TenantConfiguration};
 use std::path::PathBuf;
 use thiserror::Error;
+use url::Url;
 
 #[derive(Error, Debug)]
 enum PcliError {
@@ -29,8 +32,24 @@ fn main() -> Result<(), PcliError> {
     let matches = create_cli_commands();
 
     match matches.subcommand() {
+        Some(("login", _)) => {
+            let config = Configuration::load_default().unwrap();
+            let tenant = config.get_tenant(&"my_alias".to_string()).unwrap();
+            let response = security::login(&tenant);
+
+            match response {
+                Ok(()) => (),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
         // working with configuration
         Some(("config", sub_matches)) => match sub_matches.subcommand() {
+            Some(("show-default-location", _)) => {
+                let path = Configuration::get_default_configuration_file_path()?;
+                let path = path.into_os_string().into_string().unwrap();
+
+                println!("{}", path);
+            }
             Some(("init", sub_matches)) => {
                 let file = sub_matches.get_one::<String>("file");
                 let file = PathBuf::from(file.unwrap());
@@ -90,6 +109,51 @@ fn main() -> Result<(), PcliError> {
                     None => unreachable!("\"name\" is a mandatory argument"),
                 }
             }
+            Some(("tenant", sub_matches)) => match sub_matches.subcommand() {
+                Some(("add", sub_matches)) => {
+                    let alias = sub_matches.get_one::<String>("alias");
+                    let id = sub_matches.get_one::<String>("id").unwrap().to_owned();
+                    let alias = match alias {
+                        Some(alias) => Some(alias.to_owned()),
+                        None => Some(id.to_owned()),
+                    };
+                    let api_url = sub_matches.get_one::<String>("api-url").unwrap();
+                    let api_url = Url::parse(api_url.as_str()).unwrap();
+                    let oidc_url = sub_matches
+                        .get_one::<String>("oidc-url")
+                        .unwrap()
+                        .to_owned();
+                    let oidc_url = Url::parse(oidc_url.as_str()).unwrap();
+                    let client_id = sub_matches
+                        .get_one::<String>("client-id")
+                        .unwrap()
+                        .to_owned();
+                    let client_secret = sub_matches
+                        .get_one::<String>("client-secret")
+                        .unwrap()
+                        .to_owned();
+
+                    let tenant =
+                        TenantConfiguration::new(id, api_url, oidc_url, client_id, client_secret);
+
+                    let mut configuration = Configuration::load_default().unwrap();
+                    configuration.add_tenant(alias, tenant).unwrap();
+                    configuration.save_to_default().unwrap();
+                }
+                Some(("delete", sub_matches)) => {
+                    let id = sub_matches.get_one::<String>("id").unwrap();
+
+                    let mut configuration = Configuration::load_default().unwrap();
+                    configuration.delete_tenant(id);
+                    configuration.save_to_default().unwrap();
+                }
+                Some(("show-all-aliases", _sub_matches)) => {
+                    let configuration = Configuration::load_default().unwrap();
+                    let aliases = configuration.get_all_tenant_aliases();
+                    aliases.iter().for_each(|a| println!("{}", a));
+                }
+                _ => unreachable!("Invalid sub command for 'tenant'"),
+            },
             _ => unreachable!("Invalid sub command for 'config'"),
         },
 

@@ -1,5 +1,7 @@
+mod browser;
 mod commands;
 mod configuration;
+mod security;
 
 use commands::create_cli_commands;
 use configuration::{Configuration, ConfigurationError, TenantConfiguration};
@@ -30,6 +32,16 @@ fn main() -> Result<(), PcliError> {
     let matches = create_cli_commands();
 
     match matches.subcommand() {
+        Some(("login", _)) => {
+            let config = Configuration::load_default().unwrap();
+            let tenant = config.get_tenant(&"my_alias".to_string()).unwrap();
+            let response = security::login(&tenant);
+
+            match response {
+                Ok(()) => (),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
         // working with configuration
         Some(("config", sub_matches)) => match sub_matches.subcommand() {
             Some(("show-default-location", _)) => {

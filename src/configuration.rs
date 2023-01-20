@@ -95,6 +95,46 @@ impl TenantConfiguration {
             client_secret,
         }
     }
+
+    pub fn set_tenant_id(&mut self, tenant_id: String) {
+        self.tenant_id = tenant_id.clone();
+    }
+
+    pub fn get_tenant_id(&self) -> String {
+        self.tenant_id.clone()
+    }
+
+    pub fn set_api_url(&mut self, api_url: Url) {
+        self.api_url = api_url.clone();
+    }
+
+    pub fn get_api_url(&self) -> Url {
+        self.api_url.clone()
+    }
+
+    pub fn set_oidc_url(&mut self, oidc_url: Url) {
+        self.oidc_url = oidc_url.clone();
+    }
+
+    pub fn get_oidc_url(&self) -> Url {
+        self.oidc_url.clone()
+    }
+
+    pub fn set_client_id(&mut self, client_id: String) {
+        self.client_id = client_id.clone();
+    }
+
+    pub fn get_client_id(&self) -> String {
+        self.client_id.clone()
+    }
+
+    pub fn set_client_secret(&mut self, client_secret: String) {
+        self.client_secret = client_secret.clone();
+    }
+
+    pub fn get_client_secret(&self) -> String {
+        self.client_secret.clone()
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]

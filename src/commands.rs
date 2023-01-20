@@ -8,6 +8,10 @@ pub fn create_cli_commands() -> ArgMatches {
         .propagate_version(true)
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(
+            Command::new("login")
+                .about("initiate new session")
+        )
         // working with configuration peroperties
         .subcommand(
             Command::new("config")

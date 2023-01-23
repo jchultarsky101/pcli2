@@ -34,7 +34,7 @@ impl DeviceVerificationCodeResponse {
 }
 
 pub fn login(tenant: &TenantConfiguration) -> Result<()> {
-    trace!("Logging in for tenant {}...", tenant.get_tenant_id());
+    trace!("Logging in for tenant {}...", tenant.tenant_id());
 
     // let url = tenant.get_oidc_url();
     // let client_id = tenant.get_client_id();

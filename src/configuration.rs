@@ -100,7 +100,7 @@ impl TenantConfiguration {
         self.tenant_id = tenant_id.clone();
     }
 
-    pub fn get_tenant_id(&self) -> String {
+    pub fn tenant_id(&self) -> String {
         self.tenant_id.clone()
     }
 
@@ -108,7 +108,7 @@ impl TenantConfiguration {
         self.api_url = api_url.clone();
     }
 
-    pub fn get_api_url(&self) -> Url {
+    pub fn api_url(&self) -> Url {
         self.api_url.clone()
     }
 
@@ -116,7 +116,7 @@ impl TenantConfiguration {
         self.oidc_url = oidc_url.clone();
     }
 
-    pub fn get_oidc_url(&self) -> Url {
+    pub fn oidc_url(&self) -> Url {
         self.oidc_url.clone()
     }
 
@@ -124,7 +124,7 @@ impl TenantConfiguration {
         self.client_id = client_id.clone();
     }
 
-    pub fn get_client_id(&self) -> String {
+    pub fn client_id(&self) -> String {
         self.client_id.clone()
     }
 
@@ -132,7 +132,7 @@ impl TenantConfiguration {
         self.client_secret = client_secret.clone();
     }
 
-    pub fn get_client_secret(&self) -> String {
+    pub fn client_secret(&self) -> String {
         self.client_secret.clone()
     }
 }
@@ -894,5 +894,38 @@ mod tests {
         let mut produced_ids = configuration.get_all_tenant_aliases();
         produced_ids.sort();
         assert_eq!(produced_ids, tenant_aliases);
+    }
+
+    #[test]
+    fn test_configuration_tenant_setters() {
+        let wrong = "wrong_value".to_string();
+        let wrong_url = Url::parse("https://wrong.com").unwrap();
+        let mut tenant = TenantConfiguration::new(
+            wrong.clone(),
+            wrong_url.clone(),
+            wrong_url.clone(),
+            wrong.clone(),
+            wrong.clone(),
+        );
+
+        let tenant_id = "my_tenant".to_string();
+        tenant.set_tenant_id(tenant_id.clone());
+        assert_eq!(tenant.tenant_id(), tenant_id);
+
+        let api_url = Url::parse("https://my_api_url.com").unwrap();
+        tenant.set_api_url(api_url.clone());
+        assert_eq!(tenant.api_url(), api_url);
+
+        let oidc_url = Url::parse("https://my_oidc_url.com").unwrap();
+        tenant.set_oidc_url(oidc_url.clone());
+        assert_eq!(tenant.oidc_url(), oidc_url);
+
+        let client_id = "my_client_id".to_string();
+        tenant.set_client_id(client_id.clone());
+        assert_eq!(tenant.client_id(), client_id);
+
+        let client_secret = "my_client_secret".to_string();
+        tenant.set_client_secret(client_secret.clone());
+        assert_eq!(tenant.client_secret(), client_secret);
     }
 }

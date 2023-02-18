@@ -2,6 +2,7 @@ use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
+use strum::{EnumIter, IntoEnumIterator};
 use url::Url;
 
 const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
@@ -137,7 +138,7 @@ impl TenantConfiguration {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputFormat {
     Csv,
@@ -149,6 +150,21 @@ pub enum OutputFormat {
     TablePretty,
     Tree,
     TreePretty,
+}
+
+impl OutputFormat {
+    pub fn names() -> Vec<&'static str> {
+        vec![
+            "json",
+            "json_pretty",
+            "csv",
+            "csv_pretty",
+            "table",
+            "table_pretty",
+            "tree",
+            "tree_pretty",
+        ]
+    }
 }
 
 impl std::fmt::Display for OutputFormat {
@@ -250,7 +266,7 @@ impl Configuration {
         }
     }
 
-    pub fn save_to_file(&self, path: PathBuf) -> Result<(), ConfigurationError> {
+    pub fn save_to_file(&self, path: &PathBuf) -> Result<(), ConfigurationError> {
         // first check if the parent directory exists and try to create it if not
         let configuration_directory = path.parent();
         match configuration_directory {
@@ -284,7 +300,7 @@ impl Configuration {
     }
 
     pub fn save_to_default(&self) -> Result<(), ConfigurationError> {
-        self.save_to_file(Self::get_default_configuration_file_path()?)
+        self.save_to_file(&Self::get_default_configuration_file_path()?)
     }
 
     pub fn get_default_tenant(&self) -> Option<String> {
@@ -466,7 +482,7 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let path = file.into_temp_path();
         let configuration = Configuration::default();
-        configuration.save_to_file(path.to_path_buf()).unwrap();
+        configuration.save_to_file(&path.to_path_buf()).unwrap();
         path.close().unwrap();
     }
 
@@ -478,7 +494,7 @@ mod tests {
         let path = file.into_temp_path();
         let mut configuration = Configuration::default();
         configuration.set_default_tenant(Some("mytenant".to_string()));
-        configuration.save_to_file(path.to_path_buf()).unwrap();
+        configuration.save_to_file(&path.to_path_buf()).unwrap();
 
         let configuration2 = Configuration::load_from_file(path.to_path_buf()).unwrap();
 

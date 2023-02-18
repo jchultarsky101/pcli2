@@ -2,28 +2,29 @@ use crate::configuration::OutputFormat;
 use clap::{Arg, ArgMatches, Command};
 use std::path::PathBuf;
 
-pub const COMMAND_NAME_CONFIG: &str = "config";
-pub const COMMAND_NAME_EXPORT: &str = "export";
-pub const COMMAND_NAME_SHOW: &str = "show";
-pub const COMMAND_NAME_PATH: &str = "path";
-pub const COMMAND_NAME_ALL: &str = "all";
+pub const COMMAND_CONFIG: &str = "config";
+pub const COMMAND_EXPORT: &str = "export";
+pub const COMMAND_SHOW: &str = "show";
+pub const COMMAND_PATH: &str = "path";
+pub const COMMAND_SET: &str = "set";
+pub const COMMAND_TENANT: &str = "tenant";
 
-pub const PARAMETER_NAME_FORMAT: &str = "format";
-pub const PARAMETER_NAME_OUTPUT: &str = "output";
+pub const PARAMETER_FORMAT: &str = "format";
+pub const PARAMETER_OUTPUT: &str = "output";
 
 pub fn create_cli_commands() -> ArgMatches {
-    let format_parameter = Arg::new(PARAMETER_NAME_FORMAT)
+    let format_parameter = Arg::new(PARAMETER_FORMAT)
         .short('f')
-        .long(PARAMETER_NAME_FORMAT)
+        .long(PARAMETER_FORMAT)
         .num_args(1)
         .required(false)
         .default_value("json")
         .help("Output data format")
         .value_parser(OutputFormat::names());
 
-    let output_file_parameter = Arg::new(PARAMETER_NAME_OUTPUT)
+    let output_file_parameter = Arg::new(PARAMETER_OUTPUT)
         .short('o')
-        .long(PARAMETER_NAME_OUTPUT)
+        .long(PARAMETER_OUTPUT)
         .num_args(1)
         .required(true)
         .help("output file path")
@@ -38,24 +39,29 @@ pub fn create_cli_commands() -> ArgMatches {
         .arg_required_else_help(true)
         .subcommand(
             // Configuration
-            Command::new(COMMAND_NAME_CONFIG)
+            Command::new(COMMAND_CONFIG)
                 .about("working with configuration")
+                .subcommand_required(true)
                 .subcommand(
-                    Command::new(COMMAND_NAME_SHOW)
+                    Command::new(COMMAND_SHOW)
                         .about("displays configuration")
+                        .subcommand(Command::new(COMMAND_PATH).about("show the configuration path"))
                         .subcommand(
-                            Command::new(COMMAND_NAME_PATH).about("show the configuration path"),
-                        )
-                        .subcommand(
-                            Command::new(COMMAND_NAME_ALL)
-                                .about("shows all valid configuration property names")
-                                .arg(format_parameter),
+                            Command::new(COMMAND_TENANT).about("shows tenant configuration"),
                         ),
                 )
                 .subcommand(
-                    Command::new(COMMAND_NAME_EXPORT)
-                        .about("exports the current configuration to a file")
+                    Command::new(COMMAND_EXPORT)
+                        .about("exports the current configuration as a Yaml file")
                         .arg(output_file_parameter),
+                )
+                .subcommand(
+                    Command::new(COMMAND_SET)
+                        .about("sets configuration property")
+                        .subcommand_required(true)
+                        .subcommand(
+                            Command::new(COMMAND_TENANT).about("sets tenant configuration"),
+                        ),
                 ),
         )
         .get_matches()

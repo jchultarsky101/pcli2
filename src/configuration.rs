@@ -1,7 +1,13 @@
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
-use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
+use std::{
+    collections::HashMap,
+    fs::{self, File},
+    io::Write,
+    path::PathBuf,
+    str::FromStr,
+};
 use strum::{EnumIter, IntoEnumIterator};
 use url::Url;
 
@@ -266,7 +272,17 @@ impl Configuration {
         }
     }
 
-    pub fn save_to_file(&self, path: &PathBuf) -> Result<(), ConfigurationError> {
+    pub fn write(&self, writer: Box<dyn Write>) -> Result<(), ConfigurationError> {
+        let configuration = self.clone();
+        match serde_yaml::to_writer(writer, configuration) {
+            Ok(()) => Ok(()),
+            Err(e) => Err(ConfigurationError::FailedToWriteData {
+                cause: e.to_string(),
+            }),
+        }
+    }
+
+    pub fn save(&self, path: &PathBuf) -> Result<(), ConfigurationError> {
         // first check if the parent directory exists and try to create it if not
         let configuration_directory = path.parent();
         match configuration_directory {
@@ -281,18 +297,13 @@ impl Configuration {
         }
 
         let configuration = self.clone();
-        let file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(path);
+        let file = File::create(&path);
 
         match file {
-            Ok(file) => match serde_yaml::to_writer(file, configuration) {
-                Ok(()) => Ok(()),
-                Err(e) => Err(ConfigurationError::FailedToWriteData {
-                    cause: e.to_string(),
-                }),
-            },
+            Ok(file) => {
+                let writer: Box<dyn Write> = Box::new(file);
+                Ok(self.write(writer)?)
+            }
             Err(e) => Err(ConfigurationError::FailedToWriteData {
                 cause: e.to_string(),
             }),
@@ -300,7 +311,7 @@ impl Configuration {
     }
 
     pub fn save_to_default(&self) -> Result<(), ConfigurationError> {
-        self.save_to_file(&Self::get_default_configuration_file_path()?)
+        self.save(&Self::get_default_configuration_file_path()?)
     }
 
     pub fn get_default_tenant(&self) -> Option<String> {

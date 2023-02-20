@@ -20,19 +20,23 @@ struct DeviceVerificationCodeResponse {
 }
 
 impl DeviceVerificationCodeResponse {
+    #[allow(dead_code)]
     fn qrcode_url(&self) -> Url {
         self.verification_uri_complete.to_owned()
     }
 
+    #[allow(dead_code)]
     fn user_code(&self) -> String {
         self.user_code.to_owned()
     }
 
+    #[allow(dead_code)]
     fn verification_uri(&self) -> Url {
         self.verification_uri.to_owned()
     }
 }
 
+#[allow(dead_code)]
 pub fn login(tenant: &TenantConfiguration) -> Result<()> {
     trace!("Logging in for tenant {}...", tenant.tenant_id());
 

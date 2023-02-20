@@ -3,6 +3,7 @@ use qrcode_generator::QrCodeEcc;
 use url::Url;
 use web_view::*;
 
+#[allow(dead_code)]
 pub fn open(url: &Url) {
     trace!("Testing webview...");
 
@@ -20,6 +21,7 @@ pub fn open(url: &Url) {
     trace!("Test finished.");
 }
 
+#[allow(dead_code)]
 pub fn display_url_as_qrcode(url: &Url) {
     let svg: String =
         qrcode_generator::to_svg_to_string(url.to_string(), QrCodeEcc::Low, 300, None::<&str>)

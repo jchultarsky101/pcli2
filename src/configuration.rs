@@ -275,7 +275,7 @@ impl TenantConfigurationBuilder {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Configuration {
     tenants: HashMap<String, TenantConfiguration>,
 }
@@ -326,8 +326,7 @@ impl Configuration {
     }
 
     pub fn write(&self, writer: Box<dyn Write>) -> Result<(), ConfigurationError> {
-        let configuration = self.clone();
-        match serde_yaml::to_writer(writer, configuration) {
+        match serde_yaml::to_writer(writer, &self.clone()) {
             Ok(()) => Ok(()),
             Err(e) => Err(ConfigurationError::FailedToWriteData { cause: Box::new(e) }),
         }

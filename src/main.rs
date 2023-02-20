@@ -1,4 +1,5 @@
 use crate::format::{OutputFormat, OutputFormatter};
+use api::Api;
 use commands::{
     create_cli_commands, COMMAND_CONFIG, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDERS,
     COMMAND_PATH, COMMAND_SET, COMMAND_SHOW, COMMAND_TENANT, PARAMETER_API_URL,
@@ -6,6 +7,7 @@ use commands::{
     PARAMETER_OIDC_URL, PARAMETER_OUTPUT, PARAMETER_TENANT, PARAMETER_TENANT_ALIAS,
 };
 use configuration::{Configuration, ConfigurationError, TenantConfiguration};
+use std::cell::RefCell;
 use std::str::FromStr;
 use std::{
     io::{stdout, Write},
@@ -44,7 +46,8 @@ fn exit_with_error(message: &str, code: exitcode::ExitCode) {
 fn main() -> Result<(), PcliError> {
     // initialize the log
     let _log_init_result = pretty_env_logger::try_init_timed();
-    let mut configuration = Configuration::load_default().unwrap_or_default();
+    let configuration = RefCell::new(Configuration::load_default().unwrap_or_default());
+    let api = Api::new(&configuration);
     let commands = create_cli_commands();
 
     match commands.subcommand() {
@@ -69,14 +72,14 @@ fn main() -> Result<(), PcliError> {
                         .client_secret(client_secret.to_owned())
                         .build()?;
 
-                    configuration.add_tenant(alias, &tenant)?;
-                    configuration.save_to_default()?;
+                    configuration.borrow_mut().add_tenant(alias, &tenant)?;
+                    configuration.borrow().save_to_default()?;
                 }
                 _ => unreachable!("Invalid subcommand for 'config set"),
             },
             Some((COMMAND_EXPORT, sub_matches)) => {
                 let path = sub_matches.get_one::<PathBuf>(PARAMETER_OUTPUT).unwrap(); // it is save vefause the argument is mandatory
-                configuration.save(path)?;
+                configuration.borrow().save(path)?;
             }
             Some((COMMAND_SHOW, sub_matches)) => match sub_matches.subcommand() {
                 Some((COMMAND_PATH, _)) => {
@@ -89,7 +92,7 @@ fn main() -> Result<(), PcliError> {
                     let format = OutputFormat::from_str(format).unwrap();
 
                     let id = sub_matches.get_one::<String>(PARAMETER_ID).unwrap();
-                    let tenant = configuration.get_tenant(id).unwrap();
+                    let tenant = configuration.borrow().get_tenant(id).unwrap();
                     match tenant.format(format) {
                         Ok(output) => println!("{}", output),
                         Err(e) => exit_with_error(e.to_string().as_str(), exitcode::CONFIG),
@@ -97,14 +100,14 @@ fn main() -> Result<(), PcliError> {
                 }
                 _ => {
                     let out: Box<dyn Write> = Box::new(stdout());
-                    configuration.write(out)?;
+                    configuration.borrow().write(out)?;
                 }
             },
             Some((COMMAND_DELETE, sub_matches)) => match sub_matches.subcommand() {
                 Some((COMMAND_TENANT, sub_matches)) => {
                     let alias = sub_matches.get_one::<String>(PARAMETER_ID).unwrap();
-                    configuration.delete_tenant(alias);
-                    match configuration.save_to_default() {
+                    configuration.borrow_mut().delete_tenant(alias);
+                    match configuration.borrow().save_to_default() {
                         Ok(()) => (),
                         Err(e) => exit_with_error(e.to_string().as_str(), exitcode::IOERR),
                     }
@@ -118,7 +121,7 @@ fn main() -> Result<(), PcliError> {
             let tenant = sub_matches.get_one::<String>(PARAMETER_TENANT).unwrap();
             let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
             let format = OutputFormat::from_str(format).unwrap();
-            let folders = api::Api::get_all_folders();
+            let folders = api.get_all_folders(&tenant);
 
             match folders {
                 Ok(folders) => match folders.format(format) {

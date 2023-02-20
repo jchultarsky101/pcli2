@@ -92,7 +92,7 @@ fn main() -> Result<(), PcliError> {
                     let format = OutputFormat::from_str(format).unwrap();
 
                     let id = sub_matches.get_one::<String>(PARAMETER_ID).unwrap();
-                    let tenant = configuration.borrow().get_tenant(id).unwrap();
+                    let tenant = configuration.borrow().tenant(id).unwrap();
                     match tenant.format(format) {
                         Ok(output) => println!("{}", output),
                         Err(e) => exit_with_error(e.to_string().as_str(), exitcode::CONFIG),

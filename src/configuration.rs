@@ -392,7 +392,7 @@ impl Configuration {
 
     /// Returns an Option of an owned instance of TenantConfiguration
     /// if one exists, or None
-    pub fn get_tenant(&self, tenant_id: &String) -> Option<TenantConfiguration> {
+    pub fn tenant(&self, tenant_id: &String) -> Option<TenantConfiguration> {
         let tenant = self.tenants.get(tenant_id);
 
         match tenant {

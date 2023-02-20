@@ -23,6 +23,7 @@ impl Folder {
         Folder { id, name }
     }
 
+    #[allow(dead_code)]
     pub fn set_id(&mut self, id: u32) {
         self.id = id;
     }
@@ -31,6 +32,7 @@ impl Folder {
         self.id
     }
 
+    #[allow(dead_code)]
     pub fn set_name(&mut self, name: String) {
         self.name = name;
     }
@@ -128,10 +130,12 @@ impl FolderList {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.folders.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.folders.len()
     }
@@ -140,19 +144,22 @@ impl FolderList {
         self.folders.insert(folder.id, folder.clone());
     }
 
+    #[allow(dead_code)]
     pub fn remove(&mut self, id: &u32) {
         self.folders.remove(id);
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, id: &u32) -> Option<&Folder> {
         self.folders.get(id)
     }
 
+    #[allow(dead_code)]
     pub fn find_by_name(&self, name: &String) -> Option<&Folder> {
         let result = self.folders.iter().find(|(_, f)| f.name.eq(name));
 
         match result {
-            Some((key, folder)) => Some(folder),
+            Some((_key, folder)) => Some(folder),
             None => None,
         }
     }

@@ -17,6 +17,7 @@ mod browser;
 mod commands;
 mod configuration;
 mod format;
+mod model;
 mod security;
 
 #[derive(Error, Debug)]

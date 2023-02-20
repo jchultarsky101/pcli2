@@ -10,6 +10,7 @@ pub const COMMAND_PATH: &str = "path";
 pub const COMMAND_SET: &str = "set";
 pub const COMMAND_DELETE: &str = "delete";
 pub const COMMAND_TENANT: &str = "tenant";
+pub const COMMAND_FOLDERS: &str = "folders";
 
 pub const PARAMETER_FORMAT: &str = "format";
 pub const PARAMETER_OUTPUT: &str = "output";
@@ -18,6 +19,7 @@ pub const PARAMETER_OIDC_URL: &str = "oidc_url";
 pub const PARAMETER_CLIENT_ID: &str = "client_id";
 pub const PARAMETER_CLIENT_SECRET: &str = "client_secret";
 pub const PARAMETER_ID: &str = "id";
+pub const PARAMETER_TENANT: &str = "tenant";
 pub const PARAMETER_TENANT_ALIAS: &str = "alias";
 
 pub fn create_cli_commands() -> ArgMatches {
@@ -51,6 +53,12 @@ pub fn create_cli_commands() -> ArgMatches {
         .num_args(1)
         .required(false)
         .help("tenant alias");
+
+    let tenant_parameter = Arg::new(PARAMETER_TENANT)
+        .short('t')
+        .long(PARAMETER_TENANT)
+        .num_args(1)
+        .required(true);
 
     let api_url_parameter = Arg::new(PARAMETER_API_URL)
         .long(PARAMETER_API_URL)
@@ -128,6 +136,13 @@ pub fn create_cli_commands() -> ArgMatches {
                             .arg(id_parameter.clone()),
                     ),
                 ),
+        )
+        .subcommand(
+            // Folders
+            Command::new(COMMAND_FOLDERS)
+                .about("lists all folders")
+                .arg(tenant_parameter)
+                .arg(format_parameter),
         )
         .get_matches()
 }

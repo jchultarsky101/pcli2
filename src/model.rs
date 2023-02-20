@@ -1,7 +1,9 @@
-use crate::format::{FormattingError, OutputFormat, OutputFormatter};
+use crate::format::{
+    CsvRecordProducer, FormattingError, JsonProducer, OutputFormat, OutputFormatter,
+};
 use csv::Writer;
 use serde::{Deserialize, Serialize};
-use std::io::BufWriter;
+use std::{collections::HashMap, io::BufWriter};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -10,7 +12,7 @@ pub enum ModelError {
     MissingPropertyValue { name: String },
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Folder {
     id: u32,
     name: String,
@@ -42,33 +44,25 @@ impl Folder {
     }
 }
 
+impl CsvRecordProducer for Folder {
+    fn csv_header() -> Vec<String> {
+        vec!["ID".to_string(), "NAME".to_string()]
+    }
+
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![self.id().to_string(), self.name()]]
+    }
+}
+
+impl JsonProducer for Folder {}
+
 impl OutputFormatter for Folder {
     type Item = Folder;
 
     fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
         match format {
-            OutputFormat::Json => {
-                let json = serde_json::to_string_pretty(self);
-                match json {
-                    Ok(json) => Ok(json),
-                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-                }
-            }
-            OutputFormat::Csv => {
-                let buf = BufWriter::new(Vec::new());
-                let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&["ID", "NAME"]).unwrap();
-                wtr.write_record(&[self.id().to_string(), self.name()])
-                    .unwrap();
-                match wtr.flush() {
-                    Ok(_) => {
-                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
-                        let csv = String::from_utf8(bytes).unwrap();
-                        Ok(csv.clone())
-                    }
-                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-                }
-            }
+            OutputFormat::Json => Ok(self.to_json()?),
+            OutputFormat::Csv => Ok(self.to_csv()?),
             _ => Err(FormattingError::UnsupportedOutputFormat {
                 format: format.to_string(),
             }),
@@ -119,6 +113,105 @@ impl FolderBuilder {
         };
 
         Ok(Folder::new(id, name.clone()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderList {
+    folders: HashMap<u32, Folder>,
+}
+
+impl FolderList {
+    pub fn empty() -> FolderList {
+        FolderList {
+            folders: HashMap::new(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.folders.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.folders.len()
+    }
+
+    pub fn insert(&mut self, folder: Folder) {
+        self.folders.insert(folder.id, folder.clone());
+    }
+
+    pub fn remove(&mut self, id: &u32) {
+        self.folders.remove(id);
+    }
+
+    pub fn get(&self, id: &u32) -> Option<&Folder> {
+        self.folders.get(id)
+    }
+
+    pub fn find_by_name(&self, name: &String) -> Option<&Folder> {
+        let result = self.folders.iter().find(|(_, f)| f.name.eq(name));
+
+        match result {
+            Some((key, folder)) => Some(folder),
+            None => None,
+        }
+    }
+}
+
+impl Default for FolderList {
+    fn default() -> Self {
+        FolderList::empty()
+    }
+}
+
+impl CsvRecordProducer for FolderList {
+    fn csv_header() -> Vec<String> {
+        Folder::csv_header()
+    }
+
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        let mut records: Vec<Vec<String>> = Vec::new();
+
+        for (_, folder) in &self.folders {
+            records.push(folder.as_csv_records()[0].clone());
+        }
+
+        records
+    }
+}
+
+impl OutputFormatter for FolderList {
+    type Item = FolderList;
+
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => {
+                let json = serde_json::to_string_pretty(self);
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv => {
+                let buf = BufWriter::new(Vec::new());
+                let mut wtr = Writer::from_writer(buf);
+                wtr.write_record(&Self::csv_header()).unwrap();
+                for record in self.as_csv_records() {
+                    wtr.write_record(&record).unwrap();
+                }
+                match wtr.flush() {
+                    Ok(_) => {
+                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
+                        let csv = String::from_utf8(bytes).unwrap();
+                        Ok(csv.clone())
+                    }
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            _ => Err(FormattingError::UnsupportedOutputFormat {
+                format: format.to_string(),
+            }),
+        }
     }
 }
 

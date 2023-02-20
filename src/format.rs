@@ -1,5 +1,7 @@
+use csv::Writer;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use serde_json;
+use std::{io::BufWriter, str::FromStr};
 use strum::EnumIter;
 
 pub const JSON: &'static str = "json";
@@ -78,4 +80,40 @@ impl FromStr for OutputFormat {
 pub trait OutputFormatter {
     type Item;
     fn format(&self, format: OutputFormat) -> Result<String, FormattingError>;
+}
+
+pub trait CsvRecordProducer {
+    fn csv_header() -> Vec<String>;
+
+    fn as_csv_records(&self) -> Vec<Vec<String>>;
+
+    fn to_csv(&self) -> Result<String, FormattingError> {
+        let buf = BufWriter::new(Vec::new());
+        let mut wtr = Writer::from_writer(buf);
+        wtr.write_record(&Self::csv_header()).unwrap();
+        for record in self.as_csv_records() {
+            wtr.write_record(&record).unwrap();
+        }
+        match wtr.flush() {
+            Ok(_) => {
+                let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
+                let csv = String::from_utf8(bytes).unwrap();
+                Ok(csv.clone())
+            }
+            Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+        }
+    }
+}
+
+pub trait JsonProducer {
+    fn to_json(&self) -> Result<String, FormattingError>
+    where
+        Self: Serialize,
+    {
+        let json = serde_json::to_string_pretty(&self);
+        match json {
+            Ok(json) => Ok(json),
+            Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+        }
+    }
 }

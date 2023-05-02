@@ -1,18 +1,28 @@
-mod browser;
-mod commands;
-mod configuration;
-mod security;
-
-use commands::create_cli_commands;
+use crate::format::{OutputFormat, OutputFormatter};
+use api::Api;
+use commands::{
+    create_cli_commands, COMMAND_CONFIG, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDERS,
+    COMMAND_LOGIN, COMMAND_PATH, COMMAND_SET, COMMAND_SHOW, COMMAND_TENANT, PARAMETER_API_URL,
+    PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID,
+    PARAMETER_OIDC_URL, PARAMETER_OUTPUT, PARAMETER_TENANT, PARAMETER_TENANT_ALIAS,
+};
 use configuration::{Configuration, ConfigurationError, TenantConfiguration};
+use pcli2::api::ApiError;
+use pcli2::commands::COMMAND_LOGOFF;
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::str::FromStr;
 use thiserror::Error;
 use url::Url;
+
+use pcli2::{api, commands, configuration, format};
 
 #[derive(Error, Debug)]
 enum PcliError {
     #[error("configuration error")]
     ConfigurationError { message: String },
+    #[error("API error")]
+    ApiError(#[from] ApiError),
 }
 
 impl From<ConfigurationError> for PcliError {
@@ -23,159 +33,117 @@ impl From<ConfigurationError> for PcliError {
     }
 }
 
+fn exit_with_error(message: &str, code: exitcode::ExitCode) {
+    eprintln!("ERROR: {}", message);
+    ::std::process::exit(code);
+}
+
 fn main() -> Result<(), PcliError> {
     // initialize the log
     let _log_init_result = pretty_env_logger::try_init_timed();
+    let configuration = RefCell::new(Configuration::load_default().unwrap_or_default());
+    let api = Api::new(&configuration);
+    let commands = create_cli_commands();
 
-    //let configuration = Configuration::load_from_file(configuration_file_path).unwrap_or_default();
+    match commands.subcommand() {
+        // Configuration
+        Some((COMMAND_CONFIG, sub_matches)) => match sub_matches.subcommand() {
+            Some((COMMAND_SET, sub_matches)) => match sub_matches.subcommand() {
+                Some((COMMAND_TENANT, sub_matches)) => {
+                    let id = sub_matches.get_one::<String>(PARAMETER_ID).unwrap();
+                    let alias = sub_matches.get_one::<String>(PARAMETER_TENANT_ALIAS);
+                    let api_url = sub_matches.get_one::<Url>(PARAMETER_API_URL).unwrap();
+                    let oidc_url = sub_matches.get_one::<Url>(PARAMETER_OIDC_URL).unwrap();
+                    let client_id = sub_matches.get_one::<String>(PARAMETER_CLIENT_ID).unwrap();
+                    let client_secret = sub_matches
+                        .get_one::<String>(PARAMETER_CLIENT_SECRET)
+                        .unwrap();
 
-    let matches = create_cli_commands();
+                    let tenant = TenantConfiguration::builder()
+                        .tenant_id(id.to_owned())
+                        .api_url(api_url.to_owned())
+                        .oidc_url(oidc_url.to_owned())
+                        .client_id(client_id.to_owned())
+                        .client_secret(client_secret.to_owned())
+                        .build()?;
 
-    match matches.subcommand() {
-        Some(("login", _)) => {
-            let config = Configuration::load_default().unwrap();
-            let tenant = config.get_tenant(&"my_alias".to_string()).unwrap();
-            let response = security::login(&tenant);
+                    configuration.borrow_mut().add_tenant(alias, &tenant)?;
+                    configuration.borrow().save_to_default()?;
+                }
+                _ => unreachable!("Invalid subcommand for 'config set"),
+            },
+            Some((COMMAND_EXPORT, sub_matches)) => {
+                let path = sub_matches.get_one::<PathBuf>(PARAMETER_OUTPUT).unwrap(); // it is save vefause the argument is mandatory
+                configuration.borrow().save(path)?;
+            }
+            Some((COMMAND_SHOW, sub_matches)) => match sub_matches.subcommand() {
+                Some((COMMAND_PATH, _)) => {
+                    let path = Configuration::get_default_configuration_file_path()?;
+                    let path = path.into_os_string().into_string().unwrap();
+                    println!("{}", path);
+                }
+                Some((COMMAND_TENANT, sub_matches)) => {
+                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+                    let format = OutputFormat::from_str(format).unwrap();
 
-            match response {
-                Ok(()) => (),
-                Err(e) => eprintln!("Error: {}", e),
+                    let id = sub_matches.get_one::<String>(PARAMETER_ID).unwrap();
+                    match configuration.borrow().tenant(id) {
+                        Some(tenant) => match tenant.format(format) {
+                            Ok(output) => println!("{}", output),
+                            Err(e) => exit_with_error(e.to_string().as_str(), exitcode::CONFIG),
+                        },
+                        None => (),
+                    }
+                }
+                _ => {
+                    // print all tenants
+                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+                    let format = OutputFormat::from_str(format).unwrap();
+
+                    match configuration.borrow().format(format) {
+                        Ok(output) => println!("{}", output),
+                        Err(e) => exit_with_error(e.to_string().as_str(), exitcode::CONFIG),
+                    }
+                }
+            },
+            Some((COMMAND_DELETE, sub_matches)) => match sub_matches.subcommand() {
+                Some((COMMAND_TENANT, sub_matches)) => {
+                    let alias = sub_matches.get_one::<String>(PARAMETER_ID).unwrap();
+                    configuration.borrow_mut().delete_tenant(alias);
+                    match configuration.borrow().save_to_default() {
+                        Ok(()) => (),
+                        Err(e) => exit_with_error(e.to_string().as_str(), exitcode::IOERR),
+                    }
+                }
+                _ => unreachable!("Invalid subcommand for 'delete'"),
+            },
+            _ => unreachable!("Invalid subcommand for 'config'"),
+        },
+        // Folders
+        Some((COMMAND_FOLDERS, sub_matches)) => {
+            let tenant = sub_matches.get_one::<String>(PARAMETER_TENANT).unwrap();
+            let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+            let format = OutputFormat::from_str(format).unwrap();
+            let folders = api.list_folders(&tenant);
+
+            match folders {
+                Ok(folders) => match folders.format(format) {
+                    Ok(output) => println!("{}", output),
+                    Err(e) => exit_with_error(e.to_string().as_str(), exitcode::CONFIG),
+                },
+                Err(e) => exit_with_error(&e.to_string(), exitcode::DATAERR),
             }
         }
-        // working with configuration
-        Some(("config", sub_matches)) => match sub_matches.subcommand() {
-            Some(("show-default-location", _)) => {
-                let path = Configuration::get_default_configuration_file_path()?;
-                let path = path.into_os_string().into_string().unwrap();
-
-                println!("{}", path);
-            }
-            Some(("init", sub_matches)) => {
-                let file = sub_matches.get_one::<String>("file");
-                let file = PathBuf::from(file.unwrap());
-                let configuration = Configuration::default();
-
-                configuration.save_to_file(file)?
-            }
-            Some(("import", sub_matches)) => {
-                let file = sub_matches.get_one::<String>("file");
-                let file = PathBuf::from(file.unwrap());
-                let default_file = Configuration::get_default_configuration_file_path()?;
-                let configuration = Configuration::load_from_file(file)?;
-
-                configuration.save_to_file(default_file)?
-            }
-            Some(("export", sub_matches)) => {
-                let file = sub_matches.get_one::<String>("file");
-                let file = PathBuf::from(file.unwrap());
-                let configuration = Configuration::load_default()?;
-                configuration.save_to_file(file)?
-            }
-            Some(("show-names", _)) => {
-                let property_names = Configuration::get_all_valid_property_names();
-                property_names.iter().for_each(|name| println!("{}", name));
-            }
-            Some(("get", sub_matches)) => {
-                let name = sub_matches.get_one::<String>("name");
-                match name {
-                    Some(name) => {
-                        let name = name.to_string();
-                        let configuration = Configuration::load_default()?;
-                        println!("{}", configuration.get(name).unwrap_or_default())
-                    }
-                    None => unreachable!("Invalid option for config subcommand!"),
-                }
-            }
-            Some(("set", sub_matches)) => {
-                let name = sub_matches.get_one::<String>("name");
-                let value = sub_matches.get_one::<String>("value");
-                match name {
-                    Some(name) => {
-                        let configuration = Configuration::load_default();
-
-                        let value = match value {
-                            Some(value) => Some(value.to_owned()),
-                            None => None,
-                        };
-
-                        match configuration {
-                            Ok(mut configuration) => {
-                                configuration.set(name.to_string(), value)?;
-                                configuration.save_to_default()?;
-                            }
-                            Err(e) => return Err(PcliError::from(e)),
-                        }
-                    }
-                    None => unreachable!("\"name\" is a mandatory argument"),
-                }
-            }
-            Some(("tenant", sub_matches)) => match sub_matches.subcommand() {
-                Some(("add", sub_matches)) => {
-                    let alias = sub_matches.get_one::<String>("alias");
-                    let id = sub_matches.get_one::<String>("id").unwrap().to_owned();
-                    let alias = match alias {
-                        Some(alias) => Some(alias.to_owned()),
-                        None => Some(id.to_owned()),
-                    };
-                    let api_url = sub_matches.get_one::<String>("api-url").unwrap();
-                    let api_url = Url::parse(api_url.as_str()).unwrap();
-                    let oidc_url = sub_matches
-                        .get_one::<String>("oidc-url")
-                        .unwrap()
-                        .to_owned();
-                    let oidc_url = Url::parse(oidc_url.as_str()).unwrap();
-                    let client_id = sub_matches
-                        .get_one::<String>("client-id")
-                        .unwrap()
-                        .to_owned();
-                    let client_secret = sub_matches
-                        .get_one::<String>("client-secret")
-                        .unwrap()
-                        .to_owned();
-
-                    let tenant =
-                        TenantConfiguration::new(id, api_url, oidc_url, client_id, client_secret);
-
-                    let mut configuration = Configuration::load_default().unwrap();
-                    configuration.add_tenant(alias, tenant).unwrap();
-                    configuration.save_to_default().unwrap();
-                }
-                Some(("delete", sub_matches)) => {
-                    let id = sub_matches.get_one::<String>("id").unwrap();
-
-                    let mut configuration = Configuration::load_default().unwrap();
-                    configuration.delete_tenant(id);
-                    configuration.save_to_default().unwrap();
-                }
-                Some(("show-all-aliases", _sub_matches)) => {
-                    let configuration = Configuration::load_default().unwrap();
-                    let aliases = configuration.get_all_tenant_aliases();
-                    aliases.iter().for_each(|a| println!("{}", a));
-                }
-                _ => unreachable!("Invalid sub command for 'tenant'"),
-            },
-            _ => unreachable!("Invalid sub command for 'config'"),
-        },
-
-        // working with folders
-        Some(("folder", sub_matches)) => match sub_matches.subcommand() {
-            Some(("get", sub_matches)) => {
-                let search = sub_matches.get_one::<String>("search");
-
-                match search {
-                    Some(search) => {
-                        println!("executing \"folder get {search}\"...", search = search)
-                    }
-                    None => print!("executing \"folder get *\"..."),
-                }
-            }
-            Some(("add", sub_matches)) => {
-                let name = sub_matches.get_one::<String>("name").unwrap();
-
-                println!("executing \"folder add {name}\"...", name = name);
-            }
-            _ => unreachable!("Invalid sub command for 'folder'"),
-        },
+        // Login
+        Some((COMMAND_LOGIN, sub_matches)) => {
+            let tenant = sub_matches.get_one::<String>(PARAMETER_TENANT).unwrap();
+            let _ = api.login(tenant)?;
+        }
+        // Logoff
+        Some((COMMAND_LOGOFF, sub_matches)) => {
+            let tenant = sub_matches.get_one::<String>(PARAMETER_TENANT).unwrap();
+            api.logoff(tenant)?;
+        }
         _ => unreachable!("Invalid command"),
     }
 

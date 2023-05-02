@@ -551,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn test_new_for_tenant_configuration() {
+    fn test_create_new_tenant_configuration() {
         let tenant_id = "my_tenant".to_string();
         let api_url =
             Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
@@ -572,6 +572,26 @@ mod tests {
         );
 
         assert_eq!(tenant_config_one, tenant_config_two);
+    }
+
+    #[test]
+    fn test_keyring() {
+        let tenant_id = "my_tenant".to_string();
+        let api_url =
+            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
+        let oidc_url = Url::parse("https://authentication.com").unwrap();
+        let client_id = "my_client_id".to_string();
+        let mut tenant_config = TenantConfiguration {
+            tenant_id: tenant_id.clone(),
+            api_url: api_url.clone(),
+            oidc_url: oidc_url.clone(),
+            client_id: client_id.clone(),
+        };
+        let secret = String::from("my super secret secret");
+        tenant_config.set_client_secret(secret.to_owned()).unwrap();
+        let output = tenant_config.client_secret().unwrap();
+
+        assert_eq!(secret, output);
     }
 
     #[test]

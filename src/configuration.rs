@@ -1,73 +1,43 @@
+use crate::format::{FormattingError, OutputFormat, OutputFormatter};
+use crate::security::{Keyring, KeyringError, SECRET_KEY};
+use csv::Writer;
 use dirs::config_dir;
+use log::trace;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use serde_yaml;
-use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
+use std::{
+    collections::HashMap,
+    fs::{self, File},
+    io::{BufWriter, Write},
+    path::PathBuf,
+};
 use url::Url;
 
-const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
-const DEFAULT_CONFIGURATION_FILE_NAME: &'static str = "config.yml";
-
-const DEFAULT_TENANT: &'static str = "default_tenant";
-const DEFAULT_OUTPUT_FORMAT: &'static str = "default_output_format";
-
-const JSON: &'static str = "json";
-const JSON_PRETTY: &'static str = "json_pretty";
-const CSV: &'static str = "csv";
-const CSV_PRETTY: &'static str = "csv_pretty";
-const TABLE: &'static str = "table";
-const TABLE_PRETTY: &'static str = "table_pretty";
-const TREE: &'static str = "tree";
-const TREE_PRETTY: &'static str = "tree_pretty";
+pub const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
+pub const DEFAULT_CONFIGURATION_FILE_NAME: &'static str = "config.yml";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationError {
     #[error("failed to resolve the configuration directory")]
     FailedToFindConfigurationDirectory,
-    // #[error("invalid configuration property name '{name:?}'")]
-    // InvalidPropertyName { name: String },
-    // #[error("Invalid value '{value:?} for property '{name:?}'")]
-    // InvalidValueForProperty { name: String, value: String },
     #[error("failed to load configuration data, because of: {cause:?}")]
-    FailedToLoadData { cause: String },
+    FailedToLoadData { cause: Box<dyn std::error::Error> },
     #[error("failed to write configuration data to file, because of: {cause:?}")]
-    FailedToWriteData { cause: String },
-    #[error("invalid property name \"{name:?}\"")]
-    InvalidPropertyName { name: String },
-    #[error("invalid output format \"{format:?}\"")]
-    InvalidOutputFormat { format: String },
-    #[error("failed to set property value for property due to: \"{cause:?}\"")]
-    FailedToSetValue { cause: String },
+    FailedToWriteData { cause: Box<dyn std::error::Error> },
     #[error("missing value for property \"{name:?}\"")]
     MissingRequiredPropertyValue { name: String },
-}
-
-#[derive(Debug, PartialEq)]
-enum ConfigurationPropertyName {
-    DefaultTenant,
-    DefaultOutputFormat,
-}
-
-impl FromStr for ConfigurationPropertyName {
-    type Err = ConfigurationError;
-
-    fn from_str(name: &str) -> Result<ConfigurationPropertyName, ConfigurationError> {
-        match name.to_lowercase().as_str() {
-            DEFAULT_TENANT => Ok(ConfigurationPropertyName::DefaultTenant),
-            DEFAULT_OUTPUT_FORMAT => Ok(ConfigurationPropertyName::DefaultOutputFormat),
-            _ => Err(ConfigurationError::InvalidPropertyName {
-                name: name.to_string(),
-            }),
-        }
-    }
-}
-
-impl std::fmt::Display for ConfigurationPropertyName {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            ConfigurationPropertyName::DefaultTenant => write!(f, "default_tenant"),
-            ConfigurationPropertyName::DefaultOutputFormat => write!(f, "default_output_format"),
-        }
-    }
+    #[error("unknown tenant \"{tenant_id:?}\"")]
+    UnknownTenant { tenant_id: String },
+    #[error("credentials not provided")]
+    CredentialsNotProvided,
+    #[error("{cause:?}")]
+    FormattingError {
+        #[from]
+        cause: FormattingError,
+    },
+    #[error("security error {0}")]
+    KeyringError(#[from] KeyringError),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -76,7 +46,6 @@ pub struct TenantConfiguration {
     api_url: Url,
     oidc_url: Url,
     client_id: String,
-    client_secret: String,
 }
 
 impl TenantConfiguration {
@@ -85,121 +54,204 @@ impl TenantConfiguration {
         api_url: Url,
         oidc_url: Url,
         client_id: String,
-        client_secret: String,
     ) -> TenantConfiguration {
         TenantConfiguration {
             tenant_id,
             api_url,
             oidc_url,
             client_id,
-            client_secret,
         }
     }
 
+    pub fn builder() -> TenantConfigurationBuilder {
+        TenantConfigurationBuilder::new()
+    }
+
+    #[allow(dead_code)]
     pub fn set_tenant_id(&mut self, tenant_id: String) {
         self.tenant_id = tenant_id.clone();
     }
 
-    pub fn get_tenant_id(&self) -> String {
+    pub fn tenant_id(&self) -> String {
         self.tenant_id.clone()
     }
 
+    #[allow(dead_code)]
     pub fn set_api_url(&mut self, api_url: Url) {
         self.api_url = api_url.clone();
     }
 
-    pub fn get_api_url(&self) -> Url {
+    pub fn api_url(&self) -> Url {
         self.api_url.clone()
     }
 
+    #[allow(dead_code)]
     pub fn set_oidc_url(&mut self, oidc_url: Url) {
         self.oidc_url = oidc_url.clone();
     }
 
-    pub fn get_oidc_url(&self) -> Url {
+    pub fn oidc_url(&self) -> Url {
         self.oidc_url.clone()
     }
 
+    #[allow(dead_code)]
     pub fn set_client_id(&mut self, client_id: String) {
         self.client_id = client_id.clone();
     }
 
-    pub fn get_client_id(&self) -> String {
+    pub fn client_id(&self) -> String {
         self.client_id.clone()
     }
 
-    pub fn set_client_secret(&mut self, client_secret: String) {
-        self.client_secret = client_secret.clone();
+    #[allow(dead_code)]
+    pub fn set_client_secret(&mut self, client_secret: String) -> Result<(), ConfigurationError> {
+        Keyring::default().put(&self.tenant_id, String::from(SECRET_KEY), client_secret)?;
+        Ok(())
     }
 
-    pub fn get_client_secret(&self) -> String {
-        self.client_secret.clone()
-    }
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OutputFormat {
-    Csv,
-    CsvPretty,
-    #[default]
-    Json,
-    JsonPretty,
-    Table,
-    TablePretty,
-    Tree,
-    TreePretty,
-}
-
-impl std::fmt::Display for OutputFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            OutputFormat::Csv => write!(f, "csv"),
-            OutputFormat::CsvPretty => write!(f, "csv_pretty"),
-            OutputFormat::Json => write!(f, "json"),
-            OutputFormat::JsonPretty => write!(f, "json_pretty"),
-            OutputFormat::Table => write!(f, "table"),
-            OutputFormat::TablePretty => write!(f, "table_pretty"),
-            OutputFormat::Tree => write!(f, "tree"),
-            OutputFormat::TreePretty => write!(f, "tree_pretty"),
+    pub fn client_secret(&self) -> Result<String, ConfigurationError> {
+        match Keyring::default().get(&self.tenant_id, String::from(SECRET_KEY))? {
+            Some(secret) => Ok(secret),
+            None => Err(ConfigurationError::CredentialsNotProvided),
         }
     }
 }
 
-impl FromStr for OutputFormat {
-    type Err = ConfigurationError;
+impl OutputFormatter for TenantConfiguration {
+    type Item = TenantConfiguration;
 
-    fn from_str(format_str: &str) -> Result<OutputFormat, ConfigurationError> {
-        let normalized_format = format_str.to_lowercase();
-        let normalized_format = normalized_format.as_str();
-        match normalized_format {
-            JSON => Ok(OutputFormat::Json),
-            JSON_PRETTY => Ok(OutputFormat::JsonPretty),
-            CSV => Ok(OutputFormat::Csv),
-            CSV_PRETTY => Ok(OutputFormat::CsvPretty),
-            TABLE => Ok(OutputFormat::Table),
-            TABLE_PRETTY => Ok(OutputFormat::TablePretty),
-            TREE => Ok(OutputFormat::Tree),
-            TREE_PRETTY => Ok(OutputFormat::TreePretty),
-            _ => Err(ConfigurationError::InvalidOutputFormat {
-                format: format_str.to_string(),
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => {
+                let json = serde_json::to_string_pretty(self);
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv => {
+                let buf = BufWriter::new(Vec::new());
+                let mut wtr = Writer::from_writer(buf);
+                wtr.write_record(&["ID", "API_URL", "OIDC_URL", "CLIENT_ID"])
+                    .unwrap();
+                wtr.write_record(&[
+                    self.tenant_id(),
+                    self.api_url().to_string(),
+                    self.oidc_url().to_string(),
+                    self.client_id(),
+                ])
+                .unwrap();
+                match wtr.flush() {
+                    Ok(_) => {
+                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
+                        let csv = String::from_utf8(bytes).unwrap();
+                        Ok(csv.clone())
+                    }
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            _ => Err(FormattingError::UnsupportedOutputFormat {
+                format: format.to_string(),
             }),
         }
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct TenantConfigurationBuilder {
+    tenant_id: Option<String>,
+    api_url: Option<Url>,
+    oidc_url: Option<Url>,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+}
+
+impl TenantConfigurationBuilder {
+    fn new() -> TenantConfigurationBuilder {
+        TenantConfigurationBuilder {
+            tenant_id: None,
+            api_url: None,
+            oidc_url: None,
+            client_id: None,
+            client_secret: None,
+        }
+    }
+
+    pub fn tenant_id(&mut self, id: String) -> &mut TenantConfigurationBuilder {
+        self.tenant_id = Some(id.clone());
+        self
+    }
+
+    pub fn api_url(&mut self, api_url: Url) -> &mut TenantConfigurationBuilder {
+        self.api_url = Some(api_url.clone());
+        self
+    }
+
+    pub fn oidc_url(&mut self, oidc_url: Url) -> &mut TenantConfigurationBuilder {
+        self.oidc_url = Some(oidc_url.clone());
+        self
+    }
+
+    pub fn client_id(&mut self, client_id: String) -> &mut TenantConfigurationBuilder {
+        self.client_id = Some(client_id.clone());
+        self
+    }
+
+    pub fn client_secret(&mut self, client_secret: String) -> &mut TenantConfigurationBuilder {
+        self.client_secret = Some(client_secret.clone());
+        self
+    }
+
+    pub fn build(&self) -> Result<TenantConfiguration, ConfigurationError> {
+        let tenant_id = match &self.tenant_id {
+            Some(tenant_id) => Ok(tenant_id.clone()),
+            None => Err(ConfigurationError::MissingRequiredPropertyValue {
+                name: "tenant_id".to_string(),
+            }),
+        }?;
+
+        let api_url = match &self.api_url {
+            Some(api_url) => Ok(api_url.clone()),
+            None => Err(ConfigurationError::MissingRequiredPropertyValue {
+                name: "api_url".to_string(),
+            }),
+        }?;
+
+        let oidc_url = match &self.oidc_url {
+            Some(oidc_url) => Ok(oidc_url.clone()),
+            None => Err(ConfigurationError::MissingRequiredPropertyValue {
+                name: "oidc_url".to_string(),
+            }),
+        }?;
+
+        let client_id: String = match &self.client_id {
+            Some(client_id) => Ok(client_id.clone()),
+            None => Err(ConfigurationError::MissingRequiredPropertyValue {
+                name: "client_id".to_string(),
+            }),
+        }?;
+
+        let client_secret = match &self.client_secret {
+            Some(client_secret) => Ok(client_secret.clone()),
+            None => Err(ConfigurationError::MissingRequiredPropertyValue {
+                name: "client_secret".to_string(),
+            }),
+        }?;
+
+        let mut tenant_config = TenantConfiguration::new(tenant_id, api_url, oidc_url, client_id);
+        tenant_config.set_client_secret(client_secret)?;
+
+        Ok(tenant_config)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Configuration {
-    default_tenant: Option<String>,
-    default_format: Option<OutputFormat>,
     tenants: HashMap<String, TenantConfiguration>,
 }
 
 impl Default for Configuration {
     fn default() -> Self {
         Self {
-            default_tenant: None,
-            default_format: Some(OutputFormat::Json),
             tenants: HashMap::new(),
         }
     }
@@ -231,26 +283,25 @@ impl Configuration {
                 let configuration = serde_yaml::from_str(&configuration);
                 match configuration {
                     Ok(configuration) => Ok(configuration),
-                    Err(e) => Err(ConfigurationError::FailedToLoadData {
-                        cause: format!(
-                            "failed to read configuration file from path {}. Cause: {}",
-                            path.into_os_string().into_string().unwrap(),
-                            e.to_string()
-                        ),
+                    Err(cause) => Err(ConfigurationError::FailedToLoadData {
+                        cause: Box::new(cause),
                     }),
                 }
             }
-            Err(e) => Err(ConfigurationError::FailedToLoadData {
-                cause: format!(
-                    "failed to read the configuration file from path {}. Cause: {}",
-                    path.into_os_string().into_string().unwrap(),
-                    e.to_string()
-                ),
+            Err(cause) => Err(ConfigurationError::FailedToLoadData {
+                cause: Box::new(cause),
             }),
         }
     }
 
-    pub fn save_to_file(&self, path: PathBuf) -> Result<(), ConfigurationError> {
+    pub fn write(&self, writer: Box<dyn Write>) -> Result<(), ConfigurationError> {
+        match serde_yaml::to_writer(writer, &self.clone()) {
+            Ok(()) => Ok(()),
+            Err(e) => Err(ConfigurationError::FailedToWriteData { cause: Box::new(e) }),
+        }
+    }
+
+    pub fn save(&self, path: &PathBuf) -> Result<(), ConfigurationError> {
         // first check if the parent directory exists and try to create it if not
         let configuration_directory = path.parent();
         match configuration_directory {
@@ -264,107 +315,51 @@ impl Configuration {
             None => return Err(ConfigurationError::FailedToFindConfigurationDirectory),
         }
 
-        let configuration = self.clone();
-        let file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(path);
-
+        let file = File::create(&path);
         match file {
-            Ok(file) => match serde_yaml::to_writer(file, configuration) {
-                Ok(()) => Ok(()),
-                Err(e) => Err(ConfigurationError::FailedToWriteData {
-                    cause: e.to_string(),
-                }),
-            },
-            Err(e) => Err(ConfigurationError::FailedToWriteData {
-                cause: e.to_string(),
-            }),
+            Ok(file) => {
+                let writer: Box<dyn Write> = Box::new(file);
+                Ok(self.write(writer)?)
+            }
+            Err(e) => Err(ConfigurationError::FailedToWriteData { cause: Box::new(e) }),
         }
     }
 
     pub fn save_to_default(&self) -> Result<(), ConfigurationError> {
-        self.save_to_file(Self::get_default_configuration_file_path()?)
+        self.save(&Self::get_default_configuration_file_path()?)
     }
 
-    pub fn get_default_tenant(&self) -> Option<String> {
-        self.default_tenant.clone()
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.tenants.is_empty()
     }
 
-    pub fn set_default_tenant(&mut self, default_tenant: Option<String>) {
-        self.default_tenant = default_tenant;
-    }
-
-    pub fn get_default_format(&self) -> Option<OutputFormat> {
-        self.default_format.clone()
-    }
-
-    pub fn set_default_format(&mut self, default_format: Option<OutputFormat>) {
-        self.default_format = default_format;
-    }
-
-    pub fn get_all_valid_property_names() -> Vec<String> {
-        let mut result = Vec::new();
-
-        result.push(ConfigurationPropertyName::DefaultTenant.to_string());
-        result.push(ConfigurationPropertyName::DefaultOutputFormat.to_string());
-
-        result
-    }
-
-    pub fn get(&self, name: String) -> Option<String> {
-        let name = ConfigurationPropertyName::from_str(name.to_uppercase().as_str());
-
-        match name {
-            Ok(name) => match name {
-                ConfigurationPropertyName::DefaultTenant => match self.get_default_tenant() {
-                    Some(tenant) => Some(tenant.to_string()),
-                    None => None,
-                },
-                ConfigurationPropertyName::DefaultOutputFormat => match self.get_default_format() {
-                    Some(format) => Some(format.to_string()),
-                    None => None,
-                },
-            },
-            Err(_) => None,
-        }
-    }
-
-    pub fn set(&mut self, name: String, value: Option<String>) -> Result<(), ConfigurationError> {
-        let name = ConfigurationPropertyName::from_str(name.to_uppercase().as_str());
-
-        match name {
-            Ok(name) => match name {
-                ConfigurationPropertyName::DefaultTenant => Ok(self.set_default_tenant(value)),
-                ConfigurationPropertyName::DefaultOutputFormat => match value {
-                    Some(value) => {
-                        let format = OutputFormat::from_str(value.as_str())?;
-                        Ok(self.set_default_format(Some(format)))
-                    }
-                    None => Err(ConfigurationError::MissingRequiredPropertyValue {
-                        name: (DEFAULT_OUTPUT_FORMAT.to_string()),
-                    }),
-                },
-            },
-            Err(e) => Err(ConfigurationError::FailedToSetValue {
-                cause: format!("{}", e),
+    pub fn validate_tenant(
+        &self,
+        tenant_id: &String,
+    ) -> Result<TenantConfiguration, ConfigurationError> {
+        trace!("Validating tenant ID of \"{}\"...", tenant_id);
+        match self.tenant(tenant_id) {
+            Some(tenant) => {
+                trace!("Tenant ID \"{}\" is valid.", tenant_id);
+                Ok(tenant)
+            }
+            None => Err(ConfigurationError::UnknownTenant {
+                tenant_id: tenant_id.clone(),
             }),
         }
     }
 
-    pub fn has_tenants(&self) -> bool {
-        !self.tenants.is_empty()
-    }
-
     pub fn add_tenant(
         &mut self,
-        tenant_alias: Option<String>,
-        tenant: TenantConfiguration,
+        tenant_alias: Option<&String>,
+        tenant: &TenantConfiguration,
     ) -> Result<(), ConfigurationError> {
         let alias = match tenant_alias {
-            Some(alias) => alias,
+            Some(alias) => alias.clone(),
             None => tenant.tenant_id.clone(),
         };
+        trace!("Adding tenant {}...", alias);
         self.tenants.insert(alias, tenant.clone());
 
         Ok(())
@@ -372,7 +367,7 @@ impl Configuration {
 
     /// Returns an Option of an owned instance of TenantConfiguration
     /// if one exists, or None
-    pub fn get_tenant(&self, tenant_id: &String) -> Option<TenantConfiguration> {
+    pub fn tenant(&self, tenant_id: &String) -> Option<TenantConfiguration> {
         let tenant = self.tenants.get(tenant_id);
 
         match tenant {
@@ -382,13 +377,16 @@ impl Configuration {
     }
 
     pub fn delete_tenant(&mut self, tenant_id: &String) {
+        trace!("Deleting tenant {}...", tenant_id);
         self.tenants.remove(tenant_id);
     }
 
+    #[allow(dead_code)]
     pub fn delete_all_tenants(&mut self) {
         self.tenants.clear()
     }
 
+    #[allow(dead_code)]
     pub fn get_all_tenant_aliases(&self) -> Vec<String> {
         self.tenants.keys().map(|k| k.to_string()).collect()
     }
@@ -397,6 +395,7 @@ impl Configuration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format;
 
     #[test]
     fn test_output_format_create_default() {
@@ -406,37 +405,24 @@ mod tests {
 
     #[test]
     fn test_output_format_to_string() {
-        assert_eq!(OutputFormat::Csv.to_string(), CSV);
-        assert_eq!(OutputFormat::CsvPretty.to_string(), CSV_PRETTY);
-        assert_eq!(OutputFormat::Json.to_string(), JSON);
-        assert_eq!(OutputFormat::JsonPretty.to_string(), JSON_PRETTY);
-        assert_eq!(OutputFormat::Table.to_string(), TABLE);
-        assert_eq!(OutputFormat::TablePretty.to_string(), TABLE_PRETTY);
-        assert_eq!(OutputFormat::Tree.to_string(), TREE);
-        assert_eq!(OutputFormat::TreePretty.to_string(), TREE_PRETTY);
+        assert_eq!(OutputFormat::Csv.to_string(), format::CSV);
+        assert_eq!(OutputFormat::Json.to_string(), format::JSON);
+        assert_eq!(OutputFormat::Tree.to_string(), format::TREE);
     }
 
     #[test]
     fn test_format_from_string() {
-        assert_eq!(OutputFormat::from_str(JSON).unwrap(), OutputFormat::Json);
         assert_eq!(
-            OutputFormat::from_str(JSON_PRETTY).unwrap(),
-            OutputFormat::JsonPretty
+            OutputFormat::from_str(format::JSON).unwrap(),
+            OutputFormat::Json
         );
-        assert_eq!(OutputFormat::from_str(CSV).unwrap(), OutputFormat::Csv);
         assert_eq!(
-            OutputFormat::from_str(CSV_PRETTY).unwrap(),
-            OutputFormat::CsvPretty
+            OutputFormat::from_str(format::CSV).unwrap(),
+            OutputFormat::Csv
         );
-        assert_eq!(OutputFormat::from_str(TABLE).unwrap(), OutputFormat::Table);
         assert_eq!(
-            OutputFormat::from_str(TABLE_PRETTY).unwrap(),
-            OutputFormat::TablePretty
-        );
-        assert_eq!(OutputFormat::from_str(TREE).unwrap(), OutputFormat::Tree);
-        assert_eq!(
-            OutputFormat::from_str(TREE_PRETTY).unwrap(),
-            OutputFormat::TreePretty
+            OutputFormat::from_str(format::TREE).unwrap(),
+            OutputFormat::Tree
         );
     }
 
@@ -452,8 +438,6 @@ mod tests {
         assert_eq!(
             configuration,
             Configuration {
-                default_tenant: None,
-                default_format: Some(OutputFormat::Json),
                 tenants: HashMap::new(),
             }
         );
@@ -466,7 +450,7 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let path = file.into_temp_path();
         let configuration = Configuration::default();
-        configuration.save_to_file(path.to_path_buf()).unwrap();
+        configuration.save(&path.to_path_buf()).unwrap();
         path.close().unwrap();
     }
 
@@ -476,29 +460,12 @@ mod tests {
 
         let file = NamedTempFile::new().unwrap();
         let path = file.into_temp_path();
-        let mut configuration = Configuration::default();
-        configuration.set_default_tenant(Some("mytenant".to_string()));
-        configuration.save_to_file(path.to_path_buf()).unwrap();
+        let configuration = Configuration::default();
+        configuration.save(&path.to_path_buf()).unwrap();
 
         let configuration2 = Configuration::load_from_file(path.to_path_buf()).unwrap();
 
         assert_eq!(configuration2, configuration);
-    }
-
-    #[test]
-    fn test_set_default_tenant() {
-        let mut configuration = Configuration::default();
-        let tenant = String::from("mytenant");
-        configuration.set_default_tenant(Some(tenant.clone()));
-        assert_eq!(Some(tenant), configuration.get_default_tenant());
-    }
-
-    #[test]
-    fn test_set_default_output_format() {
-        let mut configuration = Configuration::default();
-        let format = OutputFormat::Csv;
-        configuration.set_default_format(Some(format.clone()));
-        assert_eq!(Some(format), configuration.get_default_format());
     }
 
     #[test]
@@ -508,33 +475,9 @@ mod tests {
     }
 
     #[test]
-    fn test_from_string_for_configuration_property_name() {
-        assert_eq!(
-            ConfigurationPropertyName::from_str(DEFAULT_TENANT).unwrap(),
-            ConfigurationPropertyName::DefaultTenant
-        );
-        assert_eq!(
-            ConfigurationPropertyName::from_str(DEFAULT_OUTPUT_FORMAT).unwrap(),
-            ConfigurationPropertyName::DefaultOutputFormat
-        );
-    }
-
-    #[test]
     #[should_panic]
     fn test_fail_on_incorrect_configuration_property_name() {
         let _ = ConfigurationPropertyName::from_str("invalid_name").unwrap();
-    }
-
-    #[test]
-    fn test_display_for_configuration_property_name() {
-        assert_eq!(
-            format!("{}", ConfigurationPropertyName::DefaultTenant),
-            DEFAULT_TENANT
-        );
-        assert_eq!(
-            format!("{}", ConfigurationPropertyName::DefaultOutputFormat),
-            DEFAULT_OUTPUT_FORMAT
-        );
     }
 
     #[test]
@@ -577,94 +520,6 @@ mod tests {
         fs::write(path.to_path_buf(), yaml).unwrap();
 
         Configuration::load_from_file(path.to_path_buf()).unwrap();
-    }
-
-    #[test]
-    fn test_get_all_valid_property_names() {
-        let names = Configuration::get_all_valid_property_names();
-        let known_names = vec![
-            DEFAULT_TENANT.to_string(),
-            DEFAULT_OUTPUT_FORMAT.to_string(),
-        ];
-
-        assert_eq!(names, known_names);
-    }
-
-    #[test]
-    fn test_get_property_value() {
-        let mut configuration = Configuration::default();
-
-        assert_eq!(configuration.get(DEFAULT_TENANT.to_string()), None);
-
-        configuration.set_default_format(None);
-        assert_eq!(configuration.get(DEFAULT_OUTPUT_FORMAT.to_string()), None);
-
-        let my_tenant = "mytenant".to_string();
-        let my_format = OutputFormat::Table;
-        configuration.set_default_tenant(Some(my_tenant.clone()));
-        configuration.set_default_format(Some(my_format.clone()));
-
-        let tenant = configuration.get(DEFAULT_TENANT.to_string()).unwrap();
-        assert_eq!(Some(tenant), Some(my_tenant));
-
-        let format = configuration
-            .get(DEFAULT_OUTPUT_FORMAT.to_string())
-            .unwrap();
-        assert_eq!(Some(format), Some(my_format.to_string()));
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_fail_on_invalid_property_name() {
-        let configuration = Configuration::default();
-
-        configuration
-            .get("invalid property name".to_string())
-            .unwrap();
-    }
-
-    #[test]
-    fn test_set_configuration_value() {
-        let mut configuration = Configuration::default();
-        let my_tenant = "my_tenant".to_string();
-        let my_format = OutputFormat::Table;
-
-        configuration
-            .set(DEFAULT_TENANT.to_string(), Some(my_tenant.clone()))
-            .unwrap();
-        assert_eq!(configuration.get_default_tenant(), Some(my_tenant));
-
-        configuration
-            .set(
-                DEFAULT_OUTPUT_FORMAT.to_string(),
-                Some(my_format.to_string()),
-            )
-            .unwrap();
-        assert_eq!(
-            Some(format!("{}", configuration.get_default_format().unwrap())),
-            Some(format!("{}", my_format))
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_fail_on_invalid_property_name_for_set() {
-        let mut configuration = Configuration::default();
-        let name = "this is invalid".to_string();
-
-        configuration
-            .set(name, Some("some value".to_string()))
-            .unwrap();
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_fail_on_empty_format_value_for_set() {
-        let mut configuration = Configuration::default();
-
-        configuration
-            .set(DEFAULT_OUTPUT_FORMAT.to_string(), None)
-            .unwrap();
     }
 
     #[test]
@@ -735,15 +590,15 @@ mod tests {
         );
 
         configuration
-            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .add_tenant(Some(&tenant_alias.clone()), &tenant)
             .unwrap();
 
-        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
         assert_eq!(tenant2, tenant);
     }
 
     #[test]
-    fn test_get_tenant() {
+    fn test_tenant() {
         let mut configuration = Configuration::default();
 
         let tenant_alias = "my_alias".to_string();
@@ -763,14 +618,14 @@ mod tests {
         );
 
         configuration
-            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .add_tenant(Some(&tenant_alias.clone()), &tenant)
             .unwrap();
 
-        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
         assert_eq!(tenant2, tenant);
 
         let invalid_tenant_id = "invalid ID".to_string();
-        let tenant2 = configuration.get_tenant(&invalid_tenant_id);
+        let tenant2 = configuration.tenant(&invalid_tenant_id);
         assert_eq!(tenant2, None);
     }
 
@@ -796,24 +651,24 @@ mod tests {
 
         // first add a tenant
         configuration
-            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .add_tenant(Some(&tenant_alias.clone()), &tenant)
             .unwrap();
 
         // check that the tenant was correctly added
-        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
         assert_eq!(tenant2, tenant);
 
         // delete the tenant
         configuration.delete_tenant(&tenant_alias);
 
         // make sure that there are no more tenants
-        assert!(!configuration.has_tenants());
+        assert!(configuration.is_empty());
     }
 
     #[test]
     fn test_has_tenants() {
         let configuration = Configuration::default();
-        assert!(!configuration.has_tenants());
+        assert!(configuration.is_empty());
     }
 
     #[test]
@@ -840,22 +695,22 @@ mod tests {
 
         // first add the tenant
         configuration
-            .add_tenant(Some(tenant_alias.clone()), tenant.clone())
+            .add_tenant(Some(&tenant_alias.clone()), &tenant)
             .unwrap();
 
         // check that the tenant was correctly added
-        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
         assert_eq!(tenant2, tenant);
 
         // delete the tenant
         configuration.delete_all_tenants();
 
         // make sure that there are no more tenants
-        assert!(!configuration.has_tenants());
+        assert!(configuration.is_empty());
     }
 
     #[test]
-    fn test_get_tenant_ids() {
+    fn test_tenant_ids() {
         let mut tenant_aliases = vec![
             "tenant_1".to_string(),
             "tenant_2".to_string(),
@@ -882,17 +737,50 @@ mod tests {
         );
 
         configuration
-            .add_tenant(Some(tenant_aliases[0].clone()), tenant.clone())
+            .add_tenant(Some(&tenant_aliases[0].clone()), &tenant)
             .unwrap();
         configuration
-            .add_tenant(Some(tenant_aliases[1].clone()), tenant.clone())
+            .add_tenant(Some(&tenant_aliases[1].clone()), &tenant)
             .unwrap();
         configuration
-            .add_tenant(Some(tenant_aliases[2].clone()), tenant.clone())
+            .add_tenant(Some(&tenant_aliases[2].clone()), &tenant)
             .unwrap();
 
         let mut produced_ids = configuration.get_all_tenant_aliases();
         produced_ids.sort();
         assert_eq!(produced_ids, tenant_aliases);
+    }
+
+    #[test]
+    fn test_configuration_tenant_setters() {
+        let wrong = "wrong_value".to_string();
+        let wrong_url = Url::parse("https://wrong.com").unwrap();
+        let mut tenant = TenantConfiguration::new(
+            wrong.clone(),
+            wrong_url.clone(),
+            wrong_url.clone(),
+            wrong.clone(),
+            wrong.clone(),
+        );
+
+        let tenant_id = "my_tenant".to_string();
+        tenant.set_tenant_id(tenant_id.clone());
+        assert_eq!(tenant.tenant_id(), tenant_id);
+
+        let api_url = Url::parse("https://my_api_url.com").unwrap();
+        tenant.set_api_url(api_url.clone());
+        assert_eq!(tenant.api_url(), api_url);
+
+        let oidc_url = Url::parse("https://my_oidc_url.com").unwrap();
+        tenant.set_oidc_url(oidc_url.clone());
+        assert_eq!(tenant.oidc_url(), oidc_url);
+
+        let client_id = "my_client_id".to_string();
+        tenant.set_client_id(client_id.clone());
+        assert_eq!(tenant.client_id(), client_id);
+
+        let client_secret = "my_client_secret".to_string();
+        tenant.set_client_secret(client_secret.clone());
+        assert_eq!(tenant.client_secret(), client_secret);
     }
 }

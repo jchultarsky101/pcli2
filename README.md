@@ -79,7 +79,31 @@ Options:
 
 ### Command "config"
 
-This command is used to manage the configuration.
+This command is used to manage the configuration. It can display details about the current configuration, but also allows you to modify it by adding new configuration elements and deleting existing ones.
+The data is stored in two locations:
+
+* System-specific user configuration directory
+* System-specific secure keyring
+
+The configuration directory location depends on your operating system. You can use the **path** sub-command to display the location:
+
+````
+pcli2 config show path
+````
+
+This command will output the configuration file path on your system. For example, on MacOS it may be similar to this:
+
+````
+/Users/myuser/Library/Application Support/pcli2/config.yml
+````
+
+where "myuser" would be your username.
+
+The configuration iteself is a text file in Yaml format. You can view it with any text editor. However, it is best to modify it via the CLI and not directly to avoid issue. If you do, please make a backup copy first.
+
+
+
+
 
 #### Command "config show"
 

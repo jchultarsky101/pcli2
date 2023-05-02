@@ -1,7 +1,8 @@
 use csv::Writer;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::{io::BufWriter, str::FromStr};
+use std::io::BufWriter;
+use std::str::FromStr;
 use strum::EnumIter;
 
 pub const JSON: &'static str = "json";
@@ -20,28 +21,13 @@ pub enum FormattingError {
 #[serde(rename_all = "snake_case")]
 pub enum OutputFormat {
     Csv,
-    CsvPretty,
     #[default]
     Json,
-    JsonPretty,
-    Table,
-    TablePretty,
-    Tree,
-    TreePretty,
 }
 
 impl OutputFormat {
     pub fn names() -> Vec<&'static str> {
-        vec![
-            "json",
-            "json_pretty",
-            "csv",
-            "csv_pretty",
-            "table",
-            "table_pretty",
-            "tree",
-            "tree_pretty",
-        ]
+        vec!["json", "csv"]
     }
 }
 
@@ -49,13 +35,7 @@ impl std::fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             OutputFormat::Csv => write!(f, "csv"),
-            OutputFormat::CsvPretty => write!(f, "csv_pretty"),
             OutputFormat::Json => write!(f, "json"),
-            OutputFormat::JsonPretty => write!(f, "json_pretty"),
-            OutputFormat::Table => write!(f, "table"),
-            OutputFormat::TablePretty => write!(f, "table_pretty"),
-            OutputFormat::Tree => write!(f, "tree"),
-            OutputFormat::TreePretty => write!(f, "tree_pretty"),
         }
     }
 }
@@ -69,7 +49,6 @@ impl FromStr for OutputFormat {
         match normalized_format {
             JSON => Ok(OutputFormat::Json),
             CSV => Ok(OutputFormat::Csv),
-            TREE => Ok(OutputFormat::Tree),
             _ => Err(FormattingError::UnsupportedOutputFormat {
                 format: normalized_format.to_string(),
             }),
@@ -87,10 +66,20 @@ pub trait CsvRecordProducer {
 
     fn as_csv_records(&self) -> Vec<Vec<String>>;
 
-    fn to_csv(&self) -> Result<String, FormattingError> {
+    fn to_csv_with_header(&self) -> Result<String, FormattingError> {
+        self.to_csv(true)
+    }
+
+    fn to_csv_without_header(&self) -> Result<String, FormattingError> {
+        self.to_csv(false)
+    }
+
+    fn to_csv(&self, with_header: bool) -> Result<String, FormattingError> {
         let buf = BufWriter::new(Vec::new());
         let mut wtr = Writer::from_writer(buf);
-        wtr.write_record(&Self::csv_header()).unwrap();
+        if with_header {
+            wtr.write_record(&Self::csv_header()).unwrap();
+        }
         for record in self.as_csv_records() {
             wtr.write_record(&record).unwrap();
         }

@@ -31,6 +31,7 @@ pub fn create_cli_commands() -> ArgMatches {
         .num_args(1)
         .required(false)
         .default_value("json")
+        .global(true)
         .help("Output data format")
         .value_parser(OutputFormat::names());
 
@@ -103,6 +104,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_SHOW)
                         .about("displays configuration")
+                        .arg(format_parameter.clone())
                         .subcommand(Command::new(COMMAND_PATH).about("show the configuration path"))
                         .subcommand(
                             Command::new(COMMAND_TENANT)

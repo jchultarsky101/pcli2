@@ -64,10 +64,7 @@ impl OutputFormatter for Folder {
     fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
         match format {
             OutputFormat::Json => Ok(self.to_json()?),
-            OutputFormat::Csv => Ok(self.to_csv()?),
-            _ => Err(FormattingError::UnsupportedOutputFormat {
-                format: format.to_string(),
-            }),
+            OutputFormat::Csv => Ok(self.to_csv_with_header()?),
         }
     }
 }
@@ -215,9 +212,6 @@ impl OutputFormatter for FolderList {
                     Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
             }
-            _ => Err(FormattingError::UnsupportedOutputFormat {
-                format: format.to_string(),
-            }),
         }
     }
 }

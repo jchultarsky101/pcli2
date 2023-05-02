@@ -1,4 +1,6 @@
-use crate::format::{FormattingError, OutputFormat, OutputFormatter};
+use crate::format::{
+    CsvRecordProducer, FormattingError, JsonProducer, OutputFormat, OutputFormatter,
+};
 use crate::security::{Keyring, KeyringError, SECRET_KEY};
 use csv::Writer;
 use dirs::config_dir;
@@ -117,42 +119,35 @@ impl TenantConfiguration {
     }
 }
 
+impl CsvRecordProducer for TenantConfiguration {
+    fn csv_header() -> Vec<String> {
+        vec![
+            String::from("ID"),
+            String::from("API_URL"),
+            String::from("OIDC_URL"),
+            String::from("CLIENT_ID"),
+        ]
+    }
+
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.tenant_id.to_owned(),
+            self.api_url.to_string(),
+            self.oidc_url.to_string(),
+            self.client_id.to_owned(),
+        ]]
+    }
+}
+
+impl JsonProducer for TenantConfiguration {}
+
 impl OutputFormatter for TenantConfiguration {
     type Item = TenantConfiguration;
 
     fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
         match format {
-            OutputFormat::Json => {
-                let json = serde_json::to_string_pretty(self);
-                match json {
-                    Ok(json) => Ok(json),
-                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-                }
-            }
-            OutputFormat::Csv => {
-                let buf = BufWriter::new(Vec::new());
-                let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&["ID", "API_URL", "OIDC_URL", "CLIENT_ID"])
-                    .unwrap();
-                wtr.write_record(&[
-                    self.tenant_id(),
-                    self.api_url().to_string(),
-                    self.oidc_url().to_string(),
-                    self.client_id(),
-                ])
-                .unwrap();
-                match wtr.flush() {
-                    Ok(_) => {
-                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
-                        let csv = String::from_utf8(bytes).unwrap();
-                        Ok(csv.clone())
-                    }
-                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-                }
-            }
-            _ => Err(FormattingError::UnsupportedOutputFormat {
-                format: format.to_string(),
-            }),
+            OutputFormat::Json => Ok(self.to_json()?),
+            OutputFormat::Csv => Ok(self.to_csv_with_header()?),
         }
     }
 }
@@ -253,6 +248,55 @@ impl Default for Configuration {
     fn default() -> Self {
         Self {
             tenants: HashMap::new(),
+        }
+    }
+}
+
+impl CsvRecordProducer for Configuration {
+    fn csv_header() -> Vec<String> {
+        TenantConfiguration::csv_header()
+    }
+
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        let mut records: Vec<Vec<String>> = Vec::new();
+
+        for (_, tenant) in &self.tenants {
+            records.push(tenant.as_csv_records()[0].clone());
+        }
+
+        records
+    }
+}
+
+impl OutputFormatter for Configuration {
+    type Item = Configuration;
+
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => {
+                let json = serde_json::to_string_pretty(self);
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv => {
+                let buf = BufWriter::new(Vec::new());
+                let mut wtr = Writer::from_writer(buf);
+                wtr.write_record(&TenantConfiguration::csv_header())
+                    .unwrap();
+                for record in self.as_csv_records() {
+                    wtr.write_record(&record).unwrap();
+                }
+                match wtr.flush() {
+                    Ok(_) => {
+                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
+                        let csv = String::from_utf8(bytes).unwrap();
+                        Ok(csv.clone())
+                    }
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
         }
     }
 }
@@ -396,6 +440,7 @@ impl Configuration {
 mod tests {
     use super::*;
     use crate::format;
+    use std::str::FromStr;
 
     #[test]
     fn test_output_format_create_default() {
@@ -407,7 +452,6 @@ mod tests {
     fn test_output_format_to_string() {
         assert_eq!(OutputFormat::Csv.to_string(), format::CSV);
         assert_eq!(OutputFormat::Json.to_string(), format::JSON);
-        assert_eq!(OutputFormat::Tree.to_string(), format::TREE);
     }
 
     #[test]
@@ -419,10 +463,6 @@ mod tests {
         assert_eq!(
             OutputFormat::from_str(format::CSV).unwrap(),
             OutputFormat::Csv
-        );
-        assert_eq!(
-            OutputFormat::from_str(format::TREE).unwrap(),
-            OutputFormat::Tree
         );
     }
 
@@ -466,18 +506,6 @@ mod tests {
         let configuration2 = Configuration::load_from_file(path.to_path_buf()).unwrap();
 
         assert_eq!(configuration2, configuration);
-    }
-
-    #[test]
-    fn test_debug_on_configuration_property_name() {
-        let name = ConfigurationPropertyName::DefaultTenant;
-        assert_eq!(format!("{:?}", name), "DefaultTenant");
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_fail_on_incorrect_configuration_property_name() {
-        let _ = ConfigurationPropertyName::from_str("invalid_name").unwrap();
     }
 
     #[test]
@@ -529,20 +557,18 @@ mod tests {
             Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
         let oidc_url = Url::parse("https://authentication.com").unwrap();
         let client_id = "my_client_id".to_string();
-        let client_secret = "my_client_secret".to_string();
         let tenant_config_one = TenantConfiguration {
             tenant_id: tenant_id.clone(),
             api_url: api_url.clone(),
             oidc_url: oidc_url.clone(),
             client_id: client_id.clone(),
-            client_secret: client_secret.clone(),
         };
+
         let tenant_config_two = TenantConfiguration::new(
             tenant_id.clone(),
             api_url.clone(),
             oidc_url.clone(),
             client_id.clone(),
-            client_secret.clone(),
         );
 
         assert_eq!(tenant_config_one, tenant_config_two);
@@ -555,15 +581,13 @@ mod tests {
             Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
         let oidc_url = Url::parse("https://authentication.com").unwrap();
         let client_id = "my_client_id".to_string();
-        let client_secret = "my_client_secret".to_string();
-        let json = r#"TenantConfiguration { tenant_id: "my_tenant", api_url: Url { scheme: "https", cannot_be_a_base: false, username: "", password: None, host: Some(Domain("my_tenant.physna.com")), port: None, path: "/api/v2", query: None, fragment: None }, oidc_url: Url { scheme: "https", cannot_be_a_base: false, username: "", password: None, host: Some(Domain("authentication.com")), port: None, path: "/", query: None, fragment: None }, client_id: "my_client_id", client_secret: "my_client_secret" }"#;
+        let json = r#"TenantConfiguration { tenant_id: "my_tenant", api_url: Url { scheme: "https", cannot_be_a_base: false, username: "", password: None, host: Some(Domain("my_tenant.physna.com")), port: None, path: "/api/v2", query: None, fragment: None }, oidc_url: Url { scheme: "https", cannot_be_a_base: false, username: "", password: None, host: Some(Domain("authentication.com")), port: None, path: "/", query: None, fragment: None }, client_id: "my_client_id" }"#;
 
         let tenant = TenantConfiguration::new(
             tenant_id.clone(),
             api_url.clone(),
             oidc_url.clone(),
             client_id.clone(),
-            client_secret.clone(),
         );
 
         assert_eq!(format!("{:?}", tenant), format!("{}", json));
@@ -579,14 +603,12 @@ mod tests {
             Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
         let oidc_url = Url::parse("https://authentication.com").unwrap();
         let client_id = "my_client_id".to_string();
-        let client_secret = "my_client_secret".to_string();
 
         let tenant = TenantConfiguration::new(
             tenant_id.clone(),
             api_url.clone(),
             oidc_url.clone(),
             client_id.clone(),
-            client_secret.clone(),
         );
 
         configuration
@@ -607,14 +629,12 @@ mod tests {
             Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
         let oidc_url = Url::parse("https://authentication.com").unwrap();
         let client_id = "my_client_id".to_string();
-        let client_secret = "my_client_secret".to_string();
 
         let tenant = TenantConfiguration::new(
             tenant_id.clone(),
             api_url.clone(),
             oidc_url.clone(),
             client_id.clone(),
-            client_secret.clone(),
         );
 
         configuration
@@ -639,14 +659,12 @@ mod tests {
             Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
         let oidc_url = Url::parse("https://authentication.com").unwrap();
         let client_id = "my_client_id".to_string();
-        let client_secret = "my_client_secret".to_string();
 
         let tenant = TenantConfiguration::new(
             tenant_id.clone(),
             api_url.clone(),
             oidc_url.clone(),
             client_id.clone(),
-            client_secret.clone(),
         );
 
         // first add a tenant
@@ -683,14 +701,12 @@ mod tests {
             Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
         let oidc_url = Url::parse("https://authentication.com").unwrap();
         let client_id = "my_client_id".to_string();
-        let client_secret = "my_client_secret".to_string();
 
         let tenant = TenantConfiguration::new(
             tenant_id.clone(),
             api_url.clone(),
             oidc_url.clone(),
             client_id.clone(),
-            client_secret.clone(),
         );
 
         // first add the tenant
@@ -726,14 +742,12 @@ mod tests {
             Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
         let oidc_url = Url::parse("https://authentication.com").unwrap();
         let client_id = "my_client_id".to_string();
-        let client_secret = "my_client_secret".to_string();
 
         let tenant = TenantConfiguration::new(
             tenant_id.clone(),
             api_url.clone(),
             oidc_url.clone(),
             client_id.clone(),
-            client_secret.clone(),
         );
 
         configuration
@@ -760,7 +774,6 @@ mod tests {
             wrong_url.clone(),
             wrong_url.clone(),
             wrong.clone(),
-            wrong.clone(),
         );
 
         let tenant_id = "my_tenant".to_string();
@@ -778,9 +791,5 @@ mod tests {
         let client_id = "my_client_id".to_string();
         tenant.set_client_id(client_id.clone());
         assert_eq!(tenant.client_id(), client_id);
-
-        let client_secret = "my_client_secret".to_string();
-        tenant.set_client_secret(client_secret.clone());
-        assert_eq!(tenant.client_secret(), client_secret);
     }
 }

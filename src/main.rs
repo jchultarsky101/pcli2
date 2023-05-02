@@ -10,11 +10,8 @@ use configuration::{Configuration, ConfigurationError, TenantConfiguration};
 use pcli2::api::ApiError;
 use pcli2::commands::COMMAND_LOGOFF;
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::{
-    io::{stdout, Write},
-    path::PathBuf,
-};
 use thiserror::Error;
 use url::Url;
 
@@ -90,15 +87,23 @@ fn main() -> Result<(), PcliError> {
                     let format = OutputFormat::from_str(format).unwrap();
 
                     let id = sub_matches.get_one::<String>(PARAMETER_ID).unwrap();
-                    let tenant = configuration.borrow().tenant(id).unwrap();
-                    match tenant.format(format) {
-                        Ok(output) => println!("{}", output),
-                        Err(e) => exit_with_error(e.to_string().as_str(), exitcode::CONFIG),
-                    };
+                    match configuration.borrow().tenant(id) {
+                        Some(tenant) => match tenant.format(format) {
+                            Ok(output) => println!("{}", output),
+                            Err(e) => exit_with_error(e.to_string().as_str(), exitcode::CONFIG),
+                        },
+                        None => (),
+                    }
                 }
                 _ => {
-                    let out: Box<dyn Write> = Box::new(stdout());
-                    configuration.borrow().write(out)?;
+                    // print all tenants
+                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+                    let format = OutputFormat::from_str(format).unwrap();
+
+                    match configuration.borrow().format(format) {
+                        Ok(output) => println!("{}", output),
+                        Err(e) => exit_with_error(e.to_string().as_str(), exitcode::CONFIG),
+                    }
                 }
             },
             Some((COMMAND_DELETE, sub_matches)) => match sub_matches.subcommand() {

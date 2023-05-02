@@ -11,6 +11,8 @@ pub const COMMAND_SET: &str = "set";
 pub const COMMAND_DELETE: &str = "delete";
 pub const COMMAND_TENANT: &str = "tenant";
 pub const COMMAND_FOLDERS: &str = "folders";
+pub const COMMAND_LOGIN: &str = "login";
+pub const COMMAND_LOGOFF: &str = "logoff";
 
 pub const PARAMETER_FORMAT: &str = "format";
 pub const PARAMETER_OUTPUT: &str = "output";
@@ -141,8 +143,20 @@ pub fn create_cli_commands() -> ArgMatches {
             // Folders
             Command::new(COMMAND_FOLDERS)
                 .about("lists all folders")
-                .arg(tenant_parameter)
+                .arg(tenant_parameter.clone())
                 .arg(format_parameter),
+        )
+        .subcommand(
+            // Login
+            Command::new(COMMAND_LOGIN)
+                .about("attempts to login for this tenant")
+                .arg(tenant_parameter.clone()),
+        )
+        .subcommand(
+            // Logoff
+            Command::new(COMMAND_LOGOFF)
+                .about("attempts to logoff for this tenant")
+                .arg(tenant_parameter.clone()),
         )
         .get_matches()
 }

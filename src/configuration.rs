@@ -1,4 +1,5 @@
 use crate::format::{FormattingError, OutputFormat, OutputFormatter};
+use crate::security::{Keyring, KeyringError, SECRET_KEY};
 use csv::Writer;
 use dirs::config_dir;
 use log::trace;
@@ -10,15 +11,11 @@ use std::{
     fs::{self, File},
     io::{BufWriter, Write},
     path::PathBuf,
-    str::FromStr,
 };
 use url::Url;
 
-const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
-const DEFAULT_CONFIGURATION_FILE_NAME: &'static str = "config.yml";
-
-const DEFAULT_TENANT: &'static str = "default_tenant";
-const DEFAULT_OUTPUT_FORMAT: &'static str = "default_output_format";
+pub const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
+pub const DEFAULT_CONFIGURATION_FILE_NAME: &'static str = "config.yml";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationError {
@@ -28,44 +25,19 @@ pub enum ConfigurationError {
     FailedToLoadData { cause: Box<dyn std::error::Error> },
     #[error("failed to write configuration data to file, because of: {cause:?}")]
     FailedToWriteData { cause: Box<dyn std::error::Error> },
-    #[error("invalid property name \"{name:?}\"")]
-    InvalidPropertyName { name: String },
     #[error("missing value for property \"{name:?}\"")]
     MissingRequiredPropertyValue { name: String },
+    #[error("unknown tenant \"{tenant_id:?}\"")]
+    UnknownTenant { tenant_id: String },
+    #[error("credentials not provided")]
+    CredentialsNotProvided,
     #[error("{cause:?}")]
     FormattingError {
         #[from]
         cause: FormattingError,
     },
-}
-
-#[derive(Debug, PartialEq)]
-enum ConfigurationPropertyName {
-    DefaultTenant,
-    DefaultOutputFormat,
-}
-
-impl FromStr for ConfigurationPropertyName {
-    type Err = ConfigurationError;
-
-    fn from_str(name: &str) -> Result<ConfigurationPropertyName, ConfigurationError> {
-        match name.to_lowercase().as_str() {
-            DEFAULT_TENANT => Ok(ConfigurationPropertyName::DefaultTenant),
-            DEFAULT_OUTPUT_FORMAT => Ok(ConfigurationPropertyName::DefaultOutputFormat),
-            _ => Err(ConfigurationError::InvalidPropertyName {
-                name: name.to_string(),
-            }),
-        }
-    }
-}
-
-impl std::fmt::Display for ConfigurationPropertyName {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            ConfigurationPropertyName::DefaultTenant => write!(f, "default_tenant"),
-            ConfigurationPropertyName::DefaultOutputFormat => write!(f, "default_output_format"),
-        }
-    }
+    #[error("security error {0}")]
+    KeyringError(#[from] KeyringError),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,7 +46,6 @@ pub struct TenantConfiguration {
     api_url: Url,
     oidc_url: Url,
     client_id: String,
-    client_secret: String,
 }
 
 impl TenantConfiguration {
@@ -83,14 +54,12 @@ impl TenantConfiguration {
         api_url: Url,
         oidc_url: Url,
         client_id: String,
-        client_secret: String,
     ) -> TenantConfiguration {
         TenantConfiguration {
             tenant_id,
             api_url,
             oidc_url,
             client_id,
-            client_secret,
         }
     }
 
@@ -135,12 +104,16 @@ impl TenantConfiguration {
     }
 
     #[allow(dead_code)]
-    pub fn set_client_secret(&mut self, client_secret: String) {
-        self.client_secret = client_secret.clone();
+    pub fn set_client_secret(&mut self, client_secret: String) -> Result<(), ConfigurationError> {
+        Keyring::default().put(&self.tenant_id, String::from(SECRET_KEY), client_secret)?;
+        Ok(())
     }
 
-    pub fn client_secret(&self) -> String {
-        self.client_secret.clone()
+    pub fn client_secret(&self) -> Result<String, ConfigurationError> {
+        match Keyring::default().get(&self.tenant_id, String::from(SECRET_KEY))? {
+            Some(secret) => Ok(secret),
+            None => Err(ConfigurationError::CredentialsNotProvided),
+        }
     }
 }
 
@@ -159,14 +132,13 @@ impl OutputFormatter for TenantConfiguration {
             OutputFormat::Csv => {
                 let buf = BufWriter::new(Vec::new());
                 let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&["ID", "API_URL", "OIDC_URL", "CLIENT_ID", "CLIENT_SECRET"])
+                wtr.write_record(&["ID", "API_URL", "OIDC_URL", "CLIENT_ID"])
                     .unwrap();
                 wtr.write_record(&[
                     self.tenant_id(),
                     self.api_url().to_string(),
                     self.oidc_url().to_string(),
                     self.client_id(),
-                    self.client_secret(),
                 ])
                 .unwrap();
                 match wtr.flush() {
@@ -265,13 +237,10 @@ impl TenantConfigurationBuilder {
             }),
         }?;
 
-        Ok(TenantConfiguration::new(
-            tenant_id,
-            api_url,
-            oidc_url,
-            client_id,
-            client_secret,
-        ))
+        let mut tenant_config = TenantConfiguration::new(tenant_id, api_url, oidc_url, client_id);
+        tenant_config.set_client_secret(client_secret)?;
+
+        Ok(tenant_config)
     }
 }
 
@@ -361,18 +330,24 @@ impl Configuration {
     }
 
     #[allow(dead_code)]
-    pub fn get_all_valid_property_names() -> Vec<String> {
-        let mut result = Vec::new();
-
-        result.push(ConfigurationPropertyName::DefaultTenant.to_string());
-        result.push(ConfigurationPropertyName::DefaultOutputFormat.to_string());
-
-        result
+    pub fn is_empty(&self) -> bool {
+        self.tenants.is_empty()
     }
 
-    #[allow(dead_code)]
-    pub fn has_tenants(&self) -> bool {
-        !self.tenants.is_empty()
+    pub fn validate_tenant(
+        &self,
+        tenant_id: &String,
+    ) -> Result<TenantConfiguration, ConfigurationError> {
+        trace!("Validating tenant ID of \"{}\"...", tenant_id);
+        match self.tenant(tenant_id) {
+            Some(tenant) => {
+                trace!("Tenant ID \"{}\" is valid.", tenant_id);
+                Ok(tenant)
+            }
+            None => Err(ConfigurationError::UnknownTenant {
+                tenant_id: tenant_id.clone(),
+            }),
+        }
     }
 
     pub fn add_tenant(
@@ -500,33 +475,9 @@ mod tests {
     }
 
     #[test]
-    fn test_from_string_for_configuration_property_name() {
-        assert_eq!(
-            ConfigurationPropertyName::from_str(DEFAULT_TENANT).unwrap(),
-            ConfigurationPropertyName::DefaultTenant
-        );
-        assert_eq!(
-            ConfigurationPropertyName::from_str(DEFAULT_OUTPUT_FORMAT).unwrap(),
-            ConfigurationPropertyName::DefaultOutputFormat
-        );
-    }
-
-    #[test]
     #[should_panic]
     fn test_fail_on_incorrect_configuration_property_name() {
         let _ = ConfigurationPropertyName::from_str("invalid_name").unwrap();
-    }
-
-    #[test]
-    fn test_display_for_configuration_property_name() {
-        assert_eq!(
-            format!("{}", ConfigurationPropertyName::DefaultTenant),
-            DEFAULT_TENANT
-        );
-        assert_eq!(
-            format!("{}", ConfigurationPropertyName::DefaultOutputFormat),
-            DEFAULT_OUTPUT_FORMAT
-        );
     }
 
     #[test]
@@ -569,17 +520,6 @@ mod tests {
         fs::write(path.to_path_buf(), yaml).unwrap();
 
         Configuration::load_from_file(path.to_path_buf()).unwrap();
-    }
-
-    #[test]
-    fn test_get_all_valid_property_names() {
-        let names = Configuration::get_all_valid_property_names();
-        let known_names = vec![
-            DEFAULT_TENANT.to_string(),
-            DEFAULT_OUTPUT_FORMAT.to_string(),
-        ];
-
-        assert_eq!(names, known_names);
     }
 
     #[test]
@@ -653,12 +593,12 @@ mod tests {
             .add_tenant(Some(&tenant_alias.clone()), &tenant)
             .unwrap();
 
-        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
         assert_eq!(tenant2, tenant);
     }
 
     #[test]
-    fn test_get_tenant() {
+    fn test_tenant() {
         let mut configuration = Configuration::default();
 
         let tenant_alias = "my_alias".to_string();
@@ -681,11 +621,11 @@ mod tests {
             .add_tenant(Some(&tenant_alias.clone()), &tenant)
             .unwrap();
 
-        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
         assert_eq!(tenant2, tenant);
 
         let invalid_tenant_id = "invalid ID".to_string();
-        let tenant2 = configuration.get_tenant(&invalid_tenant_id);
+        let tenant2 = configuration.tenant(&invalid_tenant_id);
         assert_eq!(tenant2, None);
     }
 
@@ -715,20 +655,20 @@ mod tests {
             .unwrap();
 
         // check that the tenant was correctly added
-        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
         assert_eq!(tenant2, tenant);
 
         // delete the tenant
         configuration.delete_tenant(&tenant_alias);
 
         // make sure that there are no more tenants
-        assert!(!configuration.has_tenants());
+        assert!(configuration.is_empty());
     }
 
     #[test]
     fn test_has_tenants() {
         let configuration = Configuration::default();
-        assert!(!configuration.has_tenants());
+        assert!(configuration.is_empty());
     }
 
     #[test]
@@ -759,18 +699,18 @@ mod tests {
             .unwrap();
 
         // check that the tenant was correctly added
-        let tenant2 = configuration.get_tenant(&tenant_alias).unwrap();
+        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
         assert_eq!(tenant2, tenant);
 
         // delete the tenant
         configuration.delete_all_tenants();
 
         // make sure that there are no more tenants
-        assert!(!configuration.has_tenants());
+        assert!(configuration.is_empty());
     }
 
     #[test]
-    fn test_get_tenant_ids() {
+    fn test_tenant_ids() {
         let mut tenant_aliases = vec![
             "tenant_1".to_string(),
             "tenant_2".to_string(),

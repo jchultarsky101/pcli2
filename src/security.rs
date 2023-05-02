@@ -1,116 +1,159 @@
-use super::browser;
 use super::configuration::TenantConfiguration;
-use anyhow::Result;
-use log::trace;
-use reqwest::{
-    blocking::Client,
-    header::{HeaderMap, ACCEPT, USER_AGENT},
-};
-use serde::{Deserialize, Serialize};
-use url::Url;
+use crate::client::*;
+use jsonwebtoken::decode_header;
+use keyring::Entry;
+use log::{error, trace};
+use thiserror::Error;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct DeviceVerificationCodeResponse {
-    device_code: String,
-    user_code: String,
-    verification_uri: Url,
-    verification_uri_complete: Url,
-    expires_in: usize,
-    interval: usize,
+pub const SECRET_KEY: &str = "secret";
+const TOKEN_KEY: &str = "token";
+
+#[derive(Debug, Error)]
+pub enum SecurityError {
+    #[error("access denied")]
+    AccessDenied,
+    #[error("invalid credential")]
+    InvalidCredentials,
+    #[error("keyring error")]
+    KeyrinError(#[from] KeyringError),
+    #[error("failed to decode token")]
+    FailedToDecodeToken,
+    #[error("securiy error")]
+    SecurityError {
+        #[from]
+        cause: crate::configuration::ConfigurationError,
+    },
 }
 
-impl DeviceVerificationCodeResponse {
-    #[allow(dead_code)]
-    fn qrcode_url(&self) -> Url {
-        self.verification_uri_complete.to_owned()
-    }
+#[derive(Debug, Error)]
+pub enum KeyringError {
+    #[error("keyring error")]
+    CannotAccessKeyringEntity(#[from] keyring::Error),
+}
 
-    #[allow(dead_code)]
-    fn user_code(&self) -> String {
-        self.user_code.to_owned()
-    }
+pub struct Keyring {}
 
-    #[allow(dead_code)]
-    fn verification_uri(&self) -> Url {
-        self.verification_uri.to_owned()
+impl Default for Keyring {
+    fn default() -> Keyring {
+        Keyring {}
     }
 }
 
-#[allow(dead_code)]
-pub fn login(tenant: &TenantConfiguration) -> Result<()> {
-    trace!("Logging in for tenant {}...", tenant.tenant_id());
-
-    // let url = tenant.get_oidc_url();
-    // let client_id = tenant.get_client_id();
-    // let client_secret = tenant.get_client_secret();
-    // let device_auth_url = DeviceAuthorizationUrl::from_url(url);
-
-    let client_id = "0oa8105ceeNIB0RUT5d7";
-    let okta_app_domain = "dev-11356524.okta.com";
-    let device_auth_uri = format!(
-        "https://{}/oauth2/default/v1/device/authorize",
-        okta_app_domain
-    );
-    let device_auth_url = Url::parse(device_auth_uri.as_str())?;
-
-    trace!("Creating HTTP client...");
-    let client = Client::new();
-    trace!("Client instance created.");
-
-    // step 1: obtain a verification code
-    /*
-    Example:
-
-    curl --request POST \
-      --url https://dev-11356524.okta.com/oauth2/default/v1/device/authorize \
-      --header 'Accept: application/json' \
-      --header 'Content-Type: application/x-www-form-urlencoded' \
-      --data-urlencode 'client_id=0oa8105ceeNIB0RUT5d7' \
-      --data-urlencode 'scope=openid profile offline_access'
-    */
-
-    let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, "pcli2".parse().unwrap());
-    headers.insert(ACCEPT, "application/json".parse().unwrap());
-
-    let params = [
-        ("client_id", client_id),
-        ("scope", "openid profile offline_access"),
-    ];
-
-    trace!(
-        "Sending a POST request to {}...",
-        device_auth_url.to_string()
-    );
-    let response = client
-        .post(device_auth_url)
-        .headers(headers)
-        .form(&params)
-        .send()?;
-    trace!("Response received.");
-
-    trace!("Analyzing the response...");
-    if response.status().is_success() {
-        let device_verification: DeviceVerificationCodeResponse = response.json()?;
-        let qrcode_url = device_verification.qrcode_url();
-        let user_code = device_verification.user_code();
-        let verification_uri = device_verification.verification_uri();
-
-        trace!("Verification URI: {}", verification_uri.to_string());
-        trace!("QRCode: {}", qrcode_url.to_string());
-        trace!("User Code: {}", user_code);
-
-        // step 2: navigate to the verification URL and enter the user code there
-        browser::open(&qrcode_url);
-        //browser::display_url_as_qrcode(&verification_uri);
-    } else {
-        let status_code = response.status().as_u16();
-        trace!("Status: {}", status_code);
-        let text = response.text()?;
-        trace!("Response text: {}", text);
+impl Keyring {
+    fn format_key(&self, tenant: String, key: String) -> String {
+        [tenant, key].join(":").to_owned()
     }
 
-    trace!("Done.");
+    pub fn get(&self, tenant: &String, key: String) -> Result<Option<String>, KeyringError> {
+        let key = self.format_key(tenant.to_owned(), key);
+        let entry = Entry::new("pcli2", key.as_str())?;
+        match entry.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(e) => match e {
+                keyring::Error::NoEntry => Ok(None),
+                _ => Err(KeyringError::from(e)),
+            },
+        }
+    }
 
-    Ok(())
+    pub fn put(&self, tenant: &String, key: String, value: String) -> Result<(), KeyringError> {
+        let key = self.format_key(tenant.to_owned(), key);
+        let entry = Entry::new("pcli2", key.as_str())?;
+        entry.set_password(value.as_str())?;
+        Ok(())
+    }
+
+    pub fn delete(&self, tenant: &String, key: String) -> Result<(), KeyringError> {
+        let key = self.format_key(tenant.to_owned(), key);
+        let entry = Entry::new("pcli2", key.as_str())?;
+        entry.delete_password()?;
+        Ok(())
+    }
+}
+
+pub struct TenantSession {
+    token: Option<String>,
+}
+
+impl TenantSession {
+    pub fn token(&self) -> Option<String> {
+        self.token.clone()
+    }
+
+    fn get_token_from_keyring(tenant: &String) -> Result<Option<String>, SecurityError> {
+        match Keyring::default().get(tenant, String::from(TOKEN_KEY))? {
+            Some(token) => Ok(Some(token)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn save_token_to_keyring(tenant: &String, token: &String) -> Result<(), SecurityError> {
+        Keyring::default().put(tenant, String::from(TOKEN_KEY), token.to_owned())?;
+        Ok(())
+    }
+
+    pub fn delete_token_from_keystore(tenant: &String) -> Result<(), SecurityError> {
+        Keyring::default().delete(tenant, String::from(TOKEN_KEY))?;
+        Ok(())
+    }
+
+    fn validate_token(token: &String) -> Result<String, SecurityError> {
+        match decode_header(token) {
+            Ok(_header) => return Ok(token.to_owned()),
+            Err(_) => return Err(SecurityError::FailedToDecodeToken),
+        }
+    }
+
+    fn force_login(
+        client: PhysnaHttpClient,
+        tenant_config: TenantConfiguration,
+    ) -> Result<TenantSession, SecurityError> {
+        trace!("Logging in...");
+        match Keyring::default().get(&tenant_config.tenant_id(), String::from(SECRET_KEY))? {
+            Some(secret) => {
+                let response = client.request_new_token_from_provider(secret);
+                match response {
+                    Ok(token) => {
+                        Self::save_token_to_keyring(&tenant_config.tenant_id(), &token)?;
+                        Ok(TenantSession { token: Some(token) })
+                    }
+                    Err(e) => {
+                        error!("Error: {}", e);
+                        Err(SecurityError::AccessDenied)
+                    }
+                }
+            }
+            None => Err(SecurityError::InvalidCredentials),
+        }
+    }
+
+    /// Creates a new API session
+    ///
+    pub fn login(tenant_config: TenantConfiguration) -> Result<TenantSession, SecurityError> {
+        let tenant = tenant_config.tenant_id();
+        trace!("Attemting to login for tenant \"{}\"...", &tenant);
+
+        let client = PhysnaHttpClient::new(tenant_config.to_owned());
+        let token = Self::get_token_from_keyring(&tenant)?;
+        match token {
+            Some(token) => {
+                trace!("Found an existing token for this tenant. Validating...");
+                match Self::validate_token(&token) {
+                    Ok(token) => {
+                        trace!("The existing token is still valid.");
+                        Ok(TenantSession { token: Some(token) })
+                    }
+                    Err(_) => Self::force_login(client, tenant_config),
+                }
+            }
+            None => Self::force_login(client, tenant_config),
+        }
+    }
+
+    /// Invalidates the API session if one exists for this tenant
+    ///
+    pub fn logoff(tenant_config: TenantConfiguration) -> Result<(), SecurityError> {
+        Self::delete_token_from_keystore(&tenant_config.tenant_id())?;
+        Ok(())
+    }
 }

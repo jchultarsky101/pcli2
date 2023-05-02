@@ -85,7 +85,73 @@ The data is stored in two locations:
 * System-specific user configuration directory
 * System-specific secure keyring
 
-The configuration directory location depends on your operating system. You can use the **path** sub-command to display the location:
+The configuration directory location depends on your operating system. You can use the **path** sub-command to display the location It can display details about the current configuration, but also allows you to modify it by adding new configuration elements and deleting existing ones.
+
+The data is stored in two locations:
+
+* System-specific user configuration directory
+* System-specific secure keyring
+
+The configuration directory location depends on your operating system. You can use the **path** sub-command to display the location. You should not need to deal with the configuration file itself. The CLI provides commands to manipulate the data for you.
+
+Confidential entries such as OpenID Connect client secrets or your access tokens are stored in your operating system keyring. This is a protected area and the data is encrypted. You will be prompted to enter your user password from time to time when using it.
+
+#### Command "config show"
+
+This command outputs different elements of your configuration depending on what sub-command is used.
+
+If you use it without any sub-commands, it will print out the full list of all tenant configurations currently present:
+
+````
+pcli2 confg show
+````
+
+The output may look as shown below. Please, note that this is just an example. Your configuration would look different.
+
+````
+{
+  "tenants": {
+    "my-first-tenant": {
+      "tenant_id": "my-first-tenant",
+      "api_url": "https://api.physna.com/",
+      "oidc_url": "https://physna.okta.com/oauth2/default/v1/token",
+      "client_id": "1..."
+    }
+    "my-second-tenant": {
+      "tenant_id": "my-second-tenant",
+      "api_url": "https://api.physna.com/",
+      "oidc_url": "https://physna.okta.com/oauth2/default/v1/token",
+      "client_id": "2..."
+    }
+  }
+}
+````
+
+The **show** command takes an argument **--format**, which may have one of the following values: **json** or **csv**. The default is **json**. If you would like to output your configuration in CSV format instead, you can use the following:
+
+````
+pcli2 config show --format=csv
+````
+
+The **--format** argument is inherited by all sub-commands of **show**. More on that when we discuss the sub-command **tenant**. 
+
+##### Command "config show path"
+
+````
+pcli2 config show path
+````
+
+This command will output the configuration directory path on your system. For exampmyuser
+
+where "myuser" would be your file
+
+The configuration iteself is a text file in Yaml format. You can view it with any text editor. However, it is best to modify it via the CLI and not directly to avoid issue. If you do, please make a backup copy first.
+
+ MacOS it may be similar to this:
+
+````
+````
+
 
 ````
 pcli2 config show path
@@ -105,7 +171,6 @@ The configuration iteself is a text file in Yaml format. You can view it with an
 
 
 
-#### Command "config show"
 
  
 

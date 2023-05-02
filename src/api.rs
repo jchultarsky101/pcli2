@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 
 use crate::{
+    client::{self, PhysnaHttpClient},
     configuration::{Configuration, ConfigurationError},
-    model::{Folder, FolderList},
+    model::{self, FolderList},
     security::{SecurityError, TenantSession},
 };
 use log::trace;
@@ -25,6 +26,8 @@ pub enum ApiError {
     },
     #[error("invalid tenant {0}")]
     InvalidTenant(String),
+    #[error("http error: {0}")]
+    RequestError(#[from] client::ClientError),
     #[error("unsupported operation")]
     #[allow(dead_code)]
     UnsupportedOperation,
@@ -75,27 +78,25 @@ impl Api {
 
     /// Returns the list of folders currently available for the specified tenant
     ///
-    pub fn list_folders(&self, tenant_id: &String) -> Result<FolderList, ApiError> {
+    pub fn get_list_of_folders(&self, tenant_id: &String) -> Result<FolderList, ApiError> {
         trace!("Listing all folders for tenant \"{}\"...", tenant_id);
-        let _tenant = self.configuration.borrow().validate_tenant(tenant_id)?;
 
-        let mut folders = FolderList::empty();
-        folders.insert(
-            Folder::builder()
-                .id(1)
-                .name(&"first folder".to_string())
-                .build()
-                .unwrap(),
-        );
-        folders.insert(
-            Folder::builder()
-                .id(2)
-                .name(&"second folder".to_string())
-                .build()
-                .unwrap(),
-        );
+        let tenant_configuration = self.configuration.borrow().tenant(tenant_id);
+        match tenant_configuration {
+            Some(tenant_configuration) => {
+                let mut session = TenantSession::login(tenant_configuration.to_owned())?;
+                let client = PhysnaHttpClient::new(tenant_configuration)?;
+                let folders = client.get_list_of_folders(&mut session)?;
 
-        Ok(folders.clone())
-        // Err(ApiError::UnsupportedOperation)
+                // convert the HTTP response object to model object
+                let folders = folders
+                    .iter()
+                    .map(|f| model::Folder::new(f.id, f.name.to_owned()))
+                    .collect();
+
+                Ok(folders)
+            }
+            None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),
+        }
     }
 }

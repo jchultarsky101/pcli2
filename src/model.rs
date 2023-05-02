@@ -168,6 +168,17 @@ impl Default for FolderList {
     }
 }
 
+impl FromIterator<Folder> for FolderList {
+    fn from_iter<I: IntoIterator<Item = Folder>>(iter: I) -> FolderList {
+        let mut folders = FolderList::empty();
+        for f in iter {
+            folders.insert(f);
+        }
+
+        folders
+    }
+}
+
 impl CsvRecordProducer for FolderList {
     fn csv_header() -> Vec<String> {
         Folder::csv_header()

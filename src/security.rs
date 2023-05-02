@@ -19,10 +19,12 @@ pub enum SecurityError {
     #[error("failed to decode token")]
     FailedToDecodeToken,
     #[error("securiy error")]
-    SecurityError {
+    ConfigurationError {
         #[from]
         cause: crate::configuration::ConfigurationError,
     },
+    #[error("client error")]
+    RequestError(#[from] ClientError),
 }
 
 #[derive(Debug, Error)]
@@ -80,6 +82,10 @@ impl TenantSession {
         self.token.clone()
     }
 
+    pub fn set_token(&mut self, token: String) {
+        self.token = Some(token.to_owned());
+    }
+
     fn get_token_from_keyring(tenant: &String) -> Result<Option<String>, SecurityError> {
         match Keyring::default().get(tenant, String::from(TOKEN_KEY))? {
             Some(token) => Ok(Some(token)),
@@ -117,10 +123,7 @@ impl TenantSession {
                         Self::save_token_to_keyring(&tenant_config.tenant_id(), &token)?;
                         Ok(TenantSession { token: Some(token) })
                     }
-                    Err(e) => {
-                        error!("Error: {}", e);
-                        Err(SecurityError::AccessDenied)
-                    }
+                    Err(_) => Err(SecurityError::AccessDenied),
                 }
             }
             None => Err(SecurityError::InvalidCredentials),
@@ -133,7 +136,7 @@ impl TenantSession {
         let tenant = tenant_config.tenant_id();
         trace!("Attemting to login for tenant \"{}\"...", &tenant);
 
-        let client = PhysnaHttpClient::new(tenant_config.to_owned());
+        let client = PhysnaHttpClient::new(tenant_config.to_owned())?;
         let token = Self::get_token_from_keyring(&tenant)?;
         match token {
             Some(token) => {

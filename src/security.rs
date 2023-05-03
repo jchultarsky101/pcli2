@@ -156,7 +156,9 @@ impl TenantSession {
     /// Invalidates the API session if one exists for this tenant
     ///
     pub fn logoff(tenant_config: TenantConfiguration) -> Result<(), SecurityError> {
-        Self::delete_token_from_keystore(&tenant_config.tenant_id())?;
+        let tenant = tenant_config.tenant_id();
+        trace!("Logging off for tenant \"{}\"...", &tenant);
+        Self::delete_token_from_keystore(&tenant)?;
         Ok(())
     }
 }

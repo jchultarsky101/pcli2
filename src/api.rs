@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use crate::{
     client::{self, PhysnaHttpClient},
     configuration::{Configuration, ConfigurationError},
-    model::{self, FolderList},
+    model::FolderList,
     security::{SecurityError, TenantSession},
 };
 use log::trace;
@@ -33,14 +33,10 @@ pub enum ApiError {
     UnsupportedOperation,
 }
 
-pub struct UnauthorizedApi {}
-pub struct AuthorizedApi {}
-
 /// Physna API client
 ///
-pub struct Api<State = UnauthorizedApi> {
+pub struct Api {
     configuration: RefCell<Configuration>,
-    state: std::marker::PhantomData<State>,
 }
 
 impl Api {
@@ -50,7 +46,6 @@ impl Api {
     pub fn new(configuration: &RefCell<Configuration>) -> Api {
         Api {
             configuration: configuration.clone(),
-            state: std::marker::PhantomData::<UnauthorizedApi>,
         }
     }
 
@@ -78,7 +73,11 @@ impl Api {
 
     /// Returns the list of folders currently available for the specified tenant
     ///
-    pub fn get_list_of_folders(&self, tenant_id: &String) -> Result<FolderList, ApiError> {
+    pub fn get_list_of_folders(
+        &self,
+        tenant_id: &String,
+        retry: bool,
+    ) -> Result<FolderList, ApiError> {
         trace!("Listing all folders for tenant \"{}\"...", tenant_id);
 
         let tenant_configuration = self.configuration.borrow().tenant(tenant_id);
@@ -86,14 +85,24 @@ impl Api {
             Some(tenant_configuration) => {
                 let mut session = TenantSession::login(tenant_configuration.to_owned())?;
                 let client = PhysnaHttpClient::new(tenant_configuration)?;
-                let folders = client.get_list_of_folders(&mut session)?;
+                let response = client.get_list_of_folders(&mut session);
+                let response = match response {
+                    Ok(response) => response,
+                    Err(e) => match e {
+                        client::ClientError::Unauthorized => {
+                            if retry {
+                                self.logoff(tenant_id)?;
+                                return self.get_list_of_folders(tenant_id, false);
+                            } else {
+                                return Err(ApiError::from(e));
+                            }
+                        }
+                        _ => return Err(ApiError::from(e)),
+                    },
+                };
 
                 // convert the HTTP response object to model object
-                let folders = folders
-                    .iter()
-                    .map(|f| model::Folder::new(f.id, f.name.to_owned()))
-                    .collect();
-
+                let folders = response.to_folder_list();
                 Ok(folders)
             }
             None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),

@@ -124,7 +124,7 @@ fn main() -> Result<(), PcliError> {
             let tenant = sub_matches.get_one::<String>(PARAMETER_TENANT).unwrap();
             let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
             let format = OutputFormat::from_str(format).unwrap();
-            let folders = api.get_list_of_folders(&tenant);
+            let folders = api.get_list_of_folders(&tenant, true);
 
             match folders {
                 Ok(folders) => match folders.format(format) {

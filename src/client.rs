@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use crate::{configuration::TenantConfiguration, security::TenantSession};
+use crate::{
+    configuration::TenantConfiguration,
+    model::{Folder, FolderList},
+    security::TenantSession,
+};
 use base64::{engine::general_purpose, Engine};
 use log::trace;
 use reqwest::{self, blocking::Client, StatusCode};
@@ -53,7 +57,7 @@ pub struct PageData {
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
-pub struct Folder {
+pub struct FolderResponse {
     #[serde(rename = "id")]
     pub id: u32,
     #[serde(rename = "createdAt")]
@@ -64,12 +68,35 @@ pub struct Folder {
     pub name: String,
 }
 
+impl FolderResponse {
+    pub fn to_folder(&self) -> Folder {
+        Folder::new(self.id, self.name.to_owned())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct FolderListResponse {
     #[serde(rename = "folders")]
-    pub folders: Vec<Folder>,
+    pub folders: Vec<FolderResponse>,
     #[serde(rename = "pageData")]
     pub page_data: PageData,
+}
+
+impl FolderListResponse {
+    pub fn to_folder_list(&self) -> FolderList {
+        self.folders
+            .iter()
+            .map(|f| Folder::new(f.id, f.name.to_owned()))
+            .collect()
+    }
+}
+
+impl From<Vec<FolderResponse>> for FolderListResponse {
+    fn from(folders: Vec<FolderResponse>) -> FolderListResponse {
+        let mut response: FolderListResponse = FolderListResponse::default();
+        response.folders = folders;
+        response
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
@@ -322,14 +349,32 @@ impl PhysnaHttpClient {
         Ok(content)
     }
 
+    pub fn get_folder(
+        &self,
+        session: &mut TenantSession,
+        folder_id: u32,
+    ) -> Result<FolderResponse, ClientError> {
+        trace!("Reading folder {}...", folder_id);
+        let url = format!(
+            "{}v2/folders/{}",
+            self.tenant_configuration.api_url(),
+            folder_id
+        );
+
+        let json = self.get(url.as_str(), session, None)?;
+        //trace!("{}", json);
+        let response: FolderResponse = serde_json::from_str(&json)?;
+        Ok(response)
+    }
+
     pub fn get_list_of_folders(
         &self,
         session: &mut TenantSession,
-    ) -> Result<Vec<Folder>, ClientError> {
+    ) -> Result<FolderListResponse, ClientError> {
         trace!("Reading list of folders...");
         let url = format!("{}v2/folders", self.tenant_configuration.api_url());
 
-        let mut folders: Vec<Folder> = Vec::new();
+        let mut folders: Vec<FolderResponse> = Vec::new();
         let mut last_page: usize = 2;
         let mut page: usize = 1;
 
@@ -348,6 +393,6 @@ impl PhysnaHttpClient {
             folders.append(&mut response.folders);
         }
 
-        Ok(folders)
+        Ok(FolderListResponse::from(folders))
     }
 }

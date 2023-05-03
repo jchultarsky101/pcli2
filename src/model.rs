@@ -201,6 +201,7 @@ impl OutputFormatter for FolderList {
     fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
         match format {
             OutputFormat::Json => {
+                // convert to a simple vector for output
                 let folders: Vec<Folder> = self.folders.iter().map(|(_, f)| f.clone()).collect();
                 let json = serde_json::to_string_pretty(&folders);
                 match json {

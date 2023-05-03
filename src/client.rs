@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+static DEFAULT_PAGE_SIZE: usize = 100;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -36,6 +37,22 @@ pub enum ClientError {
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct PageData {
+    #[serde(rename = "total")]
+    pub total: usize,
+    #[serde(rename = "perPage")]
+    pub per_page: usize,
+    #[serde(rename = "currentPage")]
+    pub current_page: usize,
+    #[serde(rename = "lastPage")]
+    pub last_page: usize,
+    #[serde(rename = "startIndex")]
+    pub start_index: usize,
+    #[serde(rename = "endIndex")]
+    pub end_index: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct Folder {
     #[serde(rename = "id")]
     pub id: u32,
@@ -51,6 +68,8 @@ pub struct Folder {
 pub struct FolderListResponse {
     #[serde(rename = "folders")]
     pub folders: Vec<Folder>,
+    #[serde(rename = "pageData")]
+    pub page_data: PageData,
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
@@ -310,15 +329,25 @@ impl PhysnaHttpClient {
         trace!("Reading list of folders...");
         let url = format!("{}v2/folders", self.tenant_configuration.api_url());
 
-        let params = vec![
-            (String::from("page"), String::from("1")),
-            (String::from("perPage"), String::from("20")),
-        ];
-        let json = self.get(url.as_str(), session, Some(params))?;
+        let mut folders: Vec<Folder> = Vec::new();
+        let mut last_page: usize = 2;
+        let mut page: usize = 1;
 
-        //trace!("{}", json);
-        let response: FolderListResponse = serde_json::from_str(&json)?;
+        // read with pagination
+        while page < last_page {
+            let params = vec![
+                (String::from("page"), page.to_string()),
+                (String::from("perPage"), DEFAULT_PAGE_SIZE.to_string()),
+            ];
+            let json = self.get(url.as_str(), session, Some(params))?;
 
-        Ok(response.folders)
+            //trace!("{}", json);
+            let mut response: FolderListResponse = serde_json::from_str(&json)?;
+            last_page = response.page_data.last_page;
+            page += 1;
+            folders.append(&mut response.folders);
+        }
+
+        Ok(folders)
     }
 }

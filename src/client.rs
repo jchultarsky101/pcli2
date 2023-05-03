@@ -75,6 +75,12 @@ impl FolderResponse {
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct FolderContainerResponse {
+    #[serde(rename = "folder")]
+    pub folder: FolderResponse,
+}
+
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct FolderListResponse {
     #[serde(rename = "folders")]
     pub folders: Vec<FolderResponse>,
@@ -345,14 +351,14 @@ impl PhysnaHttpClient {
         self.evaluate_satus(response.status())?;
 
         let content = response.text()?;
-        //trace!("{}", content);
+        trace!("{}", content);
         Ok(content)
     }
 
     pub fn get_folder(
         &self,
         session: &mut TenantSession,
-        folder_id: u32,
+        folder_id: &u32,
     ) -> Result<FolderResponse, ClientError> {
         trace!("Reading folder {}...", folder_id);
         let url = format!(
@@ -363,8 +369,8 @@ impl PhysnaHttpClient {
 
         let json = self.get(url.as_str(), session, None)?;
         //trace!("{}", json);
-        let response: FolderResponse = serde_json::from_str(&json)?;
-        Ok(response)
+        let response: FolderContainerResponse = serde_json::from_str(&json)?;
+        Ok(response.folder)
     }
 
     pub fn get_list_of_folders(

@@ -1,10 +1,11 @@
 use crate::format::{OutputFormat, OutputFormatter};
 use api::Api;
 use commands::{
-    create_cli_commands, COMMAND_CONFIG, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDERS,
-    COMMAND_LOGIN, COMMAND_PATH, COMMAND_SET, COMMAND_SHOW, COMMAND_TENANT, PARAMETER_API_URL,
-    PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID,
-    PARAMETER_OIDC_URL, PARAMETER_OUTPUT, PARAMETER_TENANT, PARAMETER_TENANT_ALIAS,
+    create_cli_commands, COMMAND_CONFIG, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER,
+    COMMAND_FOLDERS, COMMAND_GET, COMMAND_LOGIN, COMMAND_PATH, COMMAND_SET, COMMAND_TENANT,
+    PARAMETER_API_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FOLDER_ID,
+    PARAMETER_FORMAT, PARAMETER_ID, PARAMETER_OIDC_URL, PARAMETER_OUTPUT, PARAMETER_TENANT,
+    PARAMETER_TENANT_ALIAS,
 };
 use configuration::{Configuration, ConfigurationError, TenantConfiguration};
 use pcli2::api::ApiError;
@@ -76,7 +77,7 @@ fn main() -> Result<(), PcliError> {
                 let path = sub_matches.get_one::<PathBuf>(PARAMETER_OUTPUT).unwrap(); // it is save vefause the argument is mandatory
                 configuration.borrow().save(path)?;
             }
-            Some((COMMAND_SHOW, sub_matches)) => match sub_matches.subcommand() {
+            Some((COMMAND_GET, sub_matches)) => match sub_matches.subcommand() {
                 Some((COMMAND_PATH, _)) => {
                     let path = Configuration::get_default_configuration_file_path()?;
                     let path = path.into_os_string().into_string().unwrap();
@@ -118,6 +119,26 @@ fn main() -> Result<(), PcliError> {
                 _ => unreachable!("Invalid subcommand for 'delete'"),
             },
             _ => unreachable!("Invalid subcommand for 'config'"),
+        },
+        // Folder
+        Some((COMMAND_FOLDER, sub_matches)) => match sub_matches.subcommand() {
+            Some((COMMAND_GET, sub_matches)) => {
+                let tenant = sub_matches.get_one::<String>(PARAMETER_TENANT).unwrap();
+                let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+                let format = OutputFormat::from_str(format).unwrap();
+                let folder_id = sub_matches.get_one::<u32>(PARAMETER_FOLDER_ID).unwrap();
+
+                let folder = api.get_folder(&tenant, folder_id, true);
+
+                match folder {
+                    Ok(folder) => match folder.format(format) {
+                        Ok(output) => println!("{}", output),
+                        Err(e) => exit_with_error(e.to_string().as_str(), exitcode::DATAERR),
+                    },
+                    Err(e) => exit_with_error(&e.to_string(), exitcode::DATAERR),
+                }
+            }
+            _ => unreachable!("Invalid subcommand for 'folder'"),
         },
         // Folders
         Some((COMMAND_FOLDERS, sub_matches)) => {

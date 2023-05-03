@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use crate::{
     client::{self, PhysnaHttpClient},
     configuration::{Configuration, ConfigurationError},
-    model::FolderList,
+    model::{Folder, FolderList},
     security::{SecurityError, TenantSession},
 };
 use log::trace;
@@ -104,6 +104,49 @@ impl Api {
                 // convert the HTTP response object to model object
                 let folders = response.to_folder_list();
                 Ok(folders)
+            }
+            None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),
+        }
+    }
+
+    /// Returns the list of folders currently available for the specified tenant
+    ///
+    pub fn get_folder(
+        &self,
+        tenant_id: &String,
+        folder_id: &u32,
+        retry: bool,
+    ) -> Result<Folder, ApiError> {
+        trace!(
+            "Retrieving folder details for tenant \"{}\", folder {}...",
+            tenant_id,
+            folder_id
+        );
+
+        let tenant_configuration = self.configuration.borrow().tenant(tenant_id);
+        match tenant_configuration {
+            Some(tenant_configuration) => {
+                let mut session = TenantSession::login(tenant_configuration.to_owned())?;
+                let client = PhysnaHttpClient::new(tenant_configuration)?;
+                let response = client.get_folder(&mut session, folder_id);
+                let response = match response {
+                    Ok(response) => response,
+                    Err(e) => match e {
+                        client::ClientError::Unauthorized => {
+                            if retry {
+                                self.logoff(tenant_id)?;
+                                return self.get_folder(tenant_id, folder_id, false);
+                            } else {
+                                return Err(ApiError::from(e));
+                            }
+                        }
+                        _ => return Err(ApiError::from(e)),
+                    },
+                };
+
+                // convert the HTTP response object to model object
+                let folder = response.to_folder();
+                Ok(folder)
             }
             None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),
         }

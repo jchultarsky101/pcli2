@@ -5,7 +5,7 @@ use url::Url;
 
 pub const COMMAND_CONFIG: &str = "config";
 pub const COMMAND_EXPORT: &str = "export";
-pub const COMMAND_SHOW: &str = "show";
+pub const COMMAND_GET: &str = "get";
 pub const COMMAND_PATH: &str = "path";
 pub const COMMAND_SET: &str = "set";
 pub const COMMAND_DELETE: &str = "delete";
@@ -13,6 +13,7 @@ pub const COMMAND_TENANT: &str = "tenant";
 pub const COMMAND_FOLDERS: &str = "folders";
 pub const COMMAND_LOGIN: &str = "login";
 pub const COMMAND_LOGOFF: &str = "logoff";
+pub const COMMAND_FOLDER: &str = "folder";
 
 pub const PARAMETER_FORMAT: &str = "format";
 pub const PARAMETER_OUTPUT: &str = "output";
@@ -21,6 +22,7 @@ pub const PARAMETER_OIDC_URL: &str = "oidc_url";
 pub const PARAMETER_CLIENT_ID: &str = "client_id";
 pub const PARAMETER_CLIENT_SECRET: &str = "client_secret";
 pub const PARAMETER_ID: &str = "id";
+pub const PARAMETER_FOLDER_ID: &str = "id";
 pub const PARAMETER_TENANT: &str = "tenant";
 pub const PARAMETER_TENANT_ALIAS: &str = "alias";
 
@@ -89,6 +91,13 @@ pub fn create_cli_commands() -> ArgMatches {
         .required(true)
         .help("OpenID Connect client secret");
 
+    let folder_id_parameter = Arg::new(PARAMETER_FOLDER_ID)
+        .long(PARAMETER_ID)
+        .num_args(1)
+        .required(true)
+        .help("folder ID (positive integer)")
+        .value_parser(clap::value_parser!(u32));
+
     Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -102,7 +111,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .about("working with configuration")
                 .subcommand_required(true)
                 .subcommand(
-                    Command::new(COMMAND_SHOW)
+                    Command::new(COMMAND_GET)
                         .about("displays configuration")
                         .arg(format_parameter.clone())
                         .subcommand(Command::new(COMMAND_PATH).about("show the configuration path"))
@@ -142,11 +151,24 @@ pub fn create_cli_commands() -> ArgMatches {
                 ),
         )
         .subcommand(
+            // Folder
+            Command::new(COMMAND_FOLDER)
+                .about("individual folder operations")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_GET)
+                        .about("prints the folder details")
+                        .arg(tenant_parameter.clone())
+                        .arg(folder_id_parameter.clone())
+                        .arg(format_parameter.clone()),
+                ),
+        )
+        .subcommand(
             // Folders
             Command::new(COMMAND_FOLDERS)
                 .about("lists all folders")
                 .arg(tenant_parameter.clone())
-                .arg(format_parameter),
+                .arg(format_parameter.clone()),
         )
         .subcommand(
             // Login

@@ -1,20 +1,9 @@
 use std::time::Duration;
 
-use crate::{
-    configuration::TenantConfiguration,
-    model::FolderList,
-    security::{SecurityError, TenantSession},
-};
+use crate::{configuration::TenantConfiguration, security::TenantSession};
 use base64::{engine::general_purpose, Engine};
 use log::trace;
-use reqwest::{
-    self,
-    blocking::{
-        multipart::{Form, Part},
-        Client,
-    },
-    StatusCode,
-};
+use reqwest::{self, blocking::Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -286,6 +275,7 @@ impl PhysnaHttpClient {
             .request(reqwest::Method::GET, url)
             .timeout(Duration::from_secs(180))
             .header(reqwest::header::USER_AGENT, APP_USER_AGENT)
+            .header(reqwest::header::ACCEPT, "application/json")
             .header("X-PHYSNA-TENANTID", self.tenant_configuration.tenant_id());
 
         match query_parameters {
@@ -297,8 +287,11 @@ impl PhysnaHttpClient {
             None => (),
         }
 
-        let request = builder.bearer_auth(token).build()?;
+        let request = builder.bearer_auth(token.to_owned()).build()?;
+
         trace!("GET {}", request.url());
+        trace!("Headers: {:?}", request.headers());
+
         let response = self.client.execute(request)?;
 
         trace!("Status: {}", response.status());
@@ -306,7 +299,7 @@ impl PhysnaHttpClient {
         self.evaluate_satus(response.status())?;
 
         let content = response.text()?;
-        trace!("{}", content);
+        //trace!("{}", content);
         Ok(content)
     }
 
@@ -315,11 +308,15 @@ impl PhysnaHttpClient {
         session: &mut TenantSession,
     ) -> Result<Vec<Folder>, ClientError> {
         trace!("Reading list of folders...");
-        let url = format!("{}/v2/folders", self.tenant_configuration.api_url());
+        let url = format!("{}v2/folders", self.tenant_configuration.api_url());
 
-        let json = self.get(url.as_str(), session, None)?;
+        let params = vec![
+            (String::from("page"), String::from("1")),
+            (String::from("perPage"), String::from("20")),
+        ];
+        let json = self.get(url.as_str(), session, Some(params))?;
 
-        trace!("{}", json);
+        //trace!("{}", json);
         let response: FolderListResponse = serde_json::from_str(&json)?;
 
         Ok(response.folders)

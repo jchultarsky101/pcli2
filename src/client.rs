@@ -402,3 +402,19 @@ impl PhysnaHttpClient {
         Ok(FolderListResponse::from(folders))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create() {
+        let configuration = TenantConfiguration::new();
+        let client = PhysnaHttpClient::new(configuration);
+    }
+
+    #[test]
+    fn test_evaluate_status() {
+        use reqwest::StatusCode;
+    }
+}

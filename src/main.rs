@@ -34,11 +34,18 @@ impl From<ConfigurationError> for PcliError {
     }
 }
 
+/// Display errors in a human-readable format before exiting the application with an error code
+///
+/// # Arguments
+///
+/// * `message` - A string slice that holds the human-readable error message
+/// * `exitCode` - An exit code of type exitcode::ExitCode to be returned by the process
 fn exit_with_error(message: &str, code: exitcode::ExitCode) {
     eprintln!("ERROR: {}", message);
     ::std::process::exit(code);
 }
 
+/// Main entry point for the program
 fn main() -> Result<(), PcliError> {
     // initialize the log
     let _log_init_result = pretty_env_logger::try_init_timed();
@@ -51,7 +58,7 @@ fn main() -> Result<(), PcliError> {
         Some((COMMAND_CONFIG, sub_matches)) => match sub_matches.subcommand() {
             Some((COMMAND_SET, sub_matches)) => match sub_matches.subcommand() {
                 Some((COMMAND_TENANT, sub_matches)) => {
-                    let id = sub_matches.get_one::<String>(PARAMETER_ID).unwrap();
+                    let id = sub_matches.get_one::<String>(PARAMETER_ID).unwrap(); // unwraps here are safe, because the arguments is mandatory and it will caught by Clap before this point
                     let alias = sub_matches.get_one::<String>(PARAMETER_TENANT_ALIAS);
                     let api_url = sub_matches.get_one::<Url>(PARAMETER_API_URL).unwrap();
                     let oidc_url = sub_matches.get_one::<Url>(PARAMETER_OIDC_URL).unwrap();

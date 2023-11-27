@@ -16,3 +16,6 @@ Cargo.lock
 
 # profiler files
 *.profraw
+
+# Apple fluff
+**/.DS_Store

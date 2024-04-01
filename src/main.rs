@@ -2,21 +2,23 @@ use crate::format::{OutputFormat, OutputFormatter};
 use api::Api;
 use commands::{
     create_cli_commands, COMMAND_CONFIG, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER,
-    COMMAND_FOLDERS, COMMAND_GET, COMMAND_LOGIN, COMMAND_PATH, COMMAND_SET, COMMAND_TENANT,
-    PARAMETER_API_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FOLDER_ID,
-    PARAMETER_FORMAT, PARAMETER_ID, PARAMETER_OIDC_URL, PARAMETER_OUTPUT, PARAMETER_TENANT,
-    PARAMETER_TENANT_ALIAS,
+    COMMAND_FOLDERS, COMMAND_GET, COMMAND_LOGIN, COMMAND_LOGOFF, COMMAND_PATH, COMMAND_SET,
+    COMMAND_TENANT, PARAMETER_API_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET,
+    PARAMETER_FOLDER_ID, PARAMETER_FORMAT, PARAMETER_ID, PARAMETER_OIDC_URL, PARAMETER_OUTPUT,
+    PARAMETER_TENANT, PARAMETER_TENANT_ALIAS,
 };
 use configuration::{Configuration, ConfigurationError, TenantConfiguration};
-use pcli2::api::ApiError;
-use pcli2::commands::COMMAND_LOGOFF;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
 use url::Url;
 
-use pcli2::{api, commands, configuration, format};
+use pcli2::{
+    api::{self, ApiError},
+    cache::Cache,
+    commands, configuration, format,
+};
 
 #[derive(Error, Debug)]
 enum PcliError {
@@ -46,11 +48,13 @@ fn exit_with_error(message: &str, code: exitcode::ExitCode) {
 }
 
 /// Main entry point for the program
-fn main() -> Result<(), PcliError> {
+#[tokio::main]
+async fn main() -> Result<(), PcliError> {
     // initialize the log
     let _log_init_result = pretty_env_logger::try_init_timed();
     let configuration = RefCell::new(Configuration::load_default().unwrap_or_default());
-    let api = Api::new(&configuration);
+    let cache = RefCell::new(Cache::new(&configuration));
+    let api = Api::initialize(&configuration, &cache);
     let commands = create_cli_commands();
 
     match commands.subcommand() {
@@ -135,7 +139,7 @@ fn main() -> Result<(), PcliError> {
                 let format = OutputFormat::from_str(format).unwrap();
                 let folder_id = sub_matches.get_one::<u32>(PARAMETER_FOLDER_ID).unwrap();
 
-                let folder = api.get_folder(&tenant, folder_id, true);
+                let folder = api.get_folder(&tenant, folder_id, true).await;
 
                 match folder {
                     Ok(folder) => match folder.format(format) {
@@ -152,7 +156,7 @@ fn main() -> Result<(), PcliError> {
             let tenant = sub_matches.get_one::<String>(PARAMETER_TENANT).unwrap();
             let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
             let format = OutputFormat::from_str(format).unwrap();
-            let folders = api.get_list_of_folders(&tenant, true);
+            let folders = api.get_list_of_folders(&tenant, true, true).await;
 
             match folders {
                 Ok(folders) => match folders.format(format) {
@@ -165,7 +169,7 @@ fn main() -> Result<(), PcliError> {
         // Login
         Some((COMMAND_LOGIN, sub_matches)) => {
             let tenant = sub_matches.get_one::<String>(PARAMETER_TENANT).unwrap();
-            let _ = api.login(tenant)?;
+            let _ = api.login(tenant).await?;
         }
         // Logoff
         Some((COMMAND_LOGOFF, sub_matches)) => {

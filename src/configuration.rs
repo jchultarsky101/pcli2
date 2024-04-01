@@ -3,7 +3,7 @@ use crate::format::{
 };
 use crate::security::{Keyring, KeyringError, SECRET_KEY};
 use csv::Writer;
-use dirs::config_dir;
+use dirs::{config_dir, home_dir};
 use log::trace;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -242,12 +242,26 @@ impl TenantConfigurationBuilder {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Configuration {
     tenants: HashMap<String, TenantConfiguration>,
+    cache_path: Option<PathBuf>,
 }
 
 impl Default for Configuration {
     fn default() -> Self {
+        let home_directory = home_dir();
+        let home_directory = match home_directory {
+            Some(mut home_directory) => {
+                home_directory.push("pcli2.cache");
+                Some(home_directory.to_owned())
+            }
+            None => {
+                log::trace!("Home directory is None!");
+                None
+            }
+        };
+
         Self {
             tenants: HashMap::new(),
+            cache_path: home_directory,
         }
     }
 }
@@ -318,6 +332,14 @@ impl Configuration {
 
     pub fn load_default() -> Result<Configuration, ConfigurationError> {
         let default_file_path = Configuration::get_default_configuration_file_path()?;
+        log::debug!(
+            "Loading configuration from {}...",
+            default_file_path
+                .clone()
+                .into_os_string()
+                .into_string()
+                .unwrap()
+        );
         Configuration::load_from_file(default_file_path)
     }
 
@@ -433,6 +455,14 @@ impl Configuration {
     #[allow(dead_code)]
     pub fn get_all_tenant_aliases(&self) -> Vec<String> {
         self.tenants.keys().map(|k| k.to_string()).collect()
+    }
+
+    pub fn get_cache_path(&self) -> Option<PathBuf> {
+        self.cache_path.to_owned()
+    }
+
+    pub fn set_cache_path(&mut self, path: Option<PathBuf>) {
+        self.cache_path = path;
     }
 }
 

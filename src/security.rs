@@ -110,14 +110,14 @@ impl TenantSession {
         }
     }
 
-    fn force_login(
+    async fn force_login(
         client: PhysnaHttpClient,
         tenant_config: TenantConfiguration,
     ) -> Result<TenantSession, SecurityError> {
         trace!("Logging in...");
         match Keyring::default().get(&tenant_config.tenant_id(), String::from(SECRET_KEY))? {
             Some(secret) => {
-                let response = client.request_new_token_from_provider(secret);
+                let response = client.request_new_token_from_provider(secret).await;
                 match response {
                     Ok(token) => {
                         Self::save_token_to_keyring(&tenant_config.tenant_id(), &token)?;
@@ -132,7 +132,7 @@ impl TenantSession {
 
     /// Creates a new API session
     ///
-    pub fn login(tenant_config: TenantConfiguration) -> Result<TenantSession, SecurityError> {
+    pub async fn login(tenant_config: TenantConfiguration) -> Result<TenantSession, SecurityError> {
         let tenant = tenant_config.tenant_id();
         trace!("Attemting to login for tenant \"{}\"...", &tenant);
 
@@ -146,10 +146,10 @@ impl TenantSession {
                         trace!("The existing token is still valid.");
                         Ok(TenantSession { token: Some(token) })
                     }
-                    Err(_) => Self::force_login(client, tenant_config),
+                    Err(_) => Self::force_login(client, tenant_config).await,
                 }
             }
-            None => Self::force_login(client, tenant_config),
+            None => Self::force_login(client, tenant_config).await,
         }
     }
 

@@ -1,6 +1,7 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, marker::PhantomData};
 
 use crate::{
+    cache::{Cache, CacheError},
     client::{self, PhysnaHttpClient},
     configuration::{Configuration, ConfigurationError},
     model::{Folder, FolderList},
@@ -24,6 +25,8 @@ pub enum ApiError {
         #[from]
         cause: SecurityError,
     },
+    #[error("caching error")]
+    CachingError(#[from] CacheError),
     #[error("invalid tenant {0}")]
     InvalidTenant(String),
     #[error("http error: {0}")]
@@ -33,27 +36,36 @@ pub enum ApiError {
     UnsupportedOperation,
 }
 
+pub struct ApiUninitialized {}
+pub struct ApiInitialized {}
+
 /// Physna API client
 ///
-pub struct Api {
+pub struct Api<State = ApiUninitialized> {
     configuration: RefCell<Configuration>,
+    cache: RefCell<Cache>,
+    state: PhantomData<State>,
 }
 
-impl Api {
-    /// Creates a new instance of the API
-    ///
-    ///
-    pub fn new(configuration: &RefCell<Configuration>) -> Api {
+impl Api<ApiUninitialized> {
+    pub fn initialize(
+        configuration: &RefCell<Configuration>,
+        cache: &RefCell<Cache>,
+    ) -> Api<ApiInitialized> {
         Api {
             configuration: configuration.clone(),
+            cache: cache.clone(),
+            state: PhantomData::<ApiInitialized>,
         }
     }
+}
 
-    pub fn login(&self, tenant_id: &String) -> Result<TenantSession, ApiError> {
+impl Api<ApiInitialized> {
+    pub async fn login(&self, tenant_id: &String) -> Result<TenantSession, ApiError> {
         let tenant_configuration = &self.configuration.borrow().tenant(tenant_id);
         match tenant_configuration {
             Some(tenant_configuration) => {
-                let session = TenantSession::login(tenant_configuration.to_owned())?;
+                let session = TenantSession::login(tenant_configuration.to_owned()).await?;
                 Ok(session)
             }
             None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),
@@ -73,26 +85,36 @@ impl Api {
 
     /// Returns the list of folders currently available for the specified tenant
     ///
-    pub fn get_list_of_folders(
+    pub async fn get_list_of_folders(
         &self,
         tenant_id: &String,
         retry: bool,
+        use_cache: bool,
     ) -> Result<FolderList, ApiError> {
         trace!("Listing all folders for tenant \"{}\"...", tenant_id);
+
+        if use_cache {
+            let cached_folders = self.cache.borrow().get_folders(tenant_id).await;
+            if cached_folders.is_some() {
+                return Ok(cached_folders.unwrap());
+            }
+        }
 
         let tenant_configuration = self.configuration.borrow().tenant(tenant_id);
         match tenant_configuration {
             Some(tenant_configuration) => {
-                let mut session = TenantSession::login(tenant_configuration.to_owned())?;
+                let mut session = TenantSession::login(tenant_configuration.to_owned()).await?;
                 let client = PhysnaHttpClient::new(tenant_configuration)?;
-                let response = client.get_list_of_folders(&mut session);
+                let response = client.get_list_of_folders(&mut session).await;
                 let response = match response {
                     Ok(response) => response,
                     Err(e) => match e {
                         client::ClientError::Unauthorized => {
                             if retry {
+                                // retry if so specified
                                 self.logoff(tenant_id)?;
-                                return self.get_list_of_folders(tenant_id, false);
+
+                                client.get_list_of_folders(&mut session).await?
                             } else {
                                 return Err(ApiError::from(e));
                             }
@@ -103,6 +125,13 @@ impl Api {
 
                 // convert the HTTP response object to model object
                 let folders = response.to_folder_list();
+
+                if use_cache {
+                    self.cache
+                        .borrow()
+                        .save_folders(tenant_id, &folders)
+                        .await?;
+                }
                 Ok(folders)
             }
             None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),
@@ -111,7 +140,7 @@ impl Api {
 
     /// Returns the list of folders currently available for the specified tenant
     ///
-    pub fn get_folder(
+    pub async fn get_folder(
         &self,
         tenant_id: &String,
         folder_id: &u32,
@@ -126,16 +155,17 @@ impl Api {
         let tenant_configuration = self.configuration.borrow().tenant(tenant_id);
         match tenant_configuration {
             Some(tenant_configuration) => {
-                let mut session = TenantSession::login(tenant_configuration.to_owned())?;
+                let mut session = TenantSession::login(tenant_configuration.to_owned()).await?;
                 let client = PhysnaHttpClient::new(tenant_configuration)?;
-                let response = client.get_folder(&mut session, folder_id);
+                let response = client.get_folder(&mut session, folder_id).await;
                 let response = match response {
                     Ok(response) => response,
                     Err(e) => match e {
                         client::ClientError::Unauthorized => {
                             if retry {
                                 self.logoff(tenant_id)?;
-                                return self.get_folder(tenant_id, folder_id, false);
+
+                                client.get_folder(&mut session, folder_id).await?
                             } else {
                                 return Err(ApiError::from(e));
                             }

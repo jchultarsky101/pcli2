@@ -7,7 +7,7 @@ use crate::{
 };
 use base64::{engine::general_purpose, Engine};
 use log::trace;
-use reqwest::{self, blocking::Client, StatusCode};
+use reqwest::{self, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -120,7 +120,7 @@ pub struct PhysnaHttpClient {
 
 impl PhysnaHttpClient {
     pub fn new(tenant_configuration: TenantConfiguration) -> Result<PhysnaHttpClient, ClientError> {
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(180))
             .build()
             .unwrap();
@@ -209,7 +209,7 @@ impl PhysnaHttpClient {
         Ok(())
     }
 
-    pub fn request_new_token_from_provider(
+    pub async fn request_new_token_from_provider(
         &self,
         client_secret: String,
     ) -> Result<String, ClientError> {
@@ -267,7 +267,7 @@ impl PhysnaHttpClient {
 
         // Create the HTTP client instance
         //let client = reqwest::Client::new();
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(20))
             .build()?;
 
@@ -277,14 +277,15 @@ impl PhysnaHttpClient {
             .header("Authorization", authorization_header_value.as_str())
             .header("cache-control", "no-cache")
             .form(&params)
-            .send();
+            .send()
+            .await;
 
         match response {
             Ok(response) => {
                 let status = response.status();
 
                 if status == StatusCode::OK {
-                    let response_text = response.text();
+                    let response_text = response.text().await;
                     match response_text {
                         Ok(response_text) => {
                             let response: AuthenticationResponse =
@@ -302,7 +303,7 @@ impl PhysnaHttpClient {
         }
     }
 
-    fn get(
+    async fn get(
         &self,
         url: &str,
         session: &mut TenantSession,
@@ -310,7 +311,7 @@ impl PhysnaHttpClient {
     ) -> Result<String, ClientError> {
         let token = match session.token() {
             Some(token) => token,
-            None => match TenantSession::login(self.tenant_configuration.clone()) {
+            None => match TenantSession::login(self.tenant_configuration.clone()).await {
                 Ok(new_session) => match new_session.token() {
                     Some(token) => {
                         session.set_token(token.clone());
@@ -344,18 +345,18 @@ impl PhysnaHttpClient {
         trace!("GET {}", request.url());
         trace!("Headers: {:?}", request.headers());
 
-        let response = self.client.execute(request)?;
+        let response = self.client.execute(request).await?;
 
         trace!("Status: {}", response.status());
 
         self.evaluate_satus(response.status())?;
 
-        let content = response.text()?;
+        let content = response.text().await?;
         trace!("{}", content);
         Ok(content)
     }
 
-    pub fn get_folder(
+    pub async fn get_folder(
         &self,
         session: &mut TenantSession,
         folder_id: &u32,
@@ -367,13 +368,18 @@ impl PhysnaHttpClient {
             folder_id
         );
 
-        let json = self.get(url.as_str(), session, None)?;
+        let json = self.get(url.as_str(), session, None).await?;
         //trace!("{}", json);
         let response: FolderContainerResponse = serde_json::from_str(&json)?;
         Ok(response.folder)
     }
 
-    pub fn get_list_of_folders(
+    /// Returns the list of folders for the tenant
+    ///
+    /// # Arguments
+    ///
+    /// * `session` - the tenant sesson
+    pub async fn get_list_of_folders(
         &self,
         session: &mut TenantSession,
     ) -> Result<FolderListResponse, ClientError> {
@@ -390,7 +396,7 @@ impl PhysnaHttpClient {
                 (String::from("page"), page.to_string()),
                 (String::from("perPage"), DEFAULT_PAGE_SIZE.to_string()),
             ];
-            let json = self.get(url.as_str(), session, Some(params))?;
+            let json = self.get(url.as_str(), session, Some(params)).await?;
 
             //trace!("{}", json);
             let mut response: FolderListResponse = serde_json::from_str(&json)?;
@@ -400,21 +406,5 @@ impl PhysnaHttpClient {
         }
 
         Ok(FolderListResponse::from(folders))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_create() {
-        let configuration = TenantConfiguration::new();
-        let client = PhysnaHttpClient::new(configuration);
-    }
-
-    #[test]
-    fn test_evaluate_status() {
-        use reqwest::StatusCode;
     }
 }

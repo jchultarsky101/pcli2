@@ -2,8 +2,8 @@ use super::configuration::TenantConfiguration;
 use crate::client::*;
 use jsonwebtoken::decode_header;
 use keyring::Entry;
-use log::{error, trace};
 use thiserror::Error;
+use tracing::{error, trace};
 
 pub const SECRET_KEY: &str = "secret";
 const TOKEN_KEY: &str = "token";

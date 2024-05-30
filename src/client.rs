@@ -6,10 +6,10 @@ use crate::{
     security::TenantSession,
 };
 use base64::{engine::general_purpose, Engine};
-use log::trace;
 use reqwest::{self, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::trace;
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 static DEFAULT_PAGE_SIZE: usize = 100;

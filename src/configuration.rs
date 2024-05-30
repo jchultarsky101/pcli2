@@ -4,7 +4,6 @@ use crate::format::{
 use crate::security::{Keyring, KeyringError, SECRET_KEY};
 use csv::Writer;
 use dirs::{config_dir, home_dir};
-use log::trace;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use serde_yaml;
@@ -14,6 +13,7 @@ use std::{
     io::{BufWriter, Write},
     path::PathBuf,
 };
+use tracing::{debug, trace};
 use url::Url;
 
 pub const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
@@ -254,7 +254,7 @@ impl Default for Configuration {
                 Some(home_directory.to_owned())
             }
             None => {
-                log::trace!("Home directory is None!");
+                trace!("Home directory is None!");
                 None
             }
         };
@@ -332,7 +332,7 @@ impl Configuration {
 
     pub fn load_default() -> Result<Configuration, ConfigurationError> {
         let default_file_path = Configuration::get_default_configuration_file_path()?;
-        log::debug!(
+        debug!(
             "Loading configuration from {}...",
             default_file_path
                 .clone()

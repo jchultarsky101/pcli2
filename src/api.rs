@@ -1,13 +1,12 @@
 use std::{cell::RefCell, marker::PhantomData};
 
 use crate::{
-    cache::{Cache, CacheError},
     client::{self, PhysnaHttpClient},
     configuration::{Configuration, ConfigurationError},
     model::{Folder, FolderList},
     security::{SecurityError, TenantSession},
 };
-use log::trace;
+use tracing::trace;
 
 /// Error emmitted by the Api
 ///
@@ -25,8 +24,6 @@ pub enum ApiError {
         #[from]
         cause: SecurityError,
     },
-    #[error("caching error")]
-    CachingError(#[from] CacheError),
     #[error("invalid tenant {0}")]
     InvalidTenant(String),
     #[error("http error: {0}")]
@@ -43,18 +40,13 @@ pub struct ApiInitialized {}
 ///
 pub struct Api<State = ApiUninitialized> {
     configuration: RefCell<Configuration>,
-    cache: RefCell<Cache>,
     state: PhantomData<State>,
 }
 
 impl Api<ApiUninitialized> {
-    pub fn initialize(
-        configuration: &RefCell<Configuration>,
-        cache: &RefCell<Cache>,
-    ) -> Api<ApiInitialized> {
+    pub fn initialize(configuration: &RefCell<Configuration>) -> Api<ApiInitialized> {
         Api {
             configuration: configuration.clone(),
-            cache: cache.clone(),
             state: PhantomData::<ApiInitialized>,
         }
     }
@@ -89,16 +81,8 @@ impl Api<ApiInitialized> {
         &self,
         tenant_id: &String,
         retry: bool,
-        use_cache: bool,
     ) -> Result<FolderList, ApiError> {
         trace!("Listing all folders for tenant \"{}\"...", tenant_id);
-
-        if use_cache {
-            let cached_folders = self.cache.borrow().get_folders(tenant_id).await;
-            if cached_folders.is_some() {
-                return Ok(cached_folders.unwrap());
-            }
-        }
 
         let tenant_configuration = self.configuration.borrow().tenant(tenant_id);
         match tenant_configuration {
@@ -126,12 +110,6 @@ impl Api<ApiInitialized> {
                 // convert the HTTP response object to model object
                 let folders = response.to_folder_list();
 
-                if use_cache {
-                    self.cache
-                        .borrow()
-                        .save_folders(tenant_id, &folders)
-                        .await?;
-                }
                 Ok(folders)
             }
             None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),

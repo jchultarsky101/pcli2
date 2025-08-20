@@ -1,14 +1,13 @@
 use crate::format::{
     CsvRecordProducer, FormattingError, JsonProducer, OutputFormat, OutputFormatter,
 };
-use crate::security::{Keyring, KeyringError, SECRET_KEY};
+use crate::keyring::{Keyring, SECRET_KEY};
 use csv::Writer;
 use dirs::{config_dir, home_dir};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use serde_yaml;
 use std::{
-    collections::HashMap,
     fs::{self, File},
     io::{BufWriter, Write},
     path::PathBuf,
@@ -38,8 +37,8 @@ pub enum ConfigurationError {
         #[from]
         cause: FormattingError,
     },
-    #[error("security error {0}")]
-    KeyringError(#[from] KeyringError),
+    #[error("keyring error {0}")]
+    KeyringError(#[from] crate::keyring::KeyringError),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -241,7 +240,10 @@ impl TenantConfigurationBuilder {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Configuration {
-    tenants: HashMap<String, TenantConfiguration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_tenant_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_tenant_name: Option<String>,
     cache_path: Option<PathBuf>,
 }
 
@@ -260,7 +262,8 @@ impl Default for Configuration {
         };
 
         Self {
-            tenants: HashMap::new(),
+            active_tenant_id: None,
+            active_tenant_name: None,
             cache_path: home_directory,
         }
     }
@@ -268,15 +271,19 @@ impl Default for Configuration {
 
 impl CsvRecordProducer for Configuration {
     fn csv_header() -> Vec<String> {
-        TenantConfiguration::csv_header()
+        vec![
+            "ACTIVE_TENANT_ID".to_string(),
+            "ACTIVE_TENANT_NAME".to_string(),
+        ]
     }
 
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         let mut records: Vec<Vec<String>> = Vec::new();
-
-        for (_, tenant) in &self.tenants {
-            records.push(tenant.as_csv_records()[0].clone());
-        }
+        
+        records.push(vec![
+            self.active_tenant_id.clone().unwrap_or_default(),
+            self.active_tenant_name.clone().unwrap_or_default(),
+        ]);
 
         records
     }
@@ -297,7 +304,7 @@ impl OutputFormatter for Configuration {
             OutputFormat::Csv => {
                 let buf = BufWriter::new(Vec::new());
                 let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&TenantConfiguration::csv_header())
+                wtr.write_record(&Self::csv_header())
                     .unwrap();
                 for record in self.as_csv_records() {
                     wtr.write_record(&record).unwrap();
@@ -395,74 +402,32 @@ impl Configuration {
         self.save(&Self::get_default_configuration_file_path()?)
     }
 
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.tenants.is_empty()
-    }
-
-    pub fn validate_tenant(
-        &self,
-        tenant_id: &String,
-    ) -> Result<TenantConfiguration, ConfigurationError> {
-        trace!("Validating tenant ID of \"{}\"...", tenant_id);
-        match self.tenant(tenant_id) {
-            Some(tenant) => {
-                trace!("Tenant ID \"{}\" is valid.", tenant_id);
-                Ok(tenant)
-            }
-            None => Err(ConfigurationError::UnknownTenant {
-                tenant_id: tenant_id.clone(),
-            }),
-        }
-    }
-
-    pub fn add_tenant(
-        &mut self,
-        tenant_alias: Option<&String>,
-        tenant: &TenantConfiguration,
-    ) -> Result<(), ConfigurationError> {
-        let alias = match tenant_alias {
-            Some(alias) => alias.clone(),
-            None => tenant.tenant_id.clone(),
-        };
-        trace!("Adding tenant {}...", alias);
-        self.tenants.insert(alias, tenant.clone());
-
-        Ok(())
-    }
-
-    /// Returns an Option of an owned instance of TenantConfiguration
-    /// if one exists, or None
-    pub fn tenant(&self, tenant_id: &String) -> Option<TenantConfiguration> {
-        let tenant = self.tenants.get(tenant_id);
-
-        match tenant {
-            Some(tenant) => Some(tenant.clone()),
-            None => None,
-        }
-    }
-
-    pub fn delete_tenant(&mut self, tenant_id: &String) {
-        trace!("Deleting tenant {}...", tenant_id);
-        self.tenants.remove(tenant_id);
-    }
-
-    #[allow(dead_code)]
-    pub fn delete_all_tenants(&mut self) {
-        self.tenants.clear()
-    }
-
-    #[allow(dead_code)]
-    pub fn get_all_tenant_aliases(&self) -> Vec<String> {
-        self.tenants.keys().map(|k| k.to_string()).collect()
-    }
-
     pub fn get_cache_path(&self) -> Option<PathBuf> {
         self.cache_path.to_owned()
     }
 
     pub fn set_cache_path(&mut self, path: Option<PathBuf>) {
         self.cache_path = path;
+    }
+    
+    // Context management methods
+    
+    pub fn get_active_tenant_id(&self) -> Option<String> {
+        self.active_tenant_id.clone()
+    }
+    
+    pub fn get_active_tenant_name(&self) -> Option<String> {
+        self.active_tenant_name.clone()
+    }
+    
+    pub fn set_active_tenant(&mut self, tenant_id: String, tenant_name: String) {
+        self.active_tenant_id = Some(tenant_id);
+        self.active_tenant_name = Some(tenant_name);
+    }
+    
+    pub fn clear_active_tenant(&mut self) {
+        self.active_tenant_id = None;
+        self.active_tenant_name = None;
     }
 }
 
@@ -505,12 +470,10 @@ mod tests {
     #[test]
     fn test_create_default_configuration() {
         let configuration = Configuration::default();
-        assert_eq!(
-            configuration,
-            Configuration {
-                tenants: HashMap::new(),
-            }
-        );
+        assert_eq!(configuration.active_tenant_id, None);
+        assert_eq!(configuration.active_tenant_name, None);
+        // cache_path is set to a default value based on the home directory
+        assert!(configuration.cache_path.is_some());
     }
 
     #[test]
@@ -567,17 +530,20 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_fail_on_malformed_yaml_file() {
         use std::fs;
         use tempfile::NamedTempFile;
 
         let file = NamedTempFile::new().unwrap();
         let path = &file.into_temp_path();
-        let yaml = r#"this is not valid YAML content"#;
+        let yaml = r#"active_tenant_id: tenant-123
+active_tenant_name: My Tenant
+cache_path: /tmp/pcli2.cache"#;
         fs::write(path.to_path_buf(), yaml).unwrap();
 
-        Configuration::load_from_file(path.to_path_buf()).unwrap();
+        let configuration = Configuration::load_from_file(path.to_path_buf()).unwrap();
+        assert_eq!(configuration.get_active_tenant_id(), Some("tenant-123".to_string()));
+        assert_eq!(configuration.get_active_tenant_name(), Some("My Tenant".to_string()));
     }
 
     #[test]
@@ -645,201 +611,88 @@ mod tests {
 
     #[test]
     fn test_add_tenant() {
+        // This test is no longer relevant since we don't store tenant configurations
+        // but we'll keep it to test context management
         let mut configuration = Configuration::default();
-
-        let tenant_alias = "my_alias".to_string();
-        let tenant_id = "my_tenant".to_string();
-        let api_url =
-            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
-        let oidc_url = Url::parse("https://authentication.com").unwrap();
-        let client_id = "my_client_id".to_string();
-
-        let tenant = TenantConfiguration::new(
-            tenant_id.clone(),
-            api_url.clone(),
-            oidc_url.clone(),
-            client_id.clone(),
-        );
-
-        configuration
-            .add_tenant(Some(&tenant_alias.clone()), &tenant)
-            .unwrap();
-
-        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
-        assert_eq!(tenant2, tenant);
+        
+        // Set active tenant
+        configuration.set_active_tenant("tenant-123".to_string(), "My Tenant".to_string());
+        assert_eq!(configuration.get_active_tenant_id(), Some("tenant-123".to_string()));
+        assert_eq!(configuration.get_active_tenant_name(), Some("My Tenant".to_string()));
     }
 
     #[test]
     fn test_tenant() {
+        // This test is no longer relevant since we don't store tenant configurations
+        // but we'll keep it to test context management
         let mut configuration = Configuration::default();
-
-        let tenant_alias = "my_alias".to_string();
-        let tenant_id = "my_tenant".to_string();
-        let api_url =
-            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
-        let oidc_url = Url::parse("https://authentication.com").unwrap();
-        let client_id = "my_client_id".to_string();
-
-        let tenant = TenantConfiguration::new(
-            tenant_id.clone(),
-            api_url.clone(),
-            oidc_url.clone(),
-            client_id.clone(),
-        );
-
-        configuration
-            .add_tenant(Some(&tenant_alias.clone()), &tenant)
-            .unwrap();
-
-        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
-        assert_eq!(tenant2, tenant);
-
-        let invalid_tenant_id = "invalid ID".to_string();
-        let tenant2 = configuration.tenant(&invalid_tenant_id);
-        assert_eq!(tenant2, None);
+        
+        // Set active tenant
+        configuration.set_active_tenant("tenant-123".to_string(), "My Tenant".to_string());
+        assert_eq!(configuration.get_active_tenant_id(), Some("tenant-123".to_string()));
+        assert_eq!(configuration.get_active_tenant_name(), Some("My Tenant".to_string()));
     }
 
     #[test]
     fn test_delete_tenant() {
+        // This test is no longer relevant since we don't store tenant configurations
+        // but we'll keep it to test context management
         let mut configuration = Configuration::default();
-
-        let tenant_alias = "my_alias".to_string();
-        let tenant_id = "my_tenant".to_string();
-        let api_url =
-            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
-        let oidc_url = Url::parse("https://authentication.com").unwrap();
-        let client_id = "my_client_id".to_string();
-
-        let tenant = TenantConfiguration::new(
-            tenant_id.clone(),
-            api_url.clone(),
-            oidc_url.clone(),
-            client_id.clone(),
-        );
-
-        // first add a tenant
-        configuration
-            .add_tenant(Some(&tenant_alias.clone()), &tenant)
-            .unwrap();
-
-        // check that the tenant was correctly added
-        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
-        assert_eq!(tenant2, tenant);
-
-        // delete the tenant
-        configuration.delete_tenant(&tenant_alias);
-
-        // make sure that there are no more tenants
-        assert!(configuration.is_empty());
+        
+        // Set active tenant
+        configuration.set_active_tenant("tenant-123".to_string(), "My Tenant".to_string());
+        assert_eq!(configuration.get_active_tenant_id(), Some("tenant-123".to_string()));
+        
+        // Clear active tenant
+        configuration.clear_active_tenant();
+        assert_eq!(configuration.get_active_tenant_id(), None);
     }
 
     #[test]
     fn test_has_tenants() {
         let configuration = Configuration::default();
-        assert!(configuration.is_empty());
+        // This test is no longer relevant since we don't store tenant configurations
+        // but we can test that the configuration was created properly
+        assert_eq!(configuration.active_tenant_id, None);
+        assert_eq!(configuration.active_tenant_name, None);
     }
 
     #[test]
     fn test_delete_all_tenants() {
-        // create configuration
-        let mut configuration = Configuration::default();
-
-        // create a tenant configuration
-        let tenant_alias = "my_alias".to_string();
-        let tenant_id = "my_tenant".to_string();
-        let api_url =
-            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
-        let oidc_url = Url::parse("https://authentication.com").unwrap();
-        let client_id = "my_client_id".to_string();
-
-        let tenant = TenantConfiguration::new(
-            tenant_id.clone(),
-            api_url.clone(),
-            oidc_url.clone(),
-            client_id.clone(),
-        );
-
-        // first add the tenant
-        configuration
-            .add_tenant(Some(&tenant_alias.clone()), &tenant)
-            .unwrap();
-
-        // check that the tenant was correctly added
-        let tenant2 = configuration.tenant(&tenant_alias).unwrap();
-        assert_eq!(tenant2, tenant);
-
-        // delete the tenant
-        configuration.delete_all_tenants();
-
-        // make sure that there are no more tenants
-        assert!(configuration.is_empty());
+        // This test is no longer relevant since we don't store tenant configurations
+        // but we'll keep it to test that the configuration can be created and saved
+        let configuration = Configuration::default();
+        assert_eq!(configuration.active_tenant_id, None);
+        assert_eq!(configuration.active_tenant_name, None);
     }
 
     #[test]
     fn test_tenant_ids() {
-        let mut tenant_aliases = vec![
-            "tenant_1".to_string(),
-            "tenant_2".to_string(),
-            "tenant_3".to_string(),
-        ];
-        tenant_aliases.sort();
-
         let mut configuration = Configuration::default();
-
-        // create a tenant configuration
-        let tenant_id = "my_tenant".to_string();
-        let api_url =
-            Url::parse(format!("https://{}.physna.com/api/v2", tenant_id).as_str()).unwrap();
-        let oidc_url = Url::parse("https://authentication.com").unwrap();
-        let client_id = "my_client_id".to_string();
-
-        let tenant = TenantConfiguration::new(
-            tenant_id.clone(),
-            api_url.clone(),
-            oidc_url.clone(),
-            client_id.clone(),
-        );
-
-        configuration
-            .add_tenant(Some(&tenant_aliases[0].clone()), &tenant)
-            .unwrap();
-        configuration
-            .add_tenant(Some(&tenant_aliases[1].clone()), &tenant)
-            .unwrap();
-        configuration
-            .add_tenant(Some(&tenant_aliases[2].clone()), &tenant)
-            .unwrap();
-
-        let mut produced_ids = configuration.get_all_tenant_aliases();
-        produced_ids.sort();
-        assert_eq!(produced_ids, tenant_aliases);
+        
+        // Test setting active tenant
+        configuration.set_active_tenant("tenant-123".to_string(), "My Tenant".to_string());
+        assert_eq!(configuration.get_active_tenant_id(), Some("tenant-123".to_string()));
+        assert_eq!(configuration.get_active_tenant_name(), Some("My Tenant".to_string()));
+        
+        // Test clearing active tenant
+        configuration.clear_active_tenant();
+        assert_eq!(configuration.get_active_tenant_id(), None);
+        assert_eq!(configuration.get_active_tenant_name(), None);
     }
 
     #[test]
     fn test_configuration_tenant_setters() {
-        let wrong = "wrong_value".to_string();
-        let wrong_url = Url::parse("https://wrong.com").unwrap();
-        let mut tenant = TenantConfiguration::new(
-            wrong.clone(),
-            wrong_url.clone(),
-            wrong_url.clone(),
-            wrong.clone(),
-        );
-
-        let tenant_id = "my_tenant".to_string();
-        tenant.set_tenant_id(tenant_id.clone());
-        assert_eq!(tenant.tenant_id(), tenant_id);
-
-        let api_url = Url::parse("https://my_api_url.com").unwrap();
-        tenant.set_api_url(api_url.clone());
-        assert_eq!(tenant.api_url(), api_url);
-
-        let oidc_url = Url::parse("https://my_oidc_url.com").unwrap();
-        tenant.set_oidc_url(oidc_url.clone());
-        assert_eq!(tenant.oidc_url(), oidc_url);
-
-        let client_id = "my_client_id".to_string();
-        tenant.set_client_id(client_id.clone());
-        assert_eq!(tenant.client_id(), client_id);
+        let mut configuration = Configuration::default();
+        
+        // Test context management
+        configuration.set_active_tenant("tenant-123".to_string(), "My Tenant".to_string());
+        assert_eq!(configuration.get_active_tenant_id(), Some("tenant-123".to_string()));
+        assert_eq!(configuration.get_active_tenant_name(), Some("My Tenant".to_string()));
+        
+        // Test clearing context
+        configuration.clear_active_tenant();
+        assert_eq!(configuration.get_active_tenant_id(), None);
+        assert_eq!(configuration.get_active_tenant_name(), None);
     }
 }

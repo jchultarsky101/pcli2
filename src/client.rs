@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::{
     configuration::TenantConfiguration,
     model::{Folder, FolderList},
-    security::TenantSession,
+    keyring::TenantSession,
 };
 use base64::{engine::general_purpose, Engine};
 use reqwest::{self, Client, StatusCode};
@@ -232,26 +232,6 @@ impl PhysnaHttpClient {
         if client_secret.is_empty() {
             return Err(ClientError::InvalidClientSecret);
         }
-
-        // 0. Encode Base64: clientId + ":" + clientSecret
-        // 1. Set the headers
-        // "Authorization", "Basic " + encodedCredentials
-        // "cache-control", "no-cache"
-        // "scope", "tenantApp"
-        // 2. Prepare multi value request body:
-        // "grant_type", "client_credentials"
-        // "scope", "tenantApp"
-        // 3. POST to the provider URL
-
-        // Example:
-        /*
-            curl --request POST --url https://physna.okta.com/oauth2/default/v1/token \
-            --header 'accept: application/json' \
-            --header 'authorization: Basic MG9h...' \
-            --header 'cache-control: no-cache' \
-            --header 'content-type: application/x-www-form-urlencoded' \
-            --data 'grant_type=client_credentials&scope=tenantApp roles'
-        */
 
         let combined_credentials = [client_id.clone(), client_secret.clone()]
             .join(":")

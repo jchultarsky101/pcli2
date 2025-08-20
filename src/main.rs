@@ -4,7 +4,6 @@ use pcli2::{
     api::{self, ApiError},
     commands, configuration, format,
 };
-use std::cell::RefCell;
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
@@ -13,20 +12,12 @@ use cli::{execute_command, CliError};
 
 #[derive(Error, Debug)]
 enum PcliError {
-    #[error("configuration error")]
-    ConfigurationError { message: String },
-    #[error("API error")]
+    #[error(transparent)]
+    ConfigurationError(#[from] ConfigurationError),
+    #[error(transparent)]
     ApiError(#[from] ApiError),
-    #[error("CLI Error")]
+    #[error(transparent)]
     CliError(#[from] CliError),
-}
-
-impl From<ConfigurationError> for PcliError {
-    fn from(error: ConfigurationError) -> PcliError {
-        PcliError::ConfigurationError {
-            message: format!("{}", error.to_string()),
-        }
-    }
 }
 
 /// Main entry point for the program
@@ -38,16 +29,17 @@ async fn main() -> Result<(), PcliError> {
         .init();
 
     // Get the configuration
-    let configuration = RefCell::new(Configuration::load_default().unwrap_or_default());
+    let configuration = Configuration::load_default()?;
 
     // Create an API client
-    let api = RefCell::new(Api::initialize(&configuration));
+    let configuration_ref = std::cell::RefCell::new(configuration.clone());
+    let api = Api::initialize(&configuration_ref);
 
     // Parse and execute the CLI command
     match execute_command(configuration, api).await {
         Ok(()) => Ok(()),
         Err(e) => {
-            eprintln!("ERROR[]: {}", e.to_string());
+            eprintln!("ERROR: {}", e.to_string());
             ::std::process::exit(exitcode::DATAERR);
         }
     }

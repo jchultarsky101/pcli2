@@ -229,6 +229,97 @@ impl OutputFormatter for FolderList {
     }
 }
 
+// New models for Physna V3 API
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TenantSetting {
+    #[serde(rename = "tenantId")]
+    pub tenant_id: String,
+    #[serde(rename = "tenantRole")]
+    pub tenant_role: String,
+    #[serde(rename = "userEnabled")]
+    pub user_enabled: bool,
+    #[serde(rename = "tenantDisplayName")]
+    pub tenant_display_name: String,
+    #[serde(rename = "tenantShortName")]
+    pub tenant_short_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct User {
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    pub settings: Vec<TenantSetting>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CurrentUserResponse {
+    pub user: User,
+}
+
+impl CurrentUserResponse {
+    pub fn get_tenant_by_name(&self, name: &str) -> Option<&TenantSetting> {
+        self.user.settings.iter().find(|setting| {
+            setting.tenant_display_name == name || setting.tenant_short_name == name
+        })
+    }
+    
+    pub fn get_tenant_by_id(&self, id: &str) -> Option<&TenantSetting> {
+        self.user.settings.iter().find(|setting| setting.tenant_id == id)
+    }
+}
+
+// Folder models for Physna V3 API
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderResponse {
+    pub id: u32,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "ownerId")]
+    pub owner_id: Option<String>,
+    pub name: String,
+}
+
+impl FolderResponse {
+    pub fn to_folder(&self) -> Folder {
+        Folder::new(self.id, self.name.clone())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderListResponse {
+    pub folders: Vec<FolderResponse>,
+    #[serde(rename = "pageData")]
+    pub page_data: PageData,
+}
+
+impl FolderListResponse {
+    pub fn to_folder_list(&self) -> FolderList {
+        let mut folder_list = FolderList::empty();
+        for folder_response in &self.folders {
+            let folder = folder_response.to_folder();
+            folder_list.insert(folder);
+        }
+        folder_list
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageData {
+    pub total: usize,
+    #[serde(rename = "perPage")]
+    pub per_page: usize,
+    #[serde(rename = "currentPage")]
+    pub current_page: usize,
+    #[serde(rename = "lastPage")]
+    pub last_page: usize,
+    #[serde(rename = "startIndex")]
+    pub start_index: usize,
+    #[serde(rename = "endIndex")]
+    pub end_index: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

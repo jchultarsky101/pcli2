@@ -9,26 +9,27 @@ pub const SECRET_KEY: &str = "secret";
 const TOKEN_KEY: &str = "token";
 
 #[derive(Debug, Error)]
-pub enum SecurityError {
+pub enum KeyringError {
     #[error("access denied")]
     AccessDenied,
     #[error("invalid credential")]
     InvalidCredentials,
     #[error("keyring error")]
-    KeyrinError(#[from] KeyringError),
+    KeyringAccessError(#[from] KeyringErrorInternal),
     #[error("failed to decode token")]
     FailedToDecodeToken,
-    #[error("securiy error")]
-    ConfigurationError {
-        #[from]
-        cause: crate::configuration::ConfigurationError,
-    },
     #[error("client error")]
     RequestError(#[from] ClientError),
 }
 
+impl From<keyring::Error> for KeyringError {
+    fn from(error: keyring::Error) -> Self {
+        KeyringError::KeyringAccessError(KeyringErrorInternal::CannotAccessKeyringEntity(error))
+    }
+}
+
 #[derive(Debug, Error)]
-pub enum KeyringError {
+pub enum KeyringErrorInternal {
     #[error("keyring error")]
     CannotAccessKeyringEntity(#[from] keyring::Error),
 }
@@ -77,6 +78,12 @@ pub struct TenantSession {
     token: Option<String>,
 }
 
+impl Default for TenantSession {
+    fn default() -> Self {
+        Self { token: None }
+    }
+}
+
 impl TenantSession {
     pub fn token(&self) -> Option<String> {
         self.token.clone()
@@ -86,34 +93,34 @@ impl TenantSession {
         self.token = Some(token.to_owned());
     }
 
-    fn get_token_from_keyring(tenant: &String) -> Result<Option<String>, SecurityError> {
+    fn get_token_from_keyring(tenant: &String) -> Result<Option<String>, KeyringError> {
         match Keyring::default().get(tenant, String::from(TOKEN_KEY))? {
             Some(token) => Ok(Some(token)),
             None => Ok(None),
         }
     }
 
-    pub fn save_token_to_keyring(tenant: &String, token: &String) -> Result<(), SecurityError> {
+    pub fn save_token_to_keyring(tenant: &String, token: &String) -> Result<(), KeyringError> {
         Keyring::default().put(tenant, String::from(TOKEN_KEY), token.to_owned())?;
         Ok(())
     }
 
-    pub fn delete_token_from_keystore(tenant: &String) -> Result<(), SecurityError> {
+    pub fn delete_token_from_keystore(tenant: &String) -> Result<(), KeyringError> {
         Keyring::default().delete(tenant, String::from(TOKEN_KEY))?;
         Ok(())
     }
 
-    fn validate_token(token: &String) -> Result<String, SecurityError> {
+    fn validate_token(token: &String) -> Result<String, KeyringError> {
         match decode_header(token) {
             Ok(_header) => return Ok(token.to_owned()),
-            Err(_) => return Err(SecurityError::FailedToDecodeToken),
+            Err(_) => return Err(KeyringError::FailedToDecodeToken),
         }
     }
 
     async fn force_login(
         client: PhysnaHttpClient,
         tenant_config: TenantConfiguration,
-    ) -> Result<TenantSession, SecurityError> {
+    ) -> Result<TenantSession, KeyringError> {
         trace!("Logging in...");
         match Keyring::default().get(&tenant_config.tenant_id(), String::from(SECRET_KEY))? {
             Some(secret) => {
@@ -123,16 +130,16 @@ impl TenantSession {
                         Self::save_token_to_keyring(&tenant_config.tenant_id(), &token)?;
                         Ok(TenantSession { token: Some(token) })
                     }
-                    Err(_) => Err(SecurityError::AccessDenied),
+                    Err(_) => Err(KeyringError::AccessDenied),
                 }
             }
-            None => Err(SecurityError::InvalidCredentials),
+            None => Err(KeyringError::InvalidCredentials),
         }
     }
 
     /// Creates a new API session
     ///
-    pub async fn login(tenant_config: TenantConfiguration) -> Result<TenantSession, SecurityError> {
+    pub async fn login(tenant_config: TenantConfiguration) -> Result<TenantSession, KeyringError> {
         let tenant = tenant_config.tenant_id();
         trace!("Attemting to login for tenant \"{}\"...", &tenant);
 
@@ -155,7 +162,7 @@ impl TenantSession {
 
     /// Invalidates the API session if one exists for this tenant
     ///
-    pub fn logoff(tenant_config: TenantConfiguration) -> Result<(), SecurityError> {
+    pub fn logoff(tenant_config: TenantConfiguration) -> Result<(), KeyringError> {
         let tenant = tenant_config.tenant_id();
         trace!("Logging off for tenant \"{}\"...", &tenant);
         Self::delete_token_from_keystore(&tenant)?;

@@ -3,7 +3,6 @@ use std::{cell::RefCell, marker::PhantomData};
 use crate::{
     configuration::{Configuration, ConfigurationError},
     model::{Folder, FolderList},
-    keyring::{KeyringError, TenantSession},
 };
 use tracing::trace;
 
@@ -16,16 +15,6 @@ pub enum ApiError {
         #[from]
         cause: ConfigurationError,
     },
-    #[error("keyring error, cause: {cause:?}")]
-    KeyringError {
-        #[from]
-        cause: KeyringError,
-    },
-    #[error("http error: {0}")]
-    RequestError(#[from] crate::client::ClientError),
-    #[error("unsupported operation")]
-    #[allow(dead_code)]
-    UnsupportedOperation,
 }
 
 pub struct ApiUninitialized {}
@@ -46,18 +35,6 @@ impl Api<ApiUninitialized> {
 }
 
 impl Api<ApiInitialized> {
-    pub async fn login(&self, tenant_id: &String) -> Result<TenantSession, ApiError> {
-        // This is a placeholder implementation since we're moving to Physna V3 API
-        println!("Would login to tenant: {} (but using Physna V3 API approach)", tenant_id);
-        Ok(TenantSession::default())
-    }
-
-    pub fn logoff(&self, tenant_id: &String) -> Result<(), ApiError> {
-        // This is a placeholder implementation since we're moving to Physna V3 API
-        println!("Would logoff from tenant: {} (but using Physna V3 API approach)", tenant_id);
-        Ok(())
-    }
-
     /// Returns the list of folders currently available for the specified tenant
     ///
     pub async fn get_list_of_folders(
@@ -86,6 +63,6 @@ impl Api<ApiInitialized> {
         );
         // This is a placeholder implementation since we're moving to Physna V3 API
         println!("Would get folder {} for tenant: {} (but using Physna V3 API approach)", folder_id, tenant_id);
-        Ok(Folder::new(*folder_id, "Sample Folder".to_string()))
+        Ok(Folder::new(*folder_id, "unknown".to_string(), "Sample Folder".to_string()))
     }
 }

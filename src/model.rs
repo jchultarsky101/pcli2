@@ -15,12 +15,19 @@ pub enum ModelError {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Folder {
     id: u32,
+    uuid: String,
     name: String,
 }
 
 impl Folder {
-    pub fn new(id: u32, name: String) -> Folder {
-        Folder { id, name }
+    pub fn new(id: u32, uuid: String, name: String) -> Folder {
+        Folder { id, uuid, name }
+    }
+    
+    pub fn from_uuid(uuid: String, name: String) -> Folder {
+        // Create a hash-based ID from the UUID for compatibility
+        let id = uuid.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32));
+        Folder { id, uuid, name }
     }
 
     #[allow(dead_code)]
@@ -30,6 +37,10 @@ impl Folder {
 
     pub fn id(&self) -> u32 {
         self.id
+    }
+    
+    pub fn uuid(&self) -> &str {
+        &self.uuid
     }
 
     #[allow(dead_code)]
@@ -71,6 +82,7 @@ impl OutputFormatter for Folder {
 
 pub struct FolderBuilder {
     id: Option<u32>,
+    uuid: Option<String>,
     name: Option<String>,
 }
 
@@ -78,12 +90,18 @@ impl FolderBuilder {
     fn new() -> FolderBuilder {
         FolderBuilder {
             id: None,
+            uuid: None,
             name: None,
         }
     }
 
     pub fn id(&mut self, id: u32) -> &mut FolderBuilder {
         self.id = Some(id);
+        self
+    }
+    
+    pub fn uuid(&mut self, uuid: String) -> &mut FolderBuilder {
+        self.uuid = Some(uuid);
         self
     }
 
@@ -93,15 +111,6 @@ impl FolderBuilder {
     }
 
     pub fn build(&self) -> Result<Folder, ModelError> {
-        let id = match &self.id {
-            Some(id) => id.clone(),
-            None => {
-                return Err(ModelError::MissingPropertyValue {
-                    name: "id".to_string(),
-                })
-            }
-        };
-
         let name = match &self.name {
             Some(name) => name.clone(),
             None => {
@@ -110,8 +119,19 @@ impl FolderBuilder {
                 })
             }
         };
-
-        Ok(Folder::new(id, name.clone()))
+        
+        // If we have a UUID, use it to create the folder
+        if let Some(uuid) = &self.uuid {
+            let id = self.id.unwrap_or_else(|| {
+                uuid.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))
+            });
+            Ok(Folder::new(id, uuid.clone(), name))
+        } else {
+            // Fallback to just using the name and a default ID
+            let uuid = "unknown".to_string();
+            let id = self.id.unwrap_or(0);
+            Ok(Folder::new(id, uuid, name))
+        }
     }
 }
 
@@ -273,17 +293,27 @@ impl CurrentUserResponse {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FolderResponse {
-    pub id: u32,
+    pub id: String,
+    #[serde(rename = "tenantId")]
+    pub tenant_id: String,
+    pub name: String,
     #[serde(rename = "createdAt")]
     pub created_at: String,
-    #[serde(rename = "ownerId")]
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    #[serde(rename = "assetsCount")]
+    pub assets_count: u32,
+    #[serde(rename = "foldersCount")]
+    pub folders_count: u32,
+    #[serde(rename = "parentFolderId", skip_serializing_if = "Option::is_none")]
+    pub parent_folder_id: Option<String>,
+    #[serde(rename = "ownerId", skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
-    pub name: String,
 }
 
 impl FolderResponse {
     pub fn to_folder(&self) -> Folder {
-        Folder::new(self.id, self.name.clone())
+        Folder::from_uuid(self.id.clone(), self.name.clone())
     }
 }
 
@@ -327,32 +357,38 @@ mod tests {
     #[test]
     fn test_folder_creation() {
         let id: u32 = 100;
+        let uuid: String = "test-uuid".to_string();
         let name: String = "some_folder_name".to_string();
 
-        let folder = Folder::new(id, name.clone());
+        let folder = Folder::new(id, uuid.clone(), name.clone());
         assert_eq!(id, folder.id());
+        assert_eq!(uuid, folder.uuid());
         assert_eq!(name, folder.name());
     }
 
     #[test]
     fn test_folder_builder() {
         let id: u32 = 110;
+        let uuid: String = "test-uuid".to_string();
         let name: String = "some_other_name".to_string();
 
-        let folder = Folder::builder().id(id).name(&name).build().unwrap();
+        let folder = Folder::builder().id(id).uuid(uuid.clone()).name(&name).build().unwrap();
         assert_eq!(id, folder.id());
+        assert_eq!(uuid, folder.uuid());
         assert_eq!(name, folder.name());
     }
 
     #[test]
     fn test_output_format() {
         let id: u32 = 120;
+        let uuid: String = "test-uuid".to_string();
         let name: String = "folder_name".to_string();
 
-        let folder = Folder::builder().id(id).name(&name).build().unwrap();
+        let folder = Folder::builder().id(id).uuid(uuid.clone()).name(&name).build().unwrap();
         let json = folder.format(OutputFormat::Json).unwrap();
         let json_expected = r#"{
   "id": 120,
+  "uuid": "test-uuid",
   "name": "folder_name"
 }"#;
         assert_eq!(json_expected, json);

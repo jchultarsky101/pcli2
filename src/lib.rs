@@ -1,7 +1,5 @@
 pub mod api;
-pub mod api_key;
 pub mod auth;
-pub mod client;
 pub mod commands;
 pub mod configuration;
 pub mod format;

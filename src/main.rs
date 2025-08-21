@@ -1,8 +1,6 @@
-use api::Api;
 use configuration::{Configuration, ConfigurationError};
 use pcli2::{
-    api::{self, ApiError},
-    commands, configuration, format,
+    configuration,
 };
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
@@ -14,8 +12,6 @@ use cli::{execute_command, CliError};
 enum PcliError {
     #[error(transparent)]
     ConfigurationError(#[from] ConfigurationError),
-    #[error(transparent)]
-    ApiError(#[from] ApiError),
     #[error(transparent)]
     CliError(#[from] CliError),
 }
@@ -31,9 +27,8 @@ async fn main() -> Result<(), PcliError> {
     // Get the configuration
     let configuration = Configuration::load_default()?;
 
-    // Create an API client
-    let configuration_ref = std::cell::RefCell::new(configuration.clone());
-    let api = Api::initialize(&configuration_ref);
+    // Create an API client (placeholder for now)
+    let api = (); // We're using Physna V3 API directly in CLI commands
 
     // Parse and execute the CLI command
     match execute_command(configuration, api).await {

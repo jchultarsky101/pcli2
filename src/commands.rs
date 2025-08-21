@@ -33,7 +33,6 @@ pub const COMMAND_CLEAR: &str = "clear";
 pub const PARAMETER_FORMAT: &str = "format";
 pub const PARAMETER_OUTPUT: &str = "output";
 pub const PARAMETER_INPUT: &str = "input";
-pub const PARAMETER_API_KEY: &str = "api-key";
 pub const PARAMETER_CLIENT_ID: &str = "client-id";
 pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
 pub const PARAMETER_ID: &str = "id";
@@ -66,12 +65,6 @@ pub fn create_cli_commands() -> ArgMatches {
         .required(false)
         .help("Input file path")
         .value_parser(clap::value_parser!(PathBuf));
-
-    let api_key_parameter = Arg::new(PARAMETER_API_KEY)
-        .long(PARAMETER_API_KEY)
-        .num_args(1)
-        .required(false)
-        .help("API key for authentication");
 
     let client_id_parameter = Arg::new(PARAMETER_CLIENT_ID)
         .long(PARAMETER_CLIENT_ID)
@@ -121,8 +114,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_CREATE)
                         .about("Create a new tenant")
-                        .arg(name_parameter.clone())
-                        .arg(api_key_parameter.clone()),
+                        .arg(name_parameter.clone()),
                 )
                 .subcommand(
                     Command::new(COMMAND_GET)
@@ -139,8 +131,7 @@ pub fn create_cli_commands() -> ArgMatches {
                     Command::new(COMMAND_UPDATE)
                         .about("Update tenant configuration")
                         .arg(id_parameter.clone())
-                        .arg(name_parameter.clone())
-                        .arg(api_key_parameter.clone()),
+                        .arg(name_parameter.clone()),
                 )
                 .subcommand(
                     Command::new(COMMAND_DELETE)
@@ -192,28 +183,6 @@ pub fn create_cli_commands() -> ArgMatches {
                 .about("Authentication operations")
                 .subcommand_required(true)
                 .subcommand(
-                    Command::new(COMMAND_SET)
-                        .about("Set API key")
-                        .arg(api_key_parameter.clone())
-                        .subcommand(
-                            Command::new("api-key")
-                                .about("Set API key for authentication")
-                                .arg(api_key_parameter.clone()),
-                        ),
-                )
-                .subcommand(
-                    Command::new(COMMAND_GET)
-                        .about("Get authentication status")
-                        .subcommand(Command::new("api-key").about("Get current API key status")),
-                )
-                .subcommand(
-                    Command::new(COMMAND_DELETE)
-                        .about("Delete authentication credentials")
-                        .subcommand(
-                            Command::new("api-key").about("Delete stored API key"),
-                        ),
-                )
-                .subcommand(
                     Command::new(COMMAND_LOGIN)
                         .about("Login using client credentials")
                         .arg(client_id_parameter.clone())
@@ -235,7 +204,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         .subcommand(
                             Command::new("tenant")
                                 .about("Set active tenant")
-                                .arg(name_parameter.clone())
+                                .arg(name_parameter.clone().required(false))
                                 .arg(id_parameter.clone()),
                         ),
                 )

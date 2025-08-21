@@ -4,7 +4,7 @@ use crate::{
     configuration::{Configuration, ConfigurationError},
     model::{Folder, FolderList},
 };
-use tracing::trace;
+use tracing::{trace, debug};
 
 /// Error emmitted by the Api
 ///
@@ -44,7 +44,7 @@ impl Api<ApiInitialized> {
     ) -> Result<FolderList, ApiError> {
         trace!("Listing all folders for tenant \"{}\"...", tenant_id);
         // This is a placeholder implementation since we're moving to Physna V3 API
-        println!("Would list folders for tenant: {} (but using Physna V3 API approach)", tenant_id);
+        debug!("Using placeholder implementation for tenant: {}", tenant_id);
         Ok(FolderList::empty())
     }
 
@@ -62,7 +62,7 @@ impl Api<ApiInitialized> {
             folder_id
         );
         // This is a placeholder implementation since we're moving to Physna V3 API
-        println!("Would get folder {} for tenant: {} (but using Physna V3 API approach)", folder_id, tenant_id);
+        debug!("Using placeholder implementation for tenant: {}, folder: {}", tenant_id, folder_id);
         Ok(Folder::new(*folder_id, "unknown".to_string(), "Sample Folder".to_string()))
     }
 }

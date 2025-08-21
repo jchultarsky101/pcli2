@@ -16,6 +16,7 @@ use pcli2::physna_v3::PhysnaApiClient;
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
+use tracing::{debug, trace, error};
 
 #[derive(Debug, Error)]
 pub enum CliError {
@@ -44,6 +45,7 @@ pub async fn execute_command(
     mut configuration: Configuration,
     _api: (), // We're using Physna V3 API directly
 ) -> Result<(), CliError> {
+    trace!("Executing CLI command");
     let commands = create_cli_commands();
 
     match commands.subcommand() {
@@ -51,6 +53,7 @@ pub async fn execute_command(
         Some((COMMAND_TENANT, sub_matches)) => {
             match sub_matches.subcommand() {
                 Some((COMMAND_LIST, sub_matches)) => {
+                    trace!("Executing tenant list command");
                     // Try to get access token and list tenants from Physna V3 API
                     let keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
@@ -62,6 +65,7 @@ pub async fn execute_command(
                                     let format = OutputFormat::from_str(format).unwrap();
                                     
                                     // Display the tenants
+                                    trace!("Displaying list of available tenants");
                                     println!("Available tenants:");
                                     for tenant in tenants {
                                         match format {
@@ -77,6 +81,7 @@ pub async fn execute_command(
                                     Ok(())
                                 }
                                 Err(e) => {
+                                    error!("Error fetching tenants: {}", e);
                                     eprintln!("Error fetching tenants: {}", e);
                                     Ok(())
                                 }
@@ -101,6 +106,7 @@ pub async fn execute_command(
         Some((COMMAND_FOLDER, sub_matches)) => {
             match sub_matches.subcommand() {
                 Some((COMMAND_LIST, sub_matches)) => {
+                    trace!("Executing folder list command");
                     // Get tenant from explicit parameter or fall back to active tenant from configuration
                     let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
                         Some(tenant_id) => tenant_id.clone(),
@@ -134,6 +140,7 @@ pub async fn execute_command(
                                     }
                                 }
                                 Err(e) => {
+                                    error!("Error fetching folders: {}", e);
                                     eprintln!("Error fetching folders: {}", e);
                                     Ok(())
                                 }
@@ -158,6 +165,7 @@ pub async fn execute_command(
         Some((COMMAND_AUTH, sub_matches)) => {
             match sub_matches.subcommand() {
                 Some((COMMAND_LOGIN, sub_matches)) => {
+                    trace!("Executing login command");
                     let client_id = sub_matches.get_one::<String>(PARAMETER_CLIENT_ID)
                         .ok_or(CliError::MissingRequiredArgument(PARAMETER_CLIENT_ID.to_string()))?;
                     let client_secret = sub_matches.get_one::<String>(PARAMETER_CLIENT_SECRET)
@@ -187,6 +195,7 @@ pub async fn execute_command(
                     }
                 }
                 Some((COMMAND_LOGOUT, _)) => {
+                    trace!("Executing logout command");
                     let keyring = Keyring::default();
                     match keyring.delete(&"default".to_string(), "access-token".to_string()) {
                         Ok(()) => {
@@ -210,6 +219,7 @@ pub async fn execute_command(
                 Some((COMMAND_SET, sub_matches)) => {
                     match sub_matches.subcommand() {
                         Some(("tenant", sub_matches)) => {
+                            trace!("Executing context set tenant command");
                             let name = sub_matches.get_one::<String>(PARAMETER_NAME);
                             
                             // Try to get access token and fetch tenant info from Physna V3 API
@@ -301,6 +311,7 @@ pub async fn execute_command(
                     }
                 }
                 Some((COMMAND_GET, sub_matches)) => {
+                    trace!("Executing context get command");
                     let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
                     let format = OutputFormat::from_str(format).unwrap();
                     
@@ -325,6 +336,7 @@ pub async fn execute_command(
                     Ok(())
                 }
                 Some((COMMAND_CLEAR, sub_matches)) => {
+                    trace!("Executing context clear command");
                     match sub_matches.subcommand() {
                         Some(("tenant", _)) => {
                             configuration.clear_active_tenant();
@@ -351,8 +363,10 @@ pub async fn execute_command(
         }
         // Configuration commands
         Some((COMMAND_CONFIG, sub_matches)) => {
+            trace!("Executing config command");
             match sub_matches.subcommand() {
                 Some((COMMAND_GET, sub_matches)) => {
+                    trace!("Executing config get command");
                     match sub_matches.subcommand() {
                         Some(("path", _)) => {
                             let path = Configuration::get_default_configuration_file_path()?;
@@ -376,6 +390,7 @@ pub async fn execute_command(
                     }
                 }
                 Some((COMMAND_LIST, sub_matches)) => {
+                    trace!("Executing config list command");
                     let _format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
                     let _format = OutputFormat::from_str(_format).unwrap();
 
@@ -388,16 +403,18 @@ pub async fn execute_command(
                     }
                 }
                 Some((COMMAND_EXPORT, sub_matches)) => {
+                    trace!("Executing config export command");
                     let path = sub_matches.get_one::<PathBuf>(PARAMETER_OUTPUT)
                         .ok_or(CliError::MissingRequiredArgument(PARAMETER_OUTPUT.to_string()))?;
                     configuration.save(path)?;
                     Ok(())
                 }
                 Some((COMMAND_IMPORT, sub_matches)) => {
+                    trace!("Executing config import command");
                     let path = sub_matches.get_one::<PathBuf>(PARAMETER_INPUT)
                         .ok_or(CliError::MissingRequiredArgument(PARAMETER_INPUT.to_string()))?;
                     // Implementation would import configuration
-                    println!("Importing configuration from: {:?}", path);
+                    debug!("Importing configuration from: {:?}", path);
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

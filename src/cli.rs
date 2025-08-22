@@ -1,7 +1,7 @@
 use pcli2::commands::{
     create_cli_commands, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
-    COMMAND_FOLDER, COMMAND_GET, COMMAND_EXPORT, COMMAND_IMPORT, COMMAND_LIST, 
-    COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, COMMAND_TENANT,
+    COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET, COMMAND_EXPORT, COMMAND_IMPORT, 
+    COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, COMMAND_TENANT, COMMAND_UPDATE,
     PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, 
     PARAMETER_FORMAT, PARAMETER_INPUT, PARAMETER_NAME, 
     PARAMETER_OUTPUT, PARAMETER_TENANT,
@@ -11,7 +11,10 @@ use clap::ArgMatches;
 use inquire::Select;
 use pcli2::auth::AuthClient;
 use pcli2::configuration::Configuration;
+use pcli2::commands::{PARAMETER_ID, PARAMETER_PARENT_FOLDER_ID, PARAMETER_PATH};
+use pcli2::folder_hierarchy::FolderHierarchy;
 use pcli2::keyring::Keyring;
+use pcli2::model::Folder;
 use pcli2::physna_v3::PhysnaApiClient;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -58,7 +61,16 @@ pub async fn execute_command(
                     let keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
-                            let client = PhysnaApiClient::new().with_access_token(token);
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
                             match client.list_tenants().await {
                                 Ok(tenants) => {
                                     let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
@@ -75,6 +87,9 @@ pub async fn execute_command(
                                             }
                                             OutputFormat::Csv => {
                                                 println!("  {},{}", tenant.tenant_id, tenant.tenant_display_name);
+                                            }
+                                            OutputFormat::Tree => {
+                                                println!("  {} ({})", tenant.tenant_display_name, tenant.tenant_id);
                                             }
                                         }
                                     }
@@ -127,21 +142,469 @@ pub async fn execute_command(
                     let keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
-                            let client = PhysnaApiClient::new().with_access_token(token);
-                            match client.list_folders(&tenant).await {
-                                Ok(folder_list_response) => {
-                                    let folder_list = folder_list_response.to_folder_list();
-                                    match folder_list.format(format) {
-                                        Ok(output) => {
-                                            println!("{}", output);
-                                            Ok(())
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // If tree format is requested, we need to build the full hierarchy
+                            if format == OutputFormat::Tree {
+                                match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                    Ok(hierarchy) => {
+                                        hierarchy.print_tree();
+                                        Ok(())
+                                    }
+                                    Err(e) => {
+                                        error!("Error building folder hierarchy: {}", e);
+                                        eprintln!("Error building folder hierarchy: {}", e);
+                                        Ok(())
+                                    }
+                                }
+                            } else {
+                                // Regular list - build hierarchy to get proper paths
+                                match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                    Ok(hierarchy) => {
+                                        let folder_list = hierarchy.to_folder_list();
+                                        match folder_list.format(format) {
+                                            Ok(output) => {
+                                                println!("{}", output);
+                                                Ok(())
+                                            }
+                                            Err(e) => Err(CliError::FormattingError(e)),
                                         }
-                                        Err(e) => Err(CliError::FormattingError(e)),
+                                    }
+                                    Err(e) => {
+                                        error!("Error building folder hierarchy: {}", e);
+                                        eprintln!("Error building folder hierarchy: {}", e);
+                                        Ok(())
+                                    }
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                Some((COMMAND_GET, sub_matches)) => {
+                    trace!("Executing folder get command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let folder_id_param = sub_matches.get_one::<String>(PARAMETER_ID);
+                    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    // Must provide either ID or path
+                    if folder_id_param.is_none() && folder_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token and get folder via Physna V3 API
+                    let keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve folder ID from either ID parameter or path
+                            let folder_id = if let Some(id) = folder_id_param {
+                                id.clone()
+                            } else if let Some(path) = folder_path_param {
+                                // Build hierarchy and resolve path to folder ID
+                                match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                    Ok(hierarchy) => {
+                                        if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
+                                            folder_node.folder.id.clone()
+                                        } else {
+                                            return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", path)));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error building folder hierarchy: {}", e);
+                                        return Err(CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
+                                    }
+                                }
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
+                            };
+                            
+                            match client.get_folder(&tenant, &folder_id).await {
+                                Ok(folder_response) => {
+                                    // Build hierarchy to get the path for this folder
+                                    match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                        Ok(hierarchy) => {
+                                            let path = hierarchy.get_path_for_folder(&folder_id).unwrap_or_else(|| folder_response.name.clone());
+                                            let folder = Folder::from_folder_response(folder_response, path);
+                                            match folder.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error building folder hierarchy: {}", e);
+                                            // Fallback to folder without path
+                                            let folder = Folder::from_folder_response(folder_response.clone(), folder_response.name.clone());
+                                            match folder.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
                                     }
                                 }
                                 Err(e) => {
-                                    error!("Error fetching folders: {}", e);
-                                    eprintln!("Error fetching folders: {}", e);
+                                    error!("Error fetching folder: {}", e);
+                                    eprintln!("Error fetching folder: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                Some((COMMAND_CREATE, sub_matches)) => {
+                    trace!("Executing folder create command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let name = sub_matches.get_one::<String>(PARAMETER_NAME)
+                        .ok_or(CliError::MissingRequiredArgument(PARAMETER_NAME.to_string()))?
+                        .clone();
+                        
+                    let parent_folder_id_param = sub_matches.get_one::<String>(PARAMETER_PARENT_FOLDER_ID);
+                    let parent_folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
+                    if parent_folder_id_param.is_some() && parent_folder_path_param.is_some() {
+                        return Err(CliError::MissingRequiredArgument("Only one of --parent-folder-id or --path can be specified, not both".to_string()));
+                    }
+                    
+                    // Try to get access token and create folder via Physna V3 API
+                    let keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve parent folder ID from either ID parameter or path
+                            let parent_folder_id = if let Some(id) = parent_folder_id_param {
+                                Some(id.clone())
+                            } else if let Some(path) = parent_folder_path_param {
+                                // Build hierarchy and resolve path to folder ID
+                                match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                    Ok(hierarchy) => {
+                                        if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
+                                            Some(folder_node.folder.id.clone())
+                                        } else {
+                                            return Err(CliError::MissingRequiredArgument(format!("Parent folder not found at path: {}", path)));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error building folder hierarchy: {}", e);
+                                        return Err(CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                            
+                            match client.create_folder(&tenant, &name, parent_folder_id.as_deref()).await {
+                                Ok(folder_response) => {
+                                    // Build hierarchy to get the path for this new folder
+                                    match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                        Ok(hierarchy) => {
+                                            let path = if let Some(parent_id) = &parent_folder_id {
+                                                if let Some(parent_path) = hierarchy.get_path_for_folder(parent_id) {
+                                                    format!("{}/{}", parent_path, folder_response.name)
+                                                } else {
+                                                    folder_response.name.clone()
+                                                }
+                                            } else {
+                                                folder_response.name.clone()
+                                            };
+                                            let folder = Folder::from_folder_response(folder_response, path);
+                                            match folder.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error building folder hierarchy: {}", e);
+                                            // Fallback to folder without path
+                                            let folder = Folder::from_folder_response(folder_response.clone(), folder_response.name.clone());
+                                            match folder.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error creating folder: {}", e);
+                                    eprintln!("Error creating folder: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                Some((COMMAND_UPDATE, sub_matches)) => {
+                    trace!("Executing folder update command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let folder_id_param = sub_matches.get_one::<String>(PARAMETER_ID);
+                    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    let name = sub_matches.get_one::<String>(PARAMETER_NAME)
+                        .ok_or(CliError::MissingRequiredArgument(PARAMETER_NAME.to_string()))?
+                        .clone();
+                    
+                    // Must provide either ID or path
+                    if folder_id_param.is_none() && folder_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token and update folder via Physna V3 API
+                    let keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve folder ID from either ID parameter or path
+                            let folder_id = if let Some(id) = folder_id_param {
+                                id.clone()
+                            } else if let Some(path) = folder_path_param {
+                                // Build hierarchy and resolve path to folder ID
+                                match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                    Ok(hierarchy) => {
+                                        if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
+                                            folder_node.folder.id.clone()
+                                        } else {
+                                            return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", path)));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error building folder hierarchy: {}", e);
+                                        return Err(CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
+                                    }
+                                }
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
+                            };
+                            
+                            match client.update_folder(&tenant, &folder_id, &name).await {
+                                Ok(folder_response) => {
+                                    // Build hierarchy to get the path for this folder
+                                    match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                        Ok(hierarchy) => {
+                                            let path = hierarchy.get_path_for_folder(&folder_id).unwrap_or_else(|| folder_response.name.clone());
+                                            let folder = Folder::from_folder_response(folder_response, path);
+                                            match folder.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error building folder hierarchy: {}", e);
+                                            // Fallback to folder without path
+                                            let folder = Folder::from_folder_response(folder_response.clone(), folder_response.name.clone());
+                                            match folder.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error updating folder: {}", e);
+                                    eprintln!("Error updating folder: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                Some((COMMAND_DELETE, sub_matches)) => {
+                    trace!("Executing folder delete command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let folder_id_param = sub_matches.get_one::<String>(PARAMETER_ID);
+                    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    // Must provide either ID or path
+                    if folder_id_param.is_none() && folder_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
+                    }
+                    
+                    // Try to get access token and delete folder via Physna V3 API
+                    let keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve folder ID from either ID parameter or path
+                            let folder_id = if let Some(id) = folder_id_param {
+                                id.clone()
+                            } else if let Some(path) = folder_path_param {
+                                // Build hierarchy and resolve path to folder ID
+                                match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                    Ok(hierarchy) => {
+                                        if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
+                                            folder_node.folder.id.clone()
+                                        } else {
+                                            return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", path)));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error building folder hierarchy: {}", e);
+                                        return Err(CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
+                                    }
+                                }
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
+                            };
+                            
+                            match client.delete_folder(&tenant, &folder_id).await {
+                                Ok(_) => {
+                                    println!("Folder deleted successfully");
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error!("Error deleting folder: {}", e);
+                                    eprintln!("Error deleting folder: {}", e);
                                     Ok(())
                                 }
                             }
@@ -166,26 +629,57 @@ pub async fn execute_command(
             match sub_matches.subcommand() {
                 Some((COMMAND_LOGIN, sub_matches)) => {
                     trace!("Executing login command");
-                    let client_id = sub_matches.get_one::<String>(PARAMETER_CLIENT_ID)
-                        .ok_or(CliError::MissingRequiredArgument(PARAMETER_CLIENT_ID.to_string()))?;
-                    let client_secret = sub_matches.get_one::<String>(PARAMETER_CLIENT_SECRET)
-                        .ok_or(CliError::MissingRequiredArgument(PARAMETER_CLIENT_SECRET.to_string()))?;
+                    
+                    // Try to get client credentials from command line or stored values
+                    let keyring = Keyring::default();
+                    let client_id = match sub_matches.get_one::<String>(PARAMETER_CLIENT_ID) {
+                        Some(id) => id.clone(),
+                        None => {
+                            // Try to get stored client ID
+                            match keyring.get(&"default".to_string(), "client-id".to_string()) {
+                                Ok(Some(stored_id)) => stored_id,
+                                _ => {
+                                    return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_ID.to_string()));
+                                }
+                            }
+                        }
+                    };
+                    
+                    let client_secret = match sub_matches.get_one::<String>(PARAMETER_CLIENT_SECRET) {
+                        Some(secret) => secret.clone(),
+                        None => {
+                            // Try to get stored client secret
+                            match keyring.get(&"default".to_string(), "client-secret".to_string()) {
+                                Ok(Some(stored_secret)) => stored_secret,
+                                _ => {
+                                    return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_SECRET.to_string()));
+                                }
+                            }
+                        }
+                    };
                     
                     let auth_client = AuthClient::new(client_id.clone(), client_secret.clone());
                     
+                    // Store the client credentials so they're available for token refresh
+                    let client_id_result = keyring.put(&"default".to_string(), "client-id".to_string(), client_id.clone());
+                    let client_secret_result = keyring.put(&"default".to_string(), "client-secret".to_string(), client_secret.clone());
+                    
+                    if client_id_result.is_err() || client_secret_result.is_err() {
+                        eprintln!("Error storing client credentials");
+                        return Err(CliError::SecurityError(String::from("Failed to store client credentials")));
+                    }
+                    
                     match auth_client.get_access_token().await {
                         Ok(token) => {
-                            // Store the token in the keyring
-                            let keyring = Keyring::default();
-                            match keyring.put(&"default".to_string(), "access-token".to_string(), token) {
-                                Ok(()) => {
-                                    println!("Login successful");
-                                    Ok(())
-                                }
-                                Err(e) => {
-                                    eprintln!("Error storing access token: {}", e);
-                                    Err(CliError::SecurityError(String::from("Failed to store access token")))
-                                }
+                            // Store the access token
+                            let token_result = keyring.put(&"default".to_string(), "access-token".to_string(), token);
+                            
+                            if token_result.is_ok() {
+                                println!("Login successful");
+                                Ok(())
+                            } else {
+                                eprintln!("Error storing access token");
+                                Err(CliError::SecurityError(String::from("Failed to store access token")))
                             }
                         }
                         Err(e) => {
@@ -226,7 +720,16 @@ pub async fn execute_command(
                             let keyring = Keyring::default();
                             match keyring.get(&"default".to_string(), "access-token".to_string()) {
                                 Ok(Some(token)) => {
-                                    let client = PhysnaApiClient::new().with_access_token(token);
+                                    let mut client = PhysnaApiClient::new().with_access_token(token);
+                                    
+                                    // Try to get client credentials for automatic token refresh
+                                    if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                        keyring.get(&"default".to_string(), "client-id".to_string()),
+                                        keyring.get(&"default".to_string(), "client-secret".to_string())
+                                    ) {
+                                        client = client.with_client_credentials(client_id, client_secret);
+                                    }
+                                    
                                     match client.list_tenants().await {
                                         Ok(tenants) => {
                                             // If no name was provided, show interactive selection
@@ -323,8 +826,12 @@ pub async fn execute_command(
                                         tenant_id, tenant_name);
                                 }
                                 OutputFormat::Csv => {
-                                    println!("ACTIVE_TENANT_ID,ACTIVE_TENANT_NAME\n{},{}", 
+                                    println!("ACTIVE_TENANT_ID,ACTIVE_TENANT_NAME
+{},{}", 
                                         tenant_id, tenant_name);
+                                }
+                                OutputFormat::Tree => {
+                                    println!("Active tenant: {} ({})", tenant_name, tenant_id);
                                 }
                             }
                         } else {

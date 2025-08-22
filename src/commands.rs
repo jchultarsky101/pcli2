@@ -38,6 +38,8 @@ pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
 pub const PARAMETER_ID: &str = "id";
 pub const PARAMETER_NAME: &str = "name";
 pub const PARAMETER_TENANT: &str = "tenant";
+pub const PARAMETER_PARENT_FOLDER_ID: &str = "parent-folder-id";
+pub const PARAMETER_PATH: &str = "path";
 
 pub fn create_cli_commands() -> ArgMatches {
     let format_parameter = Arg::new(PARAMETER_FORMAT)
@@ -98,6 +100,20 @@ pub fn create_cli_commands() -> ArgMatches {
         .num_args(1)
         .required(false)
         .help("Tenant ID or alias");
+        
+    
+        
+    let parent_folder_id_parameter = Arg::new(PARAMETER_PARENT_FOLDER_ID)
+        .long(PARAMETER_PARENT_FOLDER_ID)
+        .num_args(1)
+        .required(false)
+        .help("Parent folder ID for creating subfolders");
+        
+    let path_parameter = Arg::new(PARAMETER_PATH)
+        .long(PARAMETER_PATH)
+        .num_args(1)
+        .required(false)
+        .help("Folder path (e.g., /Root/Child/Grandchild)");
 
     Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
@@ -148,13 +164,21 @@ pub fn create_cli_commands() -> ArgMatches {
                     Command::new(COMMAND_CREATE)
                         .about("Create a new folder")
                         .arg(tenant_parameter.clone())
-                        .arg(name_parameter.clone()),
+                        .arg(name_parameter.clone())
+                        .arg(parent_folder_id_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone())
+                        .group(clap::ArgGroup::new("parent")
+                            .args([PARAMETER_PARENT_FOLDER_ID, PARAMETER_PATH])
+                            .multiple(false)
+                        ),
                 )
                 .subcommand(
                     Command::new(COMMAND_GET)
                         .about("Get folder details")
                         .arg(tenant_parameter.clone())
                         .arg(id_parameter.clone())
+                        .arg(path_parameter.clone())
                         .arg(format_parameter.clone()),
                 )
                 .subcommand(
@@ -168,13 +192,16 @@ pub fn create_cli_commands() -> ArgMatches {
                         .about("Update folder details")
                         .arg(tenant_parameter.clone())
                         .arg(id_parameter.clone())
-                        .arg(name_parameter.clone()),
+                        .arg(path_parameter.clone())
+                        .arg(name_parameter.clone())
+                        .arg(format_parameter.clone()),
                 )
                 .subcommand(
                     Command::new(COMMAND_DELETE)
                         .about("Delete a folder")
                         .arg(tenant_parameter.clone())
-                        .arg(id_parameter.clone()),
+                        .arg(id_parameter.clone())
+                        .arg(path_parameter.clone()),
                 ),
         )
         .subcommand(

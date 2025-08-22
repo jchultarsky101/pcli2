@@ -113,6 +113,14 @@ impl OutputFormatter for Configuration {
                     Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
             }
+            OutputFormat::Tree => {
+                // For configuration, tree format is the same as JSON
+                let json = serde_json::to_string_pretty(self);
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
         }
     }
 }

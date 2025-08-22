@@ -63,6 +63,6 @@ impl Api<ApiInitialized> {
         );
         // This is a placeholder implementation since we're moving to Physna V3 API
         debug!("Using placeholder implementation for tenant: {}, folder: {}", tenant_id, folder_id);
-        Ok(Folder::new(*folder_id, "unknown".to_string(), "Sample Folder".to_string()))
+        Ok(Folder::new(Some(*folder_id), Some("unknown".to_string()), "Sample Folder".to_string(), "unknown".to_string()))
     }
 }

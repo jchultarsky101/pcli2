@@ -56,12 +56,25 @@ impl AuthClient {
             .await?;
 
         if response.status().is_success() {
-            let token_response: TokenResponse = response.json().await?;
-            Ok(token_response.access_token)
+            match response.json::<TokenResponse>().await {
+                Ok(token_response) => Ok(token_response.access_token),
+                Err(e) => Err(AuthError::HttpError(e.into()))
+            }
         } else {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            Err(AuthError::AuthFailed(format!("HTTP {}: {}", status, error_text)))
+            // Try to get error details - first as text, then try to parse as JSON if needed
+            let error_text = match response.text().await {
+                Ok(text) => text,
+                Err(_) => "Unknown error".to_string()
+            };
+            
+            // Try to parse as JSON for better formatting
+            let error_details = match serde_json::from_str::<serde_json::Value>(&error_text) {
+                Ok(error_json) => format!("{:?}", error_json),
+                Err(_) => error_text
+            };
+            
+            Err(AuthError::AuthFailed(format!("HTTP {}: {}", status, error_details)))
         }
     }
 }

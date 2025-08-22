@@ -3,7 +3,7 @@ use crate::format::{
 };
 use csv::Writer;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::BufWriter};
+use std::collections::HashMap;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -14,22 +14,41 @@ pub enum ModelError {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Folder {
-    id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uuid: Option<String>,
     name: String,
+    path: String,
 }
 
 impl Folder {
-    pub fn new(id: u32, name: String) -> Folder {
-        Folder { id, name }
+    pub fn new(id: Option<u32>, uuid: Option<String>, name: String, path: String) -> Folder {
+        Folder { id, uuid, name, path }
+    }
+    
+    pub fn from_folder_response(folder_response: FolderResponse, path: String) -> Folder {
+        Folder { 
+            id: None, 
+            uuid: Some(folder_response.id), 
+            name: folder_response.name, 
+            path 
+        }
     }
 
     #[allow(dead_code)]
     pub fn set_id(&mut self, id: u32) {
-        self.id = id;
+        self.id = Some(id);
     }
 
-    pub fn id(&self) -> u32 {
+    #[allow(dead_code)]
+    pub fn id(&self) -> Option<u32> {
         self.id
+    }
+    
+    #[allow(dead_code)]
+    pub fn uuid(&self) -> Option<&String> {
+        self.uuid.as_ref()
     }
 
     #[allow(dead_code)]
@@ -40,6 +59,10 @@ impl Folder {
     pub fn name(&self) -> String {
         self.name.clone()
     }
+    
+    pub fn path(&self) -> String {
+        self.path.clone()
+    }
 
     pub fn builder() -> FolderBuilder {
         FolderBuilder::new()
@@ -48,11 +71,47 @@ impl Folder {
 
 impl CsvRecordProducer for Folder {
     fn csv_header() -> Vec<String> {
-        vec!["ID".to_string(), "NAME".to_string()]
+        vec!["NAME".to_string(), "PATH".to_string()]
     }
 
     fn as_csv_records(&self) -> Vec<Vec<String>> {
-        vec![vec![self.id().to_string(), self.name()]]
+        vec![vec![self.name(), self.path()]]
+    }
+    
+    fn to_csv_with_header(&self) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+        wtr.write_record(&Self::csv_header())
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
+        
+        // Sort records by folder name
+        let mut records = self.as_csv_records();
+        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        
+        for record in records {
+            wtr.write_record(&record)
+                .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+        }
+        let data = wtr.into_inner()
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
+        Ok(String::from_utf8(data)
+            .map_err(|e| FormattingError::Utf8Error(e))?)
+    }
+
+    fn to_csv_without_header(&self) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+        
+        // Sort records by folder name
+        let mut records = self.as_csv_records();
+        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        
+        for record in records {
+            wtr.write_record(&record)
+                .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+        }
+        let data = wtr.into_inner()
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
+        Ok(String::from_utf8(data)
+            .map_err(|e| FormattingError::Utf8Error(e))?)
     }
 }
 
@@ -65,20 +124,25 @@ impl OutputFormatter for Folder {
         match format {
             OutputFormat::Json => Ok(self.to_json()?),
             OutputFormat::Csv => Ok(self.to_csv_with_header()?),
+            OutputFormat::Tree => Ok(self.to_json()?), // For single folder, tree format is the same as JSON
         }
     }
 }
 
 pub struct FolderBuilder {
     id: Option<u32>,
+    uuid: Option<String>,
     name: Option<String>,
+    path: Option<String>,
 }
 
 impl FolderBuilder {
     fn new() -> FolderBuilder {
         FolderBuilder {
             id: None,
+            uuid: None,
             name: None,
+            path: None,
         }
     }
 
@@ -86,22 +150,23 @@ impl FolderBuilder {
         self.id = Some(id);
         self
     }
-
+    
+    pub fn uuid(&mut self, uuid: String) -> &mut FolderBuilder {
+        self.uuid = Some(uuid);
+        self
+    }
+    
     pub fn name(&mut self, name: &String) -> &mut FolderBuilder {
         self.name = Some(name.clone());
         self
     }
+    
+    pub fn path(&mut self, path: String) -> &mut FolderBuilder {
+        self.path = Some(path);
+        self
+    }
 
     pub fn build(&self) -> Result<Folder, ModelError> {
-        let id = match &self.id {
-            Some(id) => id.clone(),
-            None => {
-                return Err(ModelError::MissingPropertyValue {
-                    name: "id".to_string(),
-                })
-            }
-        };
-
         let name = match &self.name {
             Some(name) => name.clone(),
             None => {
@@ -110,8 +175,13 @@ impl FolderBuilder {
                 })
             }
         };
-
-        Ok(Folder::new(id, name.clone()))
+        
+        let path = match &self.path {
+            Some(path) => path.clone(),
+            None => name.clone(),
+        };
+        
+        Ok(Folder::new(self.id, self.uuid.clone(), name, path))
     }
 }
 
@@ -138,7 +208,10 @@ impl FolderList {
     }
 
     pub fn insert(&mut self, folder: Folder) {
-        self.folders.insert(folder.id, folder.clone());
+        // Use a combination of name and path as the key to avoid conflicts
+        let key = format!("{}:{}", folder.name(), folder.path());
+        let hash_key = key.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32));
+        self.folders.insert(hash_key, folder.clone());
     }
 
     #[allow(dead_code)]
@@ -193,6 +266,42 @@ impl CsvRecordProducer for FolderList {
 
         records
     }
+    
+    fn to_csv_with_header(&self) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+        wtr.write_record(&Self::csv_header())
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
+        
+        // Sort records by folder name
+        let mut records = self.as_csv_records();
+        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        
+        for record in records {
+            wtr.write_record(&record)
+                .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+        }
+        let data = wtr.into_inner()
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
+        Ok(String::from_utf8(data)
+            .map_err(|e| FormattingError::Utf8Error(e))?)
+    }
+    
+    fn to_csv_without_header(&self) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+        
+        // Sort records by folder name
+        let mut records = self.as_csv_records();
+        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        
+        for record in records {
+            wtr.write_record(&record)
+                .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+        }
+        let data = wtr.into_inner()
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
+        Ok(String::from_utf8(data)
+            .map_err(|e| FormattingError::Utf8Error(e))?)
+    }
 }
 
 impl OutputFormatter for FolderList {
@@ -201,8 +310,9 @@ impl OutputFormatter for FolderList {
     fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
         match format {
             OutputFormat::Json => {
-                // convert to a simple vector for output
-                let folders: Vec<Folder> = self.folders.iter().map(|(_, f)| f.clone()).collect();
+                // convert to a simple vector for output, sorted by name
+                let mut folders: Vec<Folder> = self.folders.iter().map(|(_, f)| f.clone()).collect();
+                folders.sort_by(|a, b| a.name().cmp(&b.name()));
                 let json = serde_json::to_string_pretty(&folders);
                 match json {
                     Ok(json) => Ok(json),
@@ -210,23 +320,132 @@ impl OutputFormatter for FolderList {
                 }
             }
             OutputFormat::Csv => {
-                let buf = BufWriter::new(Vec::new());
-                let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&Self::csv_header()).unwrap();
-                for record in self.as_csv_records() {
-                    wtr.write_record(&record).unwrap();
-                }
-                match wtr.flush() {
-                    Ok(_) => {
-                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
-                        let csv = String::from_utf8(bytes).unwrap();
-                        Ok(csv.clone())
-                    }
+                // Use the csv crate for proper escaping
+                self.to_csv_with_header()
+            }
+            OutputFormat::Tree => {
+                // For folder list, tree format is the same as JSON
+                // In practice, tree format should be handled at the command level
+                // where we have access to the full hierarchy
+                let mut folders: Vec<Folder> = self.folders.iter().map(|(_, f)| f.clone()).collect();
+                folders.sort_by(|a, b| a.name().cmp(&b.name()));
+                let json = serde_json::to_string_pretty(&folders);
+                match json {
+                    Ok(json) => Ok(json),
                     Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
             }
         }
     }
+}
+
+// New models for Physna V3 API
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TenantSetting {
+    #[serde(rename = "tenantId")]
+    pub tenant_id: String,
+    #[serde(rename = "tenantRole")]
+    pub tenant_role: String,
+    #[serde(rename = "userEnabled")]
+    pub user_enabled: bool,
+    #[serde(rename = "tenantDisplayName")]
+    pub tenant_display_name: String,
+    #[serde(rename = "tenantShortName")]
+    pub tenant_short_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct User {
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    pub settings: Vec<TenantSetting>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CurrentUserResponse {
+    pub user: User,
+}
+
+impl CurrentUserResponse {
+    pub fn get_tenant_by_name(&self, name: &str) -> Option<&TenantSetting> {
+        self.user.settings.iter().find(|setting| {
+            setting.tenant_display_name == name || setting.tenant_short_name == name
+        })
+    }
+    
+    pub fn get_tenant_by_id(&self, id: &str) -> Option<&TenantSetting> {
+        self.user.settings.iter().find(|setting| setting.tenant_id == id)
+    }
+}
+
+// Folder models for Physna V3 API
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderResponse {
+    pub id: String,
+    #[serde(rename = "tenantId")]
+    pub tenant_id: String,
+    pub name: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    #[serde(rename = "assetsCount")]
+    pub assets_count: u32,
+    #[serde(rename = "foldersCount")]
+    pub folders_count: u32,
+    #[serde(rename = "parentFolderId", skip_serializing_if = "Option::is_none")]
+    pub parent_folder_id: Option<String>,
+    #[serde(rename = "ownerId", skip_serializing_if = "Option::is_none")]
+    pub owner_id: Option<String>,
+}
+
+impl FolderResponse {
+    pub fn to_folder(&self, path: String) -> Folder {
+        Folder::from_folder_response(self.clone(), path)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SingleFolderResponse {
+    #[serde(rename = "folder")]
+    pub folder: FolderResponse,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderListResponse {
+    pub folders: Vec<FolderResponse>,
+    #[serde(rename = "pageData")]
+    pub page_data: PageData,
+}
+
+impl FolderListResponse {
+    pub fn to_folder_list(&self) -> FolderList {
+        let mut folder_list = FolderList::empty();
+        for folder_response in &self.folders {
+            // For now, we'll use the folder name as the path since we don't have the full hierarchy yet
+            // In a real implementation, we would need to build the full hierarchy to get proper paths
+            let folder = folder_response.to_folder(folder_response.name.clone());
+            folder_list.insert(folder);
+        }
+        folder_list
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageData {
+    pub total: usize,
+    #[serde(rename = "perPage")]
+    pub per_page: usize,
+    #[serde(rename = "currentPage")]
+    pub current_page: usize,
+    #[serde(rename = "lastPage")]
+    pub last_page: usize,
+    #[serde(rename = "startIndex")]
+    pub start_index: usize,
+    #[serde(rename = "endIndex")]
+    pub end_index: usize,
 }
 
 #[cfg(test)]
@@ -236,39 +455,51 @@ mod tests {
     #[test]
     fn test_folder_creation() {
         let id: u32 = 100;
+        let uuid: String = "test-uuid".to_string();
         let name: String = "some_folder_name".to_string();
+        let path: String = "some/path".to_string();
 
-        let folder = Folder::new(id, name.clone());
-        assert_eq!(id, folder.id());
+        let folder = Folder::new(Some(id), Some(uuid.clone()), name.clone(), path.clone());
+        assert_eq!(Some(id), folder.id());
+        assert_eq!(Some(&uuid), folder.uuid());
         assert_eq!(name, folder.name());
+        assert_eq!(path, folder.path());
     }
 
     #[test]
     fn test_folder_builder() {
         let id: u32 = 110;
+        let uuid: String = "test-uuid".to_string();
         let name: String = "some_other_name".to_string();
+        let path: String = "some/path".to_string();
 
-        let folder = Folder::builder().id(id).name(&name).build().unwrap();
-        assert_eq!(id, folder.id());
+        let folder = Folder::builder().id(id).uuid(uuid.clone()).name(&name).path(path.clone()).build().unwrap();
+        assert_eq!(Some(id), folder.id());
+        assert_eq!(Some(uuid), folder.uuid().cloned());
         assert_eq!(name, folder.name());
+        assert_eq!(path, folder.path());
     }
 
     #[test]
     fn test_output_format() {
         let id: u32 = 120;
+        let uuid: String = "test-uuid".to_string();
         let name: String = "folder_name".to_string();
+        let path: String = "folder_name".to_string();
 
-        let folder = Folder::builder().id(id).name(&name).build().unwrap();
+        let folder = Folder::builder().id(id).uuid(uuid.clone()).name(&name).path(path.clone()).build().unwrap();
         let json = folder.format(OutputFormat::Json).unwrap();
         let json_expected = r#"{
   "id": 120,
-  "name": "folder_name"
+  "uuid": "test-uuid",
+  "name": "folder_name",
+  "path": "folder_name"
 }"#;
         assert_eq!(json_expected, json);
 
         let csv = folder.format(OutputFormat::Csv).unwrap();
-        let csv_expected = r#"ID,NAME
-120,folder_name
+        let csv_expected = r#"NAME,PATH
+folder_name,folder_name
 "#;
         assert_eq!(csv_expected, csv);
     }

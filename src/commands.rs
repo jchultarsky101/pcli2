@@ -1,30 +1,46 @@
 use crate::format::OutputFormat;
 use clap::{Arg, ArgMatches, Command};
 use std::path::PathBuf;
-use url::Url;
 
+// Resource commands
+pub const COMMAND_TENANT: &str = "tenant";
+pub const COMMAND_FOLDER: &str = "folder";
+pub const COMMAND_FILE: &str = "file";
+
+// CRUD operations
+pub const COMMAND_CREATE: &str = "create";
+pub const COMMAND_GET: &str = "get";
+pub const COMMAND_LIST: &str = "list";
+pub const COMMAND_UPDATE: &str = "update";
+pub const COMMAND_DELETE: &str = "delete";
+
+// Auth commands
+pub const COMMAND_AUTH: &str = "auth";
+pub const COMMAND_LOGIN: &str = "login";
+pub const COMMAND_LOGOUT: &str = "logout";
+
+// Config commands
 pub const COMMAND_CONFIG: &str = "config";
 pub const COMMAND_EXPORT: &str = "export";
-pub const COMMAND_GET: &str = "get";
-pub const COMMAND_PATH: &str = "path";
-pub const COMMAND_SET: &str = "set";
-pub const COMMAND_DELETE: &str = "delete";
-pub const COMMAND_TENANT: &str = "tenant";
-pub const COMMAND_FOLDERS: &str = "folders";
-pub const COMMAND_LOGIN: &str = "login";
-pub const COMMAND_LOGOFF: &str = "logoff";
-pub const COMMAND_FOLDER: &str = "folder";
+pub const COMMAND_IMPORT: &str = "import";
 
+// Context commands
+pub const COMMAND_CONTEXT: &str = "context";
+pub const COMMAND_SET: &str = "set";
+pub const COMMAND_CLEAR: &str = "clear";
+
+// Parameter names
 pub const PARAMETER_FORMAT: &str = "format";
 pub const PARAMETER_OUTPUT: &str = "output";
-pub const PARAMETER_API_URL: &str = "api_url";
-pub const PARAMETER_OIDC_URL: &str = "oidc_url";
-pub const PARAMETER_CLIENT_ID: &str = "client_id";
-pub const PARAMETER_CLIENT_SECRET: &str = "client_secret";
+pub const PARAMETER_INPUT: &str = "input";
+pub const PARAMETER_CLIENT_ID: &str = "client-id";
+pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
 pub const PARAMETER_ID: &str = "id";
-pub const PARAMETER_FOLDER_ID: &str = "id";
+pub const PARAMETER_UUID: &str = "uuid";
+pub const PARAMETER_NAME: &str = "name";
 pub const PARAMETER_TENANT: &str = "tenant";
-pub const PARAMETER_TENANT_ALIAS: &str = "alias";
+pub const PARAMETER_PARENT_FOLDER_ID: &str = "parent-folder-id";
+pub const PARAMETER_PATH: &str = "path";
 
 pub fn create_cli_commands() -> ArgMatches {
     let format_parameter = Arg::new(PARAMETER_FORMAT)
@@ -41,62 +57,70 @@ pub fn create_cli_commands() -> ArgMatches {
         .short('o')
         .long(PARAMETER_OUTPUT)
         .num_args(1)
-        .required(true)
-        .help("output file path")
+        .required(false)
+        .help("Output file path")
         .value_parser(clap::value_parser!(PathBuf));
+
+    let input_file_parameter = Arg::new(PARAMETER_INPUT)
+        .short('i')
+        .long(PARAMETER_INPUT)
+        .num_args(1)
+        .required(false)
+        .help("Input file path")
+        .value_parser(clap::value_parser!(PathBuf));
+
+    let client_id_parameter = Arg::new(PARAMETER_CLIENT_ID)
+        .long(PARAMETER_CLIENT_ID)
+        .num_args(1)
+        .required(false)
+        .help("Client ID for OAuth2 authentication");
+
+    let client_secret_parameter = Arg::new(PARAMETER_CLIENT_SECRET)
+        .long(PARAMETER_CLIENT_SECRET)
+        .num_args(1)
+        .required(false)
+        .help("Client secret for OAuth2 authentication");
 
     let id_parameter = Arg::new(PARAMETER_ID)
         .short('i')
         .long(PARAMETER_ID)
         .num_args(1)
-        .required(true)
-        .help("tenant ID");
-
-    let tenant_alias_parameter = Arg::new(PARAMETER_TENANT_ALIAS)
-        .short('a')
-        .long(PARAMETER_TENANT_ALIAS)
+        .required(false)
+        .help("Resource ID");
+        
+    let uuid_parameter = Arg::new(PARAMETER_UUID)
+        .long(PARAMETER_UUID)
         .num_args(1)
         .required(false)
-        .help("tenant alias");
+        .help("Resource UUID");
+
+    let name_parameter = Arg::new(PARAMETER_NAME)
+        .short('n')
+        .long(PARAMETER_NAME)
+        .num_args(1)
+        .required(false)
+        .help("Resource name");
 
     let tenant_parameter = Arg::new(PARAMETER_TENANT)
         .short('t')
         .long(PARAMETER_TENANT)
         .num_args(1)
-        .required(true);
-
-    let api_url_parameter = Arg::new(PARAMETER_API_URL)
-        .long(PARAMETER_API_URL)
+        .required(false)
+        .help("Tenant ID or alias");
+        
+    
+        
+    let parent_folder_id_parameter = Arg::new(PARAMETER_PARENT_FOLDER_ID)
+        .long(PARAMETER_PARENT_FOLDER_ID)
         .num_args(1)
-        .required(true)
-        .help("API URL")
-        .value_parser(clap::value_parser!(Url));
-
-    let oidc_url_parameter = Arg::new(PARAMETER_OIDC_URL)
-        .long(PARAMETER_OIDC_URL)
+        .required(false)
+        .help("Parent folder ID for creating subfolders");
+        
+    let path_parameter = Arg::new(PARAMETER_PATH)
+        .long(PARAMETER_PATH)
         .num_args(1)
-        .required(true)
-        .help("OpenID Connect identity provider URL")
-        .value_parser(clap::value_parser!(Url));
-
-    let client_id_parameter = Arg::new(PARAMETER_CLIENT_ID)
-        .long(PARAMETER_CLIENT_ID)
-        .num_args(1)
-        .required(true)
-        .help("OpenID Connect client ID");
-
-    let client_secret_parameter = Arg::new(PARAMETER_CLIENT_SECRET)
-        .long(PARAMETER_CLIENT_SECRET)
-        .num_args(1)
-        .required(true)
-        .help("OpenID Connect client secret");
-
-    let folder_id_parameter = Arg::new(PARAMETER_FOLDER_ID)
-        .long(PARAMETER_ID)
-        .num_args(1)
-        .required(true)
-        .help("folder ID (positive integer)")
-        .value_parser(clap::value_parser!(u32));
+        .required(false)
+        .help("Folder path (e.g., /Root/Child/Grandchild)");
 
     Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
@@ -106,81 +130,149 @@ pub fn create_cli_commands() -> ArgMatches {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(
-            // Configuration
-            Command::new(COMMAND_CONFIG)
-                .about("working with configuration")
+            // Tenant resource commands
+            Command::new(COMMAND_TENANT)
+                .about("Manage tenants")
                 .subcommand_required(true)
                 .subcommand(
+                    Command::new(COMMAND_CREATE)
+                        .about("Create a new tenant")
+                        .arg(name_parameter.clone()),
+                )
+                .subcommand(
                     Command::new(COMMAND_GET)
-                        .about("displays configuration")
+                        .about("Get tenant details")
+                        .arg(id_parameter.clone())
+                        .arg(format_parameter.clone()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_LIST)
+                        .about("List all tenants")
+                        .arg(format_parameter.clone()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_UPDATE)
+                        .about("Update tenant configuration")
+                        .arg(id_parameter.clone())
+                        .arg(name_parameter.clone()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_DELETE)
+                        .about("Delete a tenant")
+                        .arg(id_parameter.clone()),
+                ),
+        )
+        .subcommand(
+            // Folder resource commands
+            Command::new(COMMAND_FOLDER)
+                .about("Manage folders")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_CREATE)
+                        .about("Create a new folder")
+                        .arg(tenant_parameter.clone())
+                        .arg(name_parameter.clone())
+                        .arg(parent_folder_id_parameter.clone())
+                        .arg(path_parameter.clone())
                         .arg(format_parameter.clone())
-                        .subcommand(Command::new(COMMAND_PATH).about("show the configuration path"))
+                        .group(clap::ArgGroup::new("parent")
+                            .args([PARAMETER_PARENT_FOLDER_ID, PARAMETER_PATH])
+                            .multiple(false)
+                        ),
+                )
+                .subcommand(
+                    Command::new(COMMAND_GET)
+                        .about("Get folder details")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_LIST)
+                        .about("List all folders")
+                        .arg(tenant_parameter.clone())
+                        .arg(format_parameter.clone()),
+                )
+                
+                .subcommand(
+                    Command::new(COMMAND_DELETE)
+                        .about("Delete a folder")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone()),
+                ),
+        )
+        .subcommand(
+            // Authentication commands
+            Command::new(COMMAND_AUTH)
+                .about("Authentication operations")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_LOGIN)
+                        .about("Login using client credentials")
+                        .arg(client_id_parameter.clone())
+                        .arg(client_secret_parameter.clone()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_LOGOUT)
+                        .about("Logout and clear session"),
+                ),
+        )
+        .subcommand(
+            // Context commands
+            Command::new(COMMAND_CONTEXT)
+                .about("Context management")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_SET)
+                        .about("Set context")
                         .subcommand(
-                            Command::new(COMMAND_TENANT)
-                                .about("shows tenant configuration")
-                                .arg(format_parameter.clone())
+                            Command::new("tenant")
+                                .about("Set active tenant")
+                                .arg(name_parameter.clone().required(false))
                                 .arg(id_parameter.clone()),
                         ),
                 )
                 .subcommand(
-                    Command::new(COMMAND_EXPORT)
-                        .about("exports the current configuration as a Yaml file")
-                        .arg(output_file_parameter),
+                    Command::new(COMMAND_GET)
+                        .about("Get current context")
+                        .arg(format_parameter.clone()),
                 )
                 .subcommand(
-                    Command::new(COMMAND_SET)
-                        .about("sets configuration property")
-                        .subcommand_required(true)
+                    Command::new(COMMAND_CLEAR)
+                        .about("Clear context")
                         .subcommand(
-                            Command::new(COMMAND_TENANT)
-                                .about("sets tenant configuration")
-                                .arg(tenant_alias_parameter.clone())
-                                .arg(id_parameter.clone())
-                                .arg(api_url_parameter)
-                                .arg(oidc_url_parameter)
-                                .arg(client_id_parameter)
-                                .arg(client_secret_parameter),
+                            Command::new("tenant").about("Clear active tenant"),
                         ),
-                )
-                .subcommand(
-                    Command::new(COMMAND_DELETE).about("delete").subcommand(
-                        Command::new(COMMAND_TENANT)
-                            .about("deletes a tenant")
-                            .arg(id_parameter.clone()),
-                    ),
                 ),
         )
         .subcommand(
-            // Folder
-            Command::new(COMMAND_FOLDER)
-                .about("individual folder operations")
+            // Configuration commands
+            Command::new(COMMAND_CONFIG)
+                .about("Configuration management")
                 .subcommand_required(true)
                 .subcommand(
                     Command::new(COMMAND_GET)
-                        .about("prints the folder details")
-                        .arg(tenant_parameter.clone())
-                        .arg(folder_id_parameter.clone())
+                        .about("Get configuration details")
+                        .arg(format_parameter.clone())
+                        .subcommand(Command::new("path").about("Show configuration file path")),
+                )
+                .subcommand(
+                    Command::new(COMMAND_LIST)
+                        .about("List configuration")
                         .arg(format_parameter.clone()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_EXPORT)
+                        .about("Export configuration to file")
+                        .arg(output_file_parameter),
+                )
+                .subcommand(
+                    Command::new(COMMAND_IMPORT)
+                        .about("Import configuration from file")
+                        .arg(input_file_parameter),
                 ),
-        )
-        .subcommand(
-            // Folders
-            Command::new(COMMAND_FOLDERS)
-                .about("lists all folders")
-                .arg(tenant_parameter.clone())
-                .arg(format_parameter.clone()),
-        )
-        .subcommand(
-            // Login
-            Command::new(COMMAND_LOGIN)
-                .about("attempts to login for this tenant")
-                .arg(tenant_parameter.clone()),
-        )
-        .subcommand(
-            // Logoff
-            Command::new(COMMAND_LOGOFF)
-                .about("attempts to logoff for this tenant")
-                .arg(tenant_parameter.clone()),
         )
         .get_matches()
 }

@@ -15,6 +15,12 @@ pub enum FormattingError {
     UnsupportedOutputFormat { format: String },
     #[error("failed to format output due to: {cause:?}")]
     FormatFailure { cause: Box<dyn std::error::Error> },
+    #[error("CSV error: {0}")]
+    CsvError(#[from] csv::Error),
+    #[error("UTF-8 conversion error: {0}")]
+    Utf8Error(#[from] std::string::FromUtf8Error),
+    #[error("CSV writer error: {0}")]
+    CsvWriterError(String),
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, EnumIter)]
@@ -23,11 +29,12 @@ pub enum OutputFormat {
     Csv,
     #[default]
     Json,
+    Tree,
 }
 
 impl OutputFormat {
     pub fn names() -> Vec<&'static str> {
-        vec!["json", "csv"]
+        vec!["json", "csv", "tree"]
     }
 }
 
@@ -36,6 +43,7 @@ impl std::fmt::Display for OutputFormat {
         match self {
             OutputFormat::Csv => write!(f, "csv"),
             OutputFormat::Json => write!(f, "json"),
+            OutputFormat::Tree => write!(f, "tree"),
         }
     }
 }
@@ -49,6 +57,7 @@ impl FromStr for OutputFormat {
         match normalized_format {
             JSON => Ok(OutputFormat::Json),
             CSV => Ok(OutputFormat::Csv),
+            TREE => Ok(OutputFormat::Tree),
             _ => Err(FormattingError::UnsupportedOutputFormat {
                 format: normalized_format.to_string(),
             }),

@@ -5,26 +5,63 @@ use serde_json;
 use tracing::{debug, trace};
 
 /// Error emitted by the Physna V3 Api
+/// 
+/// This enum represents all possible errors that can occur when interacting with the Physna V3 API.
+/// It includes HTTP errors, JSON parsing errors, authentication errors, and retry failures.
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
+    /// HTTP request error from the reqwest crate
     #[error("HTTP error: {0}")]
     HttpError(#[from] reqwest::Error),
+    
+    /// JSON parsing error from serde_json
     #[error("JSON parsing error: {0}")]
     JsonError(#[from] serde_json::Error),
+    
+    /// Authentication error with a descriptive message
     #[error("Authentication error: {0}")]
     AuthError(String),
+    
+    /// Request failed after retry attempts with a descriptive message
     #[error("Request failed after retry: {0}")]
     RetryFailed(String),
 }
 
+/// Physna V3 API client
+/// 
+/// This client provides methods to interact with the Physna V3 REST API.
+/// It handles authentication, automatic token refresh, and common HTTP operations.
+/// 
+/// The client supports:
+/// - Automatic access token management with refresh on expiration
+/// - Client credentials for token refresh
+/// - Common HTTP operations (GET, POST, PUT, DELETE)
+/// - Automatic retry on authentication failures
 pub struct PhysnaApiClient {
+    /// Base URL for the Physna V3 API (e.g., "https://app-api.physna.com/v3")
     base_url: String,
+    
+    /// Current access token for API authentication
     access_token: Option<String>,
+    
+    /// Client credentials (client_id, client_secret) for token refresh
     client_credentials: Option<(String, String)>, // (client_id, client_secret)
+    
+    /// HTTP client for making requests
     http_client: reqwest::Client,
 }
 
 impl PhysnaApiClient {
+    /// Create a new Physna API client with default configuration
+    /// 
+    /// The client is initialized with:
+    /// - Default base URL: "https://app-api.physna.com/v3"
+    /// - No access token (must be set with `with_access_token`)
+    /// - No client credentials (must be set with `with_client_credentials`)
+    /// - Default HTTP client
+    /// 
+    /// # Returns
+    /// A new `PhysnaApiClient` instance
     pub fn new() -> Self {
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
@@ -34,86 +71,138 @@ impl PhysnaApiClient {
         }
     }
     
+    /// Set the base URL for the API client
+    /// 
+    /// # Arguments
+    /// * `base_url` - The base URL for the Physna V3 API (e.g., "https://app-api.physna.com/v3")
+    /// 
+    /// # Returns
+    /// The updated `PhysnaApiClient` instance with the new base URL
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self
     }
 
+    /// Set the access token for API authentication
+    /// 
+    /// # Arguments
+    /// * `token` - The access token to use for API requests
+    /// 
+    /// # Returns
+    /// The updated `PhysnaApiClient` instance with the access token set
     pub fn with_access_token(mut self, token: String) -> Self {
         self.access_token = Some(token);
         self
     }
     
+    /// Set the client credentials for automatic token refresh
+    /// 
+    /// # Arguments
+    /// * `client_id` - The client ID for authentication
+    /// * `client_secret` - The client secret for authentication
+    /// 
+    /// # Returns
+    /// The updated `PhysnaApiClient` instance with client credentials set
     pub fn with_client_credentials(mut self, client_id: String, client_secret: String) -> Self {
         self.client_credentials = Some((client_id, client_secret));
         self
     }
     
     /// Attempt to refresh the access token using client credentials
+    /// 
+    /// This method tries to obtain a new access token using the stored client credentials.
+    /// It's called automatically when API requests fail with authentication errors (401/403).
+    /// 
+    /// # Returns
+    /// * `Ok(())` - Token successfully refreshed
+    /// * `Err(ApiError::AuthError)` - Failed to refresh token or no credentials available
     async fn refresh_token(&mut self) -> Result<(), ApiError> {
+        // Check if we have client credentials available for token refresh
         if let Some((client_id, client_secret)) = &self.client_credentials {
             trace!("Refreshing access token");
+            
+            // Create a new auth client with the stored credentials
             let auth_client = AuthClient::new(client_id.clone(), client_secret.clone());
+            
+            // Attempt to get a new access token
             match auth_client.get_access_token().await {
                 Ok(new_token) => {
                     debug!("Successfully refreshed access token");
+                    // Update the stored access token
                     self.access_token = Some(new_token);
                     Ok(())
                 }
                 Err(e) => {
+                    // Return an authentication error with details
                     Err(ApiError::AuthError(format!("Failed to refresh token: {}", e)))
                 }
             }
         } else {
+            // No client credentials available for token refresh
             Err(ApiError::AuthError("No client credentials available for token refresh".to_string()))
         }
     }
     
-    /// Execute an HTTP request with automatic token refresh on 401/403 errors
+    /// Generic method to build and execute HTTP requests with automatic token refresh on 401/403 errors
+    /// 
+    /// This method provides a unified interface for making HTTP requests to the Physna V3 API.
+    /// It automatically handles:
+    /// - Adding access tokens to authenticated requests
+    /// - Detecting authentication failures (401/403)
+    /// - Refreshing expired tokens using client credentials
+    /// - Retrying failed requests with refreshed tokens
+    /// 
+    /// # Type Parameters
+    /// * `T` - The type to deserialize the response into (must implement `DeserializeOwned`)
+    /// * `F` - A closure that builds the HTTP request
+    /// 
+    /// # Arguments
+    /// * `request_builder` - A closure that takes a `reqwest::Client` and returns a `RequestBuilder`
+    /// 
+    /// # Returns
+    /// * `Ok(T)` - Successfully executed request with parsed response
+    /// * `Err(ApiError)` - HTTP error, JSON parsing error, or authentication failure
     async fn execute_request<T, F>(&mut self, request_builder: F) -> Result<T, ApiError>
     where
         T: serde::de::DeserializeOwned,
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
-        // First attempt with current token
+        // Build and execute the initial request
         let mut request = request_builder(&self.http_client);
         
-        // Add access token if available
+        // Add access token header if available for authentication
         if let Some(token) = &self.access_token {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
         
-        trace!("Executing request");
         let response = request.send().await?;
-        
-        // Check if we need to retry due to authentication issues
+
+        // Check if we need to retry due to authentication issues (401 Unauthorized or 403 Forbidden)
         if response.status() == reqwest::StatusCode::UNAUTHORIZED || 
            response.status() == reqwest::StatusCode::FORBIDDEN {
             debug!("Received authentication error ({}), attempting token refresh", response.status());
             
-            // Try to refresh the token
-            if let Err(refresh_error) = self.refresh_token().await {
-                return Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Refresh failed: {}", 
-                    response.status(), 
-                    refresh_error
-                )));
-            }
+            // Try to refresh the expired or invalid access token
+            self.refresh_token().await?;
             
-            // Retry the request with the new token
+            // Retry the original request with the newly refreshed token
             debug!("Retrying request with refreshed token");
             let mut retry_request = request_builder(&self.http_client);
             
+            // Add the refreshed access token to the retry request
             if let Some(token) = &self.access_token {
                 retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
             }
             
             let retry_response = retry_request.send().await?;
             
+            // Check if the retry was successful
             if retry_response.status().is_success() {
+                // Parse and return the JSON response
                 let result: T = retry_response.json().await?;
                 Ok(result)
             } else {
+                // Retry failed - return detailed error information
                 Err(ApiError::RetryFailed(format!(
                     "Original error: {}, Retry failed with status: {}", 
                     response.status(), 
@@ -121,11 +210,11 @@ impl PhysnaApiClient {
                 )))
             }
         } else if response.status().is_success() {
-            match response.json::<T>().await {
-                Ok(result) => Ok(result),
-                Err(e) => Err(ApiError::HttpError(e.into()))
-            }
+            // Initial request was successful - parse and return the JSON response
+            let result: T = response.json().await?;
+            Ok(result)
         } else {
+            // Other HTTP error - return the error status
             Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
         }
     }
@@ -203,20 +292,51 @@ impl PhysnaApiClient {
         }
     }
 
+    /// Get the current user's information from the Physna V3 API
+    /// 
+    /// This method fetches information about the currently authenticated user,
+    /// including their tenant settings and other user-specific configuration.
+    /// The response contains the user's profile information and available tenants.
+    /// 
+    /// # Returns
+    /// * `Ok(CurrentUserResponse)` - Successfully fetched current user information
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn get_current_user(&mut self) -> Result<CurrentUserResponse, ApiError> {
         let url = format!("{}/users/me", self.base_url);
         self.get(&url).await
     }
 
+    /// List all available tenants for the current user
+    /// 
+    /// This method fetches all tenants available to the currently authenticated user.
+    /// Tenants represent different organizations or environments that the user has access to.
+    /// Each tenant has its own set of folders, assets, and configurations.
+    /// 
+    /// # Returns
+    /// * `Ok(Vec<TenantSetting>)` - Successfully fetched list of available tenants
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn list_tenants(&mut self) -> Result<Vec<crate::model::TenantSetting>, ApiError> {
         let user = self.get_current_user().await?;
         Ok(user.user.settings)
     }
     
+    /// List folders for a specific tenant with optional pagination
+    /// 
+    /// This method fetches a list of folders for the specified tenant.
+    /// It supports pagination through the optional `page` and `per_page` parameters.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant whose folders to list
+    /// * `page` - Optional page number (1-based indexing)
+    /// * `per_page` - Optional number of items per page (default: 100)
+    /// 
+    /// # Returns
+    /// * `Ok(FolderListResponse)` - Successfully fetched list of folders with pagination metadata
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn list_folders(&mut self, tenant_id: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
         let url = format!("{}/tenants/{}/folders", self.base_url, tenant_id);
         
-        // Add query parameters if provided
+        // Build query parameters for pagination if provided
         let mut query_params = Vec::new();
         if let Some(page) = page {
             query_params.push(("page", page.to_string()));
@@ -225,37 +345,62 @@ impl PhysnaApiClient {
             query_params.push(("per_page", per_page.to_string()));
         }
         
+        // Add query parameters to URL if provided
         let url = if !query_params.is_empty() {
             format!("{}?{}", url, serde_urlencoded::to_string(query_params).unwrap())
         } else {
             url
         };
         
+        // Execute GET request to fetch folders
         self.get(&url).await
     }
     
+    /// Get details for a specific folder by ID
+    /// 
+    /// This method fetches detailed information about a specific folder by its ID.
+    /// The response includes folder metadata such as name, creation date, asset count, etc.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the folder
+    /// * `folder_id` - The UUID of the folder to retrieve
+    /// 
+    /// # Returns
+    /// * `Ok(FolderResponse)` - Successfully fetched folder details
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn get_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<crate::model::FolderResponse, ApiError> {
         let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_id, folder_id);
-        // The API returns a SingleFolderResponse with a "folder" field
-        let response: crate::model::SingleFolderResponse = self.get(&url).await?;
-        Ok(response.folder)
+        self.get(&url).await
     }
     
+    /// Create a new folder within a tenant
+    /// 
+    /// This method creates a new folder with the specified name within the given tenant.
+    /// Optionally, the folder can be created as a subfolder of an existing parent folder.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant where to create the folder
+    /// * `name` - The name for the new folder
+    /// * `parent_folder_id` - Optional UUID of the parent folder (creates subfolder if provided)
+    /// 
+    /// # Returns
+    /// * `Ok(FolderResponse)` - Successfully created folder details
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn create_folder(&mut self, tenant_id: &str, name: &str, parent_folder_id: Option<&str>) -> Result<crate::model::FolderResponse, ApiError> {
         let url = format!("{}/tenants/{}/folders", self.base_url, tenant_id);
         
+        // Build request body with folder name
         let mut body = serde_json::json!({
             "name": name
         });
         
-        // Add parent folder ID if provided
+        // Add parent folder ID if provided to create a subfolder
         if let Some(parent_id) = parent_folder_id {
             body["parentFolderId"] = serde_json::Value::String(parent_id.to_string());
         }
         
-        // The API returns a SingleFolderResponse with a "folder" field
-        let response: crate::model::SingleFolderResponse = self.post(&url, &body).await?;
-        Ok(response.folder)
+        // Execute POST request to create the folder
+        self.post(&url, &body).await
     }
     
     pub async fn update_folder(&mut self, tenant_id: &str, folder_id: &str, name: &str) -> Result<crate::model::FolderResponse, ApiError> {
@@ -270,6 +415,18 @@ impl PhysnaApiClient {
         Ok(response.folder)
     }
     
+    /// Delete a folder by ID
+    /// 
+    /// This method deletes the specified folder from the tenant.
+    /// Note: Deleting a folder will also delete all its contents (subfolders and assets).
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the folder
+    /// * `folder_id` - The UUID of the folder to delete
+    /// 
+    /// # Returns
+    /// * `Ok(())` - Successfully deleted folder
+    /// * `Err(ApiError)` - HTTP error or other error
     pub async fn delete_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<(), ApiError> {
         let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_id, folder_id);
         self.delete(&url).await

@@ -3,7 +3,7 @@ use crate::format::{
 };
 use csv::Writer;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::BufWriter};
+use std::collections::HashMap;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -76,6 +76,42 @@ impl CsvRecordProducer for Folder {
 
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         vec![vec![self.name(), self.path()]]
+    }
+    
+    fn to_csv_with_header(&self) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+        wtr.write_record(&Self::csv_header())
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
+        
+        // Sort records by folder name
+        let mut records = self.as_csv_records();
+        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        
+        for record in records {
+            wtr.write_record(&record)
+                .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+        }
+        let data = wtr.into_inner()
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
+        Ok(String::from_utf8(data)
+            .map_err(|e| FormattingError::Utf8Error(e))?)
+    }
+
+    fn to_csv_without_header(&self) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+        
+        // Sort records by folder name
+        let mut records = self.as_csv_records();
+        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        
+        for record in records {
+            wtr.write_record(&record)
+                .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+        }
+        let data = wtr.into_inner()
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
+        Ok(String::from_utf8(data)
+            .map_err(|e| FormattingError::Utf8Error(e))?)
     }
 }
 
@@ -230,6 +266,42 @@ impl CsvRecordProducer for FolderList {
 
         records
     }
+    
+    fn to_csv_with_header(&self) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+        wtr.write_record(&Self::csv_header())
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
+        
+        // Sort records by folder name
+        let mut records = self.as_csv_records();
+        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        
+        for record in records {
+            wtr.write_record(&record)
+                .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+        }
+        let data = wtr.into_inner()
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
+        Ok(String::from_utf8(data)
+            .map_err(|e| FormattingError::Utf8Error(e))?)
+    }
+    
+    fn to_csv_without_header(&self) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+        
+        // Sort records by folder name
+        let mut records = self.as_csv_records();
+        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        
+        for record in records {
+            wtr.write_record(&record)
+                .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+        }
+        let data = wtr.into_inner()
+            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
+        Ok(String::from_utf8(data)
+            .map_err(|e| FormattingError::Utf8Error(e))?)
+    }
 }
 
 impl OutputFormatter for FolderList {
@@ -248,25 +320,8 @@ impl OutputFormatter for FolderList {
                 }
             }
             OutputFormat::Csv => {
-                let buf = BufWriter::new(Vec::new());
-                let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&Self::csv_header()).unwrap();
-                
-                // Sort records by folder name
-                let mut records = self.as_csv_records();
-                records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
-                
-                for record in records {
-                    wtr.write_record(&record).unwrap();
-                }
-                match wtr.flush() {
-                    Ok(_) => {
-                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
-                        let csv = String::from_utf8(bytes).unwrap();
-                        Ok(csv.clone())
-                    }
-                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-                }
+                // Use the csv crate for proper escaping
+                self.to_csv_with_header()
             }
             OutputFormat::Tree => {
                 // For folder list, tree format is the same as JSON

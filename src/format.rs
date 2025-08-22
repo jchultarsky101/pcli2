@@ -15,6 +15,12 @@ pub enum FormattingError {
     UnsupportedOutputFormat { format: String },
     #[error("failed to format output due to: {cause:?}")]
     FormatFailure { cause: Box<dyn std::error::Error> },
+    #[error("CSV error: {0}")]
+    CsvError(#[from] csv::Error),
+    #[error("UTF-8 conversion error: {0}")]
+    Utf8Error(#[from] std::string::FromUtf8Error),
+    #[error("CSV writer error: {0}")]
+    CsvWriterError(String),
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, EnumIter)]

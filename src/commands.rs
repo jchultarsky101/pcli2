@@ -36,6 +36,7 @@ pub const PARAMETER_INPUT: &str = "input";
 pub const PARAMETER_CLIENT_ID: &str = "client-id";
 pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
 pub const PARAMETER_ID: &str = "id";
+pub const PARAMETER_UUID: &str = "uuid";
 pub const PARAMETER_NAME: &str = "name";
 pub const PARAMETER_TENANT: &str = "tenant";
 pub const PARAMETER_PARENT_FOLDER_ID: &str = "parent-folder-id";
@@ -86,6 +87,12 @@ pub fn create_cli_commands() -> ArgMatches {
         .num_args(1)
         .required(false)
         .help("Resource ID");
+        
+    let uuid_parameter = Arg::new(PARAMETER_UUID)
+        .long(PARAMETER_UUID)
+        .num_args(1)
+        .required(false)
+        .help("Resource UUID");
 
     let name_parameter = Arg::new(PARAMETER_NAME)
         .short('n')
@@ -177,7 +184,7 @@ pub fn create_cli_commands() -> ArgMatches {
                     Command::new(COMMAND_GET)
                         .about("Get folder details")
                         .arg(tenant_parameter.clone())
-                        .arg(id_parameter.clone())
+                        .arg(uuid_parameter.clone())
                         .arg(path_parameter.clone())
                         .arg(format_parameter.clone()),
                 )
@@ -187,20 +194,12 @@ pub fn create_cli_commands() -> ArgMatches {
                         .arg(tenant_parameter.clone())
                         .arg(format_parameter.clone()),
                 )
-                .subcommand(
-                    Command::new(COMMAND_UPDATE)
-                        .about("Update folder details")
-                        .arg(tenant_parameter.clone())
-                        .arg(id_parameter.clone())
-                        .arg(path_parameter.clone())
-                        .arg(name_parameter.clone())
-                        .arg(format_parameter.clone()),
-                )
+                
                 .subcommand(
                     Command::new(COMMAND_DELETE)
                         .about("Delete a folder")
                         .arg(tenant_parameter.clone())
-                        .arg(id_parameter.clone())
+                        .arg(uuid_parameter.clone())
                         .arg(path_parameter.clone()),
                 ),
         )

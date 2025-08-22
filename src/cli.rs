@@ -82,14 +82,13 @@ pub async fn execute_command(
                                     for tenant in tenants {
                                         match format {
                                             OutputFormat::Json => {
-                                                println!("  {{\"id\": \"{}\", \"name\": \"{}\"}}", 
-                                                    tenant.tenant_id, tenant.tenant_display_name);
+                                                println!("  {{\"name\": \"{}\"}}", tenant.tenant_display_name);
                                             }
                                             OutputFormat::Csv => {
-                                                println!("  {},{}", tenant.tenant_id, tenant.tenant_display_name);
+                                                println!("  {}", tenant.tenant_display_name);
                                             }
                                             OutputFormat::Tree => {
-                                                println!("  {} ({})", tenant.tenant_display_name, tenant.tenant_id);
+                                                println!("  {}", tenant.tenant_display_name);
                                             }
                                         }
                                     }
@@ -822,16 +821,14 @@ pub async fn execute_command(
                         if let Some(tenant_name) = configuration.get_active_tenant_name() {
                             match format {
                                 OutputFormat::Json => {
-                                    println!("{{\"active_tenant\": {{\"id\": \"{}\", \"name\": \"{}\"}}}}", 
-                                        tenant_id, tenant_name);
+                                    println!("{{\"active_tenant\": {{\"name\": \"{}\"}}}}", tenant_name);
                                 }
                                 OutputFormat::Csv => {
-                                    println!("ACTIVE_TENANT_ID,ACTIVE_TENANT_NAME
-{},{}", 
-                                        tenant_id, tenant_name);
+                                    println!("ACTIVE_TENANT_NAME
+{}", tenant_name);
                                 }
                                 OutputFormat::Tree => {
-                                    println!("Active tenant: {} ({})", tenant_name, tenant_id);
+                                    println!("Active tenant: {}", tenant_name);
                                 }
                             }
                         } else {

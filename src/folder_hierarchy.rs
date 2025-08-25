@@ -51,11 +51,15 @@ impl FolderHierarchy {
     pub async fn build_from_api(client: &mut PhysnaApiClient, tenant_id: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let mut hierarchy = Self::new();
         
-        // Fetch all folders using pagination with default per_page of 100
+        // Fetch all folders using pagination with per_page of 200 for better performance (API max is 1000)
         let mut page = 1;
+        let per_page = 200;
         loop {
-            trace!("Fetching folder page {}", page);
-            let response = client.list_folders(tenant_id, Some(page), Some(100)).await?;
+            trace!("Fetching folder page {} for tenant {} ({} folders so far)", page, tenant_id, hierarchy.nodes.len());
+            let response = client.list_folders(tenant_id, Some(page), Some(per_page)).await?;
+            
+            let folders_on_page = response.folders.len();
+            trace!("Fetched {} folders on page {}", folders_on_page, page);
             
             // Add all folders to the hierarchy
             for folder in response.folders {
@@ -75,7 +79,9 @@ impl FolderHierarchy {
             }
             
             // Check if we've reached the last page
+            // The API uses 1-based indexing for pages
             if response.page_data.current_page >= response.page_data.last_page {
+                trace!("Reached last page of folders for tenant {} after {} pages", tenant_id, page);
                 break;
             }
             

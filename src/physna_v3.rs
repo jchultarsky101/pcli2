@@ -1,5 +1,5 @@
 use crate::auth::AuthClient;
-use crate::model::{CurrentUserResponse, FolderListResponse, AssetListResponse, AssetResponse, SingleAssetResponse};
+use crate::model::{CurrentUserResponse, FolderListResponse};
 use reqwest;
 use serde_json;
 use tracing::{debug, trace};
@@ -455,7 +455,7 @@ impl PhysnaApiClient {
         // Build query parameters for pagination and filtering if provided
         let mut query_params = Vec::new();
         if let Some(folder_id) = folder_id {
-            query_params.push(("folder_id", folder_id));
+            query_params.push(("folderId", folder_id));
         }
         if let Some(page) = page {
             query_params.push(("page", page.to_string()));

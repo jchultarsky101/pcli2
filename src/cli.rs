@@ -10,6 +10,7 @@ use pcli2::commands::{
 use pcli2::format::{OutputFormat, OutputFormatter};
 use clap::ArgMatches;
 use inquire::Select;
+use pcli2::asset_cache::AssetCache;
 use pcli2::auth::AuthClient;
 use pcli2::configuration::Configuration;
 use pcli2::folder_cache::FolderCache;
@@ -34,6 +35,8 @@ pub enum CliError {
     SecurityError(String),
     #[error("Missing required argument: {0}")]
     MissingRequiredArgument(String),
+    #[error("JSON serialization error")]
+    JsonError(#[from] serde_json::Error),
 }
 
 fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
@@ -59,7 +62,7 @@ pub async fn execute_command(
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing tenant list command");
                     // Try to get access token and list tenants from Physna V3 API
-                    let keyring = Keyring::default();
+                    let mut keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
@@ -77,19 +80,23 @@ pub async fn execute_command(
                                     let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
                                     let format = OutputFormat::from_str(format).unwrap();
                                     
-                                    // Display the tenants
-                                    trace!("Displaying list of available tenants");
-                                    println!("Available tenants:");
-                                    for tenant in tenants {
-                                        match format {
-                                            OutputFormat::Json => {
-                                                println!("  {{\"name\": \"{}\"}}", tenant.tenant_display_name);
+                                    match format {
+                                        OutputFormat::Json => {
+                                            // For JSON format, output a single array containing all tenants
+                                            let json = serde_json::to_string_pretty(&tenants)?;
+                                            println!("{}", json);
+                                        }
+                                        OutputFormat::Csv => {
+                                            // For CSV format, output header and each tenant name on a separate line
+                                            println!("TENANT_NAME");
+                                            for tenant in tenants {
+                                                println!("{}", tenant.tenant_display_name);
                                             }
-                                            OutputFormat::Csv => {
-                                                println!("  {}", tenant.tenant_display_name);
-                                            }
-                                            OutputFormat::Tree => {
-                                                println!("  {}", tenant.tenant_display_name);
+                                        }
+                                        OutputFormat::Tree => {
+                                            // For tree format, output each tenant name on a separate line
+                                            for tenant in tenants {
+                                                println!("{}", tenant.tenant_display_name);
                                             }
                                         }
                                     }
@@ -142,7 +149,7 @@ pub async fn execute_command(
                     let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
                     
                     // Try to get access token and list folders from Physna V3 API
-                    let keyring = Keyring::default();
+                    let mut keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
@@ -237,7 +244,7 @@ pub async fn execute_command(
                     let format = OutputFormat::from_str(&format_str).unwrap();
                     
                     // Try to get access token and get folder via Physna V3 API
-                    let keyring = Keyring::default();
+                    let mut keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
@@ -350,7 +357,7 @@ pub async fn execute_command(
                     }
                     
                     // Try to get access token and create folder via Physna V3 API
-                    let keyring = Keyring::default();
+                    let mut keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
@@ -464,7 +471,7 @@ pub async fn execute_command(
                     }
                     
                     // Try to get access token and delete folder via Physna V3 API
-                    let keyring = Keyring::default();
+                    let mut keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
@@ -502,7 +509,6 @@ pub async fn execute_command(
                             
                             match client.delete_folder(&tenant, &folder_id).await {
                                 Ok(_) => {
-                                    println!("Folder deleted successfully");
                                     Ok(())
                                 }
                                 Err(e) => {
@@ -557,8 +563,11 @@ pub async fn execute_command(
                         _ => {} // JSON and CSV are supported
                     }
                     
+                    // Check if refresh is requested
+                    let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
+                    
                     // Try to get access token and list assets from Physna V3 API
-                    let keyring = Keyring::default();
+                    let mut keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
@@ -571,48 +580,41 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // If a path is specified, find the folder ID for that path
-                            let folder_id = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
-                                trace!("Finding folder ID for path: {}", path);
-                                // We need to get the folder hierarchy to find the folder by path
-                                match FolderCache::get_or_fetch(&mut client, &tenant).await {
-                                    Ok(hierarchy) => {
-                                        if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
-                                            Some(folder_node.id().to_string())
-                                        } else {
-                                            eprintln!("Folder with path '{}' not found", path);
-                                            return Ok(());
-                                        }
-                                    }
+                            // If a path is specified, get assets filtered by folder path
+                            let asset_list = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                trace!("Getting assets for folder path: {}", path);
+                                match AssetCache::get_assets_for_folder(&mut client, &tenant, path, refresh_requested).await {
+                                    Ok(asset_list) => asset_list,
                                     Err(e) => {
-                                        error!("Error building folder hierarchy: {}", e);
-                                        eprintln!("Error building folder hierarchy: {}", e);
+                                        error!("Error getting assets for folder '{}': {}", path, e);
+                                        eprintln!("Error getting assets for folder '{}': {}", path, e);
                                         return Ok(());
                                     }
                                 }
                             } else {
-                                // If no path is specified, list assets in the root folder
-                                // For now, we'll list all assets (no folder filter)
-                                None
-                            };
-                            
-                            // List assets in the specified folder (or all assets if no folder specified)
-                            match client.list_assets(&tenant, folder_id, None, None).await {
-                                Ok(asset_list_response) => {
-                                    let asset_list = asset_list_response.to_asset_list();
-                                    match asset_list.format(format) {
-                                        Ok(output) => {
-                                            println!("{}", output);
-                                            Ok(())
-                                        }
-                                        Err(e) => Err(CliError::FormattingError(e)),
+                                // No path specified, get all assets for tenant
+                                match if refresh_requested {
+                                    trace!("Refresh requested, forcing API fetch for all assets");
+                                    AssetCache::refresh(&mut client, &tenant).await
+                                } else {
+                                    trace!("Using cache or fetching from API for all assets");
+                                    AssetCache::get_or_fetch(&mut client, &tenant).await
+                                } {
+                                    Ok(asset_list_response) => asset_list_response.to_asset_list(),
+                                    Err(e) => {
+                                        error!("Error fetching assets: {}", e);
+                                        eprintln!("Error fetching assets: {}", e);
+                                        return Ok(());
                                     }
                                 }
-                                Err(e) => {
-                                    error!("Error listing assets: {}", e);
-                                    eprintln!("Error listing assets: {}", e);
+                            };
+                            
+                            match asset_list.format(format) {
+                                Ok(output) => {
+                                    println!("{}", output);
                                     Ok(())
                                 }
+                                Err(e) => Err(CliError::FormattingError(e)),
                             }
                         }
                         Ok(None) => {
@@ -637,7 +639,7 @@ pub async fn execute_command(
                     trace!("Executing login command");
                     
                     // Try to get client credentials from command line or stored values
-                    let keyring = Keyring::default();
+                    let mut keyring = Keyring::default();
                     let client_id = match sub_matches.get_one::<String>(PARAMETER_CLIENT_ID) {
                         Some(id) => id.clone(),
                         None => {
@@ -681,7 +683,6 @@ pub async fn execute_command(
                             let token_result = keyring.put(&"default".to_string(), "access-token".to_string(), token);
                             
                             if token_result.is_ok() {
-                                println!("Login successful");
                                 Ok(())
                             } else {
                                 eprintln!("Error storing access token");
@@ -696,10 +697,9 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_LOGOUT, _)) => {
                     trace!("Executing logout command");
-                    let keyring = Keyring::default();
+                    let mut keyring = Keyring::default();
                     match keyring.delete(&"default".to_string(), "access-token".to_string()) {
                         Ok(()) => {
-                            println!("Logout successful");
                             Ok(())
                         }
                         Err(e) => {
@@ -723,7 +723,7 @@ pub async fn execute_command(
                             let name = sub_matches.get_one::<String>(PARAMETER_NAME);
                             
                             // Try to get access token and fetch tenant info from Physna V3 API
-                            let keyring = Keyring::default();
+                            let mut keyring = Keyring::default();
                             match keyring.get(&"default".to_string(), "access-token".to_string()) {
                                 Ok(Some(token)) => {
                                     let mut client = PhysnaApiClient::new().with_access_token(token);
@@ -784,8 +784,6 @@ pub async fn execute_command(
                                                 // Save configuration
                                                 match configuration.save_to_default() {
                                                     Ok(()) => {
-                                                        println!("Active tenant set to: {} ({})", 
-                                                            tenant.tenant_display_name, tenant.tenant_id);
                                                         Ok(())
                                                     }
                                                     Err(e) => {
@@ -853,7 +851,6 @@ pub async fn execute_command(
                             configuration.clear_active_tenant();
                             match configuration.save_to_default() {
                                 Ok(()) => {
-                                    println!("Active tenant cleared");
                                     Ok(())
                                 }
                                 Err(e) => {

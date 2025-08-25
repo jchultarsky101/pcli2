@@ -1,7 +1,9 @@
 pub mod api;
+pub mod asset_cache;
 pub mod auth;
 pub mod commands;
 pub mod configuration;
+pub mod dev_keyring;
 pub mod folder_cache;
 pub mod folder_hierarchy;
 pub mod format;

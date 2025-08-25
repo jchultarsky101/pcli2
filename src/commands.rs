@@ -150,7 +150,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all tenants")
-                        .arg(format_parameter.clone()),
+                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(
                     Command::new(COMMAND_UPDATE)
@@ -240,6 +240,14 @@ pub fn create_cli_commands() -> ArgMatches {
                         .about("List all assets in a folder")
                         .arg(tenant_parameter.clone())
                         .arg(path_parameter.clone())
+                        .arg(
+                            Arg::new(PARAMETER_REFRESH)
+                                .short('r')
+                                .long(PARAMETER_REFRESH)
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Force refresh asset cache data from API"),
+                        )
                         .arg(
                             Arg::new(PARAMETER_FORMAT)
                                 .short('f')

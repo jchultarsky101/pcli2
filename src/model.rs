@@ -409,25 +409,24 @@ pub struct AssetResponse {
     pub id: String,
     #[serde(rename = "tenantId")]
     pub tenant_id: String,
-    pub name: String,
+    pub path: String,
     #[serde(rename = "folderId")]
     pub folder_id: String,
+    #[serde(rename = "type")]
+    pub asset_type: String,
     #[serde(rename = "createdAt")]
     pub created_at: String,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
-    #[serde(rename = "fileSize")]
-    pub file_size: u64,
-    #[serde(rename = "fileType")]
-    pub file_type: String,
-    #[serde(rename = "processingStatus")]
-    pub processing_status: String,
+    pub state: String,
+    #[serde(rename = "isAssembly")]
+    pub is_assembly: bool,
+    #[serde(rename = "metadata")]
+    pub metadata: std::collections::HashMap<String, serde_json::Value>,
     #[serde(rename = "parentFolderId", skip_serializing_if = "Option::is_none")]
     pub parent_folder_id: Option<String>,
     #[serde(rename = "ownerId", skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
-    #[serde(rename = "checksum", skip_serializing_if = "Option::is_none")]
-    pub checksum: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -453,8 +452,8 @@ impl AssetListResponse {
     pub fn to_asset_list(&self) -> AssetList {
         let mut asset_list = AssetList::empty();
         for asset_response in &self.assets {
-            // For assets, the path is just the asset name since assets don't have hierarchical paths
-            let path = asset_response.name.clone();
+            // For assets, use the path from the API response
+            let path = asset_response.path.clone();
             let asset = Asset::from_asset_response(asset_response.clone(), path);
             asset_list.insert(asset);
         }
@@ -541,14 +540,17 @@ impl Asset {
     }
     
     pub fn from_asset_response(asset_response: AssetResponse, path: String) -> Asset {
+        // Extract the name from the path (last part after the last slash)
+        let name = asset_response.path.split('/').last().unwrap_or(&asset_response.path).to_string();
+        
         Asset::new(
             Some(asset_response.id.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))),
             Some(asset_response.id.clone()),
-            asset_response.name,
+            name,
             path,
-            Some(asset_response.file_size),
-            Some(asset_response.file_type),
-            Some(asset_response.processing_status),
+            None, // file_size not in current API response
+            Some(asset_response.asset_type),
+            Some(asset_response.state),
             Some(asset_response.created_at),
             Some(asset_response.updated_at),
         )
@@ -605,11 +607,16 @@ impl Asset {
 
 impl CsvRecordProducer for Asset {
     fn csv_header() -> Vec<String> {
-        vec!["NAME".to_string(), "PATH".to_string()]
+        vec!["NAME".to_string(), "PATH".to_string(), "TYPE".to_string(), "STATE".to_string()]
     }
 
     fn as_csv_records(&self) -> Vec<Vec<String>> {
-        vec![vec![self.name(), self.path()]]
+        vec![vec![
+            self.name(), 
+            self.path(), 
+            self.file_type().cloned().unwrap_or_default(),
+            self.processing_status().cloned().unwrap_or_default()
+        ]]
     }
 }
 
@@ -728,8 +735,9 @@ impl OutputFormatter for AssetList {
     fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
         match format {
             OutputFormat::Json => {
-                // convert to a simple vector for output
-                let assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
+                // convert to a simple vector for output and sort by path
+                let mut assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
+                assets.sort_by(|a, b| a.path().cmp(&b.path()));
                 let json = serde_json::to_string_pretty(&assets);
                 match json {
                     Ok(json) => Ok(json),
@@ -740,7 +748,12 @@ impl OutputFormatter for AssetList {
                 let buf = BufWriter::new(Vec::new());
                 let mut wtr = Writer::from_writer(buf);
                 wtr.write_record(&Self::csv_header()).unwrap();
-                for record in self.as_csv_records() {
+                
+                // Sort records by asset path
+                let mut records = self.as_csv_records();
+                records.sort_by(|a, b| a[1].cmp(&b[1])); // Sort by PATH column (index 1)
+                
+                for record in records {
                     wtr.write_record(&record).unwrap();
                 }
                 match wtr.flush() {
@@ -756,7 +769,9 @@ impl OutputFormatter for AssetList {
                 // For asset list, tree format is the same as JSON
                 // In practice, tree format should be handled at the command level
                 // where we have access to the full hierarchy
-                let assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
+                // convert to a simple vector for output and sort by path
+                let mut assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
+                assets.sort_by(|a, b| a.path().cmp(&b.path()));
                 let json = serde_json::to_string_pretty(&assets);
                 match json {
                     Ok(json) => Ok(json),

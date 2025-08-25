@@ -1,3 +1,5 @@
+use clap::ArgMatches;
+use inquire::Select;
 use pcli2::commands::{
     create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
     COMMAND_CREATE, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
@@ -7,17 +9,16 @@ use pcli2::commands::{
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
     PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
 };
-use pcli2::format::{OutputFormat, OutputFormatter};
-use clap::ArgMatches;
-use inquire::Select;
-use pcli2::asset_cache::AssetCache;
+use pcli2::exit_codes::PcliExitCode;
+use pcli2::model::{Asset, Folder};
 use pcli2::auth::AuthClient;
 use pcli2::configuration::Configuration;
 use pcli2::folder_cache::FolderCache;
+use pcli2::asset_cache::AssetCache;
 use pcli2::folder_hierarchy::FolderHierarchy;
 use pcli2::keyring::Keyring;
-use pcli2::model::{Asset, Folder};
 use pcli2::physna_v3::PhysnaApiClient;
+use pcli2::format::{OutputFormat, OutputFormatter};
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
@@ -37,6 +38,20 @@ pub enum CliError {
     MissingRequiredArgument(String),
     #[error("JSON serialization error")]
     JsonError(#[from] serde_json::Error),
+}
+
+impl CliError {
+    /// Get the appropriate exit code for this error
+    pub fn exit_code(&self) -> PcliExitCode {
+        match self {
+            CliError::UnsupportedSubcommand(_) => PcliExitCode::UsageError,
+            CliError::ConfigurationError(_) => PcliExitCode::ConfigError,
+            CliError::FormattingError(_) => PcliExitCode::DataError,
+            CliError::SecurityError(_) => PcliExitCode::AuthError,
+            CliError::MissingRequiredArgument(_) => PcliExitCode::UsageError,
+            CliError::JsonError(_) => PcliExitCode::DataError,
+        }
+    }
 }
 
 fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {

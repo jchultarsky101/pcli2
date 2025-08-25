@@ -272,7 +272,16 @@ pub fn create_cli_commands() -> ArgMatches {
                         .arg(tenant_parameter.clone())
                         .arg(asset_uuid_parameter.clone())
                         .arg(path_parameter.clone())
-                        .arg(format_parameter.clone())
+                        .arg(
+                            Arg::new(PARAMETER_FORMAT)
+                                .short('f')
+                                .long(PARAMETER_FORMAT)
+                                .num_args(1)
+                                .required(false)
+                                .default_value("json")
+                                .help("Output data format")
+                                .value_parser(["json", "csv"]),
+                        )
                         .group(clap::ArgGroup::new("asset_identifier")
                             .args([PARAMETER_ASSET_UUID, PARAMETER_PATH])
                             .multiple(false)

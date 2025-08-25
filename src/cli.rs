@@ -166,13 +166,24 @@ pub async fn execute_command(
                             
                             match result {
                                 Ok(hierarchy) => {
+                                    // If a path is specified, filter the hierarchy to show only that subtree
+                                    let filtered_hierarchy = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                        trace!("Filtering hierarchy by path: {}", path);
+                                        hierarchy.filter_by_path(path).unwrap_or_else(|| {
+                                            eprintln!("Warning: Folder path '{}' not found, showing full hierarchy", path);
+                                            hierarchy
+                                        })
+                                    } else {
+                                        hierarchy
+                                    };
+                                    
                                     // If tree format is requested, display the hierarchical tree structure
                                     if format == OutputFormat::Tree {
-                                        hierarchy.print_tree();
+                                        filtered_hierarchy.print_tree();
                                         Ok(())
                                     } else {
                                         // For other formats (JSON, CSV), convert to folder list with paths
-                                        let folder_list = hierarchy.to_folder_list();
+                                        let folder_list = filtered_hierarchy.to_folder_list();
                                         match folder_list.format(format) {
                                             Ok(output) => {
                                                 println!("{}", output);

@@ -194,6 +194,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         .about("List all folders")
                         .arg(tenant_parameter.clone())
                         .arg(format_parameter.clone())
+                        .arg(path_parameter.clone())
                         .arg(
                             Arg::new(PARAMETER_REFRESH)
                                 .short('r')

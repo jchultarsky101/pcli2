@@ -202,6 +202,36 @@ impl FolderHierarchy {
         }
     }
     
+    /// Create a new FolderHierarchy containing only the subtree under the specified path
+    pub fn filter_by_path(&self, path: &str) -> Option<FolderHierarchy> {
+        // Find the folder node at the specified path
+        let target_node = self.get_folder_by_path(path)?;
+        
+        // Create a new hierarchy with only the subtree
+        let mut filtered_hierarchy = FolderHierarchy::new();
+        
+        // Add the target folder and all its descendants
+        self.add_subtree_to_hierarchy(&mut filtered_hierarchy, target_node);
+        
+        Some(filtered_hierarchy)
+    }
+    
+    /// Recursively add a subtree to a hierarchy
+    fn add_subtree_to_hierarchy(&self, hierarchy: &mut FolderHierarchy, node: &FolderNode) {
+        // Add the current node
+        hierarchy.nodes.insert(node.id().to_string(), node.clone());
+        
+        // Add this node to root_ids since it's the root of our filtered hierarchy
+        hierarchy.root_ids.push(node.id().to_string());
+        
+        // Recursively add all children
+        for child_id in &node.children {
+            if let Some(child_node) = self.nodes.get(child_id) {
+                self.add_subtree_to_hierarchy(hierarchy, child_node);
+            }
+        }
+    }
+    
     pub fn print_tree(&self) {
         // Sort root folders by name
         let mut sorted_roots: Vec<(&String, &FolderNode)> = self.root_ids

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 // Resource commands
 pub const COMMAND_TENANT: &str = "tenant";
 pub const COMMAND_FOLDER: &str = "folder";
+pub const COMMAND_ASSET: &str = "asset";
 pub const COMMAND_FILE: &str = "file";
 
 // CRUD operations
@@ -227,6 +228,28 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_LOGOUT)
                         .about("Logout and clear session"),
+                ),
+        )
+        .subcommand(
+            // Asset resource commands
+            Command::new(COMMAND_ASSET)
+                .about("Manage assets")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_LIST)
+                        .about("List all assets in a folder")
+                        .arg(tenant_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(
+                            Arg::new(PARAMETER_FORMAT)
+                                .short('f')
+                                .long(PARAMETER_FORMAT)
+                                .num_args(1)
+                                .required(false)
+                                .default_value("json")
+                                .help("Output data format (json or csv)")
+                                .value_parser(["json", "csv"]),
+                        ),
                 ),
         )
         .subcommand(

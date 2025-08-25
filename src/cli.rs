@@ -1,5 +1,5 @@
 use pcli2::commands::{
-    create_cli_commands, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
+    create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
     COMMAND_CREATE, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
     COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, 
     COMMAND_TENANT,
@@ -508,6 +508,109 @@ pub async fn execute_command(
                                 Err(e) => {
                                     error!("Error deleting folder: {}", e);
                                     eprintln!("Error deleting folder: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                    sub_matches,
+                ))),
+            }
+        }
+        // Asset resource commands
+        Some((COMMAND_ASSET, sub_matches)) => {
+            match sub_matches.subcommand() {
+                Some((COMMAND_LIST, sub_matches)) => {
+                    trace!("Executing asset list command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+                    let format = OutputFormat::from_str(format).unwrap();
+                    
+                    // Validate format - only JSON and CSV are supported for assets
+                    match format {
+                        OutputFormat::Tree => {
+                            eprintln!("Tree format is not supported for asset listing");
+                            return Ok(());
+                        }
+                        _ => {} // JSON and CSV are supported
+                    }
+                    
+                    // Try to get access token and list assets from Physna V3 API
+                    let keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // If a path is specified, find the folder ID for that path
+                            let folder_id = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                trace!("Finding folder ID for path: {}", path);
+                                // We need to get the folder hierarchy to find the folder by path
+                                match FolderCache::get_or_fetch(&mut client, &tenant).await {
+                                    Ok(hierarchy) => {
+                                        if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
+                                            Some(folder_node.id().to_string())
+                                        } else {
+                                            eprintln!("Folder with path '{}' not found", path);
+                                            return Ok(());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error building folder hierarchy: {}", e);
+                                        eprintln!("Error building folder hierarchy: {}", e);
+                                        return Ok(());
+                                    }
+                                }
+                            } else {
+                                // If no path is specified, list assets in the root folder
+                                // For now, we'll list all assets (no folder filter)
+                                None
+                            };
+                            
+                            // List assets in the specified folder (or all assets if no folder specified)
+                            match client.list_assets(&tenant, folder_id, None, None).await {
+                                Ok(asset_list_response) => {
+                                    let asset_list = asset_list_response.to_asset_list();
+                                    match asset_list.format(format) {
+                                        Ok(output) => {
+                                            println!("{}", output);
+                                            Ok(())
+                                        }
+                                        Err(e) => Err(CliError::FormattingError(e)),
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error listing assets: {}", e);
+                                    eprintln!("Error listing assets: {}", e);
                                     Ok(())
                                 }
                             }

@@ -1,5 +1,5 @@
 use crate::auth::AuthClient;
-use crate::model::{CurrentUserResponse, FolderListResponse};
+use crate::model::{CurrentUserResponse, FolderListResponse, AssetListResponse, AssetResponse, SingleAssetResponse};
 use reqwest;
 use serde_json;
 use tracing::{debug, trace};
@@ -17,6 +17,10 @@ pub enum ApiError {
     /// JSON parsing error from serde_json
     #[error("JSON parsing error: {0}")]
     JsonError(#[from] serde_json::Error),
+    
+    /// IO error from std::io operations
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
     
     /// Authentication error with a descriptive message
     #[error("Authentication error: {0}")]
@@ -430,6 +434,92 @@ impl PhysnaApiClient {
     pub async fn delete_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<(), ApiError> {
         let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_id, folder_id);
         self.delete(&url).await
+    }
+    
+    // Asset operations
+    
+    /// List all assets for a tenant with optional pagination and search
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant whose assets to list
+    /// * `folder_id` - Optional folder ID to filter assets within a specific folder
+    /// * `page` - Optional page number (1-based indexing)
+    /// * `per_page` - Optional number of items per page (default: 100)
+    /// 
+    /// # Returns
+    /// * `Ok(AssetListResponse)` - Successfully fetched list of assets with pagination metadata
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn list_assets(&mut self, tenant_id: &str, folder_id: Option<String>, page: Option<u32>, per_page: Option<u32>) -> Result<crate::model::AssetListResponse, ApiError> {
+        let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
+        
+        // Build query parameters for pagination and filtering if provided
+        let mut query_params = Vec::new();
+        if let Some(folder_id) = folder_id {
+            query_params.push(("folder_id", folder_id));
+        }
+        if let Some(page) = page {
+            query_params.push(("page", page.to_string()));
+        }
+        if let Some(per_page) = per_page {
+            query_params.push(("per_page", per_page.to_string()));
+        }
+        
+        // Add query parameters to URL if provided
+        let url = if !query_params.is_empty() {
+            format!("{}?{}", url, serde_urlencoded::to_string(query_params).unwrap())
+        } else {
+            url
+        };
+        
+        self.get(&url).await
+    }
+    
+    /// Get details for a specific asset by ID
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_id` - The UUID of the asset to retrieve
+    /// 
+    /// # Returns
+    /// * `Ok(crate::model::AssetResponse)` - Successfully fetched asset details
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn get_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<crate::model::AssetResponse, ApiError> {
+        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
+        self.get(&url).await
+    }
+    
+    /// Delete an asset by ID
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_id` - The UUID of the asset to delete
+    /// 
+    /// # Returns
+    /// * `Ok(())` - Successfully deleted asset
+    /// * `Err(ApiError)` - HTTP error or other error
+    pub async fn delete_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<(), ApiError> {
+        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
+        self.delete(&url).await
+    }
+    
+    /// Update an asset's metadata
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_id` - The UUID of the asset to update
+    /// * `name` - The new name for the asset
+    /// 
+    /// # Returns
+    /// * `Ok(crate::model::AssetResponse)` - Successfully updated asset with new metadata
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn update_asset(&mut self, tenant_id: &str, asset_id: &str, name: &str) -> Result<crate::model::AssetResponse, ApiError> {
+        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
+        
+        let body = serde_json::json!({
+            "name": name
+        });
+        
+        self.put(&url, &body).await
     }
 }
 

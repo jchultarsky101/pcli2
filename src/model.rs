@@ -4,6 +4,7 @@ use crate::format::{
 use csv::Writer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::BufWriter;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -401,9 +402,63 @@ pub struct FolderResponse {
     pub owner_id: Option<String>,
 }
 
+// Asset models for Physna V3 API
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetResponse {
+    pub id: String,
+    #[serde(rename = "tenantId")]
+    pub tenant_id: String,
+    pub name: String,
+    #[serde(rename = "folderId")]
+    pub folder_id: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    #[serde(rename = "fileSize")]
+    pub file_size: u64,
+    #[serde(rename = "fileType")]
+    pub file_type: String,
+    #[serde(rename = "processingStatus")]
+    pub processing_status: String,
+    #[serde(rename = "parentFolderId", skip_serializing_if = "Option::is_none")]
+    pub parent_folder_id: Option<String>,
+    #[serde(rename = "ownerId", skip_serializing_if = "Option::is_none")]
+    pub owner_id: Option<String>,
+    #[serde(rename = "checksum", skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SingleAssetResponse {
+    #[serde(rename = "asset")]
+    pub asset: AssetResponse,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetListResponse {
+    pub assets: Vec<AssetResponse>,
+    #[serde(rename = "pageData")]
+    pub page_data: PageData,
+}
+
 impl FolderResponse {
     pub fn to_folder(&self, path: String) -> Folder {
         Folder::from_folder_response(self.clone(), path)
+    }
+}
+
+impl AssetListResponse {
+    pub fn to_asset_list(&self) -> AssetList {
+        let mut asset_list = AssetList::empty();
+        for asset_response in &self.assets {
+            // For assets, the path is just the asset name since assets don't have hierarchical paths
+            let path = asset_response.name.clone();
+            let asset = Asset::from_asset_response(asset_response.clone(), path);
+            asset_list.insert(asset);
+        }
+        asset_list
     }
 }
 
@@ -446,6 +501,270 @@ pub struct PageData {
     pub start_index: usize,
     #[serde(rename = "endIndex")]
     pub end_index: usize,
+}
+
+// Asset models for Physna V3 API
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Asset {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uuid: Option<String>,
+    name: String,
+    path: String,
+    #[serde(rename = "fileSize", skip_serializing_if = "Option::is_none")]
+    file_size: Option<u64>,
+    #[serde(rename = "fileType", skip_serializing_if = "Option::is_none")]
+    file_type: Option<String>,
+    #[serde(rename = "processingStatus", skip_serializing_if = "Option::is_none")]
+    processing_status: Option<String>,
+    #[serde(rename = "createdAt", skip_serializing_if = "Option::is_none")]
+    created_at: Option<String>,
+    #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
+    updated_at: Option<String>,
+}
+
+impl Asset {
+    pub fn new(id: Option<u32>, uuid: Option<String>, name: String, path: String, file_size: Option<u64>, file_type: Option<String>, processing_status: Option<String>, created_at: Option<String>, updated_at: Option<String>) -> Asset {
+        Asset {
+            id,
+            uuid,
+            name,
+            path,
+            file_size,
+            file_type,
+            processing_status,
+            created_at,
+            updated_at,
+        }
+    }
+    
+    pub fn from_asset_response(asset_response: AssetResponse, path: String) -> Asset {
+        Asset::new(
+            Some(asset_response.id.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))),
+            Some(asset_response.id.clone()),
+            asset_response.name,
+            path,
+            Some(asset_response.file_size),
+            Some(asset_response.file_type),
+            Some(asset_response.processing_status),
+            Some(asset_response.created_at),
+            Some(asset_response.updated_at),
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn set_id(&mut self, id: u32) {
+        self.id = Some(id);
+    }
+
+    #[allow(dead_code)]
+    pub fn id(&self) -> Option<u32> {
+        self.id
+    }
+    
+    #[allow(dead_code)]
+    pub fn uuid(&self) -> Option<&String> {
+        self.uuid.as_ref()
+    }
+
+    #[allow(dead_code)]
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+    
+    pub fn path(&self) -> String {
+        self.path.clone()
+    }
+    
+    pub fn file_size(&self) -> Option<u64> {
+        self.file_size
+    }
+    
+    pub fn file_type(&self) -> Option<&String> {
+        self.file_type.as_ref()
+    }
+    
+    pub fn processing_status(&self) -> Option<&String> {
+        self.processing_status.as_ref()
+    }
+    
+    pub fn created_at(&self) -> Option<&String> {
+        self.created_at.as_ref()
+    }
+    
+    pub fn updated_at(&self) -> Option<&String> {
+        self.updated_at.as_ref()
+    }
+}
+
+impl CsvRecordProducer for Asset {
+    fn csv_header() -> Vec<String> {
+        vec!["NAME".to_string(), "PATH".to_string()]
+    }
+
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![self.name(), self.path()]]
+    }
+}
+
+impl JsonProducer for Asset {}
+
+impl OutputFormatter for Asset {
+    type Item = Asset;
+
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => Ok(self.to_json()?),
+            OutputFormat::Csv => Ok(self.to_csv_with_header()?),
+            // No tree format for assets - they're not hierarchical
+            OutputFormat::Tree => {
+                // For single asset, tree format is the same as JSON
+                Ok(self.to_json()?)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetList {
+    assets: HashMap<u32, Asset>, // ID -> Asset
+}
+
+impl AssetList {
+    pub fn empty() -> AssetList {
+        AssetList {
+            assets: HashMap::new(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.assets.is_empty()
+    }
+
+    #[allow(dead_code)]
+    pub fn len(&self) -> usize {
+        self.assets.len()
+    }
+
+    pub fn insert(&mut self, asset: Asset) {
+        if let Some(id) = asset.id() {
+            self.assets.insert(id, asset);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn remove(&mut self, id: &u32) {
+        self.assets.remove(id);
+    }
+
+    #[allow(dead_code)]
+    pub fn get(&self, id: &u32) -> Option<&Asset> {
+        self.assets.get(id)
+    }
+
+    #[allow(dead_code)]
+    pub fn find_by_name(&self, name: &String) -> Option<&Asset> {
+        let result = self.assets.iter().find(|(_, f)| f.name.eq(name));
+
+        match result {
+            Some((_key, folder)) => Some(folder),
+            None => None,
+        }
+    }
+    
+    pub fn find_by_path(&self, path: &str) -> Option<&Asset> {
+        let result = self.assets.iter().find(|(_, a)| a.path().eq(path));
+
+        match result {
+            Some((_key, asset)) => Some(asset),
+            None => None,
+        }
+    }
+}
+
+impl Default for AssetList {
+    fn default() -> Self {
+        AssetList::empty()
+    }
+}
+
+impl FromIterator<Asset> for AssetList {
+    fn from_iter<I: IntoIterator<Item = Asset>>(iter: I) -> AssetList {
+        let mut assets = AssetList::empty();
+        for a in iter {
+            assets.insert(a);
+        }
+
+        assets
+    }
+}
+
+impl CsvRecordProducer for AssetList {
+    fn csv_header() -> Vec<String> {
+        Asset::csv_header()
+    }
+
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        let mut records: Vec<Vec<String>> = Vec::new();
+
+        for (_, asset) in &self.assets {
+            records.push(asset.as_csv_records()[0].clone());
+        }
+
+        records
+    }
+}
+
+impl OutputFormatter for AssetList {
+    type Item = AssetList;
+
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => {
+                // convert to a simple vector for output
+                let assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
+                let json = serde_json::to_string_pretty(&assets);
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv => {
+                let buf = BufWriter::new(Vec::new());
+                let mut wtr = Writer::from_writer(buf);
+                wtr.write_record(&Self::csv_header()).unwrap();
+                for record in self.as_csv_records() {
+                    wtr.write_record(&record).unwrap();
+                }
+                match wtr.flush() {
+                    Ok(_) => {
+                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
+                        let csv = String::from_utf8(bytes).unwrap();
+                        Ok(csv.clone())
+                    }
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Tree => {
+                // For asset list, tree format is the same as JSON
+                // In practice, tree format should be handled at the command level
+                // where we have access to the full hierarchy
+                let assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
+                let json = serde_json::to_string_pretty(&assets);
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

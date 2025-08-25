@@ -211,23 +211,25 @@ impl FolderHierarchy {
         let mut filtered_hierarchy = FolderHierarchy::new();
         
         // Add the target folder and all its descendants
-        self.add_subtree_to_hierarchy(&mut filtered_hierarchy, target_node);
+        self.add_subtree_to_hierarchy(&mut filtered_hierarchy, target_node, true);
         
         Some(filtered_hierarchy)
     }
     
     /// Recursively add a subtree to a hierarchy
-    fn add_subtree_to_hierarchy(&self, hierarchy: &mut FolderHierarchy, node: &FolderNode) {
+    fn add_subtree_to_hierarchy(&self, hierarchy: &mut FolderHierarchy, node: &FolderNode, is_root: bool) {
         // Add the current node
         hierarchy.nodes.insert(node.id().to_string(), node.clone());
         
-        // Add this node to root_ids since it's the root of our filtered hierarchy
-        hierarchy.root_ids.push(node.id().to_string());
+        // Add this node to root_ids only if it's the root of our filtered hierarchy
+        if is_root {
+            hierarchy.root_ids.push(node.id().to_string());
+        }
         
         // Recursively add all children
         for child_id in &node.children {
             if let Some(child_node) = self.nodes.get(child_id) {
-                self.add_subtree_to_hierarchy(hierarchy, child_node);
+                self.add_subtree_to_hierarchy(hierarchy, child_node, false);
             }
         }
     }

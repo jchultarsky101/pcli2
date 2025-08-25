@@ -1,10 +1,11 @@
 use crate::model::FolderResponse;
 use crate::physna_v3::PhysnaApiClient;
 use ptree::TreeBuilder;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::trace;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FolderNode {
     pub folder: FolderResponse,
     pub children: Vec<String>, // UUIDs of child folders
@@ -31,6 +32,7 @@ impl FolderNode {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct FolderHierarchy {
     // Map of folder UUID to FolderNode
     nodes: HashMap<String, FolderNode>,

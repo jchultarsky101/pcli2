@@ -6,6 +6,7 @@ authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
 description = "CLI client utility to the Physna public API"
 
 [dependencies]
+bincode = "1.3.3"
 clap = { version = "4.5.45", features = ["derive"] }
 dirs = "5.0.1"
 exitcode = "1.1.2"
@@ -29,3 +30,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 csv = "1.3.0"
 inquire = "0.7.5"
 ptree = "0.4.0"
+
+[dev-dependencies]
+assert_cmd = "2.0.14"
+predicates = "3.1.0"

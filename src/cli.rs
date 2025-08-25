@@ -3,7 +3,7 @@ use pcli2::commands::{
     COMMAND_CREATE, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
     COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, 
     COMMAND_TENANT,
-    PARAMETER_ASSET_UUID, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID, 
+    PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID, 
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
     PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
 };
@@ -642,7 +642,7 @@ pub async fn execute_command(
                         }
                     };
                     
-                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_ASSET_UUID);
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
                     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
                     
                     // Must provide either asset UUID or path
@@ -695,7 +695,7 @@ pub async fn execute_command(
                             };
                             
                             let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                            let format = OutputFormat::from_str(&format_str).unwrap();
+                            let _format = OutputFormat::from_str(&format_str).unwrap();
                             
                             match client.get_asset(&tenant, &asset_id).await {
                                 Ok(asset_response) => {
@@ -803,6 +803,41 @@ pub async fn execute_command(
                         Err(e) => {
                             eprintln!("Error deleting access token: {}", e);
                             Err(CliError::SecurityError(String::from("Failed to delete access token")))
+                        }
+                    }
+                }
+                Some((COMMAND_GET, sub_matches)) => {
+                    trace!("Executing auth token get command");
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token from keyring
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            // Output the token based on the requested format
+                            match format {
+                                OutputFormat::Json => {
+                                    println!("{{\"access_token\": \"{}\"}}", token);
+                                }
+                                OutputFormat::Csv => {
+                                    println!("ACCESS_TOKEN\n{}", token);
+                                }
+                                OutputFormat::Tree => {
+                                    // For tree format, just output the token value
+                                    println!("{}", token);
+                                }
+                            }
+                            Ok(())
+                        }
+                        Ok(None) => {
+                            eprintln!("No access token found. Please login first.");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
                         }
                     }
                 }

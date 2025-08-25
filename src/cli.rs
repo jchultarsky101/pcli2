@@ -694,6 +694,18 @@ pub async fn execute_command(
                                 return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
                             };
                             
+                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                            let _format = OutputFormat::from_str(&format_str).unwrap();
+                            
+                            // Validate format - only JSON and CSV are supported for assets
+                            match _format {
+                                OutputFormat::Tree => {
+                                    eprintln!("Tree format is not supported for asset details");
+                                    return Ok(());
+                                }
+                                _ => {} // JSON and CSV are supported
+                            }
+                            
                             match client.get_asset(&tenant, &asset_id).await {
                                 Ok(asset_response) => {
                                     let asset = Asset::from_asset_response(asset_response, asset_id.clone());

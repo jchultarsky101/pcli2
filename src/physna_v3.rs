@@ -485,7 +485,8 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn get_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<crate::model::AssetResponse, ApiError> {
         let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
-        self.get(&url).await
+        let response: crate::model::SingleAssetResponse = self.get(&url).await?;
+        Ok(response.asset)
     }
     
     /// Delete an asset by ID

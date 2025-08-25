@@ -38,6 +38,7 @@ pub const PARAMETER_CLIENT_ID: &str = "client-id";
 pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
 pub const PARAMETER_ID: &str = "id";
 pub const PARAMETER_UUID: &str = "uuid";
+pub const PARAMETER_ASSET_UUID: &str = "asset-uuid";
 pub const PARAMETER_NAME: &str = "name";
 pub const PARAMETER_TENANT: &str = "tenant";
 pub const PARAMETER_PARENT_FOLDER_ID: &str = "parent-folder-id";
@@ -95,6 +96,12 @@ pub fn create_cli_commands() -> ArgMatches {
         .num_args(1)
         .required(false)
         .help("Resource UUID");
+
+    let asset_uuid_parameter = Arg::new(PARAMETER_ASSET_UUID)
+        .long(PARAMETER_ASSET_UUID)
+        .num_args(1)
+        .required(false)
+        .help("Asset UUID");
 
     let name_parameter = Arg::new(PARAMETER_NAME)
         .short('n')
@@ -257,6 +264,19 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .default_value("json")
                                 .help("Output data format (json or csv)")
                                 .value_parser(["json", "csv"]),
+                        ),
+                )
+                .subcommand(
+                    Command::new(COMMAND_GET)
+                        .about("Get asset details")
+                        .arg(tenant_parameter.clone())
+                        .arg(asset_uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone())
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_ASSET_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
                         ),
                 ),
         )

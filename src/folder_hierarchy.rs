@@ -218,13 +218,22 @@ impl FolderHierarchy {
     
     /// Recursively add a subtree to a hierarchy
     fn add_subtree_to_hierarchy(&self, hierarchy: &mut FolderHierarchy, node: &FolderNode, is_root: bool) {
-        // Add the current node
-        hierarchy.nodes.insert(node.id().to_string(), node.clone());
+        // Create a new node with adjusted parent relationship
+        let mut new_node = node.clone();
         
-        // Add this node to root_ids only if it's the root of our filtered hierarchy
+        // If this is the root of our filtered hierarchy, remove the parent relationship
         if is_root {
+            // Create a new folder response with no parent
+            let mut new_folder = new_node.folder.clone();
+            new_folder.parent_folder_id = None;
+            new_node.folder = new_folder;
+            
+            // Add this node to root_ids since it's the root of our filtered hierarchy
             hierarchy.root_ids.push(node.id().to_string());
         }
+        
+        // Add the current node
+        hierarchy.nodes.insert(node.id().to_string(), new_node);
         
         // Recursively add all children
         for child_id in &node.children {

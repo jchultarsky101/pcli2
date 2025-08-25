@@ -5,13 +5,14 @@ use pcli2::commands::{
     COMMAND_TENANT,
     PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID, 
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
-    PARAMETER_PATH, PARAMETER_TENANT, PARAMETER_UUID,
+    PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
 };
 use pcli2::format::{OutputFormat, OutputFormatter};
 use clap::ArgMatches;
 use inquire::Select;
 use pcli2::auth::AuthClient;
 use pcli2::configuration::Configuration;
+use pcli2::folder_cache::FolderCache;
 use pcli2::folder_hierarchy::FolderHierarchy;
 use pcli2::keyring::Keyring;
 use pcli2::model::Folder;
@@ -137,6 +138,9 @@ pub async fn execute_command(
                     let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
                     let format = OutputFormat::from_str(format).unwrap();
                     
+                    // Check if refresh is requested
+                    let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
+                    
                     // Try to get access token and list folders from Physna V3 API
                     let keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
@@ -152,7 +156,15 @@ pub async fn execute_command(
                             }
                             
                             // Build the folder hierarchy to get proper paths for all folders
-                            match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                            let result = if refresh_requested {
+                                trace!("Refresh requested, forcing API fetch");
+                                FolderCache::refresh(&mut client, &tenant).await
+                            } else {
+                                trace!("Using cache or fetching from API");
+                                FolderCache::get_or_fetch(&mut client, &tenant).await
+                            };
+                            
+                            match result {
                                 Ok(hierarchy) => {
                                     // If tree format is requested, display the hierarchical tree structure
                                     if format == OutputFormat::Tree {

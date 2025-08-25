@@ -41,6 +41,7 @@ pub const PARAMETER_NAME: &str = "name";
 pub const PARAMETER_TENANT: &str = "tenant";
 pub const PARAMETER_PARENT_FOLDER_ID: &str = "parent-folder-id";
 pub const PARAMETER_PATH: &str = "path";
+pub const PARAMETER_REFRESH: &str = "refresh";
 
 pub fn create_cli_commands() -> ArgMatches {
     let format_parameter = Arg::new(PARAMETER_FORMAT)
@@ -192,7 +193,15 @@ pub fn create_cli_commands() -> ArgMatches {
                     Command::new(COMMAND_LIST)
                         .about("List all folders")
                         .arg(tenant_parameter.clone())
-                        .arg(format_parameter.clone()),
+                        .arg(format_parameter.clone())
+                        .arg(
+                            Arg::new(PARAMETER_REFRESH)
+                                .short('r')
+                                .long(PARAMETER_REFRESH)
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Force refresh folder cache data from API"),
+                        ),
                 )
                 
                 .subcommand(

@@ -208,9 +208,9 @@ impl FolderList {
     }
 
     pub fn insert(&mut self, folder: Folder) {
-        // Use a combination of name and path as the key to avoid conflicts
+        // Use the full key to avoid hash collisions
         let key = format!("{}:{}", folder.name(), folder.path());
-        let hash_key = key.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32));
+        let hash_key = key.chars().fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32));
         self.folders.insert(hash_key, folder.clone());
     }
 

@@ -872,6 +872,93 @@ pub async fn execute_command(
                 ))),
             }
         }
+                Some((COMMAND_DELETE, sub_matches)) => {
+                    trace!("Executing asset delete command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    // Must provide either asset UUID or path
+                    if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    }
+                    
+                    // Try to get access token and delete asset via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve asset ID from either UUID parameter or path
+                            let asset_id = if let Some(uuid) = asset_uuid_param {
+                                uuid.clone()
+                            } else if let Some(path) = asset_path_param {
+                                // To resolve asset by path, we need to:
+                                // 1. Get all assets for the tenant
+                                // 2. Find the asset with matching path
+                                trace!("Resolving asset by path: {}", path);
+                                match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                    Ok(asset_list_response) => {
+                                        // Find asset with matching path
+                                        if let Some(asset_response) = asset_list_response.assets.iter().find(|asset| asset.path == *path) {
+                                            asset_response.id.clone()
+                                        } else {
+                                            return Err(CliError::MissingRequiredArgument(format!("Asset with path '{}' not found", path)));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error fetching assets for path resolution: {}", e);
+                                        return Err(CliError::MissingRequiredArgument("Failed to fetch assets for path resolution".to_string()));
+                                    }
+                                }
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                            };
+                            
+                            match client.delete_asset(&tenant, &asset_id).await {
+                                Ok(()) => {
+                                    println!("Asset deleted successfully");
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error!("Error deleting asset: {}", e);
+                                    eprintln!("Error deleting asset: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+
         // Authentication commands
         Some((COMMAND_AUTH, sub_matches)) => {
             match sub_matches.subcommand() {

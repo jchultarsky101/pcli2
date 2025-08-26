@@ -306,7 +306,7 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .value_parser(clap::value_parser!(PathBuf)),
                         )
                         .arg(path_parameter.clone())
-                        .arg(format_parameter.clone()),
+                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(
                     Command::new(COMMAND_LIST)
@@ -348,6 +348,18 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .help("Output data format")
                                 .value_parser(["json", "csv"]),
                         )
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
+                )
+                .subcommand(
+                    Command::new(COMMAND_DELETE)
+                        .about("Delete an asset")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
                         .group(clap::ArgGroup::new("asset_identifier")
                             .args([PARAMETER_UUID, PARAMETER_PATH])
                             .multiple(false)

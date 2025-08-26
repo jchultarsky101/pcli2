@@ -628,7 +628,27 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            match client.create_asset(&tenant, file_path.to_str().unwrap()).await {
+                            // Resolve folder ID from path parameter if provided
+                            let folder_id = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                // Build hierarchy and resolve path to folder ID
+                                match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                    Ok(hierarchy) => {
+                                        if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
+                                            Some(folder_node.folder.id.clone())
+                                        } else {
+                                            return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", path)));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error building folder hierarchy: {}", e);
+                                        return Err(CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                            
+                            match client.create_asset(&tenant, file_path.to_str().unwrap(), folder_id.as_deref()).await {
                                 Ok(asset_response) => {
                                     let asset = Asset::from_asset_response(asset_response, file_path.to_string_lossy().to_string());
                                     match asset.format(format) {

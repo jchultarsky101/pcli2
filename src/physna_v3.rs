@@ -531,11 +531,12 @@ impl PhysnaApiClient {
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant where to create the asset
     /// * `file_path` - The path to the file to upload
+    /// * `folder_id` - Optional folder ID where to place the asset
     /// 
     /// # Returns
     /// * `Ok(crate::model::AssetResponse)` - Successfully created asset details
     /// * `Err(ApiError)` - HTTP error, IO error, or other error
-    pub async fn create_asset(&mut self, tenant_id: &str, file_path: &str) -> Result<crate::model::AssetResponse, ApiError> {
+    pub async fn create_asset(&mut self, tenant_id: &str, file_path: &str, folder_id: Option<&str>) -> Result<crate::model::AssetResponse, ApiError> {
         let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
         
         // Read the file content
@@ -559,9 +560,17 @@ impl PhysnaApiClient {
         let file_part = reqwest::multipart::Part::bytes(file_data)
             .file_name(file_name.clone());
         
-        // Build the multipart form
-        let form = reqwest::multipart::Form::new()
-            .part("file", file_part);
+        // Build the multipart form with file part
+        let mut form = reqwest::multipart::Form::new()
+            .part("file", file_part)
+            .text("name", file_name.clone())
+            .text("path", file_name.clone()); // The API requires a path parameter
+        
+        // Add folder ID if provided
+        if let Some(folder_id) = folder_id {
+            // For multipart forms, we need to add non-file parts as text
+            form = form.text("folderId", folder_id.to_string());
+        }
         
         // Build and execute the request with multipart form data
         let mut request = self.http_client.post(&url)
@@ -585,9 +594,18 @@ impl PhysnaApiClient {
             // Create a new form for the retry
             let file_data = tokio::fs::read(file_path).await?;
             let file_part = reqwest::multipart::Part::bytes(file_data)
-                .file_name(file_name);
-            let retry_form = reqwest::multipart::Form::new()
-                .part("file", file_part);
+                .file_name(file_name.clone());
+            
+            // Build the multipart form with file part
+            let mut retry_form = reqwest::multipart::Form::new()
+                .part("file", file_part)
+                .text("name", file_name.clone())
+                .text("path", file_name); // The API requires a path parameter
+            
+            // Add folder ID if provided
+            if let Some(folder_id) = folder_id {
+                retry_form = retry_form.text("folderId", folder_id.to_string());
+            }
             
             // Retry the request with the new token
             debug!("Retrying asset creation request with refreshed token");
@@ -601,8 +619,8 @@ impl PhysnaApiClient {
             let retry_response = retry_request.send().await?;
             
             if retry_response.status().is_success() {
-                let result: crate::model::SingleAssetResponse = retry_response.json().await?;
-                Ok(result.asset)
+                let result: crate::model::AssetResponse = retry_response.json().await?;
+                Ok(result)
             } else {
                 Err(ApiError::RetryFailed(format!(
                     "Original error: {}, Retry failed with status: {}", 
@@ -611,8 +629,8 @@ impl PhysnaApiClient {
                 )))
             }
         } else if response.status().is_success() {
-            let result: crate::model::SingleAssetResponse = response.json().await?;
-            Ok(result.asset)
+            let result: crate::model::AssetResponse = response.json().await?;
+            Ok(result)
         } else {
             Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
         }

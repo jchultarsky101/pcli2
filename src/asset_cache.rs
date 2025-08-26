@@ -120,7 +120,7 @@ impl AssetCache {
             // Filter assets that belong to this folder
             let filtered_assets = asset_list_response.assets
                 .into_iter()
-                .filter(|asset| asset.folder_id == folder_id)
+                .filter(|asset| asset.folder_id.as_ref().map(|id| id.as_str()) == Some(folder_id))
                 .collect::<Vec<_>>();
             
             // Create a new AssetListResponse with the filtered assets

@@ -554,8 +554,8 @@ pub struct AssetResponse {
     /// The path of the asset
     pub path: String,
     /// The ID of the folder containing the asset
-    #[serde(rename = "folderId")]
-    pub folder_id: String,
+    #[serde(rename = "folderId", skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<String>,
     /// The type of the asset
     #[serde(rename = "type")]
     pub asset_type: String,

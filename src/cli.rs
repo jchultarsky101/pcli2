@@ -593,6 +593,69 @@ pub async fn execute_command(
         // Asset resource commands
         Some((COMMAND_ASSET, sub_matches)) => {
             match sub_matches.subcommand() {
+                Some((COMMAND_CREATE, sub_matches)) => {
+                    trace!("Executing asset create command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let file_path = sub_matches.get_one::<PathBuf>("file")
+                        .ok_or(CliError::MissingRequiredArgument("file".to_string()))?;
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token and create asset via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            match client.create_asset(&tenant, file_path.to_str().unwrap()).await {
+                                Ok(asset_response) => {
+                                    let asset = Asset::from_asset_response(asset_response, file_path.to_string_lossy().to_string());
+                                    match asset.format(format) {
+                                        Ok(output) => {
+                                            println!("{}", output);
+                                            Ok(())
+                                        }
+                                        Err(e) => Err(CliError::FormattingError(e)),
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error creating asset: {}", e);
+                                    eprintln!("Error creating asset: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing asset list command");
                     // Get tenant from explicit parameter or fall back to active tenant from configuration

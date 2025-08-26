@@ -522,10 +522,120 @@ impl PhysnaApiClient {
         
         self.put(&url, &body).await
     }
+    
+    /// Create a new asset by uploading a file
+    /// 
+    /// This method uploads a file as a new asset in the specified tenant.
+    /// The file is sent as multipart/form-data with the file content.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant where to create the asset
+    /// * `file_path` - The path to the file to upload
+    /// 
+    /// # Returns
+    /// * `Ok(crate::model::AssetResponse)` - Successfully created asset details
+    /// * `Err(ApiError)` - HTTP error, IO error, or other error
+    pub async fn create_asset(&mut self, tenant_id: &str, file_path: &str) -> Result<crate::model::AssetResponse, ApiError> {
+        let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
+        
+        // Read the file content
+        let file_data = tokio::fs::read(file_path).await?;
+        
+        // Extract filename from path
+        let file_name = std::path::Path::new(file_path)
+            .file_name()
+            .ok_or_else(|| ApiError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid file path"
+            )))?
+            .to_str()
+            .ok_or_else(|| ApiError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid file name"
+            )))?
+            .to_string();
+            
+        // Create a file part from the file data
+        let file_part = reqwest::multipart::Part::bytes(file_data)
+            .file_name(file_name.clone());
+        
+        // Build the multipart form
+        let form = reqwest::multipart::Form::new()
+            .part("file", file_part);
+        
+        // Build and execute the request with multipart form data
+        let mut request = self.http_client.post(&url)
+            .multipart(form);
+        
+        // Add access token if available
+        if let Some(token) = &self.access_token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+        
+        let response = request.send().await?;
+        
+        // Check if we need to retry due to authentication issues
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED || 
+           response.status() == reqwest::StatusCode::FORBIDDEN {
+            debug!("Received authentication error ({}), attempting token refresh", response.status());
+            
+            // Try to refresh the token
+            self.refresh_token().await?;
+            
+            // Create a new form for the retry
+            let file_data = tokio::fs::read(file_path).await?;
+            let file_part = reqwest::multipart::Part::bytes(file_data)
+                .file_name(file_name);
+            let retry_form = reqwest::multipart::Form::new()
+                .part("file", file_part);
+            
+            // Retry the request with the new token
+            debug!("Retrying asset creation request with refreshed token");
+            let mut retry_request = self.http_client.post(&url)
+                .multipart(retry_form);
+            
+            if let Some(token) = &self.access_token {
+                retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
+            }
+            
+            let retry_response = retry_request.send().await?;
+            
+            if retry_response.status().is_success() {
+                let result: crate::model::SingleAssetResponse = retry_response.json().await?;
+                Ok(result.asset)
+            } else {
+                Err(ApiError::RetryFailed(format!(
+                    "Original error: {}, Retry failed with status: {}", 
+                    response.status(), 
+                    retry_response.status()
+                )))
+            }
+        } else if response.status().is_success() {
+            let result: crate::model::SingleAssetResponse = response.json().await?;
+            Ok(result.asset)
+        } else {
+            Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+        }
+    }
 }
 
 impl Default for PhysnaApiClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_asset_url() {
+        let client = PhysnaApiClient::new();
+        // This test verifies that the URL is constructed correctly
+        // We're not actually making a network request in this test
+        let tenant_id = "test-tenant";
+        let url = format!("{}/tenants/{}/assets", client.base_url, tenant_id);
+        assert_eq!(url, "https://app-api.physna.com/v3/tenants/test-tenant/assets");
     }
 }

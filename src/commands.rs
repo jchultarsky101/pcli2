@@ -80,6 +80,8 @@ pub const PARAMETER_PARENT_FOLDER_ID: &str = "parent-folder-id";
 pub const PARAMETER_PATH: &str = "path";
 /// Parameter name for refresh flag
 pub const PARAMETER_REFRESH: &str = "refresh";
+/// Parameter name for file to upload
+pub const PARAMETER_FILE: &str = "file";
 
 /// Create and configure all CLI commands and their arguments.
 ///
@@ -291,6 +293,21 @@ pub fn create_cli_commands() -> ArgMatches {
             Command::new(COMMAND_ASSET)
                 .about("Manage assets")
                 .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_CREATE)
+                        .about("Create a new asset by uploading a file")
+                        .arg(tenant_parameter.clone())
+                        .arg(
+                            Arg::new("file")
+                                .long("file")
+                                .num_args(1)
+                                .required(true)
+                                .help("Path to the file to upload")
+                                .value_parser(clap::value_parser!(PathBuf)),
+                        )
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone()),
+                )
                 .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all assets in a folder")

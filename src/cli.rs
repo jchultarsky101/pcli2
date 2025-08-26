@@ -609,7 +609,15 @@ pub async fn execute_command(
                     };
                     
                     let file_path = sub_matches.get_one::<PathBuf>("file")
-                        .ok_or(CliError::MissingRequiredArgument("file".to_string()))?;
+                                .ok_or(CliError::MissingRequiredArgument("file".to_string()))?;
+                                
+                            // Extract filename from path for use in asset path construction
+                            let file_name = file_path
+                                .file_name()
+                                .ok_or_else(|| CliError::MissingRequiredArgument("Invalid file path".to_string()))?
+                                .to_str()
+                                .ok_or_else(|| CliError::MissingRequiredArgument("Invalid file name".to_string()))?
+                                .to_string();
                     
                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                     let format = OutputFormat::from_str(&format_str).unwrap();
@@ -628,27 +636,21 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve folder ID from path parameter if provided
-                            let folder_id = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
-                                // Build hierarchy and resolve path to folder ID
-                                match FolderHierarchy::build_from_api(&mut client, &tenant).await {
-                                    Ok(hierarchy) => {
-                                        if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
-                                            Some(folder_node.folder.id.clone())
-                                        } else {
-                                            return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", path)));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        error!("Error building folder hierarchy: {}", e);
-                                        return Err(CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
-                                    }
+                            // Construct the full asset path by combining folder path with filename
+                            let asset_path = if let Some(folder_path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                if folder_path.is_empty() {
+                                    file_name.clone()
+                                } else {
+                                    format!("{}/{}", folder_path, file_name)
                                 }
                             } else {
-                                None
+                                // If no folder path specified, just use the filename
+                                file_name.clone()
                             };
                             
-                            match client.create_asset(&tenant, file_path.to_str().unwrap(), folder_id.as_deref()).await {
+                            debug!("Creating asset with path: {}", asset_path);
+                            
+                            match client.create_asset(&tenant, file_path.to_str().unwrap(), Some(&asset_path)).await {
                                 Ok(asset_response) => {
                                     let asset = Asset::from_asset_response(asset_response, file_path.to_string_lossy().to_string());
                                     match asset.format(format) {

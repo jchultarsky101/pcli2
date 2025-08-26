@@ -531,12 +531,12 @@ impl PhysnaApiClient {
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant where to create the asset
     /// * `file_path` - The path to the file to upload
-    /// * `folder_id` - Optional folder ID where to place the asset
+    /// * `asset_path` - Optional full path where to place the asset (e.g., "Julian/test/filename.stl")
     /// 
     /// # Returns
     /// * `Ok(crate::model::AssetResponse)` - Successfully created asset details
     /// * `Err(ApiError)` - HTTP error, IO error, or other error
-    pub async fn create_asset(&mut self, tenant_id: &str, file_path: &str, folder_id: Option<&str>) -> Result<crate::model::AssetResponse, ApiError> {
+    pub async fn create_asset(&mut self, tenant_id: &str, file_path: &str, asset_path: Option<&str>) -> Result<crate::model::AssetResponse, ApiError> {
         let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
         
         // Read the file content
@@ -560,17 +560,21 @@ impl PhysnaApiClient {
         let file_part = reqwest::multipart::Part::bytes(file_data)
             .file_name(file_name.clone());
         
-        // Build the multipart form with file part
-        let mut form = reqwest::multipart::Form::new()
-            .part("file", file_part)
-            .text("name", file_name.clone())
-            .text("path", file_name.clone()); // The API requires a path parameter
+        // Determine the path to use for the asset
+        let path_to_use = if let Some(path) = asset_path {
+            path.to_string()
+        } else {
+            file_name.clone()
+        };
         
-        // Add folder ID if provided
-        if let Some(folder_id) = folder_id {
-            // For multipart forms, we need to add non-file parts as text
-            form = form.text("folderId", folder_id.to_string());
-        }
+        // Build the multipart form with file part and required parameters
+        let form = reqwest::multipart::Form::new()
+            .part("file", file_part)
+            .text("path", path_to_use.clone())
+            .text("metadata", "")  // Empty metadata as in the working example
+            .text("createMissingFolders", "");  // Empty createMissingFolders as in the working example
+        
+        debug!("Creating asset with path: {}", path_to_use);
         
         // Build and execute the request with multipart form data
         let mut request = self.http_client.post(&url)
@@ -596,16 +600,21 @@ impl PhysnaApiClient {
             let file_part = reqwest::multipart::Part::bytes(file_data)
                 .file_name(file_name.clone());
             
-            // Build the multipart form with file part
-            let mut retry_form = reqwest::multipart::Form::new()
-                .part("file", file_part)
-                .text("name", file_name.clone())
-                .text("path", file_name); // The API requires a path parameter
+            // Determine the path to use for the asset (again for retry)
+            let path_to_use_retry = if let Some(path) = asset_path {
+                path.to_string()
+            } else {
+                file_name.clone()
+            };
             
-            // Add folder ID if provided
-            if let Some(folder_id) = folder_id {
-                retry_form = retry_form.text("folderId", folder_id.to_string());
-            }
+            // Build the multipart form with file part and required parameters
+            let retry_form = reqwest::multipart::Form::new()
+                .part("file", file_part)
+                .text("path", path_to_use_retry.clone())
+                .text("metadata", "")  // Empty metadata as in the working example
+                .text("createMissingFolders", "");  // Empty createMissingFolders as in the working example
+            
+            debug!("Retrying asset creation with path: {}", path_to_use_retry);
             
             // Retry the request with the new token
             debug!("Retrying asset creation request with refreshed token");

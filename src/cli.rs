@@ -144,10 +144,10 @@ pub async fn execute_command(
                                             println!("{}", json);
                                         }
                                         OutputFormat::Csv => {
-                                            // For CSV format, output header and each tenant name on a separate line
-                                            println!("TENANT_NAME");
+                                            // For CSV format, output header with both tenant name and UUID columns
+                                            println!("TENANT_NAME,TENANT_UUID");
                                             for tenant in tenants {
-                                                println!("{}", tenant.tenant_display_name);
+                                                println!("{},{}", tenant.tenant_display_name, tenant.tenant_id);
                                             }
                                         }
                                         OutputFormat::Tree => {

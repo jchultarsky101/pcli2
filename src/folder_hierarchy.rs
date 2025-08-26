@@ -1,3 +1,9 @@
+//! Folder hierarchy management for the Physna CLI client.
+//!
+//! This module provides functionality for building, managing, and manipulating
+//! folder hierarchies retrieved from the Physna API. It includes features for
+//! path-based lookups, tree printing, and hierarchical filtering.
+
 use crate::model::FolderResponse;
 use crate::physna_v3::PhysnaApiClient;
 use ptree::TreeBuilder;
@@ -5,13 +11,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::trace;
 
+/// Represents a single folder node in the folder hierarchy
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FolderNode {
+    /// The folder data from the Physna API
     pub folder: FolderResponse,
-    pub children: Vec<String>, // UUIDs of child folders
+    /// UUIDs of child folders
+    pub children: Vec<String>,
 }
 
 impl FolderNode {
+    /// Create a new FolderNode from a FolderResponse
     pub fn new(folder: FolderResponse) -> Self {
         Self {
             folder,
@@ -19,28 +29,33 @@ impl FolderNode {
         }
     }
     
+    /// Get the ID of the folder
     pub fn id(&self) -> &str {
         &self.folder.id
     }
     
+    /// Get the name of the folder
     pub fn name(&self) -> &str {
         &self.folder.name
     }
     
+    /// Get the parent folder ID, if any
     pub fn parent_id(&self) -> Option<&String> {
         self.folder.parent_folder_id.as_ref()
     }
 }
 
+/// Represents the complete folder hierarchy for a tenant
 #[derive(Serialize, Deserialize)]
 pub struct FolderHierarchy {
-    // Map of folder UUID to FolderNode
+    /// Map of folder UUID to FolderNode
     nodes: HashMap<String, FolderNode>,
-    // Root folder IDs (folders with no parent)
+    /// Root folder IDs (folders with no parent)
     root_ids: Vec<String>,
 }
 
 impl FolderHierarchy {
+    /// Create a new empty FolderHierarchy
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -48,6 +63,18 @@ impl FolderHierarchy {
         }
     }
     
+    /// Build a folder hierarchy by fetching all folders from the Physna API
+    /// 
+    /// This method fetches all folders for a tenant using pagination and constructs
+    /// a complete folder hierarchy with parent-child relationships.
+    /// 
+    /// # Arguments
+    /// * `client` - A mutable reference to the Physna API client
+    /// * `tenant_id` - The ID of the tenant whose folders to fetch
+    /// 
+    /// # Returns
+    /// * `Ok(FolderHierarchy)` - The complete folder hierarchy for the tenant
+    /// * `Err` - If there was an error during API calls or data processing
     pub async fn build_from_api(client: &mut PhysnaApiClient, tenant_id: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let mut hierarchy = Self::new();
         
@@ -120,6 +147,13 @@ impl FolderHierarchy {
         Ok(hierarchy)
     }
     
+    /// Convert the folder hierarchy to a flat FolderList
+    /// 
+    /// This method creates a FolderList with all folders in the hierarchy,
+    /// each with its full path computed from the hierarchy.
+    /// 
+    /// # Returns
+    /// A FolderList containing all folders with their computed paths
     pub fn to_folder_list(&self) -> crate::model::FolderList {
         let mut folder_list = crate::model::FolderList::empty();
         
@@ -133,10 +167,26 @@ impl FolderHierarchy {
         folder_list
     }
     
+    /// Get a folder node by its ID
+    /// 
+    /// # Arguments
+    /// * `id` - The ID of the folder to retrieve
+    /// 
+    /// # Returns
+    /// * `Some(&FolderNode)` - If a folder with the specified ID exists
+    /// * `None` - If no folder with the specified ID exists
     pub fn get_folder_by_id(&self, id: &str) -> Option<&FolderNode> {
         self.nodes.get(id)
     }
     
+    /// Get a folder node by its path
+    /// 
+    /// # Arguments
+    /// * `path` - The path of the folder to retrieve (e.g., "Root/Child/Grandchild")
+    /// 
+    /// # Returns
+    /// * `Some(&FolderNode)` - If a folder with the specified path exists
+    /// * `None` - If no folder with the specified path exists
     pub fn get_folder_by_path(&self, path: &str) -> Option<&FolderNode> {
         if path.is_empty() || path == "/" {
             // Return first root folder if there's only one, otherwise return None
@@ -158,6 +208,15 @@ impl FolderHierarchy {
         self.find_folder_by_path_parts(&self.root_ids, &path_parts)
     }
     
+    /// Find a folder node by path parts recursively
+    /// 
+    /// # Arguments
+    /// * `folder_ids` - The IDs of folders to search within
+    /// * `path_parts` - The remaining path parts to match
+    /// 
+    /// # Returns
+    /// * `Some(&FolderNode)` - If a folder matching the path parts is found
+    /// * `None` - If no matching folder is found
     fn find_folder_by_path_parts(&self, folder_ids: &[String], path_parts: &[&str]) -> Option<&FolderNode> {
         if path_parts.is_empty() {
             return None;
@@ -183,6 +242,14 @@ impl FolderHierarchy {
         None
     }
     
+    /// Get the full path for a folder by its ID
+    /// 
+    /// # Arguments
+    /// * `folder_id` - The ID of the folder whose path to retrieve
+    /// 
+    /// # Returns
+    /// * `Some(String)` - The full path of the folder (e.g., "Root/Child/Grandchild")
+    /// * `None` - If no folder with the specified ID exists
     pub fn get_path_for_folder(&self, folder_id: &str) -> Option<String> {
         let mut path_parts = Vec::new();
         let mut current_id = folder_id;
@@ -209,6 +276,13 @@ impl FolderHierarchy {
     }
     
     /// Create a new FolderHierarchy containing only the subtree under the specified path
+    /// 
+    /// # Arguments
+    /// * `path` - The path of the folder to use as the root of the new hierarchy
+    /// 
+    /// # Returns
+    /// * `Some(FolderHierarchy)` - A new hierarchy containing only the subtree
+    /// * `None` - If no folder exists at the specified path
     pub fn filter_by_path(&self, path: &str) -> Option<FolderHierarchy> {
         // Find the folder node at the specified path
         let target_node = self.get_folder_by_path(path)?;
@@ -223,6 +297,11 @@ impl FolderHierarchy {
     }
     
     /// Recursively add a subtree to a hierarchy
+    /// 
+    /// # Arguments
+    /// * `hierarchy` - The hierarchy to add the subtree to
+    /// * `node` - The root node of the subtree to add
+    /// * `is_root` - Whether this node is the root of the new hierarchy
     fn add_subtree_to_hierarchy(&self, hierarchy: &mut FolderHierarchy, node: &FolderNode, is_root: bool) {
         // Create a new node with adjusted parent relationship
         let mut new_node = node.clone();
@@ -249,6 +328,10 @@ impl FolderHierarchy {
         }
     }
     
+    /// Print the folder hierarchy as a tree structure
+    /// 
+    /// This method prints the folder hierarchy to stdout using a tree-like format
+    /// with proper indentation to show parent-child relationships.
     pub fn print_tree(&self) {
         // Sort root folders by name
         let mut sorted_roots: Vec<(&String, &FolderNode)> = self.root_ids
@@ -277,6 +360,11 @@ impl FolderHierarchy {
         }
     }
     
+    /// Recursively build a tree node for printing
+    /// 
+    /// # Arguments
+    /// * `tree` - The TreeBuilder to add nodes to
+    /// * `node` - The current node to process
     fn build_tree_node(&self, tree: &mut TreeBuilder, node: &FolderNode) {
         tree.begin_child(node.name().to_string());
         

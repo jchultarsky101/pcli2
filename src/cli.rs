@@ -1,3 +1,9 @@
+//! CLI command execution logic.
+//!
+//! This module contains the core logic for executing CLI commands parsed by the
+//! command definition module. It handles the execution of all supported commands
+//! including tenant, folder, asset, authentication, context, and configuration operations.
+
 use clap::ArgMatches;
 use inquire::Select;
 use pcli2::commands::{
@@ -24,24 +30,37 @@ use std::str::FromStr;
 use thiserror::Error;
 use tracing::{debug, trace, error};
 
+/// Error types that can occur during CLI command execution
 #[derive(Debug, Error)]
 pub enum CliError {
+    /// Error when an unsupported or undefined subcommand is encountered
     #[error("Undefined or unsupported subcommand")]
     UnsupportedSubcommand(String),
+    /// Error related to configuration loading or management
     #[error("Configuration error")]
     ConfigurationError(#[from] pcli2::configuration::ConfigurationError),
+    /// Error related to data formatting
     #[error("Formatting error")]
     FormattingError(#[from] pcli2::format::FormattingError),
+    /// Error related to security operations (authentication, keyring access)
     #[error("Security error")]
     SecurityError(String),
+    /// Error when a required command-line argument is missing
     #[error("Missing required argument: {0}")]
     MissingRequiredArgument(String),
+    /// Error related to JSON serialization/deserialization
     #[error("JSON serialization error")]
     JsonError(#[from] serde_json::Error),
 }
 
 impl CliError {
     /// Get the appropriate exit code for this error
+    /// 
+    /// Returns the corresponding `PcliExitCode` based on the error type:
+    /// - `UsageError` for unsupported commands or missing arguments
+    /// - `ConfigError` for configuration errors
+    /// - `DataError` for formatting or JSON errors
+    /// - `AuthError` for security-related errors
     pub fn exit_code(&self) -> PcliExitCode {
         match self {
             CliError::UnsupportedSubcommand(_) => PcliExitCode::UsageError,
@@ -54,6 +73,15 @@ impl CliError {
     }
 }
 
+/// Extract the name of a subcommand from argument matches
+/// 
+/// # Arguments
+/// 
+/// * `sub_matches` - The argument matches for the subcommand
+/// 
+/// # Returns
+/// 
+/// The name of the subcommand as a String, or "unknown" if no subcommand is found
 fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
     let message = match sub_matches.subcommand() {
         Some(m) => m.0,
@@ -63,6 +91,20 @@ fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
     message.to_string()
 }
 
+/// Execute the parsed CLI command.
+/// 
+/// This is the main entry point for command execution. It takes the parsed command
+/// arguments and executes the appropriate command logic based on the command structure.
+/// 
+/// # Arguments
+/// 
+/// * `configuration` - The application configuration
+/// * `_api` - Placeholder for API client (currently unused as we use Physna V3 API directly)
+/// 
+/// # Returns
+/// 
+/// * `Ok(())` if the command executed successfully
+/// * `Err(CliError)` if an error occurred during command execution
 pub async fn execute_command(
     mut configuration: Configuration,
     _api: (), // We're using Physna V3 API directly

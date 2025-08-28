@@ -183,6 +183,25 @@ impl AssetCache {
     pub fn get_cached_assets(&self, tenant_id: &str) -> Option<AssetListResponse> {
         self.tenant_assets.get(tenant_id).cloned()
     }
+    
+    /// Invalidate cache for a specific tenant
+    /// 
+    /// Removes cached assets for the specified tenant from the cache.
+    /// This should be called after operations that modify asset state
+    /// to ensure consistency between local cache and remote API.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant whose cache to invalidate
+    /// 
+    /// # Returns
+    /// * `true` if cache entry was removed, `false` if no entry existed
+    pub fn invalidate_tenant(&mut self, tenant_id: &str) -> bool {
+        let removed = self.tenant_assets.remove(tenant_id).is_some();
+        if removed {
+            trace!("Invalidated asset cache for tenant {}", tenant_id);
+        }
+        removed
+    }
 }
 
 impl Default for AssetCache {

@@ -676,6 +676,19 @@ pub async fn execute_command(
                             
                             match client.create_asset(&tenant, file_path.to_str().unwrap(), sub_matches.get_one::<String>(PARAMETER_PATH).map(|s| s.as_str()), folder_id.as_deref()).await {
                                 Ok(asset_response) => {
+                                    // Invalidate cache for this tenant since we've modified asset state
+                                    match AssetCache::load() {
+                                        Ok(mut cache) => {
+                                            cache.invalidate_tenant(&tenant);
+                                            if let Err(e) = cache.save() {
+                                                debug!("Failed to save invalidated cache: {}", e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            debug!("Failed to load cache for invalidation: {}", e);
+                                        }
+                                    }
+                                    
                                     let asset = Asset::from_asset_response(asset_response, file_path.to_string_lossy().to_string());
                                     match asset.format(format) {
                                         Ok(output) => {
@@ -772,6 +785,19 @@ pub async fn execute_command(
 
                             match client.create_assets_batch(&tenant, &glob_pattern, sub_matches.get_one::<String>(PARAMETER_PATH).map(|s| s.as_str()), folder_id.as_deref(), concurrent, show_progress).await {
                                 Ok(asset_responses) => {
+                                    // Invalidate cache for this tenant since we've modified asset state
+                                    match AssetCache::load() {
+                                        Ok(mut cache) => {
+                                            cache.invalidate_tenant(&tenant);
+                                            if let Err(e) = cache.save() {
+                                                debug!("Failed to save invalidated cache: {}", e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            debug!("Failed to load cache for invalidation: {}", e);
+                                        }
+                                    }
+                                    
                                     // Convert responses to assets
                                     let assets: Vec<Asset> = asset_responses.into_iter()
                                         .map(|asset_response| {
@@ -1066,6 +1092,19 @@ pub async fn execute_command(
                             
                             match client.delete_asset(&tenant, &asset_id).await {
                                 Ok(()) => {
+                                    // Invalidate cache for this tenant since we've modified asset state
+                                    match AssetCache::load() {
+                                        Ok(mut cache) => {
+                                            cache.invalidate_tenant(&tenant);
+                                            if let Err(e) = cache.save() {
+                                                debug!("Failed to save invalidated cache: {}", e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            debug!("Failed to load cache for invalidation: {}", e);
+                                        }
+                                    }
+                                    
                                     Ok(())
                                 }
                                 Err(e) => {

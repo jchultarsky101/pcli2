@@ -1066,7 +1066,6 @@ pub async fn execute_command(
                             
                             match client.delete_asset(&tenant, &asset_id).await {
                                 Ok(()) => {
-                                    println!("Asset deleted successfully");
                                     Ok(())
                                 }
                                 Err(e) => {

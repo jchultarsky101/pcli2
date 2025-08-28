@@ -451,6 +451,11 @@ pub async fn execute_command(
                             
                             match client.create_folder(&tenant, &name, parent_folder_id.as_deref()).await {
                                 Ok(folder_response) => {
+                                    // Invalidate folder cache for this tenant since we've modified folder state
+                                    if let Err(e) = FolderCache::invalidate(&tenant) {
+                                        debug!("Failed to invalidate folder cache: {}", e);
+                                    }
+                                    
                                     // Build hierarchy to get the path for this new folder
                                     match FolderHierarchy::build_from_api(&mut client, &tenant).await {
                                         Ok(hierarchy) => {
@@ -566,6 +571,11 @@ pub async fn execute_command(
                             
                             match client.delete_folder(&tenant, &folder_id).await {
                                 Ok(_) => {
+                                    // Invalidate folder cache for this tenant since we've modified folder state
+                                    if let Err(e) = FolderCache::invalidate(&tenant) {
+                                        debug!("Failed to invalidate folder cache: {}", e);
+                                    }
+                                    
                                     Ok(())
                                 }
                                 Err(e) => {

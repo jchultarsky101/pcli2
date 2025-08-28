@@ -368,6 +368,18 @@ pub fn create_cli_commands() -> ArgMatches {
                             .multiple(false)
                             .required(true)
                         ),
+                )
+                .subcommand(
+                    Command::new(COMMAND_DELETE)
+                        .about("Delete an asset")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
                 ),
         )
         .subcommand(

@@ -796,7 +796,7 @@ pub async fn execute_command(
                                 }
                                 Err(e) => {
                                     error!("Error creating assets batch: {}", e);
-                                    eprintln!("Error creating assets batch: {}", e);
+                                    eprintln!("Error creating assets batch: {}. Some assets may have been uploaded successfully before the error occurred.", e);
                                     Ok(())
                                 }
                             }

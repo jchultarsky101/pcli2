@@ -40,6 +40,10 @@ pub enum ApiError {
     /// Glob pattern error for path matching
     #[error("Glob pattern path error: {0}")]
     GlobPatternError(#[from] glob::PatternError),
+    
+    /// Conflict error (e.g., asset already exists)
+    #[error("Conflict: {0}")]
+    ConflictError(String),
 }
 
 /// Physna V3 API client
@@ -681,11 +685,26 @@ impl PhysnaApiClient {
                     }
                 }
             } else {
-                Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Retry failed with status: {}", 
-                    response.status(), 
-                    retry_response.status()
-                )))
+                // Handle specific HTTP error codes with user-friendly messages
+                let status = retry_response.status();
+                match status {
+                    reqwest::StatusCode::CONFLICT => {
+                        Err(ApiError::ConflictError("Asset already exists. Please use a different filename or delete the existing asset first.".to_string()))
+                    }
+                    reqwest::StatusCode::UNPROCESSABLE_ENTITY => {
+                        Err(ApiError::ConflictError("Invalid request data. Please check your input and try again.".to_string()))
+                    }
+                    reqwest::StatusCode::PAYLOAD_TOO_LARGE => {
+                        Err(ApiError::ConflictError("File is too large. Please check the file size limits and try again.".to_string()))
+                    }
+                    _ => {
+                        Err(ApiError::RetryFailed(format!(
+                            "Original error: {}, Retry failed with status: {}", 
+                            response.status(), 
+                            retry_response.status()
+                        )))
+                    }
+                }
             }
         } else if response.status().is_success() {
             // Try to get the raw response text for debugging
@@ -707,7 +726,22 @@ impl PhysnaApiClient {
                 }
             }
         } else {
-            Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+            // Handle specific HTTP error codes with user-friendly messages
+            let status = response.status();
+            match status {
+                reqwest::StatusCode::CONFLICT => {
+                    Err(ApiError::ConflictError("Asset already exists. Please use a different filename or delete the existing asset first.".to_string()))
+                }
+                reqwest::StatusCode::UNPROCESSABLE_ENTITY => {
+                    Err(ApiError::ConflictError("Invalid request data. Please check your input and try again.".to_string()))
+                }
+                reqwest::StatusCode::PAYLOAD_TOO_LARGE => {
+                    Err(ApiError::ConflictError("File is too large. Please check the file size limits and try again.".to_string()))
+                }
+                _ => {
+                    Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+                }
+            }
         }
     }
     

@@ -20,6 +20,8 @@ pub const COMMAND_FILE: &str = "file";
 // CRUD operations
 /// Command name for creating resources
 pub const COMMAND_CREATE: &str = "create";
+/// Command name for creating multiple resources
+pub const COMMAND_CREATE_BATCH: &str = "create-batch";
 /// Command name for retrieving resources
 pub const COMMAND_GET: &str = "get";
 /// Command name for listing resources
@@ -289,7 +291,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 ),
         )
         .subcommand(
-            // Asset resource commands
+            // Asset commands
             Command::new(COMMAND_ASSET)
                 .about("Manage assets")
                 .subcommand_required(true)
@@ -309,6 +311,37 @@ pub fn create_cli_commands() -> ArgMatches {
                         .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(
+                    Command::new(COMMAND_CREATE_BATCH)
+                        .about("Create multiple assets by uploading files matching a glob pattern")
+                        .arg(tenant_parameter.clone())
+                        .arg(
+                            Arg::new("files")
+                                .long("files")
+                                .num_args(1)
+                                .required(true)
+                                .help("Glob pattern to match files to upload (e.g., \"data/puzzle/*.STL\")")
+                                .value_parser(clap::value_parser!(String)),
+                        )
+                        .arg(path_parameter.clone().required(true)) // Make path required for batch operations
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .arg(
+                            Arg::new("concurrent")
+                                .long("concurrent")
+                                .num_args(1)
+                                .required(false)
+                                .default_value("5")
+                                .help("Maximum number of concurrent uploads")
+                                .value_parser(clap::value_parser!(usize)),
+                        )
+                        .arg(
+                            Arg::new("progress")
+                                .long("progress")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Display progress bar during upload"),
+                        ),
+                )
+                .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all assets in a folder")
                         .arg(tenant_parameter.clone())
@@ -321,16 +354,7 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .required(false)
                                 .help("Force refresh asset cache data from API"),
                         )
-                        .arg(
-                            Arg::new(PARAMETER_FORMAT)
-                                .short('f')
-                                .long(PARAMETER_FORMAT)
-                                .num_args(1)
-                                .required(false)
-                                .default_value("json")
-                                .help("Output data format (json or csv)")
-                                .value_parser(["json", "csv"]),
-                        ),
+                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(
                     Command::new(COMMAND_GET)
@@ -338,28 +362,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         .arg(tenant_parameter.clone())
                         .arg(uuid_parameter.clone())
                         .arg(path_parameter.clone())
-                        .arg(
-                            Arg::new(PARAMETER_FORMAT)
-                                .short('f')
-                                .long(PARAMETER_FORMAT)
-                                .num_args(1)
-                                .required(false)
-                                .default_value("json")
-                                .help("Output data format")
-                                .value_parser(["json", "csv"]),
-                        )
-                        .group(clap::ArgGroup::new("asset_identifier")
-                            .args([PARAMETER_UUID, PARAMETER_PATH])
-                            .multiple(false)
-                            .required(true)
-                        ),
-                )
-                .subcommand(
-                    Command::new(COMMAND_DELETE)
-                        .about("Delete an asset")
-                        .arg(tenant_parameter.clone())
-                        .arg(uuid_parameter.clone())
-                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
                         .group(clap::ArgGroup::new("asset_identifier")
                             .args([PARAMETER_UUID, PARAMETER_PATH])
                             .multiple(false)

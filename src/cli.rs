@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use inquire::Select;
 use pcli2::commands::{
     create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
-    COMMAND_CREATE, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
+    COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
     COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, 
     COMMAND_TENANT,
     PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID, 
@@ -650,7 +650,31 @@ pub async fn execute_command(
                             
                             debug!("Creating asset with path: {}", asset_path);
                             
-                            match client.create_asset(&tenant, file_path.to_str().unwrap(), Some(&asset_path)).await {
+                            // Try to resolve the folder path to a folder ID
+                            let folder_id = if let Some(folder_path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                if !folder_path.is_empty() {
+                                    // Build hierarchy and resolve path to folder ID
+                                    match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                        Ok(hierarchy) => {
+                                            if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
+                                                Some(folder_node.folder.id.clone())
+                                            } else {
+                                                return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", folder_path)));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error building folder hierarchy: {}", e);
+                                            return Err(CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
+                                        }
+                                    }
+                                } else {
+                                    None // Empty folder path
+                                }
+                            } else {
+                                None // No folder path specified
+                            };
+                            
+                            match client.create_asset(&tenant, file_path.to_str().unwrap(), sub_matches.get_one::<String>(PARAMETER_PATH).map(|s| s.as_str()), folder_id.as_deref()).await {
                                 Ok(asset_response) => {
                                     let asset = Asset::from_asset_response(asset_response, file_path.to_string_lossy().to_string());
                                     match asset.format(format) {
@@ -664,6 +688,115 @@ pub async fn execute_command(
                                 Err(e) => {
                                     error!("Error creating asset: {}", e);
                                     eprintln!("Error creating asset: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                Some((COMMAND_CREATE_BATCH, sub_matches)) => {
+                    trace!("Executing asset create-batch command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+
+                    let glob_pattern = sub_matches.get_one::<String>("files")
+                        .ok_or(CliError::MissingRequiredArgument("files".to_string()))?
+                        .clone();
+
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+
+                    let concurrent = sub_matches.get_one::<usize>("concurrent").copied().unwrap_or(5);
+                    let show_progress = sub_matches.get_flag("progress");
+
+                    // Try to get access token and create assets via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+
+                            // Resolve the folder path to a folder ID
+                            let folder_id = if let Some(folder_path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                if !folder_path.is_empty() {
+                                    debug!("Resolving folder path: {}", folder_path);
+                                    // Build hierarchy and resolve path to folder ID
+                                    match FolderHierarchy::build_from_api(&mut client, &tenant).await {
+                                        Ok(hierarchy) => {
+                                            if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
+                                                debug!("Found folder ID: {}", folder_node.folder.id);
+                                                Some(folder_node.folder.id.clone())
+                                            } else {
+                                                debug!("Folder not found at path: {}", folder_path);
+                                                return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", folder_path)));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error building folder hierarchy: {}", e);
+                                            return Err(CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
+                                        }
+                                    }
+                                } else {
+                                    debug!("Empty folder path provided");
+                                    None // Empty folder path
+                                }
+                            } else {
+                                debug!("No folder path specified");
+                                None // No folder path specified
+                            };
+
+                            match client.create_assets_batch(&tenant, &glob_pattern, sub_matches.get_one::<String>(PARAMETER_PATH).map(|s| s.as_str()), folder_id.as_deref(), concurrent, show_progress).await {
+                                Ok(asset_responses) => {
+                                    // Convert responses to assets
+                                    let assets: Vec<Asset> = asset_responses.into_iter()
+                                        .map(|asset_response| {
+                                            // For batch uploads, we'll use the asset path from the API response
+                                            let path = asset_response.path.clone();
+                                            Asset::from_asset_response(asset_response, path)
+                                        })
+                                        .collect();
+
+                                    // Create an asset list for formatting
+                                    let mut asset_list = pcli2::model::AssetList::empty();
+                                    for asset in assets {
+                                        asset_list.insert(asset);
+                                    }
+                                    match asset_list.format(format) {
+                                        Ok(output) => {
+                                            println!("{}", output);
+                                            Ok(())
+                                        }
+                                        Err(e) => Err(CliError::FormattingError(e)),
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error creating assets batch: {}", e);
+                                    eprintln!("Error creating assets batch: {}", e);
                                     Ok(())
                                 }
                             }
@@ -867,11 +1000,6 @@ pub async fn execute_command(
                         }
                     }
                 }
-                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                    sub_matches,
-                ))),
-            }
-        }
                 Some((COMMAND_DELETE, sub_matches)) => {
                     trace!("Executing asset delete command");
                     // Get tenant from explicit parameter or fall back to active tenant from configuration
@@ -958,7 +1086,11 @@ pub async fn execute_command(
                         }
                     }
                 }
-
+                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                    sub_matches,
+                ))),
+            }
+        }
         // Authentication commands
         Some((COMMAND_AUTH, sub_matches)) => {
             match sub_matches.subcommand() {
@@ -1191,8 +1323,7 @@ pub async fn execute_command(
                                     println!("{{\"active_tenant\": {{\"name\": \"{}\"}}}}", tenant_name);
                                 }
                                 OutputFormat::Csv => {
-                                    println!("ACTIVE_TENANT_NAME
-{}", tenant_name);
+                                    println!("ACTIVE_TENANT_NAME\n{}", tenant_name);
                                 }
                                 OutputFormat::Tree => {
                                     println!("Active tenant: {}", tenant_name);

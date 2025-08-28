@@ -10,12 +10,9 @@ use std::io::BufWriter;
 use std::str::FromStr;
 use strum::EnumIter;
 
-/// String constant for JSON format
-pub const JSON: &'static str = "json";
-/// String constant for CSV format
-pub const CSV: &'static str = "csv";
-/// String constant for tree format
-pub const TREE: &'static str = "tree";
+pub const JSON: &str = "json";
+pub const CSV: &str = "csv";
+pub const TREE: &str = "tree";
 
 /// Error types that can occur during formatting operations
 #[derive(Debug, thiserror::Error)]
@@ -118,7 +115,7 @@ pub trait CsvRecordProducer {
         let buf = BufWriter::new(Vec::new());
         let mut wtr = Writer::from_writer(buf);
         if with_header {
-            wtr.write_record(&Self::csv_header()).unwrap();
+            wtr.write_record(Self::csv_header()).unwrap();
         }
         for record in self.as_csv_records() {
             wtr.write_record(&record).unwrap();

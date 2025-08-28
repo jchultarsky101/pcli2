@@ -23,7 +23,7 @@ impl FolderCache {
         if let Ok(test_cache_dir) = std::env::var("PCLI2_TEST_CACHE_DIR") {
             PathBuf::from(test_cache_dir).join("folder_cache")
         } else {
-            let cache_dir = dirs::cache_dir().unwrap_or_else(|| std::env::temp_dir());
+            let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
             cache_dir.join("pcli2").join("folder_cache")
         }
     }
@@ -53,10 +53,7 @@ impl FolderCache {
         if cache_file.exists() {
             match fs::read(&cache_file) {
                 Ok(data) => {
-                    match bincode::deserialize::<FolderHierarchy>(&data) {
-                        Ok(hierarchy) => Some(hierarchy),
-                        Err(_) => None,
-                    }
+                    bincode::deserialize::<FolderHierarchy>(&data).ok()
                 }
                 Err(_) => None,
             }

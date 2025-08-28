@@ -31,7 +31,7 @@ mod implementation {
     }
 
     impl Keyring {
-        pub fn get(&self, tenant: &String, key: String) -> Result<Option<String>, KeyringError> {
+        pub fn get(&self, tenant: &str, key: String) -> Result<Option<String>, KeyringError> {
             let key = [tenant.clone(), key].join(":");
             let entry = Entry::new("pcli2", key.as_str())?;
             match entry.get_password() {
@@ -43,14 +43,14 @@ mod implementation {
             }
         }
 
-        pub fn put(&self, tenant: &String, key: String, value: String) -> Result<(), KeyringError> {
+        pub fn put(&self, tenant: &str, key: String, value: String) -> Result<(), KeyringError> {
             let key = [tenant.clone(), key].join(":");
             let entry = Entry::new("pcli2", key.as_str())?;
             entry.set_password(value.as_str())?;
             Ok(())
         }
 
-        pub fn delete(&self, tenant: &String, key: String) -> Result<(), KeyringError> {
+        pub fn delete(&self, tenant: &str, key: String) -> Result<(), KeyringError> {
             let key = [tenant.clone(), key].join(":");
             let entry = Entry::new("pcli2", key.as_str())?;
             entry.delete_password()?;
@@ -70,28 +70,21 @@ mod implementation {
         KeyringAccessError(String),
     }
 
+    #[derive(Default)]
     pub struct Keyring {
         dev_keyring: DevKeyring,
     }
 
-    impl Default for Keyring {
-        fn default() -> Keyring {
-            Keyring {
-                dev_keyring: DevKeyring::default(),
-            }
-        }
-    }
-
     impl Keyring {
-        pub fn get(&mut self, tenant: &String, key: String) -> Result<Option<String>, KeyringError> {
+        pub fn get(&mut self, tenant: &str, key: String) -> Result<Option<String>, KeyringError> {
             self.dev_keyring.get(tenant, key).map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
         }
 
-        pub fn put(&mut self, tenant: &String, key: String, value: String) -> Result<(), KeyringError> {
+        pub fn put(&mut self, tenant: &str, key: String, value: String) -> Result<(), KeyringError> {
             self.dev_keyring.put(tenant, key, value).map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
         }
 
-        pub fn delete(&mut self, tenant: &String, key: String) -> Result<(), KeyringError> {
+        pub fn delete(&mut self, tenant: &str, key: String) -> Result<(), KeyringError> {
             self.dev_keyring.delete(tenant, key).map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
         }
     }

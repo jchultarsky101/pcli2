@@ -866,12 +866,9 @@ pub async fn execute_command(
                     let format = OutputFormat::from_str(format).unwrap();
                     
                     // Validate format - only JSON and CSV are supported for assets
-                    match format {
-                        OutputFormat::Tree => {
-                            eprintln!("Tree format is not supported for asset listing");
-                            return Ok(());
-                        }
-                        _ => {} // JSON and CSV are supported
+                    if format == OutputFormat::Tree {
+                        eprintln!("Tree format is not supported for asset listing");
+                        return Ok(());
                     }
                     
                     // Check if refresh is requested

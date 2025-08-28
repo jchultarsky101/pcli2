@@ -196,11 +196,7 @@ impl FolderHierarchy {
             return None;
         }
         
-        let clean_path = if path.starts_with('/') {
-            &path[1..]
-        } else {
-            path
-        };
+        let clean_path = path.strip_prefix('/').unwrap_or(path);
         
         let path_parts: Vec<&str> = clean_path.split('/').collect();
         

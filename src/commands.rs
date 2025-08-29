@@ -30,6 +30,8 @@ pub const COMMAND_LIST: &str = "list";
 pub const COMMAND_UPDATE: &str = "update";
 /// Command name for deleting resources
 pub const COMMAND_DELETE: &str = "delete";
+/// Command name for matching assets
+pub const COMMAND_MATCH: &str = "match";
 
 // Auth commands
 /// Command name for authentication operations
@@ -376,6 +378,28 @@ pub fn create_cli_commands() -> ArgMatches {
                         .arg(uuid_parameter.clone())
                         .arg(path_parameter.clone())
                         .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
+                )
+                .subcommand(
+                    Command::new("match")
+                        .about("Find geometrically similar assets")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(
+                            Arg::new("threshold")
+                                .long("threshold")
+                                .num_args(1)
+                                .required(false)
+                                .default_value("0.80")
+                                .help("Similarity threshold (0.00 to 1.00)")
+                                .value_parser(clap::value_parser!(f64)),
+                        )
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .group(clap::ArgGroup::new("reference_asset")
                             .args([PARAMETER_UUID, PARAMETER_PATH])
                             .multiple(false)
                             .required(true)

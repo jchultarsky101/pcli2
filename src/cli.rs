@@ -10,7 +10,7 @@ use pcli2::commands::{
     create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
     COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, 
-    COMMAND_TENANT,
+    COMMAND_TENANT, COMMAND_MATCH,
     PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID, 
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
     PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
@@ -600,9 +600,134 @@ pub async fn execute_command(
                 ))),
             }
         }
-        // Asset resource commands
+        // Asset commands
         Some((COMMAND_ASSET, sub_matches)) => {
             match sub_matches.subcommand() {
+                Some((COMMAND_MATCH, sub_matches)) => {
+                    trace!("Executing asset match command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    // Get the reference asset identifier (either UUID or path)
+                    let asset_id = if let Some(uuid) = sub_matches.get_one::<String>(PARAMETER_UUID) {
+                        uuid.clone()
+                    } else if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                        // We need to look up the asset by path to get its UUID
+                        // Try to get access token
+                        let mut keyring = Keyring::default();
+                        match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                            Ok(Some(token)) => {
+                                let mut client = PhysnaApiClient::new().with_access_token(token);
+                                
+                                // Try to get client credentials for automatic token refresh
+                                if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                    keyring.get(&"default".to_string(), "client-id".to_string()),
+                                    keyring.get(&"default".to_string(), "client-secret".to_string())
+                                ) {
+                                    client = client.with_client_credentials(client_id, client_secret);
+                                }
+                                
+                                // Get asset cache or fetch assets from API
+                                match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                    Ok(asset_list_response) => {
+                                        // Convert to AssetList to use find_by_path
+                                        let asset_list = asset_list_response.to_asset_list();
+                                        // Find the asset by path
+                                        if let Some(asset) = asset_list.find_by_path(path) {
+                                            if let Some(uuid) = asset.uuid() {
+                                                uuid.clone()
+                                            } else {
+                                                eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                return Ok(());
+                                            }
+                                        } else {
+                                            eprintln!("Asset not found by path '{}'", path);
+                                            return Ok(());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error fetching asset cache: {}", e);
+                                        eprintln!("Error fetching asset cache: {}", e);
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                            Ok(None) => {
+                                eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                eprintln!("Error retrieving access token: {}", e);
+                                return Ok(());
+                            }
+                        }
+                    } else {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    };
+                    
+                    // Get threshold parameter
+                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&0.80);
+                    
+                    // Validate threshold is between 0 and 1
+                    if threshold < 0.0 || threshold > 1.0 {
+                        eprintln!("Threshold must be between 0.00 and 1.00");
+                        return Ok(());
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token and perform geometric search
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            match client.geometric_search(&tenant, &asset_id, threshold).await {
+                                Ok(search_result) => {
+                                    match search_result.format(format) {
+                                        Ok(output) => {
+                                            println!("{}", output);
+                                            Ok(())
+                                        }
+                                        Err(e) => Err(CliError::FormattingError(e)),
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error performing geometric search: {}", e);
+                                    eprintln!("Error performing geometric search: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
                 Some((COMMAND_CREATE, sub_matches)) => {
                     trace!("Executing asset create command");
                     // Get tenant from explicit parameter or fall back to active tenant from configuration

@@ -830,7 +830,7 @@ impl Asset {
 impl CsvRecordProducer for Asset {
     /// Get the CSV header row for Asset records
     fn csv_header() -> Vec<String> {
-        vec!["NAME".to_string(), "PATH".to_string(), "TYPE".to_string(), "STATE".to_string()]
+        vec!["NAME".to_string(), "PATH".to_string(), "TYPE".to_string(), "STATE".to_string(), "UUID".to_string()]
     }
 
     /// Convert the Asset to CSV records
@@ -839,7 +839,8 @@ impl CsvRecordProducer for Asset {
             self.name(), 
             self.path(), 
             self.file_type().cloned().unwrap_or_default(),
-            self.processing_status().cloned().unwrap_or_default()
+            self.processing_status().cloned().unwrap_or_default(),
+            self.uuid().cloned().unwrap_or_default()
         ]]
     }
 }
@@ -1058,6 +1059,77 @@ impl OutputFormatter for AssetList {
                     Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
             }
+        }
+    }
+}
+
+// Geometric search models
+
+/// Represents a match result from the geometric search
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeometricMatch {
+    /// The UUID of the matching asset
+    #[serde(rename = "assetId")]
+    pub asset_id: String,
+    /// The path of the matching asset
+    pub path: String,
+    /// The similarity score between 0 and 1
+    pub score: f64,
+    /// The transformation matrix for the match
+    #[serde(rename = "transformation")]
+    pub transformation: Option<TransformationMatrix>,
+}
+
+/// Represents a 4x4 transformation matrix
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TransformationMatrix {
+    /// The 4x4 matrix values in row-major order
+    pub matrix: [f64; 16],
+}
+
+/// Represents the response from the geometric search API
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeometricSearchResponse {
+    /// The list of matching assets
+    pub matches: Vec<GeometricMatch>,
+}
+
+impl CsvRecordProducer for GeometricSearchResponse {
+    /// Get the CSV header row for GeometricSearchResponse records
+    fn csv_header() -> Vec<String> {
+        vec!["ASSET_ID".to_string(), "PATH".to_string(), "SCORE".to_string()]
+    }
+
+    /// Convert the GeometricSearchResponse to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.matches.iter().map(|m| {
+            vec![
+                m.asset_id.clone(),
+                m.path.clone(),
+                format!("{:.2}", m.score)
+            ]
+        }).collect()
+    }
+}
+
+impl JsonProducer for GeometricSearchResponse {}
+
+impl OutputFormatter for GeometricSearchResponse {
+    type Item = GeometricSearchResponse;
+
+    /// Format the GeometricSearchResponse according to the specified output format
+    /// 
+    /// # Arguments
+    /// * `format` - The output format to use (JSON, CSV)
+    /// 
+    /// # Returns
+    /// * `Ok(String)` - The formatted output
+    /// * `Err(FormattingError)` - If formatting fails
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => Ok(self.to_json()?),
+            OutputFormat::Csv => Ok(self.to_csv_with_header()?),
+            OutputFormat::Tree => Ok(self.to_json()?), // For geometric search, tree format is the same as JSON
         }
     }
 }

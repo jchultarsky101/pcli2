@@ -2,6 +2,7 @@ use crate::auth::AuthClient;
 use crate::model::{CurrentUserResponse, FolderListResponse};
 use reqwest;
 use serde_json;
+use serde_urlencoded;
 use tracing::{debug, trace, error};
 use glob::glob;
 use futures::stream::{self, StreamExt};
@@ -743,6 +744,30 @@ impl PhysnaApiClient {
                 }
             }
         }
+    }
+    
+    /// Perform a geometric search for similar assets
+    /// 
+    /// This method searches for assets that are geometrically similar to the reference asset.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the reference asset
+    /// * `asset_id` - The UUID of the reference asset
+    /// * `threshold` - The similarity threshold (0.0 to 1.0)
+    /// 
+    /// # Returns
+    /// * `Ok(crate::model::GeometricSearchResponse)` - The search results
+    /// * `Err(ApiError)` - HTTP error or other error
+    pub async fn geometric_search(&mut self, tenant_id: &str, asset_id: &str, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {
+        let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_id, asset_id);
+        
+        // Build request body
+        let body = serde_json::json!({
+            "threshold": threshold
+        });
+        
+        // Execute POST request
+        self.post(&url, &body).await
     }
     
     /// Create multiple assets by uploading files matching a glob pattern

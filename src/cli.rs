@@ -676,11 +676,11 @@ pub async fn execute_command(
                     };
                     
                     // Get threshold parameter
-                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&0.80);
+                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
                     
-                    // Validate threshold is between 0 and 1
-                    if threshold < 0.0 || threshold > 1.0 {
-                        eprintln!("Threshold must be between 0.00 and 1.00");
+                    // Validate threshold is between 0 and 100
+                    if threshold < 0.0 || threshold > 100.0 {
+                        eprintln!("Threshold must be between 0.00 and 100.00");
                         return Ok(());
                     }
                     
@@ -713,7 +713,25 @@ pub async fn execute_command(
                                 }
                                 Err(e) => {
                                     error!("Error performing geometric search: {}", e);
-                                    eprintln!("Error performing geometric search: {}", e);
+                                    match e {
+                                        pcli2::physna_v3::ApiError::RetryFailed(msg) => {
+                                            eprintln!("Error performing geometric search: {}", msg);
+                                        }
+                                        pcli2::physna_v3::ApiError::HttpError(http_err) => {
+                                            if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                                eprintln!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
+                                            } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
+                                                eprintln!("Error: Unauthorized access. Please check your authentication credentials.");
+                                            } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+                                                eprintln!("Error: Access forbidden. You don't have permission to perform geometric search on this asset.");
+                                            } else {
+                                                eprintln!("Error performing geometric search: HTTP error {}", http_err);
+                                            }
+                                        }
+                                        _ => {
+                                            eprintln!("Error performing geometric search: {}", e);
+                                        }
+                                    }
                                     Ok(())
                                 }
                             }
@@ -1084,7 +1102,7 @@ pub async fn execute_command(
                     }
                     
                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let _format = OutputFormat::from_str(&format_str).unwrap();
                     
                     // Try to get access token and get asset via Physna V3 API
                     let mut keyring = Keyring::default();
@@ -1132,8 +1150,12 @@ pub async fn execute_command(
                             
                             match client.get_asset(&tenant, &asset_id).await {
                                 Ok(asset_response) => {
-                                    let asset = Asset::from_asset_response(asset_response, asset_id.clone());
-                                    match asset.format(format) {
+                                    // Convert AssetResponse to Asset
+                                    let asset = pcli2::model::Asset::from_asset_response(asset_response, asset_id.clone());
+                                    
+                                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                                    let _format = OutputFormat::from_str(&format_str).unwrap();
+                                    match asset.format(_format) {
                                         Ok(output) => {
                                             println!("{}", output);
                                             Ok(())
@@ -1143,7 +1165,25 @@ pub async fn execute_command(
                                 }
                                 Err(e) => {
                                     error!("Error fetching asset: {}", e);
-                                    eprintln!("Error fetching asset: {}", e);
+                                    match e {
+                                        pcli2::physna_v3::ApiError::RetryFailed(msg) => {
+                                            eprintln!("Error fetching asset: {}", msg);
+                                        }
+                                        pcli2::physna_v3::ApiError::HttpError(http_err) => {
+                                            if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                                eprintln!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
+                                            } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
+                                                eprintln!("Error: Unauthorized access. Please check your authentication credentials.");
+                                            } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+                                                eprintln!("Error: Access forbidden. You don't have permission to access this asset.");
+                                            } else {
+                                                eprintln!("Error fetching asset: HTTP error {}", http_err);
+                                            }
+                                        }
+                                        _ => {
+                                            eprintln!("Error fetching asset: {}", e);
+                                        }
+                                    }
                                     Ok(())
                                 }
                             }

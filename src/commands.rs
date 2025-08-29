@@ -394,8 +394,8 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .long("threshold")
                                 .num_args(1)
                                 .required(false)
-                                .default_value("0.80")
-                                .help("Similarity threshold (0.00 to 1.00)")
+                                .default_value("80.0")
+                                .help("Similarity threshold (0.00 to 100.00)")
                                 .value_parser(clap::value_parser!(f64)),
                         )
                         .arg(format_parameter.clone().value_parser(["json", "csv"]))

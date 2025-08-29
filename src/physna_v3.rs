@@ -198,9 +198,11 @@ impl PhysnaApiClient {
         
         let response = request.send().await?;
 
-        // Check if we need to retry due to authentication issues (401 Unauthorized or 403 Forbidden)
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED || 
-           response.status() == reqwest::StatusCode::FORBIDDEN {
+        // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
+        // We only retry on authentication errors, as other errors like 404 are not recoverable
+        // However, we should be more specific - a 403 might indicate a permission issue rather than
+        // an authentication issue, so we should only retry on 401 errors for token refresh
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             debug!("Received authentication error ({}), attempting token refresh", response.status());
             
             // Try to refresh the expired or invalid access token
@@ -223,11 +225,14 @@ impl PhysnaApiClient {
                 let result: T = retry_response.json().await?;
                 Ok(result)
             } else {
-                // Retry failed - return detailed error information
+                // Retry failed - provide clear error information
+                let status = retry_response.status();
+                let error_text = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}", 
+                    response.status(), status, error_text);
                 Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Retry failed with status: {}", 
-                    response.status(), 
-                    retry_response.status()
+                    "Original error: {}, Retry failed with status: {} and body: {}", 
+                    response.status(), status, error_text
                 )))
             }
         } else if response.status().is_success() {
@@ -235,7 +240,7 @@ impl PhysnaApiClient {
             let result: T = response.json().await?;
             Ok(result)
         } else {
-            // Other HTTP error - return the error status
+            // For all other errors, return the error status
             Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
         }
     }
@@ -753,7 +758,7 @@ impl PhysnaApiClient {
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the reference asset
     /// * `asset_id` - The UUID of the reference asset
-    /// * `threshold` - The similarity threshold (0.0 to 1.0)
+    /// * `threshold` - The similarity threshold (0.00 to 100.00 as percentage)
     /// 
     /// # Returns
     /// * `Ok(crate::model::GeometricSearchResponse)` - The search results
@@ -761,9 +766,17 @@ impl PhysnaApiClient {
     pub async fn geometric_search(&mut self, tenant_id: &str, asset_id: &str, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {
         let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_id, asset_id);
         
-        // Build request body
+        // Build request body with the correct structure
         let body = serde_json::json!({
-            "threshold": threshold
+            "page": 1,
+            "perPage": 20,
+            "searchQuery": "",
+            "filters": {
+                "folders": [],
+                "metadata": {},
+                "extensions": ["string"]
+            },
+            "minThreshold": threshold  // Use threshold directly as percentage
         });
         
         // Execute POST request

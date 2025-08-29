@@ -5,6 +5,7 @@
 //! including tenant, folder, asset, authentication, context, and configuration operations.
 
 use clap::ArgMatches;
+use futures::StreamExt;
 use inquire::Select;
 use pcli2::commands::{
     create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
@@ -18,6 +19,7 @@ use pcli2::commands::{
 use pcli2::exit_codes::PcliExitCode;
 use pcli2::model::{Asset, Folder, FolderGeometricMatch, FolderGeometricMatchResponse};
 use pcli2::auth::AuthClient;
+use pcli2::physna_v3::ApiError;
 use pcli2::configuration::Configuration;
 use pcli2::folder_cache::FolderCache;
 use pcli2::asset_cache::AssetCache;
@@ -622,6 +624,7 @@ pub async fn execute_command(
                     let asset_id = if let Some(uuid) = sub_matches.get_one::<String>(PARAMETER_UUID) {
                         uuid.clone()
                     } else if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                        trace!("Looking up asset by path: {}", path);
                         // We need to look up the asset by path to get its UUID
                         // Try to get access token
                         let mut keyring = Keyring::default();
@@ -645,6 +648,7 @@ pub async fn execute_command(
                                         // Find the asset by path
                                         if let Some(asset) = asset_list.find_by_path(path) {
                                             if let Some(uuid) = asset.uuid() {
+                                                trace!("Found asset with UUID: {}", uuid);
                                                 uuid.clone()
                                             } else {
                                                 eprintln!("Asset found by path '{}' but has no UUID", path);
@@ -687,6 +691,8 @@ pub async fn execute_command(
                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                     let format = OutputFormat::from_str(&format_str).unwrap();
                     
+                    trace!("Performing geometric search for asset {} with threshold {}", asset_id, threshold);
+                    
                     // Try to get access token and perform geometric search
                     let mut keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
@@ -703,22 +709,28 @@ pub async fn execute_command(
                             
                             match client.geometric_search(&tenant, &asset_id, threshold).await {
                                 Ok(search_result) => {
+                                    trace!("Geometric search completed, processing {} matches", search_result.matches.len());
                                     // Get the reference asset details
                                     match client.get_asset(&tenant, &asset_id).await {
                                         Ok(reference_asset) => {
+                                            trace!("Retrieved reference asset details");
                                             // Convert GeometricSearchResponse to FolderGeometricMatchResponse format
                                             let mut matches = Vec::new();
                                             
                                             // Extract the reference asset name from the path (last part after the last slash)
                                             let reference_asset_name = reference_asset.path.split('/').last().unwrap_or(&reference_asset.path).to_string();
+                                            trace!("Reference asset name: {}", reference_asset_name);
                                             
                                             // Convert each geometric match to a folder match format
-                                            for geometric_match in search_result.matches {
+                                            for (index, geometric_match) in search_result.matches.iter().enumerate() {
+                                                trace!("Processing match {} of {}: {} -> {}", index + 1, search_result.matches.len(), asset_id, geometric_match.asset.id);
                                                 // Skip self-matches
                                                 if geometric_match.asset.id != asset_id {
+                                                    let candidate_asset_name = geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string();
+                                                    trace!("Adding match: {} -> {} ({}%)", reference_asset_name, candidate_asset_name, geometric_match.match_percentage);
                                                     let folder_match = FolderGeometricMatch {
                                                         reference_asset_name: reference_asset_name.clone(),
-                                                        candidate_asset_name: geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string(),
+                                                        candidate_asset_name: candidate_asset_name,
                                                         match_percentage: geometric_match.match_percentage,
                                                         reference_asset_path: reference_asset.path.clone(),
                                                         candidate_asset_path: geometric_match.asset.path.clone(),
@@ -726,15 +738,19 @@ pub async fn execute_command(
                                                         candidate_asset_uuid: geometric_match.asset.id.clone(),
                                                     };
                                                     matches.push(folder_match);
+                                                } else {
+                                                    trace!("Skipping self-match for asset {}", asset_id);
                                                 }
                                             }
                                             
+                                            trace!("Formatting {} matches for output", matches.len());
                                             // Create the response object (now a simple vector)
                                             let folder_match_response: FolderGeometricMatchResponse = matches;
                                             
                                             // Format and output the results
                                             match folder_match_response.format(format) {
                                                 Ok(output) => {
+                                                    trace!("Output formatted successfully");
                                                     println!("{}", output);
                                                     Ok(())
                                                 }
@@ -802,6 +818,7 @@ pub async fn execute_command(
                     let folder_path = sub_matches.get_one::<String>(PARAMETER_PATH)
                         .ok_or(CliError::MissingRequiredArgument("folder path must be provided".to_string()))?
                         .clone();
+                    trace!("Processing folder: {}", folder_path);
 
                     // Get threshold parameter
                     let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
@@ -815,71 +832,154 @@ pub async fn execute_command(
                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                     let format = OutputFormat::from_str(&format_str).unwrap();
 
+                    trace!("Retrieving access token for tenant: {}", tenant);
                     // Try to get access token and perform folder-based geometric search
                     let mut keyring = Keyring::default();
                     match keyring.get(&"default".to_string(), "access-token".to_string()) {
                         Ok(Some(token)) => {
-                            let mut client = PhysnaApiClient::new().with_access_token(token);
-
-                            // Try to get client credentials for automatic token refresh
-                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                            // Get client credentials for creating multiple clients
+                            let client_credentials = if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
                                 keyring.get(&"default".to_string(), "client-id".to_string()),
                                 keyring.get(&"default".to_string(), "client-secret".to_string())
                             ) {
-                                client = client.with_client_credentials(client_id, client_secret);
+                                Some((client_id, client_secret))
+                            } else {
+                                None
+                            };
+
+                            trace!("Fetching assets for folder: {}", folder_path);
+                            // Create a client for initial operations
+                            let mut client = PhysnaApiClient::new().with_access_token(token.clone());
+                            if let Some((client_id, client_secret)) = &client_credentials {
+                                client = client.with_client_credentials(client_id.clone(), client_secret.clone());
                             }
 
                             // Get all assets in the specified folder
                             match AssetCache::get_assets_for_folder(&mut client, &tenant, &folder_path, false).await {
                                 Ok(asset_list) => {
-                                    // Create a vector to store all match results
-                                    let mut all_matches = Vec::new();
-
+                                    trace!("Found {} assets in folder", asset_list.len());
+                                    
                                     // Get all assets from the AssetList
                                     let assets = asset_list.get_all_assets();
+                                    trace!("Processing {} assets", assets.len());
 
-                                    // For each asset in the folder, perform a geometric search against all assets
-                                    for asset in assets {
-                                        if let Some(asset_uuid) = asset.uuid() {
-                                            match client.geometric_search(&tenant, asset_uuid, threshold).await {
-                                                Ok(search_result) => {
-                                                    // Add matches to our results, skipping self-matches
-                                                    for geometric_match in search_result.matches {
-                                                        // Skip self-matches by comparing UUIDs
-                                                        if let Some(asset_uuid) = asset.uuid() {
-                                                            if geometric_match.asset.id != *asset_uuid {
-                                                                let folder_match = FolderGeometricMatch {
-                                                                    reference_asset_name: asset.name().to_string(),
-                                                                    candidate_asset_name: geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string(),
-                                                                    match_percentage: geometric_match.match_percentage,
-                                                                    reference_asset_path: asset.path().to_string(),
-                                                                    candidate_asset_path: geometric_match.asset.path.clone(),
-                                                                    reference_asset_uuid: asset_uuid.clone(),
-                                                                    candidate_asset_uuid: geometric_match.asset.id.clone(),
-                                                                };
-                                                                all_matches.push(folder_match);
+                                    // Use a reasonable concurrency level (similar to create-batch)
+                                    let concurrent = 5usize;
+                                    trace!("Using concurrency level: {}", concurrent);
+
+                                    // Create a stream of futures for processing assets concurrently
+                                    let base_url = "https://app-api.physna.com/v3".to_string(); // Use default base URL
+                                    let tenant_id = tenant.clone();
+                                    
+                                    // Create progress bar
+                                    let progress_bar = indicatif::ProgressBar::new(assets.len() as u64);
+                                    progress_bar.set_style(
+                                        indicatif::ProgressStyle::default_bar()
+                                            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                                            .unwrap()
+                                            .progress_chars("#>-")
+                                    );
+
+                                    let results: Result<Vec<_>, _> = futures::stream::iter(assets)
+                                        .map(|asset| {
+                                            let base_url = base_url.clone();
+                                            let tenant_id = tenant_id.clone();
+                                            let token = token.clone();
+                                            let client_credentials = client_credentials.clone();
+                                            // let folder_path = folder_path.clone(); // Not used in the async block
+                                            let progress_bar = progress_bar.clone();
+                                            let asset_name = asset.name().to_string();
+                                            let asset_uuid = asset.uuid().map(|s| s.clone());
+                                            let asset_path = asset.path().to_string();
+
+                                            async move {
+                                                trace!("Processing asset: {} ({})", asset_name, asset_uuid.as_deref().unwrap_or("unknown"));
+                                                
+                                                if let Some(asset_uuid) = asset_uuid {
+                                                    // Create a new client for each request to avoid borrowing issues
+                                                    let mut client = PhysnaApiClient::new().with_base_url(base_url).with_access_token(token.clone());
+                                                    if let Some((client_id, client_secret)) = client_credentials.clone() {
+                                                        client = client.with_client_credentials(client_id, client_secret);
+                                                    }
+
+                                                    trace!("Performing geometric search for asset: {} ({})", asset_name, asset_uuid);
+                                                    match client.geometric_search(&tenant_id, &asset_uuid, threshold).await {
+                                                        Ok(search_result) => {
+                                                            trace!("Geometric search completed for {}, found {} matches", asset_uuid, search_result.matches.len());
+                                                            
+                                                            // Process matches, skipping self-matches
+                                                            let mut asset_matches = Vec::new();
+                                                            for geometric_match in search_result.matches {
+                                                                // Skip self-matches by comparing UUIDs
+                                                                if geometric_match.asset.id != asset_uuid {
+                                                                    let candidate_asset_name = geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string();
+                                                                    trace!("Adding match: {} -> {} ({}%)", asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                                    let folder_match = FolderGeometricMatch {
+                                                                        reference_asset_name: asset_name.clone(),
+                                                                        candidate_asset_name,
+                                                                        match_percentage: geometric_match.match_percentage,
+                                                                        reference_asset_path: asset_path.clone(),
+                                                                        candidate_asset_path: geometric_match.asset.path.clone(),
+                                                                        reference_asset_uuid: asset_uuid.clone(),
+                                                                        candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                                    };
+                                                                    asset_matches.push(folder_match);
+                                                                } else {
+                                                                    trace!("Skipping self-match for asset {}", asset_uuid);
+                                                                }
                                                             }
+                                                            
+                                                            progress_bar.inc(1);
+                                                            progress_bar.set_message(format!("Processed: {}", asset_name));
+                                                            Ok(asset_matches)
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error performing geometric search for asset {}: {}", asset_uuid, e);
+                                                            progress_bar.inc(1);
+                                                            progress_bar.set_message(format!("Failed: {}", asset_name));
+                                                            Err(e)
                                                         }
                                                     }
-                                                }
-                                                Err(e) => {
-                                                    error!("Error performing geometric search for asset {}: {}", asset_uuid, e);
-                                                    // Continue with other assets even if one fails
+                                                } else {
+                                                    progress_bar.inc(1);
+                                                    progress_bar.set_message(format!("Skipped: {} (no UUID)", asset_name));
+                                                    Err(ApiError::AuthError("Asset has no UUID".to_string()))
                                                 }
                                             }
+                                        })
+                                        .buffer_unordered(concurrent)
+                                        .collect::<Vec<_>>()
+                                        .await
+                                        .into_iter()
+                                        .collect();
+
+                                    progress_bar.finish_with_message("Batch processing complete");
+
+                                    match results {
+                                        Ok(asset_match_results) => {
+                                            // Flatten all matches into a single vector
+                                            let all_matches: Vec<FolderGeometricMatch> = asset_match_results.into_iter().flatten().collect();
+                                            trace!("Processed all assets, found {} total matches", all_matches.len());
+
+                                            // Create the response object (now a simple vector)
+                                            let folder_match_response: FolderGeometricMatchResponse = all_matches;
+
+                                            trace!("Formatting results for output");
+                                            // Format and output the results
+                                            match folder_match_response.format(format) {
+                                                Ok(output) => {
+                                                    trace!("Output formatted successfully");
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
                                         }
-                                    }
-
-                                    // Create the response object (now a simple vector)
-                                    let folder_match_response: FolderGeometricMatchResponse = all_matches;
-
-                                    // Format and output the results
-                                    match folder_match_response.format(format) {
-                                        Ok(output) => {
-                                            println!("{}", output);
+                                        Err(e) => {
+                                            error!("Error during batch processing: {}", e);
+                                            eprintln!("Error during batch processing: {}", e);
                                             Ok(())
                                         }
-                                        Err(e) => Err(CliError::FormattingError(e)),
                                     }
                                 }
                                 Err(e) => {

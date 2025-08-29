@@ -536,8 +536,10 @@ impl PhysnaApiClient {
     /// * `Ok(crate::model::AssetResponse)` - Successfully fetched asset details
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn get_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<crate::model::AssetResponse, ApiError> {
+        trace!("Getting asset details for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
         let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
         let response: crate::model::SingleAssetResponse = self.get(&url).await?;
+        trace!("Successfully retrieved asset details for asset_id: {}", asset_id);
         Ok(response.asset)
     }
     
@@ -794,6 +796,7 @@ impl PhysnaApiClient {
     /// * `Ok(crate::model::GeometricSearchResponse)` - The search results
     /// * `Err(ApiError)` - HTTP error or other error
     pub async fn geometric_search(&mut self, tenant_id: &str, asset_id: &str, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {
+        trace!("Starting geometric search for tenant_id: {}, asset_id: {}, threshold: {}", tenant_id, asset_id, threshold);
         let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_id, asset_id);
         
         // Build request body with the correct structure
@@ -809,8 +812,11 @@ impl PhysnaApiClient {
             "minThreshold": threshold  // Use threshold directly as percentage
         });
         
+        trace!("Sending geometric search request to: {}", url);
         // Execute POST request
-        self.post(&url, &body).await
+        let result = self.post(&url, &body).await;
+        trace!("Geometric search completed for asset_id: {}", asset_id);
+        result
     }
     
     /// Create multiple assets by uploading files matching a glob pattern

@@ -758,7 +758,7 @@ pub async fn execute_command(
                                             }
                                         }
                                         Err(e) => {
-                                            eprintln!("Error getting reference asset details: {}", e);
+                                            error!("Error getting reference asset details: {}", e);
                                             Ok(())
                                         }
                                     }
@@ -766,21 +766,21 @@ pub async fn execute_command(
                                 Err(e) => {
                                     match e {
                                         pcli2::physna_v3::ApiError::RetryFailed(msg) => {
-                                            eprintln!("Error performing geometric search: {}", msg);
+                                            error!("Error performing geometric search: {}", msg);
                                         }
                                         pcli2::physna_v3::ApiError::HttpError(http_err) => {
                                             if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                                                eprintln!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
+                                                error!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
                                             } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
-                                                eprintln!("Error: Unauthorized access. Please check your authentication credentials.");
+                                                error!("Error: Unauthorized access. Please check your authentication credentials.");
                                             } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
-                                                eprintln!("Error: Access forbidden. You don't have permission to perform geometric search on this asset.");
+                                                error!("Error: Access forbidden. You don't have permission to perform geometric search on this asset.");
                                             } else {
-                                                eprintln!("Error performing geometric search: HTTP error {}", http_err);
+                                                error!("Error performing geometric search: HTTP error {}", http_err);
                                             }
                                         }
                                         _ => {
-                                            eprintln!("Error performing geometric search: {}", e);
+                                            error!("Error performing geometric search: {}", e);
                                         }
                                     }
                                     Ok(())

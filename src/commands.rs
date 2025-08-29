@@ -30,8 +30,8 @@ pub const COMMAND_LIST: &str = "list";
 pub const COMMAND_UPDATE: &str = "update";
 /// Command name for deleting resources
 pub const COMMAND_DELETE: &str = "delete";
-/// Command name for matching assets
-pub const COMMAND_MATCH: &str = "match";
+/// Command name for matching assets geometrically
+pub const COMMAND_MATCH: &str = "geometric-match";
 
 // Auth commands
 /// Command name for authentication operations
@@ -384,7 +384,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         ),
                 )
                 .subcommand(
-                    Command::new("match")
+                    Command::new("geometric-match")
                         .about("Find geometrically similar assets")
                         .arg(tenant_parameter.clone())
                         .arg(uuid_parameter.clone())

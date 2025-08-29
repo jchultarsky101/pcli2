@@ -1102,11 +1102,37 @@ pub struct TransformationMatrix {
     pub matrix: [f64; 16],
 }
 
+/// Represents filter data in API responses
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilterData {
+    /// Extensions filter information
+    pub extensions: Vec<FilterCount>,
+    /// Folders filter information
+    pub folders: Vec<FilterCount>,
+    /// Metadata filter information
+    pub metadata: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Represents a filter and its count
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilterCount {
+    /// The filter value
+    pub filter: String,
+    /// The count of items matching this filter
+    pub count: u32,
+}
+
 /// Represents the response from the geometric search API
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeometricSearchResponse {
     /// The list of matching assets
     pub matches: Vec<GeometricMatch>,
+    /// Pagination information
+    #[serde(rename = "pageData")]
+    pub page_data: Option<PageData>,
+    /// Filter information
+    #[serde(rename = "filterData")]
+    pub filter_data: Option<FilterData>,
 }
 
 impl CsvRecordProducer for GeometricSearchResponse {

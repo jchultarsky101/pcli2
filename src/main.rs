@@ -1,3 +1,9 @@
+//! Main entry point for the Physna CLI client.
+//!
+//! This module contains the main function that serves as the entry point
+//! for the CLI application. It handles initialization, configuration loading,
+//! command parsing, and error handling.
+
 use configuration::{Configuration, ConfigurationError};
 use pcli2::{
     configuration,
@@ -7,35 +13,75 @@ use tracing_subscriber::EnvFilter;
 
 mod cli;
 use cli::{execute_command, CliError};
+mod exit_codes;
+use exit_codes::PcliExitCode;
 
+/// Error types that can occur in the main application
 #[derive(Error, Debug)]
-enum PcliError {
+enum MainError {
+    /// Error related to configuration loading or management
     #[error(transparent)]
     ConfigurationError(#[from] ConfigurationError),
+    /// Error related to CLI command execution
     #[error(transparent)]
     CliError(#[from] CliError),
 }
 
-/// Main entry point for the program
+impl MainError {
+    /// Get the appropriate exit code for this error
+    /// 
+    /// Returns:
+    /// - `PcliExitCode::ConfigError` for configuration errors
+    /// - The CLI error's specific exit code for command execution errors
+    fn exit_code(&self) -> i32 {
+        match self {
+            MainError::ConfigurationError(_) => PcliExitCode::ConfigError.code(),
+            MainError::CliError(cli_error) => cli_error.exit_code().code(),
+        }
+    }
+}
+
+/// Main entry point for the Physna CLI client application.
+/// 
+/// This function performs the following steps:
+/// 1. Initializes the logging subsystem using tracing
+/// 2. Loads the application configuration
+/// 3. Parses and executes the CLI command
+/// 4. Handles any errors and exits with appropriate exit codes
+/// 
+/// # Returns
+/// 
+/// * `Ok(())` - If the command executed successfully
+/// * `Err(i32)` - If an error occurred, with the appropriate exit code
 #[tokio::main]
-async fn main() -> Result<(), PcliError> {
-    // Intialize the logging subsystem
+async fn main() -> Result<(), i32> {
+    // Initialize the logging subsystem
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     // Get the configuration
-    let configuration = Configuration::load_default()?;
+    let configuration = match Configuration::load_default() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("ERROR: Configuration error: {}", e);
+            return Err(PcliExitCode::ConfigError.code());
+        }
+    };
 
     // Create an API client (placeholder for now)
     let api = (); // We're using Physna V3 API directly in CLI commands
 
     // Parse and execute the CLI command
     match execute_command(configuration, api).await {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            // Success - exit with code 0
+            Ok(())
+        },
         Err(e) => {
-            eprintln!("ERROR: {}", e.to_string());
-            ::std::process::exit(exitcode::DATAERR);
+            eprintln!("ERROR: {}", e);
+            let main_error = MainError::CliError(e);
+            Err(main_error.exit_code())
         }
     }
 }

@@ -64,7 +64,7 @@ impl DevKeyring {
         Ok(())
     }
 
-    pub fn get(&mut self, _tenant: &String, key: String) -> Result<Option<String>, DevKeyringError> {
+    pub fn get(&mut self, _tenant: &str, key: String) -> Result<Option<String>, DevKeyringError> {
         self.load_credentials()?;
         
         if let Some(credentials) = &self.credentials {
@@ -79,7 +79,7 @@ impl DevKeyring {
         }
     }
 
-    pub fn put(&mut self, _tenant: &String, key: String, value: String) -> Result<(), DevKeyringError> {
+    pub fn put(&mut self, _tenant: &str, key: String, value: String) -> Result<(), DevKeyringError> {
         self.load_credentials()?;
         
         let mut credentials = self.credentials.take().unwrap_or(Credentials {
@@ -99,7 +99,7 @@ impl DevKeyring {
         self.save_credentials()
     }
 
-    pub fn delete(&mut self, _tenant: &String, key: String) -> Result<(), DevKeyringError> {
+    pub fn delete(&mut self, _tenant: &str, key: String) -> Result<(), DevKeyringError> {
         self.load_credentials()?;
         
         if let Some(mut credentials) = self.credentials.take() {

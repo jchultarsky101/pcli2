@@ -58,7 +58,7 @@ impl AuthClient {
         if response.status().is_success() {
             match response.json::<TokenResponse>().await {
                 Ok(token_response) => Ok(token_response.access_token),
-                Err(e) => Err(AuthError::HttpError(e.into()))
+                Err(e) => Err(AuthError::HttpError(e))
             }
         } else {
             let status = response.status();

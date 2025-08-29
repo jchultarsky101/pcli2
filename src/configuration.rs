@@ -13,8 +13,8 @@ use std::{
 };
 use tracing::{debug, trace};
 
-pub const DEFAULT_APPLICATION_ID: &'static str = "pcli2";
-pub const DEFAULT_CONFIGURATION_FILE_NAME: &'static str = "config.yml";
+pub const DEFAULT_APPLICATION_ID: &str = "pcli2";
+pub const DEFAULT_CONFIGURATION_FILE_NAME: &str = "config.yml";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationError {
@@ -73,12 +73,12 @@ impl CsvRecordProducer for Configuration {
     }
 
     fn as_csv_records(&self) -> Vec<Vec<String>> {
-        let mut records: Vec<Vec<String>> = Vec::new();
-        
-        records.push(vec![
-            self.active_tenant_id.clone().unwrap_or_default(),
-            self.active_tenant_name.clone().unwrap_or_default(),
-        ]);
+        let records: Vec<Vec<String>> = vec![
+            vec![
+                self.active_tenant_id.clone().unwrap_or_default(),
+                self.active_tenant_name.clone().unwrap_or_default(),
+            ]
+        ];
 
         records
     }
@@ -99,7 +99,7 @@ impl OutputFormatter for Configuration {
             OutputFormat::Csv => {
                 let buf = BufWriter::new(Vec::new());
                 let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&Self::csv_header())
+                wtr.write_record(Self::csv_header())
                     .unwrap();
                 for record in self.as_csv_records() {
                     wtr.write_record(&record).unwrap();
@@ -191,7 +191,7 @@ impl Configuration {
             None => return Err(ConfigurationError::FailedToFindConfigurationDirectory),
         }
 
-        let file = File::create(&path);
+        let file = File::create(path);
         match file {
             Ok(file) => {
                 let writer: Box<dyn Write> = Box::new(file);

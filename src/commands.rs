@@ -1,47 +1,98 @@
+//! CLI command definitions and argument parsing.
+//!
+//! This module defines all the CLI commands and their arguments using the clap crate.
+//! It provides a structured way to define the command-line interface for the Physna CLI.
+
 use crate::format::OutputFormat;
 use clap::{Arg, ArgMatches, Command};
 use std::path::PathBuf;
 
 // Resource commands
+/// Command name for tenant operations
 pub const COMMAND_TENANT: &str = "tenant";
+/// Command name for folder operations
 pub const COMMAND_FOLDER: &str = "folder";
+/// Command name for asset operations
+pub const COMMAND_ASSET: &str = "asset";
+/// Command name for file operations (not yet implemented)
 pub const COMMAND_FILE: &str = "file";
 
 // CRUD operations
+/// Command name for creating resources
 pub const COMMAND_CREATE: &str = "create";
+/// Command name for creating multiple resources
+pub const COMMAND_CREATE_BATCH: &str = "create-batch";
+/// Command name for retrieving resources
 pub const COMMAND_GET: &str = "get";
+/// Command name for listing resources
 pub const COMMAND_LIST: &str = "list";
+/// Command name for updating resources
 pub const COMMAND_UPDATE: &str = "update";
+/// Command name for deleting resources
 pub const COMMAND_DELETE: &str = "delete";
 
 // Auth commands
+/// Command name for authentication operations
 pub const COMMAND_AUTH: &str = "auth";
+/// Command name for login operations
 pub const COMMAND_LOGIN: &str = "login";
+/// Command name for logout operations
 pub const COMMAND_LOGOUT: &str = "logout";
 
 // Config commands
+/// Command name for configuration operations
 pub const COMMAND_CONFIG: &str = "config";
+/// Command name for exporting configuration
 pub const COMMAND_EXPORT: &str = "export";
+/// Command name for importing configuration
 pub const COMMAND_IMPORT: &str = "import";
 
 // Context commands
+/// Command name for context operations
 pub const COMMAND_CONTEXT: &str = "context";
+/// Command name for setting context
 pub const COMMAND_SET: &str = "set";
+/// Command name for clearing context
 pub const COMMAND_CLEAR: &str = "clear";
 
 // Parameter names
+/// Parameter name for output format
 pub const PARAMETER_FORMAT: &str = "format";
+/// Parameter name for output file path
 pub const PARAMETER_OUTPUT: &str = "output";
+/// Parameter name for input file path
 pub const PARAMETER_INPUT: &str = "input";
+/// Parameter name for OAuth2 client ID
 pub const PARAMETER_CLIENT_ID: &str = "client-id";
+/// Parameter name for OAuth2 client secret
 pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
+/// Parameter name for resource ID
 pub const PARAMETER_ID: &str = "id";
+/// Parameter name for resource UUID
 pub const PARAMETER_UUID: &str = "uuid";
+/// Parameter name for asset UUID
+pub const PARAMETER_ASSET_UUID: &str = "asset-uuid";
+/// Parameter name for resource name
 pub const PARAMETER_NAME: &str = "name";
+/// Parameter name for tenant ID or alias
 pub const PARAMETER_TENANT: &str = "tenant";
+/// Parameter name for parent folder ID
 pub const PARAMETER_PARENT_FOLDER_ID: &str = "parent-folder-id";
+/// Parameter name for folder path
 pub const PARAMETER_PATH: &str = "path";
+/// Parameter name for refresh flag
+pub const PARAMETER_REFRESH: &str = "refresh";
+/// Parameter name for file to upload
+pub const PARAMETER_FILE: &str = "file";
 
+/// Create and configure all CLI commands and their arguments.
+///
+/// This function defines the entire command-line interface for the Physna CLI,
+/// including all subcommands, arguments, and their relationships.
+///
+/// # Returns
+///
+/// An `ArgMatches` instance containing the parsed command-line arguments.
 pub fn create_cli_commands() -> ArgMatches {
     let format_parameter = Arg::new(PARAMETER_FORMAT)
         .short('f')
@@ -93,6 +144,12 @@ pub fn create_cli_commands() -> ArgMatches {
         .num_args(1)
         .required(false)
         .help("Resource UUID");
+
+    let _asset_uuid_parameter = Arg::new(PARAMETER_ASSET_UUID)
+        .long(PARAMETER_ASSET_UUID)
+        .num_args(1)
+        .required(false)
+        .help("Asset UUID");
 
     let name_parameter = Arg::new(PARAMETER_NAME)
         .short('n')
@@ -148,7 +205,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all tenants")
-                        .arg(format_parameter.clone()),
+                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(
                     Command::new(COMMAND_UPDATE)
@@ -192,7 +249,16 @@ pub fn create_cli_commands() -> ArgMatches {
                     Command::new(COMMAND_LIST)
                         .about("List all folders")
                         .arg(tenant_parameter.clone())
-                        .arg(format_parameter.clone()),
+                        .arg(format_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(
+                            Arg::new(PARAMETER_REFRESH)
+                                .short('r')
+                                .long(PARAMETER_REFRESH)
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Force refresh folder cache data from API"),
+                        ),
                 )
                 
                 .subcommand(
@@ -217,6 +283,103 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_LOGOUT)
                         .about("Logout and clear session"),
+                )
+                .subcommand(
+                    Command::new(COMMAND_GET)
+                        .about("Get current access token")
+                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
+                ),
+        )
+        .subcommand(
+            // Asset commands
+            Command::new(COMMAND_ASSET)
+                .about("Manage assets")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_CREATE)
+                        .about("Create a new asset by uploading a file")
+                        .arg(tenant_parameter.clone())
+                        .arg(
+                            Arg::new("file")
+                                .long("file")
+                                .num_args(1)
+                                .required(true)
+                                .help("Path to the file to upload")
+                                .value_parser(clap::value_parser!(PathBuf)),
+                        )
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
+                )
+                .subcommand(
+                    Command::new(COMMAND_CREATE_BATCH)
+                        .about("Create multiple assets by uploading files matching a glob pattern")
+                        .arg(tenant_parameter.clone())
+                        .arg(
+                            Arg::new("files")
+                                .long("files")
+                                .num_args(1)
+                                .required(true)
+                                .help("Glob pattern to match files to upload (e.g., \"data/puzzle/*.STL\")")
+                                .value_parser(clap::value_parser!(String)),
+                        )
+                        .arg(path_parameter.clone().required(true)) // Make path required for batch operations
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .arg(
+                            Arg::new("concurrent")
+                                .long("concurrent")
+                                .num_args(1)
+                                .required(false)
+                                .default_value("5")
+                                .help("Maximum number of concurrent uploads")
+                                .value_parser(clap::value_parser!(usize)),
+                        )
+                        .arg(
+                            Arg::new("progress")
+                                .long("progress")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Display progress bar during upload"),
+                        ),
+                )
+                .subcommand(
+                    Command::new(COMMAND_LIST)
+                        .about("List all assets in a folder")
+                        .arg(tenant_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(
+                            Arg::new(PARAMETER_REFRESH)
+                                .short('r')
+                                .long(PARAMETER_REFRESH)
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Force refresh asset cache data from API"),
+                        )
+                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
+                )
+                .subcommand(
+                    Command::new(COMMAND_GET)
+                        .about("Get asset details")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
+                )
+                .subcommand(
+                    Command::new(COMMAND_DELETE)
+                        .about("Delete an asset")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
                 ),
         )
         .subcommand(

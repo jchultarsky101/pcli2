@@ -1,39 +1,59 @@
+//! Folder caching functionality for the Physna CLI client.
+//!
+//! This module provides functionality for caching folder hierarchies to improve
+//! performance by reducing API calls. It uses bincode serialization for efficient
+//! storage and retrieval of folder data.
+
 use crate::folder_hierarchy::FolderHierarchy;
 use crate::physna_v3::PhysnaApiClient;
 use std::fs;
 use std::path::PathBuf;
 use bincode;
 
+/// Manages caching of folder hierarchies for Physna tenants
 pub struct FolderCache;
 
 impl FolderCache {
     /// Get the cache directory path
+    /// 
+    /// In a test environment (when PCLI2_TEST_CACHE_DIR is set), it uses that directory.
+    /// Otherwise, it uses the system's cache directory with a "pcli2/folder_cache" subdirectory.
     pub fn get_cache_dir() -> PathBuf {
         // Check if we're in a test environment
         if let Ok(test_cache_dir) = std::env::var("PCLI2_TEST_CACHE_DIR") {
             PathBuf::from(test_cache_dir).join("folder_cache")
         } else {
-            let cache_dir = dirs::cache_dir().unwrap_or_else(|| std::env::temp_dir());
+            let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
             cache_dir.join("pcli2").join("folder_cache")
         }
     }
     
     /// Get the cache file path for a specific tenant
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant whose cache file path to retrieve
+    /// 
+    /// # Returns
+    /// The full path to the tenant's cache file
     pub fn get_cache_file_path(tenant_id: &str) -> PathBuf {
         Self::get_cache_dir().join(format!("{}.bin", tenant_id))
     }
     
     /// Load cached folder hierarchy for a tenant
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant whose cached folder hierarchy to load
+    /// 
+    /// # Returns
+    /// * `Some(FolderHierarchy)` - If a valid cache file exists for the tenant
+    /// * `None` - If no cache file exists or if deserialization fails
     pub fn load(tenant_id: &str) -> Option<FolderHierarchy> {
         let cache_file = Self::get_cache_file_path(tenant_id);
         
         if cache_file.exists() {
             match fs::read(&cache_file) {
                 Ok(data) => {
-                    match bincode::deserialize::<FolderHierarchy>(&data) {
-                        Ok(hierarchy) => Some(hierarchy),
-                        Err(_) => None,
-                    }
+                    bincode::deserialize::<FolderHierarchy>(&data).ok()
                 }
                 Err(_) => None,
             }
@@ -43,6 +63,14 @@ impl FolderCache {
     }
     
     /// Save folder hierarchy to cache for a tenant
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant to cache the folder hierarchy for
+    /// * `hierarchy` - The folder hierarchy to cache
+    /// 
+    /// # Returns
+    /// * `Ok(())` - If the folder hierarchy was successfully cached
+    /// * `Err` - If there was an error during serialization or file operations
     pub fn save(tenant_id: &str, hierarchy: &FolderHierarchy) -> Result<(), Box<dyn std::error::Error>> {
         let serialized = bincode::serialize(hierarchy)?;
         
@@ -57,6 +85,17 @@ impl FolderCache {
     }
     
     /// Get folder hierarchy from cache or fetch from API if not available/cached
+    /// 
+    /// This method first attempts to load the folder hierarchy from cache. If it's not
+    /// available in cache, it fetches the data from the Physna API and caches it.
+    /// 
+    /// # Arguments
+    /// * `client` - A mutable reference to the Physna API client
+    /// * `tenant_id` - The ID of the tenant whose folder hierarchy to retrieve
+    /// 
+    /// # Returns
+    /// * `Ok(FolderHierarchy)` - The folder hierarchy for the tenant
+    /// * `Err` - If there was an error during cache operations or API calls
     pub async fn get_or_fetch(
         client: &mut PhysnaApiClient,
         tenant_id: &str,
@@ -80,6 +119,17 @@ impl FolderCache {
     }
     
     /// Refresh the cache for a specific tenant (force fetch from API)
+    /// 
+    /// This method always fetches the latest folder hierarchy from the Physna API
+    /// and updates the cache, regardless of whether valid cached data exists.
+    /// 
+    /// # Arguments
+    /// * `client` - A mutable reference to the Physna API client
+    /// * `tenant_id` - The ID of the tenant whose folder hierarchy to refresh
+    /// 
+    /// # Returns
+    /// * `Ok(FolderHierarchy)` - The refreshed folder hierarchy for the tenant
+    /// * `Err` - If there was an error during the API call or cache operations
     pub async fn refresh(
         client: &mut PhysnaApiClient,
         tenant_id: &str,
@@ -95,6 +145,15 @@ impl FolderCache {
     }
     
     /// Invalidate cache for a specific tenant
+    /// 
+    /// This method removes the cached folder hierarchy for the specified tenant.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant whose cache to invalidate
+    /// 
+    /// # Returns
+    /// * `Ok(())` - If the cache was successfully invalidated or didn't exist
+    /// * `Err` - If there was an error during file operations
     pub fn invalidate(tenant_id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let cache_file = Self::get_cache_file_path(tenant_id);
         if cache_file.exists() {

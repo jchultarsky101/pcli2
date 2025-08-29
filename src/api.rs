@@ -1,101 +1,68 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, marker::PhantomData};
 
 use crate::{
     configuration::{Configuration, ConfigurationError},
     model::{Folder, FolderList},
-    security::{SecurityError, TenantSession},
 };
-use log::trace;
+use tracing::{trace, debug};
 
 /// Error emmitted by the Api
 ///
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
-    #[error("unknown tenant {tenant:?}")]
-    UnknownTenant { tenant: String },
     #[error("configuration error, cause: {cause:?}")]
     ConfigurationError {
         #[from]
         cause: ConfigurationError,
     },
-    #[error("security error, cause: {cause:?}")]
-    SecurityError {
-        #[from]
-        cause: SecurityError,
-    },
-    #[error("invalid tenant {0}")]
-    InvalidTenant(String),
-    #[error("unsupported operation")]
-    #[allow(dead_code)]
-    UnsupportedOperation,
 }
 
-pub struct UnauthorizedApi {}
-pub struct AuthorizedApi {}
+pub struct ApiUninitialized {}
+pub struct ApiInitialized {}
 
 /// Physna API client
 ///
-pub struct Api<State = UnauthorizedApi> {
-    configuration: RefCell<Configuration>,
-    state: std::marker::PhantomData<State>,
+pub struct Api<State = ApiUninitialized> {
+    state: PhantomData<State>,
 }
 
-impl Api {
-    /// Creates a new instance of the API
-    ///
-    ///
-    pub fn new(configuration: &RefCell<Configuration>) -> Api {
+impl Api<ApiUninitialized> {
+    pub fn initialize(_configuration: &RefCell<Configuration>) -> Api<ApiInitialized> {
         Api {
-            configuration: configuration.clone(),
-            state: std::marker::PhantomData::<UnauthorizedApi>,
+            state: PhantomData::<ApiInitialized>,
         }
     }
+}
 
-    pub fn login(&self, tenant_id: &String) -> Result<TenantSession, ApiError> {
-        let tenant_configuration = &self.configuration.borrow().tenant(tenant_id);
-        match tenant_configuration {
-            Some(tenant_configuration) => {
-                let session = TenantSession::login(tenant_configuration.to_owned())?;
-                Ok(session)
-            }
-            None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),
-        }
-    }
-
-    pub fn logoff(&self, tenant_id: &String) -> Result<(), ApiError> {
-        let tenant_configuration = &self.configuration.borrow().tenant(tenant_id);
-        match tenant_configuration {
-            Some(tenant_configuration) => {
-                TenantSession::logoff(tenant_configuration.to_owned())?;
-                Ok(())
-            }
-            None => Err(ApiError::InvalidTenant(tenant_id.to_owned())),
-        }
+impl Api<ApiInitialized> {
+    /// Returns the list of folders currently available for the specified tenant
+    ///
+    pub async fn get_list_of_folders(
+        &self,
+        tenant_id: &String,
+        _retry: bool,
+    ) -> Result<FolderList, ApiError> {
+        trace!("Listing all folders for tenant \"{}\"...", tenant_id);
+        // This is a placeholder implementation since we're moving to Physna V3 API
+        debug!("Using placeholder implementation for tenant: {}", tenant_id);
+        Ok(FolderList::empty())
     }
 
     /// Returns the list of folders currently available for the specified tenant
     ///
-    pub fn list_folders(&self, tenant_id: &String) -> Result<FolderList, ApiError> {
-        trace!("Listing all folders for tenant \"{}\"...", tenant_id);
-        let _tenant = self.configuration.borrow().validate_tenant(tenant_id)?;
-
-        let mut folders = FolderList::empty();
-        folders.insert(
-            Folder::builder()
-                .id(1)
-                .name(&"first folder".to_string())
-                .build()
-                .unwrap(),
+    pub async fn get_folder(
+        &self,
+        tenant_id: &String,
+        folder_id: &u32,
+        _retry: bool,
+    ) -> Result<Folder, ApiError> {
+        trace!(
+            "Retrieving folder details for tenant \"{}\", folder {}...",
+            tenant_id,
+            folder_id
         );
-        folders.insert(
-            Folder::builder()
-                .id(2)
-                .name(&"second folder".to_string())
-                .build()
-                .unwrap(),
-        );
-
-        Ok(folders.clone())
-        // Err(ApiError::UnsupportedOperation)
+        // This is a placeholder implementation since we're moving to Physna V3 API
+        debug!("Using placeholder implementation for tenant: {}, folder: {}", tenant_id, folder_id);
+        Ok(Folder::new(Some(*folder_id), Some("unknown".to_string()), "Sample Folder".to_string(), "unknown".to_string()))
     }
 }

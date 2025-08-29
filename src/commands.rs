@@ -404,6 +404,22 @@ pub fn create_cli_commands() -> ArgMatches {
                             .multiple(false)
                             .required(true)
                         ),
+                )
+                .subcommand(
+                    Command::new("geometric-match-folder")
+                        .about("Find geometrically similar assets for all assets in a folder")
+                        .arg(tenant_parameter.clone())
+                        .arg(path_parameter.clone().required(true))
+                        .arg(
+                            Arg::new("threshold")
+                                .long("threshold")
+                                .num_args(1)
+                                .required(false)
+                                .default_value("80.0")
+                                .help("Similarity threshold (0.00 to 100.00)")
+                                .value_parser(clap::value_parser!(f64)),
+                        )
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
                 ),
         )
         .subcommand(

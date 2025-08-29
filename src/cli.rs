@@ -16,7 +16,7 @@ use pcli2::commands::{
     PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
 };
 use pcli2::exit_codes::PcliExitCode;
-use pcli2::model::{Asset, Folder};
+use pcli2::model::{Asset, Folder, FolderGeometricMatch, FolderGeometricMatchResponse};
 use pcli2::auth::AuthClient;
 use pcli2::configuration::Configuration;
 use pcli2::folder_cache::FolderCache;
@@ -703,12 +703,49 @@ pub async fn execute_command(
                             
                             match client.geometric_search(&tenant, &asset_id, threshold).await {
                                 Ok(search_result) => {
-                                    match search_result.format(format) {
-                                        Ok(output) => {
-                                            println!("{}", output);
+                                    // Get the reference asset details
+                                    match client.get_asset(&tenant, &asset_id).await {
+                                        Ok(reference_asset) => {
+                                            // Convert GeometricSearchResponse to FolderGeometricMatchResponse format
+                                            let mut matches = Vec::new();
+                                            
+                                            // Extract the reference asset name from the path (last part after the last slash)
+                                            let reference_asset_name = reference_asset.path.split('/').last().unwrap_or(&reference_asset.path).to_string();
+                                            
+                                            // Convert each geometric match to a folder match format
+                                            for geometric_match in search_result.matches {
+                                                // Skip self-matches
+                                                if geometric_match.asset.id != asset_id {
+                                                    let folder_match = FolderGeometricMatch {
+                                                        reference_asset_name: reference_asset_name.clone(),
+                                                        candidate_asset_name: geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string(),
+                                                        match_percentage: geometric_match.match_percentage,
+                                                        reference_asset_path: reference_asset.path.clone(),
+                                                        candidate_asset_path: geometric_match.asset.path.clone(),
+                                                        reference_asset_uuid: asset_id.clone(),
+                                                        candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                    };
+                                                    matches.push(folder_match);
+                                                }
+                                            }
+                                            
+                                            // Create the response object (now a simple vector)
+                                            let folder_match_response: FolderGeometricMatchResponse = matches;
+                                            
+                                            // Format and output the results
+                                            match folder_match_response.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error getting reference asset details: {}", e);
+                                            eprintln!("Error getting reference asset details: {}", e);
                                             Ok(())
                                         }
-                                        Err(e) => Err(CliError::FormattingError(e)),
                                     }
                                 }
                                 Err(e) => {
@@ -732,6 +769,122 @@ pub async fn execute_command(
                                             eprintln!("Error performing geometric search: {}", e);
                                         }
                                     }
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                Some(("geometric-match-folder", sub_matches)) => {
+                    trace!("Executing asset geometric-match-folder command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+
+                    // Get the source folder path
+                    let folder_path = sub_matches.get_one::<String>(PARAMETER_PATH)
+                        .ok_or(CliError::MissingRequiredArgument("folder path must be provided".to_string()))?
+                        .clone();
+
+                    // Get threshold parameter
+                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+
+                    // Validate threshold is between 0 and 100
+                    if threshold < 0.0 || threshold > 100.0 {
+                        eprintln!("Threshold must be between 0.00 and 100.00");
+                        return Ok(());
+                    }
+
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+
+                    // Try to get access token and perform folder-based geometric search
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+
+                            // Get all assets in the specified folder
+                            match AssetCache::get_assets_for_folder(&mut client, &tenant, &folder_path, false).await {
+                                Ok(asset_list) => {
+                                    // Create a vector to store all match results
+                                    let mut all_matches = Vec::new();
+
+                                    // Get all assets from the AssetList
+                                    let assets = asset_list.get_all_assets();
+
+                                    // For each asset in the folder, perform a geometric search against all assets
+                                    for asset in assets {
+                                        if let Some(asset_uuid) = asset.uuid() {
+                                            match client.geometric_search(&tenant, asset_uuid, threshold).await {
+                                                Ok(search_result) => {
+                                                    // Add matches to our results, skipping self-matches
+                                                    for geometric_match in search_result.matches {
+                                                        // Skip self-matches by comparing UUIDs
+                                                        if let Some(asset_uuid) = asset.uuid() {
+                                                            if geometric_match.asset.id != *asset_uuid {
+                                                                let folder_match = FolderGeometricMatch {
+                                                                    reference_asset_name: asset.name().to_string(),
+                                                                    candidate_asset_name: geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string(),
+                                                                    match_percentage: geometric_match.match_percentage,
+                                                                    reference_asset_path: asset.path().to_string(),
+                                                                    candidate_asset_path: geometric_match.asset.path.clone(),
+                                                                    reference_asset_uuid: asset_uuid.clone(),
+                                                                    candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                                };
+                                                                all_matches.push(folder_match);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    error!("Error performing geometric search for asset {}: {}", asset_uuid, e);
+                                                    // Continue with other assets even if one fails
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Create the response object (now a simple vector)
+                                    let folder_match_response: FolderGeometricMatchResponse = all_matches;
+
+                                    // Format and output the results
+                                    match folder_match_response.format(format) {
+                                        Ok(output) => {
+                                            println!("{}", output);
+                                            Ok(())
+                                        }
+                                        Err(e) => Err(CliError::FormattingError(e)),
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error getting assets for folder '{}': {}", folder_path, e);
+                                    eprintln!("Error getting assets for folder '{}': {}", folder_path, e);
                                     Ok(())
                                 }
                             }

@@ -964,6 +964,14 @@ impl AssetList {
             None => None,
         }
     }
+    
+    /// Get all assets as a vector
+    /// 
+    /// # Returns
+    /// A vector containing all assets in the AssetList
+    pub fn get_all_assets(&self) -> Vec<&Asset> {
+        self.assets.iter().map(|(_, asset)| asset).collect()
+    }
 }
 
 impl Default for AssetList {
@@ -1120,6 +1128,93 @@ pub struct FilterCount {
     pub filter: String,
     /// The count of items matching this filter
     pub count: u32,
+}
+
+/// Represents a matching pair from folder-based geometric matching
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderGeometricMatch {
+    /// Name of the reference asset (the one from the source folder)
+    #[serde(rename = "referenceAssetName")]
+    pub reference_asset_name: String,
+    /// Name of the candidate asset (the one that matched)
+    #[serde(rename = "candidateAssetName")]
+    pub candidate_asset_name: String,
+    /// Match percentage between the assets
+    #[serde(rename = "matchPercentage")]
+    pub match_percentage: f64,
+    /// Full path of the reference asset
+    #[serde(rename = "referenceAssetPath")]
+    pub reference_asset_path: String,
+    /// Full path of the candidate asset
+    #[serde(rename = "candidateAssetPath")]
+    pub candidate_asset_path: String,
+    /// UUID of the reference asset
+    #[serde(rename = "referenceAssetUuid")]
+    pub reference_asset_uuid: String,
+    /// UUID of the candidate asset
+    #[serde(rename = "candidateAssetUuid")]
+    pub candidate_asset_uuid: String,
+}
+
+impl CsvRecordProducer for FolderGeometricMatch {
+    /// Get the CSV header row for FolderGeometricMatch records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_NAME".to_string(),
+            "CANDIDATE_ASSET_NAME".to_string(),
+            "MATCH_PERCENTAGE".to_string(),
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+        ]
+    }
+
+    /// Convert the FolderGeometricMatch to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.reference_asset_name.clone(),
+            self.candidate_asset_name.clone(),
+            format!("{:.2}", self.match_percentage),
+            self.reference_asset_path.clone(),
+            self.candidate_asset_path.clone(),
+            self.reference_asset_uuid.clone(),
+            self.candidate_asset_uuid.clone(),
+        ]]
+    }
+}
+
+impl JsonProducer for FolderGeometricMatch {}
+
+/// Represents the response from folder-based geometric matching
+pub type FolderGeometricMatchResponse = Vec<FolderGeometricMatch>;
+
+// For FolderGeometricMatchResponse (Vec<FolderGeometricMatch>), we need to implement the traits manually
+impl CsvRecordProducer for FolderGeometricMatchResponse {
+    /// Get the CSV header row for FolderGeometricMatchResponse records
+    fn csv_header() -> Vec<String> {
+        FolderGeometricMatch::csv_header()
+    }
+
+    /// Convert the FolderGeometricMatchResponse to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.iter().flat_map(|m| m.as_csv_records()).collect()
+    }
+}
+
+impl JsonProducer for FolderGeometricMatchResponse {}
+
+impl OutputFormatter for FolderGeometricMatchResponse {
+    type Item = FolderGeometricMatchResponse;
+
+    /// Format the FolderGeometricMatchResponse according to the specified output format
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => Ok(self.to_json()?),
+            OutputFormat::Csv => Ok(self.to_csv_with_header()?),
+            _ => Err(FormattingError::UnsupportedOutputFormat { format: format.to_string() }),
+        }
+    }
 }
 
 /// Represents the response from the geometric search API

@@ -420,6 +420,22 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .value_parser(clap::value_parser!(f64)),
                         )
                         .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .arg(
+                            Arg::new("concurrent")
+                                .long("concurrent")
+                                .num_args(1)
+                                .required(false)
+                                .default_value("5")
+                                .help("Maximum number of concurrent operations")
+                                .value_parser(clap::value_parser!(usize)),
+                        )
+                        .arg(
+                            Arg::new("progress")
+                                .long("progress")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Display progress bar during processing"),
+                        )
                 ),
         )
         .subcommand(

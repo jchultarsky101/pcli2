@@ -829,6 +829,14 @@ pub async fn execute_command(
                         return Ok(());
                     }
 
+                    // Get concurrency parameter
+                    let concurrent = *sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
+                    trace!("Using concurrency level: {}", concurrent);
+
+                    // Get progress parameter
+                    let show_progress = sub_matches.get_flag("progress");
+                    trace!("Progress bar enabled: {}", show_progress);
+
                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                     let format = OutputFormat::from_str(&format_str).unwrap();
 
@@ -863,30 +871,30 @@ pub async fn execute_command(
                                     let assets = asset_list.get_all_assets();
                                     trace!("Processing {} assets", assets.len());
 
-                                    // Use a reasonable concurrency level (similar to create-batch)
-                                    let concurrent = 5usize;
-                                    trace!("Using concurrency level: {}", concurrent);
+                                    // Create progress bar if requested
+                                    let progress_bar = if show_progress {
+                                        let pb = indicatif::ProgressBar::new(assets.len() as u64);
+                                        pb.set_style(
+                                            indicatif::ProgressStyle::default_bar()
+                                                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                                                .unwrap()
+                                                .progress_chars("#>-")
+                                        );
+                                        Some(pb)
+                                    } else {
+                                        None
+                                    };
 
                                     // Create a stream of futures for processing assets concurrently
                                     let base_url = "https://app-api.physna.com/v3".to_string(); // Use default base URL
                                     let tenant_id = tenant.clone();
                                     
-                                    // Create progress bar
-                                    let progress_bar = indicatif::ProgressBar::new(assets.len() as u64);
-                                    progress_bar.set_style(
-                                        indicatif::ProgressStyle::default_bar()
-                                            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
-                                            .unwrap()
-                                            .progress_chars("#>-")
-                                    );
-
                                     let results: Result<Vec<_>, _> = futures::stream::iter(assets)
                                         .map(|asset| {
                                             let base_url = base_url.clone();
                                             let tenant_id = tenant_id.clone();
                                             let token = token.clone();
                                             let client_credentials = client_credentials.clone();
-                                            // let folder_path = folder_path.clone(); // Not used in the async block
                                             let progress_bar = progress_bar.clone();
                                             let asset_name = asset.name().to_string();
                                             let asset_uuid = asset.uuid().map(|s| s.clone());
@@ -929,20 +937,33 @@ pub async fn execute_command(
                                                                 }
                                                             }
                                                             
-                                                            progress_bar.inc(1);
-                                                            progress_bar.set_message(format!("Processed: {}", asset_name));
+                                                            // Update progress bar if present
+                                                            if let Some(pb) = &progress_bar {
+                                                                pb.inc(1);
+                                                                pb.set_message(format!("Processed: {}", asset_name));
+                                                            }
+                                                            
                                                             Ok(asset_matches)
                                                         }
                                                         Err(e) => {
                                                             error!("Error performing geometric search for asset {}: {}", asset_uuid, e);
-                                                            progress_bar.inc(1);
-                                                            progress_bar.set_message(format!("Failed: {}", asset_name));
+                                                            
+                                                            // Update progress bar if present
+                                                            if let Some(pb) = &progress_bar {
+                                                                pb.inc(1);
+                                                                pb.set_message(format!("Failed: {}", asset_name));
+                                                            }
+                                                            
                                                             Err(e)
                                                         }
                                                     }
                                                 } else {
-                                                    progress_bar.inc(1);
-                                                    progress_bar.set_message(format!("Skipped: {} (no UUID)", asset_name));
+                                                    // Update progress bar if present
+                                                    if let Some(pb) = &progress_bar {
+                                                        pb.inc(1);
+                                                        pb.set_message(format!("Skipped: {} (no UUID)", asset_name));
+                                                    }
+                                                    
                                                     Err(ApiError::AuthError("Asset has no UUID".to_string()))
                                                 }
                                             }
@@ -953,7 +974,10 @@ pub async fn execute_command(
                                         .into_iter()
                                         .collect();
 
-                                    progress_bar.finish_with_message("Batch processing complete");
+                                    // Finish progress bar if present
+                                    if let Some(pb) = progress_bar {
+                                        pb.finish_with_message("Batch processing complete");
+                                    }
 
                                     match results {
                                         Ok(asset_match_results) => {

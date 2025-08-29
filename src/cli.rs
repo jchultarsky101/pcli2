@@ -758,14 +758,12 @@ pub async fn execute_command(
                                             }
                                         }
                                         Err(e) => {
-                                            error!("Error getting reference asset details: {}", e);
                                             eprintln!("Error getting reference asset details: {}", e);
                                             Ok(())
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    error!("Error performing geometric search: {}", e);
                                     match e {
                                         pcli2::physna_v3::ApiError::RetryFailed(msg) => {
                                             eprintln!("Error performing geometric search: {}", msg);

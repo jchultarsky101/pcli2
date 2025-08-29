@@ -15,4 +15,10 @@ Cargo.lock
 *.pdb
 
 # profiler files
-*.profrawdata/
+*.profraw
+
+# Apple fluff
+**/.DS_Store
+
+# Data directory for test files
+data/

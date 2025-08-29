@@ -1068,16 +1068,31 @@ impl OutputFormatter for AssetList {
 /// Represents a match result from the geometric search
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeometricMatch {
-    /// The UUID of the matching asset
-    #[serde(rename = "assetId")]
-    pub asset_id: String,
-    /// The path of the matching asset
-    pub path: String,
-    /// The similarity score between 0 and 1
-    pub score: f64,
+    /// The matching asset details
+    pub asset: AssetResponse,
+    /// The similarity percentage
+    #[serde(rename = "matchPercentage")]
+    pub match_percentage: f64,
     /// The transformation matrix for the match
     #[serde(rename = "transformation")]
     pub transformation: Option<TransformationMatrix>,
+}
+
+impl GeometricMatch {
+    /// Get the asset ID
+    pub fn asset_id(&self) -> &str {
+        &self.asset.id
+    }
+    
+    /// Get the asset path
+    pub fn path(&self) -> &str {
+        &self.asset.path
+    }
+    
+    /// Get the similarity score (0.0 to 100.0)
+    pub fn score(&self) -> f64 {
+        self.match_percentage
+    }
 }
 
 /// Represents a 4x4 transformation matrix
@@ -1104,9 +1119,9 @@ impl CsvRecordProducer for GeometricSearchResponse {
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         self.matches.iter().map(|m| {
             vec![
-                m.asset_id.clone(),
-                m.path.clone(),
-                format!("{:.2}", m.score)
+                m.asset_id().to_string(),
+                m.path().to_string(),
+                format!("{:.2}", m.score())
             ]
         }).collect()
     }

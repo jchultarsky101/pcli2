@@ -221,9 +221,18 @@ impl PhysnaApiClient {
             
             // Check if the retry was successful
             if retry_response.status().is_success() {
-                // Parse and return the JSON response
-                let result: T = retry_response.json().await?;
-                Ok(result)
+                // Try to get the raw response text for debugging deserialization issues
+                let response_text = retry_response.text().await?;
+                trace!("Raw response text for deserialization: {}", response_text);
+                
+                // Try to parse and return the JSON response
+                match serde_json::from_str::<T>(&response_text) {
+                    Ok(result) => Ok(result),
+                    Err(e) => {
+                        error!("Failed to deserialize response: {}. Raw response: {}", e, response_text);
+                        Err(ApiError::JsonError(e))
+                    }
+                }
             } else {
                 // Retry failed - provide clear error information
                 let status = retry_response.status();
@@ -236,9 +245,18 @@ impl PhysnaApiClient {
                 )))
             }
         } else if response.status().is_success() {
-            // Initial request was successful - parse and return the JSON response
-            let result: T = response.json().await?;
-            Ok(result)
+            // Initial request was successful - try to get the raw response text for debugging
+            let response_text = response.text().await?;
+            trace!("Raw response text for deserialization: {}", response_text);
+            
+            // Try to parse and return the JSON response
+            match serde_json::from_str::<T>(&response_text) {
+                Ok(result) => Ok(result),
+                Err(e) => {
+                    error!("Failed to deserialize response: {}. Raw response: {}", e, response_text);
+                    Err(ApiError::JsonError(e))
+                }
+            }
         } else {
             // For all other errors, return the error status
             Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
@@ -259,7 +277,19 @@ impl PhysnaApiClient {
         T: serde::de::DeserializeOwned,
         B: serde::Serialize,
     {
-        self.execute_request(|client| client.post(url).json(body)).await
+        // Log the request for debugging
+        let body_json = serde_json::to_string_pretty(body).unwrap_or_else(|_| "Unable to serialize body".to_string());
+        trace!("POST request to {}: {}", url, body_json);
+        
+        let result = self.execute_request(|client| client.post(url).json(body)).await;
+        
+        // Log the response for debugging
+        match &result {
+            Ok(_) => trace!("POST request to {} succeeded", url),
+            Err(e) => trace!("POST request to {} failed: {}", url, e),
+        }
+        
+        result
     }
     
     /// Generic method to build and execute PUT requests
@@ -774,7 +804,7 @@ impl PhysnaApiClient {
             "filters": {
                 "folders": [],
                 "metadata": {},
-                "extensions": ["string"]
+                "extensions": []  // Empty array as requested
             },
             "minThreshold": threshold  // Use threshold directly as percentage
         });

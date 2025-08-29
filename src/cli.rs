@@ -789,25 +789,6 @@ pub async fn execute_command(
                                 }
                                 Err(e) => {
                                     error!("Error performing geometric search for asset {} after {} retries: {}", asset_id, retry_count, e);
-                                    match e {
-                                        pcli2::physna_v3::ApiError::RetryFailed(msg) => {
-                                            error!("Error performing geometric search: {}", msg);
-                                        }
-                                        pcli2::physna_v3::ApiError::HttpError(http_err) => {
-                                            if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                                                error!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
-                                            } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
-                                                error!("Error: Unauthorized access. Please check your authentication credentials.");
-                                            } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
-                                                error!("Error: Access forbidden. You don't have permission to perform geometric search on this asset.");
-                                            } else {
-                                                error!("Error performing geometric search: HTTP error {}", http_err);
-                                            }
-                                        }
-                                        _ => {
-                                            error!("Error performing geometric search: {}", e);
-                                        }
-                                    }
                                     Ok(())
                                 }
                             }

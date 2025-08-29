@@ -20,6 +20,8 @@ use pcli2::exit_codes::PcliExitCode;
 use pcli2::model::{Asset, Folder, FolderGeometricMatch, FolderGeometricMatchResponse};
 use pcli2::auth::AuthClient;
 use pcli2::physna_v3::ApiError;
+use std::time::Duration;
+use tokio::time::sleep;
 use pcli2::configuration::Configuration;
 use pcli2::folder_cache::FolderCache;
 use pcli2::asset_cache::AssetCache;
@@ -707,7 +709,29 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            match client.geometric_search(&tenant, &asset_id, threshold).await {
+                            // Try the geometric search with retry logic for 409 errors
+                            let mut retry_count = 0;
+                            let max_retries = 3;
+                            let search_result = loop {
+                                match client.geometric_search(&tenant, &asset_id, threshold).await {
+                                    Ok(result) => break Ok(result),
+                                    Err(e) => {
+                                        // Check if it's a 409 Conflict error and we should retry
+                                        if let ApiError::HttpError(http_err) = &e {
+                                            if http_err.status() == Some(reqwest::StatusCode::CONFLICT) && retry_count < max_retries {
+                                                retry_count += 1;
+                                                trace!("Received 409 Conflict for asset {}, retry {} after 500ms delay", asset_id, retry_count);
+                                                sleep(Duration::from_millis(500)).await;
+                                                continue;
+                                            }
+                                        }
+                                        // For all other errors or if we've exhausted retries, break with the error
+                                        break Err(e);
+                                    }
+                                }
+                            };
+                            
+                            match search_result {
                                 Ok(search_result) => {
                                     trace!("Geometric search completed, processing {} matches", search_result.matches.len());
                                     // Get the reference asset details
@@ -764,6 +788,7 @@ pub async fn execute_command(
                                     }
                                 }
                                 Err(e) => {
+                                    error!("Error performing geometric search for asset {} after {} retries: {}", asset_id, retry_count, e);
                                     match e {
                                         pcli2::physna_v3::ApiError::RetryFailed(msg) => {
                                             error!("Error performing geometric search: {}", msg);
@@ -909,7 +934,29 @@ pub async fn execute_command(
                                                     }
 
                                                     trace!("Performing geometric search for asset: {} ({})", asset_name, asset_uuid);
-                                                    match client.geometric_search(&tenant_id, &asset_uuid, threshold).await {
+                                                    // Try the geometric search with retry logic for 409 errors
+                                                    let mut retry_count = 0;
+                                                    let max_retries = 3;
+                                                    let search_result = loop {
+                                                        match client.geometric_search(&tenant_id, &asset_uuid, threshold).await {
+                                                            Ok(result) => break Ok(result),
+                                                            Err(e) => {
+                                                                // Check if it's a 409 Conflict error and we should retry
+                                                                if let ApiError::HttpError(http_err) = &e {
+                                                                    if http_err.status() == Some(reqwest::StatusCode::CONFLICT) && retry_count < max_retries {
+                                                                        retry_count += 1;
+                                                                        trace!("Received 409 Conflict for asset {}, retry {} after 500ms delay", asset_uuid, retry_count);
+                                                                        sleep(Duration::from_millis(500)).await;
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                                // For all other errors or if we've exhausted retries, break with the error
+                                                                break Err(e);
+                                                            }
+                                                        }
+                                                    };
+                                                    
+                                                    match search_result {
                                                         Ok(search_result) => {
                                                             trace!("Geometric search completed for {}, found {} matches", asset_uuid, search_result.matches.len());
                                                             
@@ -944,7 +991,7 @@ pub async fn execute_command(
                                                             Ok(asset_matches)
                                                         }
                                                         Err(e) => {
-                                                            error!("Error performing geometric search for asset {}: {}", asset_uuid, e);
+                                                            error!("Error performing geometric search for asset {} after {} retries: {}", asset_uuid, retry_count, e);
                                                             
                                                             // Update progress bar if present
                                                             if let Some(pb) = &progress_bar {

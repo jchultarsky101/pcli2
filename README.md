@@ -86,6 +86,9 @@ Detailed documentation is available in the [docs](docs/) directory:
 ## Commands
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4d156de750cbb2b0a16d9bf8d2ea1a24fd8c3fbc
 The application uses a hierarchy of commands:
 
 ```
@@ -122,6 +125,45 @@ pcli2
 │   └── clear            Clear active context
 └── help                 Show help information
 ```
+<<<<<<< HEAD
+=======
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test
+
+# Run tests with output
+cargo test -- --nocapture
+```
+
+### Code Quality
+
+```bash
+# Format code
+cargo fmt
+
+# Check for linting issues
+cargo clippy
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a pull request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+>>>>>>> 4d156de750cbb2b0a16d9bf8d2ea1a24fd8c3fbc
 =======
 The application uses a hierarchy of commands and sub-commands. Type the command first, followed by a sub-command (if any), followed by the arguments. See examples below.
 
@@ -284,6 +326,7 @@ where "myuser" would be your username.
 The configuration iteself is a text file in Yaml format. You can view it with any text editor. However, it is best to modify it via the CLI and not directly to avoid issue. If you do, please make a backup copy first.
 
 
+<<<<<<< HEAD
 
 
 
@@ -327,6 +370,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
+=======
+>>>>>>> 4d156de750cbb2b0a16d9bf8d2ea1a24fd8c3fbc
 For support, please contact the Physna development team or open an issue on GitHub.
 
 

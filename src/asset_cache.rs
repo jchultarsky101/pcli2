@@ -67,26 +67,20 @@ impl AssetCache {
         Ok(())
     }
     
-    /// Get assets for a tenant, either from cache or by fetching from API
+    /// Get asset cache for a tenant, fetching from API if not cached or expired
     pub async fn get_or_fetch(client: &mut PhysnaApiClient, tenant_id: &str) -> Result<AssetListResponse, Box<dyn std::error::Error>> {
-        // Try to load from cache first
-        let mut cache = Self::load().unwrap_or_else(|_| Self::new());
+        trace!("Getting or fetching asset cache for tenant: {}", tenant_id);
+        let cache = Self::load()?;
         
-        if let Some(asset_list_response) = cache.tenant_assets.get(tenant_id) {
-            trace!("Using cached assets for tenant {}", tenant_id);
-            return Ok(asset_list_response.clone());
+        if let Some(cached_assets) = cache.tenant_assets.get(tenant_id) {
+            trace!("Using existing cache for tenant: {}", tenant_id);
+            Ok(cached_assets.clone())
+        } else {
+            trace!("No cache found, fetching assets from API for tenant: {}", tenant_id);
+            let response = Self::fetch_all_assets(client, tenant_id).await?;
+            trace!("Successfully fetched {} assets from API for tenant: {}", response.assets.len(), tenant_id);
+            Ok(response)
         }
-        
-        // If not in cache, fetch from API
-        trace!("Fetching assets for tenant {} from API", tenant_id);
-        let asset_list_response = Self::fetch_all_assets(client, tenant_id).await?;
-        
-        // Store in cache
-        cache.tenant_assets.insert(tenant_id.to_string(), asset_list_response.clone());
-        cache.last_updated.insert(tenant_id.to_string(), std::time::SystemTime::now());
-        cache.save()?;
-        
-        Ok(asset_list_response)
     }
     
     /// Force refresh assets for a tenant from API
@@ -105,23 +99,29 @@ impl AssetCache {
     
     /// Get assets filtered by folder path
     pub async fn get_assets_for_folder(client: &mut PhysnaApiClient, tenant_id: &str, folder_path: &str, refresh: bool) -> Result<AssetList, Box<dyn std::error::Error>> {
+        trace!("Getting assets for folder: {} in tenant: {}, refresh: {}", folder_path, tenant_id, refresh);
         // Get all assets (using cache or fetching from API)
         let asset_list_response = if refresh {
+            trace!("Refreshing asset cache for tenant: {}", tenant_id);
             Self::refresh(client, tenant_id).await?
         } else {
+            trace!("Using cached assets for tenant: {}", tenant_id);
             Self::get_or_fetch(client, tenant_id).await?
         };
         
         // Get folder hierarchy to find the folder by path
+        trace!("Fetching folder hierarchy for tenant: {}", tenant_id);
         let hierarchy = FolderCache::get_or_fetch(client, tenant_id).await?;
         
         if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
             let folder_id = folder_node.id();
+            trace!("Found folder with ID: {} for path: {}", folder_id, folder_path);
             // Filter assets that belong to this folder
             let filtered_assets = asset_list_response.assets
                 .into_iter()
                 .filter(|asset| asset.folder_id.as_deref() == Some(folder_id))
                 .collect::<Vec<_>>();
+            trace!("Filtered {} assets for folder: {}", filtered_assets.len(), folder_path);
             
             // Create a new AssetListResponse with the filtered assets
             let filtered_response = AssetListResponse {
@@ -131,6 +131,7 @@ impl AssetCache {
             
             Ok(filtered_response.to_asset_list())
         } else {
+            trace!("Folder not found for path: {}", folder_path);
             Err(format!("Folder with path '{}' not found", folder_path).into())
         }
     }

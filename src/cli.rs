@@ -5,19 +5,23 @@
 //! including tenant, folder, asset, authentication, context, and configuration operations.
 
 use clap::ArgMatches;
+use futures::StreamExt;
 use inquire::Select;
 use pcli2::commands::{
     create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
     COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, 
-    COMMAND_TENANT,
+    COMMAND_TENANT, COMMAND_MATCH,
     PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID, 
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
     PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
 };
 use pcli2::exit_codes::PcliExitCode;
-use pcli2::model::{Asset, Folder};
+use pcli2::model::{Asset, Folder, FolderGeometricMatch, FolderGeometricMatchResponse};
 use pcli2::auth::AuthClient;
+use pcli2::physna_v3::ApiError;
+use std::time::Duration;
+use tokio::time::sleep;
 use pcli2::configuration::Configuration;
 use pcli2::folder_cache::FolderCache;
 use pcli2::asset_cache::AssetCache;
@@ -600,9 +604,451 @@ pub async fn execute_command(
                 ))),
             }
         }
-        // Asset resource commands
+        // Asset commands
         Some((COMMAND_ASSET, sub_matches)) => {
             match sub_matches.subcommand() {
+                Some((COMMAND_MATCH, sub_matches)) => {
+                    trace!("Executing asset match command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    // Get the reference asset identifier (either UUID or path)
+                    let asset_id = if let Some(uuid) = sub_matches.get_one::<String>(PARAMETER_UUID) {
+                        uuid.clone()
+                    } else if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                        trace!("Looking up asset by path: {}", path);
+                        // We need to look up the asset by path to get its UUID
+                        // Try to get access token
+                        let mut keyring = Keyring::default();
+                        match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                            Ok(Some(token)) => {
+                                let mut client = PhysnaApiClient::new().with_access_token(token);
+                                
+                                // Try to get client credentials for automatic token refresh
+                                if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                    keyring.get(&"default".to_string(), "client-id".to_string()),
+                                    keyring.get(&"default".to_string(), "client-secret".to_string())
+                                ) {
+                                    client = client.with_client_credentials(client_id, client_secret);
+                                }
+                                
+                                // Get asset cache or fetch assets from API
+                                match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                    Ok(asset_list_response) => {
+                                        // Convert to AssetList to use find_by_path
+                                        let asset_list = asset_list_response.to_asset_list();
+                                        // Find the asset by path
+                                        if let Some(asset) = asset_list.find_by_path(path) {
+                                            if let Some(uuid) = asset.uuid() {
+                                                trace!("Found asset with UUID: {}", uuid);
+                                                uuid.clone()
+                                            } else {
+                                                eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                return Ok(());
+                                            }
+                                        } else {
+                                            eprintln!("Asset not found by path '{}'", path);
+                                            return Ok(());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error fetching asset cache: {}", e);
+                                        eprintln!("Error fetching asset cache: {}", e);
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                            Ok(None) => {
+                                eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                eprintln!("Error retrieving access token: {}", e);
+                                return Ok(());
+                            }
+                        }
+                    } else {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    };
+                    
+                    // Get threshold parameter
+                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+                    
+                    // Validate threshold is between 0 and 100
+                    if threshold < 0.0 || threshold > 100.0 {
+                        eprintln!("Threshold must be between 0.00 and 100.00");
+                        return Ok(());
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    trace!("Performing geometric search for asset {} with threshold {}", asset_id, threshold);
+                    
+                    // Try to get access token and perform geometric search
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Try the geometric search with retry logic for 409 errors
+                            let mut retry_count = 0;
+                            let max_retries = 3;
+                            let search_result = loop {
+                                match client.geometric_search(&tenant, &asset_id, threshold).await {
+                                    Ok(result) => break Ok(result),
+                                    Err(e) => {
+                                        // Check if it's a 409 Conflict error and we should retry
+                                        if let ApiError::HttpError(http_err) = &e {
+                                            if http_err.status() == Some(reqwest::StatusCode::CONFLICT) && retry_count < max_retries {
+                                                retry_count += 1;
+                                                trace!("Received 409 Conflict for asset {}, retry {} after 500ms delay", asset_id, retry_count);
+                                                sleep(Duration::from_millis(500)).await;
+                                                continue;
+                                            }
+                                        }
+                                        // For all other errors or if we've exhausted retries, break with the error
+                                        break Err(e);
+                                    }
+                                }
+                            };
+                            
+                            match search_result {
+                                Ok(search_result) => {
+                                    trace!("Geometric search completed, processing {} matches", search_result.matches.len());
+                                    // Get the reference asset details
+                                    match client.get_asset(&tenant, &asset_id).await {
+                                        Ok(reference_asset) => {
+                                            trace!("Retrieved reference asset details");
+                                            // Convert GeometricSearchResponse to FolderGeometricMatchResponse format
+                                            let mut matches = Vec::new();
+                                            
+                                            // Extract the reference asset name from the path (last part after the last slash)
+                                            let reference_asset_name = reference_asset.path.split('/').last().unwrap_or(&reference_asset.path).to_string();
+                                            trace!("Reference asset name: {}", reference_asset_name);
+                                            
+                                            // Convert each geometric match to a folder match format
+                                            for (index, geometric_match) in search_result.matches.iter().enumerate() {
+                                                trace!("Processing match {} of {}: {} -> {}", index + 1, search_result.matches.len(), asset_id, geometric_match.asset.id);
+                                                // Skip self-matches
+                                                if geometric_match.asset.id != asset_id {
+                                                    let candidate_asset_name = geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string();
+                                                    trace!("Adding match: {} -> {} ({}%)", reference_asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                    let folder_match = FolderGeometricMatch {
+                                                        reference_asset_name: reference_asset_name.clone(),
+                                                        candidate_asset_name: candidate_asset_name,
+                                                        match_percentage: geometric_match.match_percentage,
+                                                        reference_asset_path: reference_asset.path.clone(),
+                                                        candidate_asset_path: geometric_match.asset.path.clone(),
+                                                        reference_asset_uuid: asset_id.clone(),
+                                                        candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                    };
+                                                    matches.push(folder_match);
+                                                } else {
+                                                    trace!("Skipping self-match for asset {}", asset_id);
+                                                }
+                                            }
+                                            
+                                            trace!("Formatting {} matches for output", matches.len());
+                                            // Create the response object (now a simple vector)
+                                            let folder_match_response: FolderGeometricMatchResponse = matches;
+                                            
+                                            // Format and output the results
+                                            match folder_match_response.format(format) {
+                                                Ok(output) => {
+                                                    trace!("Output formatted successfully");
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error getting reference asset details: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error performing geometric search for asset {} after {} retries: {}", asset_id, retry_count, e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                Some(("geometric-match-folder", sub_matches)) => {
+                    trace!("Executing asset geometric-match-folder command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+
+                    // Get the source folder path
+                    let folder_path = sub_matches.get_one::<String>(PARAMETER_PATH)
+                        .ok_or(CliError::MissingRequiredArgument("folder path must be provided".to_string()))?
+                        .clone();
+                    trace!("Processing folder: {}", folder_path);
+
+                    // Get threshold parameter
+                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+
+                    // Validate threshold is between 0 and 100
+                    if threshold < 0.0 || threshold > 100.0 {
+                        eprintln!("Threshold must be between 0.00 and 100.00");
+                        return Ok(());
+                    }
+
+                    // Get concurrency parameter
+                    let concurrent = *sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
+                    trace!("Using concurrency level: {}", concurrent);
+
+                    // Get progress parameter
+                    let show_progress = sub_matches.get_flag("progress");
+                    trace!("Progress bar enabled: {}", show_progress);
+
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+
+                    trace!("Retrieving access token for tenant: {}", tenant);
+                    // Try to get access token and perform folder-based geometric search
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            // Get client credentials for creating multiple clients
+                            let client_credentials = if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                Some((client_id, client_secret))
+                            } else {
+                                None
+                            };
+
+                            trace!("Fetching assets for folder: {}", folder_path);
+                            // Create a client for initial operations
+                            let mut client = PhysnaApiClient::new().with_access_token(token.clone());
+                            if let Some((client_id, client_secret)) = &client_credentials {
+                                client = client.with_client_credentials(client_id.clone(), client_secret.clone());
+                            }
+
+                            // Get all assets in the specified folder
+                            match AssetCache::get_assets_for_folder(&mut client, &tenant, &folder_path, false).await {
+                                Ok(asset_list) => {
+                                    trace!("Found {} assets in folder", asset_list.len());
+                                    
+                                    // Get all assets from the AssetList
+                                    let assets = asset_list.get_all_assets();
+                                    trace!("Processing {} assets", assets.len());
+
+                                    // Create progress bar if requested
+                                    let progress_bar = if show_progress {
+                                        let pb = indicatif::ProgressBar::new(assets.len() as u64);
+                                        pb.set_style(
+                                            indicatif::ProgressStyle::default_bar()
+                                                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                                                .unwrap()
+                                                .progress_chars("#>-")
+                                        );
+                                        Some(pb)
+                                    } else {
+                                        None
+                                    };
+
+                                    // Create a stream of futures for processing assets concurrently
+                                    let base_url = "https://app-api.physna.com/v3".to_string(); // Use default base URL
+                                    let tenant_id = tenant.clone();
+                                    
+                                    let results: Result<Vec<_>, _> = futures::stream::iter(assets)
+                                        .map(|asset| {
+                                            let base_url = base_url.clone();
+                                            let tenant_id = tenant_id.clone();
+                                            let token = token.clone();
+                                            let client_credentials = client_credentials.clone();
+                                            let progress_bar = progress_bar.clone();
+                                            let asset_name = asset.name().to_string();
+                                            let asset_uuid = asset.uuid().map(|s| s.clone());
+                                            let asset_path = asset.path().to_string();
+
+                                            async move {
+                                                trace!("Processing asset: {} ({})", asset_name, asset_uuid.as_deref().unwrap_or("unknown"));
+                                                
+                                                if let Some(asset_uuid) = asset_uuid {
+                                                    // Create a new client for each request to avoid borrowing issues
+                                                    let mut client = PhysnaApiClient::new().with_base_url(base_url).with_access_token(token.clone());
+                                                    if let Some((client_id, client_secret)) = client_credentials.clone() {
+                                                        client = client.with_client_credentials(client_id, client_secret);
+                                                    }
+
+                                                    trace!("Performing geometric search for asset: {} ({})", asset_name, asset_uuid);
+                                                    // Try the geometric search with retry logic for 409 errors
+                                                    let mut retry_count = 0;
+                                                    let max_retries = 3;
+                                                    let search_result = loop {
+                                                        match client.geometric_search(&tenant_id, &asset_uuid, threshold).await {
+                                                            Ok(result) => break Ok(result),
+                                                            Err(e) => {
+                                                                // Check if it's a 409 Conflict error and we should retry
+                                                                if let ApiError::HttpError(http_err) = &e {
+                                                                    if http_err.status() == Some(reqwest::StatusCode::CONFLICT) && retry_count < max_retries {
+                                                                        retry_count += 1;
+                                                                        trace!("Received 409 Conflict for asset {}, retry {} after 500ms delay", asset_uuid, retry_count);
+                                                                        sleep(Duration::from_millis(500)).await;
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                                // For all other errors or if we've exhausted retries, break with the error
+                                                                break Err(e);
+                                                            }
+                                                        }
+                                                    };
+                                                    
+                                                    match search_result {
+                                                        Ok(search_result) => {
+                                                            trace!("Geometric search completed for {}, found {} matches", asset_uuid, search_result.matches.len());
+                                                            
+                                                            // Process matches, skipping self-matches
+                                                            let mut asset_matches = Vec::new();
+                                                            for geometric_match in search_result.matches {
+                                                                // Skip self-matches by comparing UUIDs
+                                                                if geometric_match.asset.id != asset_uuid {
+                                                                    let candidate_asset_name = geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string();
+                                                                    trace!("Adding match: {} -> {} ({}%)", asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                                    let folder_match = FolderGeometricMatch {
+                                                                        reference_asset_name: asset_name.clone(),
+                                                                        candidate_asset_name,
+                                                                        match_percentage: geometric_match.match_percentage,
+                                                                        reference_asset_path: asset_path.clone(),
+                                                                        candidate_asset_path: geometric_match.asset.path.clone(),
+                                                                        reference_asset_uuid: asset_uuid.clone(),
+                                                                        candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                                    };
+                                                                    asset_matches.push(folder_match);
+                                                                } else {
+                                                                    trace!("Skipping self-match for asset {}", asset_uuid);
+                                                                }
+                                                            }
+                                                            
+                                                            // Update progress bar if present
+                                                            if let Some(pb) = &progress_bar {
+                                                                pb.inc(1);
+                                                                pb.set_message(format!("Processed: {}", asset_name));
+                                                            }
+                                                            
+                                                            Ok(asset_matches)
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error performing geometric search for asset {} after {} retries: {}", asset_uuid, retry_count, e);
+                                                            
+                                                            // Update progress bar if present
+                                                            if let Some(pb) = &progress_bar {
+                                                                pb.inc(1);
+                                                                pb.set_message(format!("Failed: {}", asset_name));
+                                                            }
+                                                            
+                                                            Err(e)
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Update progress bar if present
+                                                    if let Some(pb) = &progress_bar {
+                                                        pb.inc(1);
+                                                        pb.set_message(format!("Skipped: {} (no UUID)", asset_name));
+                                                    }
+                                                    
+                                                    Err(ApiError::AuthError("Asset has no UUID".to_string()))
+                                                }
+                                            }
+                                        })
+                                        .buffer_unordered(concurrent)
+                                        .collect::<Vec<_>>()
+                                        .await
+                                        .into_iter()
+                                        .collect();
+
+                                    // Finish progress bar if present
+                                    if let Some(pb) = progress_bar {
+                                        pb.finish_with_message("Batch processing complete");
+                                    }
+
+                                    match results {
+                                        Ok(asset_match_results) => {
+                                            // Flatten all matches into a single vector
+                                            let all_matches: Vec<FolderGeometricMatch> = asset_match_results.into_iter().flatten().collect();
+                                            trace!("Processed all assets, found {} total matches", all_matches.len());
+
+                                            // Create the response object (now a simple vector)
+                                            let folder_match_response: FolderGeometricMatchResponse = all_matches;
+
+                                            trace!("Formatting results for output");
+                                            // Format and output the results
+                                            match folder_match_response.format(format) {
+                                                Ok(output) => {
+                                                    trace!("Output formatted successfully");
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error during batch processing: {}", e);
+                                            eprintln!("Error during batch processing: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error getting assets for folder '{}': {}", folder_path, e);
+                                    eprintln!("Error getting assets for folder '{}': {}", folder_path, e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
                 Some((COMMAND_CREATE, sub_matches)) => {
                     trace!("Executing asset create command");
                     // Get tenant from explicit parameter or fall back to active tenant from configuration
@@ -959,7 +1405,7 @@ pub async fn execute_command(
                     }
                     
                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let _format = OutputFormat::from_str(&format_str).unwrap();
                     
                     // Try to get access token and get asset via Physna V3 API
                     let mut keyring = Keyring::default();
@@ -1007,8 +1453,12 @@ pub async fn execute_command(
                             
                             match client.get_asset(&tenant, &asset_id).await {
                                 Ok(asset_response) => {
-                                    let asset = Asset::from_asset_response(asset_response, asset_id.clone());
-                                    match asset.format(format) {
+                                    // Convert AssetResponse to Asset
+                                    let asset = pcli2::model::Asset::from_asset_response(asset_response, asset_id.clone());
+                                    
+                                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                                    let _format = OutputFormat::from_str(&format_str).unwrap();
+                                    match asset.format(_format) {
                                         Ok(output) => {
                                             println!("{}", output);
                                             Ok(())
@@ -1018,7 +1468,25 @@ pub async fn execute_command(
                                 }
                                 Err(e) => {
                                     error!("Error fetching asset: {}", e);
-                                    eprintln!("Error fetching asset: {}", e);
+                                    match e {
+                                        pcli2::physna_v3::ApiError::RetryFailed(msg) => {
+                                            eprintln!("Error fetching asset: {}", msg);
+                                        }
+                                        pcli2::physna_v3::ApiError::HttpError(http_err) => {
+                                            if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                                eprintln!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
+                                            } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
+                                                eprintln!("Error: Unauthorized access. Please check your authentication credentials.");
+                                            } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+                                                eprintln!("Error: Access forbidden. You don't have permission to access this asset.");
+                                            } else {
+                                                eprintln!("Error fetching asset: HTTP error {}", http_err);
+                                            }
+                                        }
+                                        _ => {
+                                            eprintln!("Error fetching asset: {}", e);
+                                        }
+                                    }
                                     Ok(())
                                 }
                             }

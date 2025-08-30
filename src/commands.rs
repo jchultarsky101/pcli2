@@ -30,6 +30,8 @@ pub const COMMAND_LIST: &str = "list";
 pub const COMMAND_UPDATE: &str = "update";
 /// Command name for deleting resources
 pub const COMMAND_DELETE: &str = "delete";
+/// Command name for matching assets geometrically
+pub const COMMAND_MATCH: &str = "geometric-match";
 
 // Auth commands
 /// Command name for authentication operations
@@ -380,6 +382,60 @@ pub fn create_cli_commands() -> ArgMatches {
                             .multiple(false)
                             .required(true)
                         ),
+                )
+                .subcommand(
+                    Command::new("geometric-match")
+                        .about("Find geometrically similar assets")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(
+                            Arg::new("threshold")
+                                .long("threshold")
+                                .num_args(1)
+                                .required(false)
+                                .default_value("80.0")
+                                .help("Similarity threshold (0.00 to 100.00)")
+                                .value_parser(clap::value_parser!(f64)),
+                        )
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .group(clap::ArgGroup::new("reference_asset")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
+                )
+                .subcommand(
+                    Command::new("geometric-match-folder")
+                        .about("Find geometrically similar assets for all assets in a folder")
+                        .arg(tenant_parameter.clone())
+                        .arg(path_parameter.clone().required(true))
+                        .arg(
+                            Arg::new("threshold")
+                                .long("threshold")
+                                .num_args(1)
+                                .required(false)
+                                .default_value("80.0")
+                                .help("Similarity threshold (0.00 to 100.00)")
+                                .value_parser(clap::value_parser!(f64)),
+                        )
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .arg(
+                            Arg::new("concurrent")
+                                .long("concurrent")
+                                .num_args(1)
+                                .required(false)
+                                .default_value("5")
+                                .help("Maximum number of concurrent operations")
+                                .value_parser(clap::value_parser!(usize)),
+                        )
+                        .arg(
+                            Arg::new("progress")
+                                .long("progress")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Display progress bar during processing"),
+                        )
                 ),
         )
         .subcommand(

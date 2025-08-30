@@ -2,6 +2,7 @@ use crate::auth::AuthClient;
 use crate::model::{CurrentUserResponse, FolderListResponse};
 use reqwest;
 use serde_json;
+use serde_urlencoded;
 use tracing::{debug, trace, error};
 use glob::glob;
 use futures::stream::{self, StreamExt};
@@ -197,9 +198,11 @@ impl PhysnaApiClient {
         
         let response = request.send().await?;
 
-        // Check if we need to retry due to authentication issues (401 Unauthorized or 403 Forbidden)
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED || 
-           response.status() == reqwest::StatusCode::FORBIDDEN {
+        // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
+        // We only retry on authentication errors, as other errors like 404 are not recoverable
+        // However, we should be more specific - a 403 might indicate a permission issue rather than
+        // an authentication issue, so we should only retry on 401 errors for token refresh
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             debug!("Received authentication error ({}), attempting token refresh", response.status());
             
             // Try to refresh the expired or invalid access token
@@ -218,23 +221,44 @@ impl PhysnaApiClient {
             
             // Check if the retry was successful
             if retry_response.status().is_success() {
-                // Parse and return the JSON response
-                let result: T = retry_response.json().await?;
-                Ok(result)
+                // Try to get the raw response text for debugging deserialization issues
+                let response_text = retry_response.text().await?;
+                trace!("Raw response text for deserialization: {}", response_text);
+                
+                // Try to parse and return the JSON response
+                match serde_json::from_str::<T>(&response_text) {
+                    Ok(result) => Ok(result),
+                    Err(e) => {
+                        error!("Failed to deserialize response: {}. Raw response: {}", e, response_text);
+                        Err(ApiError::JsonError(e))
+                    }
+                }
             } else {
-                // Retry failed - return detailed error information
+                // Retry failed - provide clear error information
+                let status = retry_response.status();
+                let error_text = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}", 
+                    response.status(), status, error_text);
                 Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Retry failed with status: {}", 
-                    response.status(), 
-                    retry_response.status()
+                    "Original error: {}, Retry failed with status: {} and body: {}", 
+                    response.status(), status, error_text
                 )))
             }
         } else if response.status().is_success() {
-            // Initial request was successful - parse and return the JSON response
-            let result: T = response.json().await?;
-            Ok(result)
+            // Initial request was successful - try to get the raw response text for debugging
+            let response_text = response.text().await?;
+            trace!("Raw response text for deserialization: {}", response_text);
+            
+            // Try to parse and return the JSON response
+            match serde_json::from_str::<T>(&response_text) {
+                Ok(result) => Ok(result),
+                Err(e) => {
+                    error!("Failed to deserialize response: {}. Raw response: {}", e, response_text);
+                    Err(ApiError::JsonError(e))
+                }
+            }
         } else {
-            // Other HTTP error - return the error status
+            // For all other errors, return the error status
             Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
         }
     }
@@ -253,7 +277,19 @@ impl PhysnaApiClient {
         T: serde::de::DeserializeOwned,
         B: serde::Serialize,
     {
-        self.execute_request(|client| client.post(url).json(body)).await
+        // Log the request for debugging
+        let body_json = serde_json::to_string_pretty(body).unwrap_or_else(|_| "Unable to serialize body".to_string());
+        trace!("POST request to {}: {}", url, body_json);
+        
+        let result = self.execute_request(|client| client.post(url).json(body)).await;
+        
+        // Log the response for debugging
+        match &result {
+            Ok(_) => trace!("POST request to {} succeeded", url),
+            Err(e) => trace!("POST request to {} failed: {}", url, e),
+        }
+        
+        result
     }
     
     /// Generic method to build and execute PUT requests
@@ -500,8 +536,10 @@ impl PhysnaApiClient {
     /// * `Ok(crate::model::AssetResponse)` - Successfully fetched asset details
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn get_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<crate::model::AssetResponse, ApiError> {
+        trace!("Getting asset details for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
         let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
         let response: crate::model::SingleAssetResponse = self.get(&url).await?;
+        trace!("Successfully retrieved asset details for asset_id: {}", asset_id);
         Ok(response.asset)
     }
     
@@ -743,6 +781,42 @@ impl PhysnaApiClient {
                 }
             }
         }
+    }
+    
+    /// Perform a geometric search for similar assets
+    /// 
+    /// This method searches for assets that are geometrically similar to the reference asset.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the reference asset
+    /// * `asset_id` - The UUID of the reference asset
+    /// * `threshold` - The similarity threshold (0.00 to 100.00 as percentage)
+    /// 
+    /// # Returns
+    /// * `Ok(crate::model::GeometricSearchResponse)` - The search results
+    /// * `Err(ApiError)` - HTTP error or other error
+    pub async fn geometric_search(&mut self, tenant_id: &str, asset_id: &str, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {
+        trace!("Starting geometric search for tenant_id: {}, asset_id: {}, threshold: {}", tenant_id, asset_id, threshold);
+        let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_id, asset_id);
+        
+        // Build request body with the correct structure
+        let body = serde_json::json!({
+            "page": 1,
+            "perPage": 20,
+            "searchQuery": "",
+            "filters": {
+                "folders": [],
+                "metadata": {},
+                "extensions": []  // Empty array as requested
+            },
+            "minThreshold": threshold  // Use threshold directly as percentage
+        });
+        
+        trace!("Sending geometric search request to: {}", url);
+        // Execute POST request
+        let result = self.post(&url, &body).await;
+        trace!("Geometric search completed for asset_id: {}", asset_id);
+        result
     }
     
     /// Create multiple assets by uploading files matching a glob pattern

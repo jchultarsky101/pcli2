@@ -20,3 +20,6 @@ Cargo.lock
 
 # Apple fluff
 **/.DS_Store
+
+# Data directory for test files
+data/

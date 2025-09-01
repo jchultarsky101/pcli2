@@ -1381,6 +1381,177 @@ pub async fn execute_command(
                         }
                     }
                 }
+                Some(("create-metadata-batch", sub_matches)) => {
+                    trace!("Executing asset create-metadata-batch command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+
+                    let csv_file_path = sub_matches.get_one::<PathBuf>("csv-file")
+                        .ok_or(CliError::MissingRequiredArgument("csv-file".to_string()))?
+                        .clone();
+
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let _format = OutputFormat::from_str(&format_str).unwrap();
+
+                    let show_progress = sub_matches.get_flag("progress");
+
+                    // Try to get access token and create assets via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get(&"default".to_string(), "client-id".to_string()),
+                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+
+                            // Read metadata entries from CSV file
+                            match pcli2::metadata::read_metadata_from_csv(csv_file_path.to_str().unwrap_or("")) {
+                                Ok(metadata_entries) => {
+                                    trace!("Successfully read {} metadata entries from CSV", metadata_entries.len());
+                                    
+                                    // Group metadata entries by asset path
+                                    let grouped_metadata = pcli2::metadata::group_metadata_by_asset(metadata_entries);
+                                    trace!("Grouped metadata for {} unique assets", grouped_metadata.len());
+
+                                    // Create progress bar if requested
+                                    let progress_bar = if show_progress {
+                                        let pb = indicatif::ProgressBar::new(grouped_metadata.len() as u64);
+                                        pb.set_style(
+                                            indicatif::ProgressStyle::default_bar()
+                                                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                                                .unwrap()
+                                                .progress_chars("#>-")
+                                        );
+                                        Some(pb)
+                                    } else {
+                                        None
+                                    };
+
+                                    // Process each asset and update its metadata
+                                    let mut success_count = 0;
+                                    let mut error_count = 0;
+                                    
+                                    // Get asset cache or fetch assets from API
+                                    match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                        Ok(asset_list_response) => {
+                                            // Convert to AssetList to use find_by_path
+                                            let asset_list = asset_list_response.to_asset_list();
+                                            
+                                            // Process each asset with metadata
+                                            for (asset_path, metadata) in grouped_metadata {
+                                                trace!("Processing metadata for asset: {}", asset_path);
+                                                
+                                                // Find the asset by path
+                                                if let Some(asset) = asset_list.find_by_path(&asset_path) {
+                                                    if let Some(asset_uuid) = asset.uuid() {
+                                                        trace!("Found asset with UUID: {}", asset_uuid);
+                                                        
+                                                        // Convert string metadata to JSON values
+                                                        let json_metadata = pcli2::metadata::convert_metadata_to_json_values(&metadata);
+                                                        
+                                                        // Update the asset metadata
+                                                        match client.update_asset_metadata(&tenant, asset_uuid, &json_metadata).await {
+                                                            Ok(_updated_asset) => {
+                                                                trace!("Successfully updated metadata for asset: {}", asset_uuid);
+                                                                success_count += 1;
+                                                                
+                                                                // Update progress bar if present
+                                                                if let Some(pb) = &progress_bar {
+                                                                    pb.inc(1);
+                                                                    pb.set_message(format!("Updated: {}", asset_path));
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                error!("Error updating metadata for asset {}: {}", asset_uuid, e);
+                                                                error_count += 1;
+                                                                
+                                                                // Update progress bar if present
+                                                                if let Some(pb) = &progress_bar {
+                                                                    pb.inc(1);
+                                                                    pb.set_message(format!("Failed: {}", asset_path));
+                                                                }
+                                                            }
+                                                        }
+                                                    } else {
+                                                        error!("Asset found by path '{}' but has no UUID", asset_path);
+                                                        error_count += 1;
+                                                        
+                                                        // Update progress bar if present
+                                                        if let Some(pb) = &progress_bar {
+                                                            pb.inc(1);
+                                                            pb.set_message(format!("No UUID: {}", asset_path));
+                                                        }
+                                                    }
+                                                } else {
+                                                    error!("Asset not found by path '{}'", asset_path);
+                                                    error_count += 1;
+                                                    
+                                                    // Update progress bar if present
+                                                    if let Some(pb) = &progress_bar {
+                                                        pb.inc(1);
+                                                        pb.set_message(format!("Not found: {}", asset_path));
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Finish progress bar if present
+                                            if let Some(pb) = progress_bar {
+                                                pb.finish_with_message("Batch metadata processing complete");
+                                            }
+                                            
+                                            // Report results
+                                            println!("Batch metadata processing complete:");
+                                            println!("  Success: {} assets updated", success_count);
+                                            println!("  Errors:  {} assets failed", error_count);
+                                            println!("  Total:   {} assets processed", success_count + error_count);
+                                            
+                                            Ok(())
+                                        }
+                                        Err(e) => {
+                                            error!("Error fetching asset cache: {}", e);
+                                            eprintln!("Error fetching asset cache: {}", e);
+                                            
+                                            // Finish progress bar if present
+                                            if let Some(pb) = progress_bar {
+                                                pb.finish_with_message("Batch processing failed");
+                                            }
+                                            
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error reading metadata from CSV file: {}", e);
+                                    eprintln!("Error reading metadata from CSV file: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Executing asset get command");
                     // Get tenant from explicit parameter or fall back to active tenant from configuration

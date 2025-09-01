@@ -28,5 +28,6 @@ pub mod folder_cache;
 pub mod folder_hierarchy;
 pub mod format;
 pub mod keyring;
+pub mod metadata;
 pub mod model;
 pub mod physna_v3;

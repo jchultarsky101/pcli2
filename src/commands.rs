@@ -344,6 +344,27 @@ pub fn create_cli_commands() -> ArgMatches {
                         ),
                 )
                 .subcommand(
+                    Command::new("create-metadata-batch")
+                        .about("Create metadata for multiple assets from a CSV file")
+                        .arg(tenant_parameter.clone())
+                        .arg(
+                            Arg::new("csv-file")
+                                .long("csv-file")
+                                .num_args(1)
+                                .required(true)
+                                .help("Path to the CSV file containing metadata entries")
+                                .value_parser(clap::value_parser!(PathBuf)),
+                        )
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .arg(
+                            Arg::new("progress")
+                                .long("progress")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Display progress bar during processing"),
+                        ),
+                )
+                .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all assets in a folder")
                         .arg(tenant_parameter.clone())

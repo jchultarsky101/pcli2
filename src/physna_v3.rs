@@ -577,6 +577,26 @@ impl PhysnaApiClient {
         self.put(&url, &body).await
     }
     
+    /// Update an asset's metadata fields
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_id` - The UUID of the asset to update
+    /// * `metadata` - A map of metadata key-value pairs to update
+    /// 
+    /// # Returns
+    /// * `Ok(crate::model::AssetResponse)` - Successfully updated asset with new metadata
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn update_asset_metadata(&mut self, tenant_id: &str, asset_id: &str, metadata: &std::collections::HashMap<String, serde_json::Value>) -> Result<crate::model::AssetResponse, ApiError> {
+        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
+        
+        let body = serde_json::json!({
+            "metadata": metadata
+        });
+        
+        self.put(&url, &body).await
+    }
+    
     /// Create a new asset by uploading a file
     /// 
     /// This method uploads a file as a new asset in the specified tenant.

@@ -346,6 +346,20 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new("create-metadata-batch")
                         .about("Create metadata for multiple assets from a CSV file")
+                        .long_about(
+                            "Create metadata for multiple assets from a CSV file.\n\n\
+                            The CSV file must have the following columns:\n\
+                            - ASSET_PATH: The full path of the asset in Physna\n\
+                            - NAME: The name of the metadata field to set\n\
+                            - VALUE: The value to set for the metadata field\n\n\
+                            Example CSV format:\n\
+                            ASSET_PATH,NAME,VALUE\n\
+                            folder/subfolder/asset1.stl,Material,Steel\n\
+                            folder/subfolder/asset1.stl,Weight,15.5\n\
+                            folder/subfolder/asset2.ipt,Material,Aluminum\n\n\
+                            The command will group metadata by asset path and update all metadata \
+                            for each asset in a single API call."
+                        )
                         .arg(tenant_parameter.clone())
                         .arg(
                             Arg::new("csv-file")

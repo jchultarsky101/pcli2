@@ -74,7 +74,7 @@ pub fn group_metadata_by_asset(entries: Vec<MetadataEntry>) -> HashMap<String, H
     
     for entry in entries {
         // Get or create the metadata map for this asset path
-        let metadata_map = grouped.entry(entry.asset_path).or_insert_with(HashMap::new);
+        let metadata_map = grouped.entry(entry.asset_path).or_default();
         
         // Add the metadata key-value pair
         metadata_map.insert(entry.name, entry.value);

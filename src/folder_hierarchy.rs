@@ -54,6 +54,12 @@ pub struct FolderHierarchy {
     root_ids: Vec<String>,
 }
 
+impl Default for FolderHierarchy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FolderHierarchy {
     /// Create a new empty FolderHierarchy
     pub fn new() -> Self {

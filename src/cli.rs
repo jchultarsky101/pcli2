@@ -124,14 +124,14 @@ pub async fn execute_command(
                     trace!("Executing tenant list command");
                     // Try to get access token and list tenants from Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -211,14 +211,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and list folders from Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -306,14 +306,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and get folder via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -419,14 +419,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and create folder via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -538,14 +538,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and delete folder via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -630,14 +630,14 @@ pub async fn execute_command(
                         // We need to look up the asset by path to get its UUID
                         // Try to get access token
                         let mut keyring = Keyring::default();
-                        match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                        match keyring.get("default", "access-token".to_string()) {
                             Ok(Some(token)) => {
                                 let mut client = PhysnaApiClient::new().with_access_token(token);
                                 
                                 // Try to get client credentials for automatic token refresh
                                 if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                    keyring.get(&"default".to_string(), "client-id".to_string()),
-                                    keyring.get(&"default".to_string(), "client-secret".to_string())
+                                    keyring.get("default", "client-id".to_string()),
+                                    keyring.get("default", "client-secret".to_string())
                                 ) {
                                     client = client.with_client_credentials(client_id, client_secret);
                                 }
@@ -685,7 +685,7 @@ pub async fn execute_command(
                     let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
                     
                     // Validate threshold is between 0 and 100
-                    if threshold < 0.0 || threshold > 100.0 {
+                    if !(0.0..=100.0).contains(&threshold) {
                         eprintln!("Threshold must be between 0.00 and 100.00");
                         return Ok(());
                     }
@@ -697,14 +697,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and perform geometric search
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -742,7 +742,7 @@ pub async fn execute_command(
                                             let mut matches = Vec::new();
                                             
                                             // Extract the reference asset name from the path (last part after the last slash)
-                                            let reference_asset_name = reference_asset.path.split('/').last().unwrap_or(&reference_asset.path).to_string();
+                                            let reference_asset_name = reference_asset.path.split('/').next_back().unwrap_or(&reference_asset.path).to_string();
                                             trace!("Reference asset name: {}", reference_asset_name);
                                             
                                             // Convert each geometric match to a folder match format
@@ -750,11 +750,11 @@ pub async fn execute_command(
                                                 trace!("Processing match {} of {}: {} -> {}", index + 1, search_result.matches.len(), asset_id, geometric_match.asset.id);
                                                 // Skip self-matches
                                                 if geometric_match.asset.id != asset_id {
-                                                    let candidate_asset_name = geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string();
+                                                    let candidate_asset_name = geometric_match.asset.path.split('/').next_back().unwrap_or(&geometric_match.asset.path).to_string();
                                                     trace!("Adding match: {} -> {} ({}%)", reference_asset_name, candidate_asset_name, geometric_match.match_percentage);
                                                     let folder_match = FolderGeometricMatch {
                                                         reference_asset_name: reference_asset_name.clone(),
-                                                        candidate_asset_name: candidate_asset_name,
+                                                        candidate_asset_name,
                                                         match_percentage: geometric_match.match_percentage,
                                                         reference_asset_path: reference_asset.path.clone(),
                                                         candidate_asset_path: geometric_match.asset.path.clone(),
@@ -828,7 +828,7 @@ pub async fn execute_command(
                     let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
 
                     // Validate threshold is between 0 and 100
-                    if threshold < 0.0 || threshold > 100.0 {
+                    if !(0.0..=100.0).contains(&threshold) {
                         eprintln!("Threshold must be between 0.00 and 100.00");
                         return Ok(());
                     }
@@ -847,12 +847,12 @@ pub async fn execute_command(
                     trace!("Retrieving access token for tenant: {}", tenant);
                     // Try to get access token and perform folder-based geometric search
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             // Get client credentials for creating multiple clients
                             let client_credentials = if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 Some((client_id, client_secret))
                             } else {
@@ -901,7 +901,7 @@ pub async fn execute_command(
                                             let client_credentials = client_credentials.clone();
                                             let progress_bar = progress_bar.clone();
                                             let asset_name = asset.name().to_string();
-                                            let asset_uuid = asset.uuid().map(|s| s.clone());
+                                            let asset_uuid = asset.uuid().cloned();
                                             let asset_path = asset.path().to_string();
 
                                             async move {
@@ -946,7 +946,7 @@ pub async fn execute_command(
                                                             for geometric_match in search_result.matches {
                                                                 // Skip self-matches by comparing UUIDs
                                                                 if geometric_match.asset.id != asset_uuid {
-                                                                    let candidate_asset_name = geometric_match.asset.path.split('/').last().unwrap_or(&geometric_match.asset.path).to_string();
+                                                                    let candidate_asset_name = geometric_match.asset.path.split('/').next_back().unwrap_or(&geometric_match.asset.path).to_string();
                                                                     trace!("Adding match: {} -> {} ({}%)", asset_name, candidate_asset_name, geometric_match.match_percentage);
                                                                     let folder_match = FolderGeometricMatch {
                                                                         reference_asset_name: asset_name.clone(),
@@ -1080,14 +1080,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and create asset via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -1198,14 +1198,14 @@ pub async fn execute_command(
 
                     // Try to get access token and create assets via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
 
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -1322,14 +1322,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and list assets from Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -1407,14 +1407,14 @@ pub async fn execute_command(
 
                     // Try to get access token and create assets via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
 
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -1580,14 +1580,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and get asset via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -1697,14 +1697,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and delete asset via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -1787,7 +1787,7 @@ pub async fn execute_command(
                         Some(id) => id.clone(),
                         None => {
                             // Try to get stored client ID
-                            match keyring.get(&"default".to_string(), "client-id".to_string()) {
+                            match keyring.get("default", "client-id".to_string()) {
                                 Ok(Some(stored_id)) => stored_id,
                                 _ => {
                                     return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_ID.to_string()));
@@ -1800,7 +1800,7 @@ pub async fn execute_command(
                         Some(secret) => secret.clone(),
                         None => {
                             // Try to get stored client secret
-                            match keyring.get(&"default".to_string(), "client-secret".to_string()) {
+                            match keyring.get("default", "client-secret".to_string()) {
                                 Ok(Some(stored_secret)) => stored_secret,
                                 _ => {
                                     return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_SECRET.to_string()));
@@ -1812,8 +1812,8 @@ pub async fn execute_command(
                     let auth_client = AuthClient::new(client_id.clone(), client_secret.clone());
                     
                     // Store the client credentials so they're available for token refresh
-                    let client_id_result = keyring.put(&"default".to_string(), "client-id".to_string(), client_id.clone());
-                    let client_secret_result = keyring.put(&"default".to_string(), "client-secret".to_string(), client_secret.clone());
+                    let client_id_result = keyring.put("default", "client-id".to_string(), client_id.clone());
+                    let client_secret_result = keyring.put("default", "client-secret".to_string(), client_secret.clone());
                     
                     if client_id_result.is_err() || client_secret_result.is_err() {
                         eprintln!("Error storing client credentials");
@@ -1823,7 +1823,7 @@ pub async fn execute_command(
                     match auth_client.get_access_token().await {
                         Ok(token) => {
                             // Store the access token
-                            let token_result = keyring.put(&"default".to_string(), "access-token".to_string(), token);
+                            let token_result = keyring.put("default", "access-token".to_string(), token);
                             
                             if token_result.is_ok() {
                                 Ok(())
@@ -1841,7 +1841,7 @@ pub async fn execute_command(
                 Some((COMMAND_LOGOUT, _)) => {
                     trace!("Executing logout command");
                     let mut keyring = Keyring::default();
-                    match keyring.delete(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.delete("default", "access-token".to_string()) {
                         Ok(()) => {
                             Ok(())
                         }
@@ -1859,7 +1859,7 @@ pub async fn execute_command(
                     
                     // Try to get access token from keyring
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             // Output the token based on the requested format
                             match format {
@@ -1902,14 +1902,14 @@ pub async fn execute_command(
                             
                             // Try to get access token and fetch tenant info from Physna V3 API
                             let mut keyring = Keyring::default();
-                            match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                            match keyring.get("default", "access-token".to_string()) {
                                 Ok(Some(token)) => {
                                     let mut client = PhysnaApiClient::new().with_access_token(token);
                                     
                                     // Try to get client credentials for automatic token refresh
                                     if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                        keyring.get(&"default".to_string(), "client-id".to_string()),
-                                        keyring.get(&"default".to_string(), "client-secret".to_string())
+                                        keyring.get("default", "client-id".to_string()),
+                                        keyring.get("default", "client-secret".to_string())
                                     ) {
                                         client = client.with_client_credentials(client_id, client_secret);
                                     }

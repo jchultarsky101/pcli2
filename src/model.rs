@@ -117,7 +117,7 @@ impl CsvRecordProducer for Folder {
     /// Generate CSV output with a header row
     fn to_csv_with_header(&self) -> Result<String, FormattingError> {
         let mut wtr = Writer::from_writer(vec![]);
-        wtr.write_record(&Self::csv_header())
+        wtr.write_record(Self::csv_header())
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
         
         // Sort records by folder name
@@ -130,8 +130,8 @@ impl CsvRecordProducer for Folder {
         }
         let data = wtr.into_inner()
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
-        Ok(String::from_utf8(data)
-            .map_err(|e| FormattingError::Utf8Error(e))?)
+        String::from_utf8(data)
+            .map_err(FormattingError::Utf8Error)
     }
 
     /// Generate CSV output without a header row
@@ -148,8 +148,8 @@ impl CsvRecordProducer for Folder {
         }
         let data = wtr.into_inner()
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
-        Ok(String::from_utf8(data)
-            .map_err(|e| FormattingError::Utf8Error(e))?)
+        String::from_utf8(data)
+            .map_err(FormattingError::Utf8Error)
     }
 }
 
@@ -211,8 +211,8 @@ impl FolderBuilder {
     }
     
     /// Set the name of the folder
-    pub fn name(&mut self, name: &String) -> &mut FolderBuilder {
-        self.name = Some(name.clone());
+    pub fn name(&mut self, name: &str) -> &mut FolderBuilder {
+        self.name = Some(name.to_owned());
         self
     }
     
@@ -353,7 +353,7 @@ impl CsvRecordProducer for FolderList {
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         let mut records: Vec<Vec<String>> = Vec::new();
 
-        for (_, folder) in &self.folders {
+        for folder in self.folders.values() {
             records.push(folder.as_csv_records()[0].clone());
         }
 
@@ -363,7 +363,7 @@ impl CsvRecordProducer for FolderList {
     /// Generate CSV output with a header row
     fn to_csv_with_header(&self) -> Result<String, FormattingError> {
         let mut wtr = Writer::from_writer(vec![]);
-        wtr.write_record(&Self::csv_header())
+        wtr.write_record(Self::csv_header())
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
         
         // Sort records by folder name
@@ -376,8 +376,8 @@ impl CsvRecordProducer for FolderList {
         }
         let data = wtr.into_inner()
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
-        Ok(String::from_utf8(data)
-            .map_err(|e| FormattingError::Utf8Error(e))?)
+        String::from_utf8(data)
+            .map_err(FormattingError::Utf8Error)
     }
     
     /// Generate CSV output without a header row
@@ -394,8 +394,8 @@ impl CsvRecordProducer for FolderList {
         }
         let data = wtr.into_inner()
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
-        Ok(String::from_utf8(data)
-            .map_err(|e| FormattingError::Utf8Error(e))?)
+        String::from_utf8(data)
+            .map_err(FormattingError::Utf8Error)
     }
 }
 
@@ -414,8 +414,8 @@ impl OutputFormatter for FolderList {
         match format {
             OutputFormat::Json => {
                 // convert to a simple vector for output, sorted by name
-                let mut folders: Vec<Folder> = self.folders.iter().map(|(_, f)| f.clone()).collect();
-                folders.sort_by(|a, b| a.name().cmp(&b.name()));
+                let mut folders: Vec<Folder> = self.folders.values().cloned().collect();
+                folders.sort_by_key(|a| a.name());
                 let json = serde_json::to_string_pretty(&folders);
                 match json {
                     Ok(json) => Ok(json),
@@ -430,8 +430,8 @@ impl OutputFormatter for FolderList {
                 // For folder list, tree format is the same as JSON
                 // In practice, tree format should be handled at the command level
                 // where we have access to the full hierarchy
-                let mut folders: Vec<Folder> = self.folders.iter().map(|(_, f)| f.clone()).collect();
-                folders.sort_by(|a, b| a.name().cmp(&b.name()));
+                let mut folders: Vec<Folder> = self.folders.values().cloned().collect();
+                folders.sort_by_key(|a| a.name());
                 let json = serde_json::to_string_pretty(&folders);
                 match json {
                     Ok(json) => Ok(json),
@@ -752,7 +752,7 @@ impl Asset {
     /// * `path` - The full path for this asset
     pub fn from_asset_response(asset_response: AssetResponse, path: String) -> Asset {
         // Extract the name from the path (last part after the last slash)
-        let name = asset_response.path.split('/').last().unwrap_or(&asset_response.path).to_string();
+        let name = asset_response.path.split('/').next_back().unwrap_or(&asset_response.path).to_string();
         
         Asset::new(
             Some(asset_response.id.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))),
@@ -970,7 +970,7 @@ impl AssetList {
     /// # Returns
     /// A vector containing all assets in the AssetList
     pub fn get_all_assets(&self) -> Vec<&Asset> {
-        self.assets.iter().map(|(_, asset)| asset).collect()
+        self.assets.values().collect()
     }
 }
 
@@ -1002,7 +1002,7 @@ impl CsvRecordProducer for AssetList {
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         let mut records: Vec<Vec<String>> = Vec::new();
 
-        for (_, asset) in &self.assets {
+        for asset in self.assets.values() {
             records.push(asset.as_csv_records()[0].clone());
         }
 
@@ -1025,8 +1025,8 @@ impl OutputFormatter for AssetList {
         match format {
             OutputFormat::Json => {
                 // convert to a simple vector for output and sort by path
-                let mut assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
-                assets.sort_by(|a, b| a.path().cmp(&b.path()));
+                let mut assets: Vec<Asset> = self.assets.values().cloned().collect();
+                assets.sort_by_key(|a| a.path());
                 let json = serde_json::to_string_pretty(&assets);
                 match json {
                     Ok(json) => Ok(json),
@@ -1036,7 +1036,7 @@ impl OutputFormatter for AssetList {
             OutputFormat::Csv => {
                 let buf = BufWriter::new(Vec::new());
                 let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&Self::csv_header()).unwrap();
+                wtr.write_record(Self::csv_header()).unwrap();
                 
                 // Sort records by asset path
                 let mut records = self.as_csv_records();
@@ -1059,8 +1059,8 @@ impl OutputFormatter for AssetList {
                 // In practice, tree format should be handled at the command level
                 // where we have access to the full hierarchy
                 // convert to a simple vector for output and sort by path
-                let mut assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
-                assets.sort_by(|a, b| a.path().cmp(&b.path()));
+                let mut assets: Vec<Asset> = self.assets.values().cloned().collect();
+                assets.sort_by_key(|a| a.path());
                 let json = serde_json::to_string_pretty(&assets);
                 match json {
                     Ok(json) => Ok(json),

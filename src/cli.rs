@@ -113,8 +113,19 @@ pub async fn execute_command(
     mut configuration: Configuration,
     _api: (), // We're using Physna V3 API directly
 ) -> Result<(), CliError> {
-    trace!("Executing CLI command");
     let commands = create_cli_commands();
+    
+    // Check for verbose flag and set up tracing level accordingly
+    if commands.get_flag("verbose") {
+        // Set tracing level to debug if verbose flag is present
+        std::env::set_var("RUST_LOG", "debug");
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .init();
+    }
+    
+    trace!("Executing CLI command");
+    trace!("Verbose mode enabled: {}", commands.get_flag("verbose"));
 
     match commands.subcommand() {
         // Tenant resource commands
@@ -238,7 +249,7 @@ pub async fn execute_command(
                                     let filtered_hierarchy = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
                                         trace!("Filtering hierarchy by path: {}", path);
                                         hierarchy.filter_by_path(path).unwrap_or_else(|| {
-                                            eprintln!("Warning: Folder path '{}' not found, showing full hierarchy", path);
+                                            tracing::warn!("Folder path '{}' not found, showing full hierarchy", path);
                                             hierarchy
                                         })
                                     } else {

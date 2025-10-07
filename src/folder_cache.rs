@@ -112,7 +112,7 @@ impl FolderCache {
         
         // Save to cache
         if let Err(e) = Self::save(tenant_id, &hierarchy) {
-            eprintln!("Warning: Failed to cache folder hierarchy: {}", e);
+            tracing::warn!("Failed to cache folder hierarchy: {}", e);
         }
         
         Ok(hierarchy)
@@ -138,7 +138,7 @@ impl FolderCache {
         
         // Save to cache
         if let Err(e) = Self::save(tenant_id, &hierarchy) {
-            eprintln!("Warning: Failed to cache folder hierarchy: {}", e);
+            tracing::warn!("Failed to cache folder hierarchy: {}", e);
         }
         
         Ok(hierarchy)

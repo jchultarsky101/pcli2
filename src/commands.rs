@@ -188,6 +188,14 @@ pub fn create_cli_commands() -> ArgMatches {
         .propagate_version(true)
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .arg(
+            Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .help("Enable verbose output for debugging"),
+        )
         .subcommand(
             // Tenant resource commands
             Command::new(COMMAND_TENANT)

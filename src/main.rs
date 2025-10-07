@@ -17,9 +17,11 @@ use configuration::{Configuration, ConfigurationError};
 use pcli2::{
     configuration,
 };
+use std::env;
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
+mod banner;
 mod cli;
 use cli::{execute_command, CliError};
 mod exit_codes;
@@ -68,6 +70,12 @@ impl MainError {
 /// * `Err(i32)` - If an error occurred, with the appropriate exit code for the error type
 #[tokio::main]
 async fn main() -> Result<(), i32> {
+    // Check if help is requested to show banner
+    let args: Vec<String> = env::args().collect();
+    if banner::has_help_flag(&args) {
+        banner::print_banner();
+    }
+
     // Initialize the logging subsystem
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())

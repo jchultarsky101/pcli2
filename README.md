@@ -17,62 +17,141 @@ Based on lessons learned from the previous version, we have developed a new and 
 - **Export/Import** functionality for data migration
 - **Context management** for working with multiple tenants
 
-## Quick Start
+## Getting Started
 
-### Installation
+### Prerequisites
 
-See the [Installation Guide](docs/installation.md) for detailed installation instructions.
+Before using PCLI2, you will need:
+- Your Physna tenant's API client credentials (client ID and client secret)
+- A system with Rust installed (for building from source) or the pre-built binary
+
+### Initial Setup
+
+1. **Get Your API Credentials**
+   - Log in to your Physna account
+   - Navigate to Settings → API Keys
+   - Create a new API key pair or use an existing one
+   - Note down your Client ID and Client Secret
+
+2. **Installation**
+   
+   See the [Installation Guide](docs/installation.md) for detailed installation instructions.
+   
+   ```bash
+   # Clone the repository
+   git clone https://github.com/physna/pcli2.git
+   cd pcli2
+   
+   # Build the project
+   cargo build --release
+   
+   # The executable will be located at target/release/pcli2
+   ```
+
+3. **Authentication Setup**
+   
+   Authenticate with your Physna tenant:
+   
+   ```bash
+   # Login with client credentials
+   pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+   ```
+   
+   You'll only need to do this once per session. The credentials are securely stored using your system's keychain.
+
+4. **Verify Setup**
+   
+   Test that everything is working:
+   
+   ```bash
+   # Verify authentication
+   pcli2 auth get
+   
+   # List available tenants to confirm connection
+   pcli2 tenant list --format json
+   
+   # Verify access to your tenant
+   pcli2 folder list --format tree
+   ```
+
+### Basic Commands to Try
+
+Once authenticated, try these basic commands to verify functionality:
 
 ```bash
-# Clone the repository
-git clone https://github.com/physna/pcli2.git
-cd pcli2
+# List all folders in your tenant (tree view)
+pcli2 folder list --format tree
 
-# Build the project
-cargo build --release
-
-# The executable will be located at target/release/pcli2
-```
-
-### Authentication
-
-Before using most commands, you need to authenticate with your Physna tenant:
-
-```bash
-# Login with client credentials
-pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
-
-# Verify authentication
-pcli2 auth get
-```
-
-### Basic Asset Operations
-
-```bash
 # List assets in the root folder
 pcli2 asset list
 
-# Create a new asset
-pcli2 asset create --file path/to/your/file.stl --path /Root/MyFolder/
+# Upload a test file (replace with your own file)
+pcli2 asset create --file /path/to/test/file.stl --path /Root/Test/
 
-# Get asset details
-pcli2 asset get --path /Root/MyFolder/MyAsset.stl
+# Get details about your test asset
+pcli2 asset get --path /Root/Test/file.stl
 
-# Delete an asset
-pcli2 asset delete --path /Root/MyFolder/MyAsset.stl
+# Find geometrically similar assets (if you have multiple assets)
+pcli2 asset geometric-match --path /Root/Test/file.stl --threshold 80.0
 ```
 
-### Geometric Matching
+### Configuration Management
 
-Find similar assets using PCLI2's powerful geometric matching:
+PCLI2 automatically manages configuration for you, but you can view and manage it:
 
 ```bash
-# Find matches for a single asset
-pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 85.0
+# View current configuration
+pcli2 config get
 
-# Find matches for all assets in a folder (parallel processing)
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --progress
+# View configuration file path
+pcli2 config get path
+
+# Set active tenant context
+pcli2 context set tenant
 ```
+
+### Working with Verbose Output
+
+For debugging purposes, you can enable verbose output:
+
+```bash
+# Enable verbose output for debugging
+pcli2 --verbose asset list
+
+# Or using the short form
+pcli2 -v asset list
+```
+
+### Next Steps
+
+Now that you're set up:
+
+1. **Explore your data**: Use `pcli2 folder list --format tree` to explore your folder structure
+2. **Upload assets**: Use `pcli2 asset create --file path/to/file --path /Destination/Folder/` to upload files
+3. **Find similar items**: Use geometric matching to discover duplicates or similar assets
+4. **Automate**: Combine PCLI2 commands in scripts for batch processing
+
+For detailed command references, see the [Commands](#commands) section below.
+
+### Troubleshooting
+
+If you encounter issues:
+
+1. **Authentication problems**: 
+   - Ensure your client credentials are correct
+   - Try logging out and back in: `pcli2 auth logout` followed by `pcli2 auth login`
+   
+2. **Permission issues**:
+   - Verify your API key has the necessary permissions
+   - Contact your Physna administrator if needed
+
+3. **Network issues**:
+   - Check your internet connection
+   - Verify that Physna's API endpoints are accessible from your network
+
+4. **For detailed debugging**:
+   - Use the `--verbose` flag to see more detailed logs
+   - Check the logs in your system's temporary directory if issues persist
 
 ## Documentation
 

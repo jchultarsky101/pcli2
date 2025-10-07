@@ -61,12 +61,18 @@ pub enum ApiError {
 /// - Comprehensive error handling with detailed error types
 /// 
 /// Usage example:
-/// ```rust
-/// let mut client = PhysnaApiClient::new()
-///     .with_access_token("your_access_token".to_string())
-///     .with_client_credentials("your_client_id".to_string(), "your_client_secret".to_string());
+/// ```no_run
+/// use pcli2::physna_v3::PhysnaApiClient;
 /// 
-/// let tenants = client.list_tenants().await?;
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let mut client = PhysnaApiClient::new()
+///         .with_access_token("your_access_token".to_string())
+///         .with_client_credentials("your_client_id".to_string(), "your_client_secret".to_string());
+///     
+///     let tenants = client.list_tenants().await?;
+///     Ok(())
+/// }
 /// ```
 #[derive(Clone)]
 pub struct PhysnaApiClient {
@@ -97,6 +103,8 @@ impl PhysnaApiClient {
     /// 
     /// # Example
     /// ```
+    /// use pcli2::physna_v3::PhysnaApiClient;
+    /// 
     /// let client = PhysnaApiClient::new();
     /// // Configure with your credentials
     /// let configured_client = client
@@ -785,9 +793,16 @@ impl PhysnaApiClient {
     ///                     including conflict errors if the asset already exists
     /// 
     /// # Example
-    /// ```
-    /// let asset = client.create_asset("tenant-uuid", "/path/to/file.stl", Some("/Root/MyFolder"), None).await?;
-    /// println!("Created asset with UUID: {}", asset.id);
+    /// ```no_run
+    /// use pcli2::physna_v3::PhysnaApiClient;
+    /// 
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let mut client = PhysnaApiClient::new();
+    ///     let asset = client.create_asset("tenant-uuid", "/path/to/file.stl", Some("/Root/MyFolder"), None).await?;
+    ///     println!("Created asset with UUID: {}", asset.id);
+    ///     Ok(())
+    /// }
     /// ```
     pub async fn create_asset(&mut self, tenant_id: &str, file_path: &str, folder_path: Option<&str>, folder_id: Option<&str>) -> Result<crate::model::AssetResponse, ApiError> {
         let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
@@ -1001,10 +1016,17 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - If there's an HTTP error, authentication issue, or other API error
     /// 
     /// # Example
-    /// ```
-    /// let matches = client.geometric_search("tenant-uuid", "asset-uuid", 85.0).await?;
-    /// for match_result in &matches.matches {
-    ///     println!("Found match: {} ({}% similar)", match_result.path(), match_result.score());
+    /// ```no_run
+    /// use pcli2::physna_v3::PhysnaApiClient;
+    /// 
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let mut client = PhysnaApiClient::new();
+    ///     let matches = client.geometric_search("tenant-uuid", "asset-uuid", 85.0).await?;
+    ///     for match_result in &matches.matches {
+    ///         println!("Found match: {} ({}% similar)", match_result.path(), match_result.score());
+    ///     }
+    ///     Ok(())
     /// }
     /// ```
     pub async fn geometric_search(&mut self, tenant_id: &str, asset_id: &str, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {

@@ -3,7 +3,7 @@ name = "pcli2"
 version = "0.1.0"
 edition = "2021"
 authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
-description = "CLI client utility to the Physna public API"
+description = "CLI client for the Physna public API - Advanced 3D Geometry Search and Analysis"
 
 [features]
 default = ["dev-keyring"]

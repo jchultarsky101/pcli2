@@ -55,8 +55,19 @@ pub enum ApiError {
 /// The client supports:
 /// - Automatic access token management with refresh on expiration
 /// - Client credentials for token refresh
-/// - Common HTTP operations (GET, POST, PUT, DELETE)
-/// - Automatic retry on authentication failures
+/// - Common HTTP operations (GET, POST, PUT, DELETE, PATCH)
+/// - Automatic retry on authentication failures (401/403)
+/// - Batch operations for efficient processing of multiple resources
+/// - Comprehensive error handling with detailed error types
+/// 
+/// Usage example:
+/// ```rust
+/// let mut client = PhysnaApiClient::new()
+///     .with_access_token("your_access_token".to_string())
+///     .with_client_credentials("your_client_id".to_string(), "your_client_secret".to_string());
+/// 
+/// let tenants = client.list_tenants().await?;
+/// ```
 #[derive(Clone)]
 pub struct PhysnaApiClient {
     /// Base URL for the Physna V3 API (e.g., "https://app-api.physna.com/v3")
@@ -79,10 +90,19 @@ impl PhysnaApiClient {
     /// - Default base URL: "https://app-api.physna.com/v3"
     /// - No access token (must be set with `with_access_token`)
     /// - No client credentials (must be set with `with_client_credentials`)
-    /// - Default HTTP client
+    /// - Default HTTP client with appropriate timeouts and headers
     /// 
     /// # Returns
-    /// A new `PhysnaApiClient` instance
+    /// A new `PhysnaApiClient` instance ready for configuration
+    /// 
+    /// # Example
+    /// ```
+    /// let client = PhysnaApiClient::new();
+    /// // Configure with your credentials
+    /// let configured_client = client
+    ///     .with_access_token("your_token".to_string())
+    ///     .with_client_credentials("client_id".to_string(), "client_secret".to_string());
+    /// ```
     pub fn new() -> Self {
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
@@ -199,10 +219,10 @@ impl PhysnaApiClient {
         let response = request.send().await?;
 
         // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
-        // We only retry on authentication errors, as other errors like 404 are not recoverable
-        // However, we should be more specific - a 403 might indicate a permission issue rather than
-        // an authentication issue, so we should only retry on 401 errors for token refresh
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        // We retry on both 401 and 403 as they can both indicate authentication issues
+        // A 401 clearly indicates an invalid token
+        // A 403 can also indicate an expired token in some cases
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED || response.status() == reqwest::StatusCode::FORBIDDEN {
             debug!("Received authentication error ({}), attempting token refresh", response.status());
             
             // Try to refresh the expired or invalid access token
@@ -299,6 +319,16 @@ impl PhysnaApiClient {
         B: serde::Serialize,
     {
         self.execute_request(|client| client.put(url).json(body)).await
+    }
+    
+    /// Generic method to build and execute PATCH requests
+    #[allow(dead_code)]
+    async fn patch<T, B>(&mut self, url: &str, body: &B) -> Result<T, ApiError>
+    where
+        T: serde::de::DeserializeOwned,
+        B: serde::Serialize,
+    {
+        self.execute_request(|client| client.patch(url).json(body)).await
     }
     
     /// Generic method to build and execute DELETE requests with automatic token refresh
@@ -587,30 +617,178 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(crate::model::AssetResponse)` - Successfully updated asset with new metadata
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn update_asset_metadata(&mut self, tenant_id: &str, asset_id: &str, metadata: &std::collections::HashMap<String, serde_json::Value>) -> Result<crate::model::AssetResponse, ApiError> {
+    pub async fn update_asset_metadata(&mut self, tenant_id: &str, asset_id: &str, metadata: &std::collections::HashMap<String, serde_json::Value>) -> Result<(), ApiError> {
         let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
         
         let body = serde_json::json!({
             "metadata": metadata
         });
         
-        self.put(&url, &body).await
+        // Log the request body for debugging
+        trace!("Updating asset metadata with JSON body: {}", serde_json::to_string_pretty(&body).unwrap_or_else(|_| "Unable to serialize body".to_string()));
+        
+        self.patch_no_response(&url, &body).await
+    }
+    
+    /// Create a new metadata field for a tenant
+    /// 
+    /// This method creates a new metadata field that can be used for assets in the specified tenant.
+    /// The field type is defaulted to "text" as specified.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `field_name` - The name of the metadata field to create
+    /// 
+    /// # Returns
+    /// * `Ok(serde_json::Value)` - Response from the API confirming the field was created
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn create_metadata_field(&mut self, tenant_id: &str, field_name: &str) -> Result<serde_json::Value, ApiError> {
+        let url = format!("{}/tenants/{}/metadata-fields", self.base_url, tenant_id);
+        
+        let body = serde_json::json!({
+            "name": field_name,
+            "type": "text"  // Default to text as specified
+        });
+        
+        self.post(&url, &body).await
+    }
+    
+    /// Generic method to build and execute PATCH requests that may return empty responses
+    /// 
+    /// This method is similar to the standard patch method but handles empty responses gracefully.
+    /// It's useful for API endpoints that return 204 No Content or empty bodies on success.
+    /// 
+    /// # Type Parameters
+    /// * `B` - The type of the request body (must implement `Serialize`)
+    /// 
+    /// # Arguments
+    /// * `url` - The URL to send the PATCH request to
+    /// * `body` - The request body to send with the PATCH request
+    /// 
+    /// # Returns
+    /// * `Ok(())` - Successfully executed request (empty response is considered success)
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    async fn patch_no_response<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
+    where
+        B: serde::Serialize,
+    {
+        self.execute_request_no_response(|client| client.patch(url).json(body)).await
+    }
+    
+    /// Generic method to execute requests that may return empty responses
+    /// 
+    /// This method is similar to execute_request but handles empty responses gracefully.
+    /// It's useful for API endpoints that return 204 No Content or empty bodies on success.
+    /// 
+    /// # Type Parameters
+    /// * `F` - A closure that builds the HTTP request
+    /// 
+    /// # Arguments
+    /// * `request_builder` - A closure that takes a `reqwest::Client` and returns a `RequestBuilder`
+    /// 
+    /// # Returns
+    /// * `Ok(())` - Successfully executed request (empty response is considered success)
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    async fn execute_request_no_response<F>(&mut self, request_builder: F) -> Result<(), ApiError>
+    where
+        F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+    {
+        // Build and execute the initial request
+        let mut request = request_builder(&self.http_client);
+        
+        // Add access token header if available for authentication
+        if let Some(token) = &self.access_token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+        
+        let response = request.send().await?;
+
+        // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
+        // We retry on both 401 and 403 as they can both indicate authentication issues
+        // A 401 clearly indicates an invalid token
+        // A 403 can also indicate an expired token in some cases
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED || response.status() == reqwest::StatusCode::FORBIDDEN {
+            debug!("Received authentication error ({}), attempting token refresh", response.status());
+            
+            // Try to refresh the expired or invalid access token
+            self.refresh_token().await?;
+            
+            // Retry the original request with the newly refreshed token
+            debug!("Retrying request with refreshed token");
+            let mut retry_request = request_builder(&self.http_client);
+            
+            // Add the refreshed access token to the retry request
+            if let Some(token) = &self.access_token {
+                retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
+            }
+            
+            let retry_response = retry_request.send().await?;
+            
+            // Check if the retry was successful
+            if retry_response.status().is_success() {
+                // For empty responses, we consider success as a successful update
+                Ok(())
+            } else {
+                // Retry failed - provide clear error information
+                let status = retry_response.status();
+                let error_text = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}", 
+                    response.status(), status, error_text);
+                Err(ApiError::RetryFailed(format!(
+                    "Original error: {}, Retry failed with status: {} and body: {}", 
+                    response.status(), status, error_text
+                )))
+            }
+        } else if response.status().is_success() {
+            // Initial request was successful - for empty responses, we consider this a success
+            Ok(())
+        } else {
+            // For all other errors, return the error status
+            Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+        }
+    }
+    
+    /// Get all metadata fields for a tenant
+    /// 
+    /// This method retrieves the list of all metadata fields defined for the specified tenant.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// 
+    /// # Returns
+    /// * `Ok(MetadataFieldListResponse)` - List of metadata fields for the tenant
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn get_metadata_fields(&mut self, tenant_id: &str) -> Result<crate::model::MetadataFieldListResponse, ApiError> {
+        let url = format!("{}/tenants/{}/metadata-fields", self.base_url, tenant_id);
+        
+        self.get(&url).await
     }
     
     /// Create a new asset by uploading a file
     /// 
     /// This method uploads a file as a new asset in the specified tenant.
-    /// The file is sent as multipart/form-data with the file content.
+    /// The file is sent as multipart/form-data with appropriate metadata.
+    /// 
+    /// The method handles automatic token refresh on authentication errors (401/403)
+    /// and includes retry logic for handling conflict errors that may occur when
+    /// the asset service is temporarily busy.
     /// 
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant where to create the asset
-    /// * `file_path` - The path to the file to upload
-    /// * `folder_path` - Optional folder path where to place the asset
-    /// * `folder_id` - Optional folder ID where to place the asset
+    /// * `file_path` - The local file system path to the file to upload
+    /// * `folder_path` - Optional folder path where to place the asset (e.g., "/Root/Folder/Subfolder")
+    /// * `folder_id` - Optional folder ID where to place the asset (takes precedence if both path and ID are provided)
     /// 
     /// # Returns
-    /// * `Ok(crate::model::AssetResponse)` - Successfully created asset details
-    /// * `Err(ApiError)` - HTTP error, IO error, or other error
+    /// * `Ok(crate::model::AssetResponse)` - Successfully created asset details from the API
+    /// * `Err(ApiError)` - If there's an HTTP error, IO error, authentication issue, or other API error
+    ///                     including conflict errors if the asset already exists
+    /// 
+    /// # Example
+    /// ```
+    /// let asset = client.create_asset("tenant-uuid", "/path/to/file.stl", Some("/Root/MyFolder"), None).await?;
+    /// println!("Created asset with UUID: {}", asset.id);
+    /// ```
     pub async fn create_asset(&mut self, tenant_id: &str, file_path: &str, folder_path: Option<&str>, folder_id: Option<&str>) -> Result<crate::model::AssetResponse, ApiError> {
         let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
         
@@ -806,15 +984,29 @@ impl PhysnaApiClient {
     /// Perform a geometric search for similar assets
     /// 
     /// This method searches for assets that are geometrically similar to the reference asset.
+    /// It uses Physna's advanced geometric matching algorithms to find assets with similar
+    /// shapes, regardless of orientation, scale, or position differences.
+    /// 
+    /// The method includes automatic retry logic for handling conflict errors (HTTP 409),
+    /// which can occur when the search service is temporarily busy.
     /// 
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the reference asset
-    /// * `asset_id` - The UUID of the reference asset
-    /// * `threshold` - The similarity threshold (0.00 to 100.00 as percentage)
+    /// * `asset_id` - The UUID of the reference asset to search for similar matches
+    /// * `threshold` - The similarity threshold as a percentage (0.00 to 100.00)
+    ///                Lower values return more matches, higher values return fewer but more similar matches
     /// 
     /// # Returns
-    /// * `Ok(crate::model::GeometricSearchResponse)` - The search results
-    /// * `Err(ApiError)` - HTTP error or other error
+    /// * `Ok(crate::model::GeometricSearchResponse)` - The search results containing similar assets
+    /// * `Err(ApiError)` - If there's an HTTP error, authentication issue, or other API error
+    /// 
+    /// # Example
+    /// ```
+    /// let matches = client.geometric_search("tenant-uuid", "asset-uuid", 85.0).await?;
+    /// for match_result in &matches.matches {
+    ///     println!("Found match: {} ({}% similar)", match_result.path(), match_result.score());
+    /// }
+    /// ```
     pub async fn geometric_search(&mut self, tenant_id: &str, asset_id: &str, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {
         trace!("Starting geometric search for tenant_id: {}, asset_id: {}, threshold: {}", tenant_id, asset_id, threshold);
         let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_id, asset_id);

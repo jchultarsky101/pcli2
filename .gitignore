@@ -21,8 +21,4 @@ Cargo.lock
 **/.DS_Store
 
 # Data directory for test files
-<<<<<<< HEAD
 data/
-=======
-data/
->>>>>>> 4d156de750cbb2b0a16d9bf8d2ea1a24fd8c3fbc

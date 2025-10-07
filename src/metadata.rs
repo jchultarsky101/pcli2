@@ -83,7 +83,11 @@ pub fn group_metadata_by_asset(entries: Vec<MetadataEntry>) -> HashMap<String, H
     grouped
 }
 
-/// Convert string metadata values to JSON values
+/// Convert string metadata values to JSON values with sanitization
+/// 
+/// This function converts string metadata values to appropriate JSON values,
+/// applying sanitization to handle special characters that might cause API issues.
+/// For now, all values are treated as strings to avoid type mismatch issues.
 /// 
 /// # Arguments
 /// * `metadata` - Map of metadata key-value pairs as strings
@@ -94,20 +98,34 @@ pub fn convert_metadata_to_json_values(metadata: &HashMap<String, String>) -> Ha
     let mut json_metadata: HashMap<String, Value> = HashMap::new();
     
     for (key, value) in metadata {
-        // Try to parse the value as a number first
-        if let Ok(number) = value.parse::<i64>() {
-            json_metadata.insert(key.clone(), Value::Number(number.into()));
-        } else if let Ok(number) = value.parse::<f64>() {
-            json_metadata.insert(key.clone(), Value::Number(serde_json::Number::from_f64(number).unwrap_or(serde_json::Number::from(0))));
-        } else if value.to_lowercase() == "true" {
-            json_metadata.insert(key.clone(), Value::Bool(true));
-        } else if value.to_lowercase() == "false" {
-            json_metadata.insert(key.clone(), Value::Bool(false));
-        } else {
-            // Treat as string
-            json_metadata.insert(key.clone(), Value::String(value.clone()));
-        }
+        // Sanitize the value to remove or replace problematic characters
+        let sanitized_value = sanitize_metadata_value(value);
+        
+        // For now, treat all values as strings to avoid type mismatch issues
+        // The API might be expecting string values for all metadata fields
+        json_metadata.insert(key.clone(), Value::String(sanitized_value));
     }
     
     json_metadata
+}
+
+/// Sanitize metadata values to handle special characters that might cause API issues
+/// 
+/// This function replaces or removes special characters that are known to cause issues
+/// with the Physna API, such as Unicode symbols that might not be properly encoded.
+/// 
+/// # Arguments
+/// * `value` - The metadata value to sanitize
+/// 
+/// # Returns
+/// * `String` - The sanitized metadata value
+fn sanitize_metadata_value(value: &str) -> String {
+    value
+        // Replace special Unicode characters with ASCII equivalents
+        .replace('Ø', "O")  // Diameter symbol
+        .replace('°', " deg")  // Degree symbol
+        .replace('″', "\"")  // Double prime (inch symbol)
+        .replace("…", "...")  // Ellipsis
+        // Keep other characters as they are
+        .to_string()
 }

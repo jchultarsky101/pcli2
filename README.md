@@ -90,29 +90,34 @@ The application uses a hierarchy of commands:
 ```
 pcli2
 ├── asset
-│   ├── create           Create a new asset by uploading a file
-│   ├── create-batch     Create multiple assets by uploading files matching a glob pattern
-│   ├── list             List all assets in a folder
-│   ├── get              Get asset details
-│   ├── delete           Delete an asset
-│   ├── geometric-match  Find geometrically similar assets for a single asset
+│   ├── create              Create a new asset by uploading a file
+│   ├── create-batch        Create multiple assets by uploading files matching a glob pattern
+│   ├── create-metadata-batch  Create metadata for multiple assets from a CSV file
+│   ├── list                List all assets in a folder
+│   ├── get                 Get asset details
+│   ├── update              Update an asset's metadata
+│   ├── delete              Delete an asset
+│   ├── geometric-match     Find geometrically similar assets for a single asset
 │   └── geometric-match-folder  Find geometrically similar assets for all assets in a folder
 ├── folder
 │   ├── create           Create a new folder
 │   ├── list             List all folders in a parent folder
 │   ├── get              Get folder details
-│   ├── delete           Delete a folder
-│   └── update           Update folder details
+│   ├── update           Update folder details
+│   └── delete           Delete a folder
 ├── tenant
+│   ├── create           Create a new tenant (not supported via API)
 │   ├── list             List all available tenants
-│   └── get              Get current tenant information
+│   ├── get              Get specific tenant details
+│   ├── update           Update tenant configuration (not supported via API)
+│   └── delete           Delete a tenant (not supported via API)
 ├── auth
 │   ├── login            Authenticate with client credentials
 │   ├── logout           Clear authentication tokens
 │   └── get              Get current authentication status
 ├── config
-│   ├── show             Show current configuration
-│   ├── set              Set configuration values
+│   ├── get              Get configuration details
+│   ├── list             List configuration
 │   ├── export           Export configuration to a file
 │   └── import           Import configuration from a file
 ├── context
@@ -120,6 +125,125 @@ pcli2
 │   ├── get              Get current context
 │   └── clear            Clear active context
 └── help                 Show help information
+```
+
+## Usage Examples
+
+### Authentication
+```bash
+# Login with client credentials
+pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+
+# Verify authentication
+pcli2 auth get --format json
+
+# Logout
+pcli2 auth logout
+```
+
+### Tenant Management
+```bash
+# List available tenants
+pcli2 tenant list --format json
+
+# Get details for a specific tenant
+pcli2 tenant get --id YOUR_TENANT_ID --format csv
+```
+
+### Folder Management
+```bash
+# List all folders in the default tenant
+pcli2 folder list --format tree
+
+# List folders in a specific tenant
+pcli2 folder list --tenant YOUR_TENANT_ID --format json
+
+# List subfolders under a specific path
+pcli2 folder list --path /Root/MyFolder --format csv
+
+# Create a new folder
+pcli2 folder create --name "New Folder" --tenant YOUR_TENANT_ID
+
+# Create a subfolder
+pcli2 folder create --name "Sub Folder" --parent-folder-id PARENT_FOLDER_UUID
+
+# Create a subfolder using path
+pcli2 folder create --name "Sub Folder" --path "/Root/Parent"
+
+# Get folder details
+pcli2 folder get --uuid FOLDER_UUID --format json
+
+# Delete a folder
+pcli2 folder delete --path "/Root/FolderToDelete"
+```
+
+### Asset Management
+```bash
+# List all assets in a folder
+pcli2 asset list --path "/Root/MyFolder" --format json
+
+# Upload a single asset
+pcli2 asset create --file /path/to/model.stl --path "/Root/Uploads" --format json
+
+# Upload multiple assets using glob pattern
+pcli2 asset create-batch --files "models/*.stl" --path "/Root/BatchUpload" --concurrent 10 --progress
+
+# Get asset details by path
+pcli2 asset get --path "/Root/MyFolder/model.stl" --format json
+
+# Get asset details by UUID
+pcli2 asset get --uuid ASSET_UUID --format csv
+
+# Update asset metadata
+pcli2 asset update --path "/Root/MyFolder/model.stl" --name "New Name" --format json
+
+# Delete an asset
+pcli2 asset delete --path "/Root/MyFolder/model.stl"
+
+# Delete an asset by UUID
+pcli2 asset delete --uuid ASSET_UUID
+```
+
+### Geometric Matching
+```bash
+# Find similar assets for a single reference asset
+pcli2 asset geometric-match --path "/Root/Reference/model.stl" --threshold 85.0 --format json
+
+# Find similar assets by UUID with different threshold
+pcli2 asset geometric-match --uuid ASSET_UUID --threshold 90.0 --format csv
+
+# Find similar assets for all assets in a folder with progress tracking
+pcli2 asset geometric-match-folder --path "/Root/SearchFolder/" --threshold 80.0 --concurrent 8 --progress --format json
+```
+
+### Context Management
+```bash
+# Set active tenant context interactively
+pcli2 context set tenant
+
+# Set active tenant context explicitly
+pcli2 context set tenant --name "My Tenant"
+
+# Get current context
+pcli2 context get --format json
+
+# Clear active context
+pcli2 context clear tenant
+```
+
+### Configuration Management
+```bash
+# Show current configuration
+pcli2 config get --format json
+
+# Show configuration file path
+pcli2 config get path
+
+# Export configuration
+pcli2 config export --output config.yaml
+
+# Import configuration
+pcli2 config import --input config.yaml
 ```
 
 ## Development

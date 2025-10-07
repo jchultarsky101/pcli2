@@ -2,6 +2,17 @@
 
 This guide will help you get started with PCLI2 quickly by walking through common tasks.
 
+## Table of Contents
+- [Installation](#installation)
+- [Authentication](#authentication)
+- [Basic Navigation](#basic-navigation)
+- [Working with Assets](#working-with-assets)
+- [Geometric Matching](#geometric-matching)
+- [Configuration](#configuration)
+- [Context Management](#context-management)
+- [Next Steps](#next-steps)
+- [Getting Help](#getting-help)
+
 ## Authentication
 
 Before using most PCLI2 commands, you need to authenticate with your Physna tenant:

@@ -3,6 +3,15 @@
 //! This module contains the main function that serves as the entry point
 //! for the CLI application. It handles initialization, configuration loading,
 //! command parsing, and error handling.
+//! 
+//! The application follows a layered architecture pattern:
+//! - main.rs: Entry point and application initialization
+//! - cli.rs: Command execution logic
+//! - commands.rs: Command definitions and parsing
+//! - physna_v3.rs: API client and communication layer  
+//! - model.rs: Data models and structures
+//! - auth.rs: Authentication handling
+//! - configuration.rs: Configuration management
 
 use configuration::{Configuration, ConfigurationError};
 use pcli2::{
@@ -44,15 +53,19 @@ impl MainError {
 /// Main entry point for the Physna CLI client application.
 /// 
 /// This function performs the following steps:
-/// 1. Initializes the logging subsystem using tracing
-/// 2. Loads the application configuration
-/// 3. Parses and executes the CLI command
-/// 4. Handles any errors and exits with appropriate exit codes
+/// 1. Initializes the logging subsystem using tracing with environment-filtered configuration
+/// 2. Loads the application configuration from persistent storage
+/// 3. Parses command-line arguments using the pre-defined command structure
+/// 4. Routes execution to the appropriate command handler based on user input
+/// 5. Handles any errors and exits with appropriate exit codes based on error types
+/// 
+/// The function uses structured error handling with the `MainError` enum to provide
+/// clear error categorization and appropriate exit codes based on error types.
 /// 
 /// # Returns
 /// 
-/// * `Ok(())` - If the command executed successfully
-/// * `Err(i32)` - If an error occurred, with the appropriate exit code
+/// * `Ok(())` - If the command executed successfully (exit code 0)
+/// * `Err(i32)` - If an error occurred, with the appropriate exit code for the error type
 #[tokio::main]
 async fn main() -> Result<(), i32> {
     // Initialize the logging subsystem

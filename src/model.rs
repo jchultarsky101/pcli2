@@ -1,9 +1,17 @@
 //! Data models for the Physna CLI client.
 //!
-//! This module contains all the data structures used in the application,
+//! This module contains all the data structures used throughout the application,
 //! including models for folders, assets, tenants, and API responses.
 //! It also includes implementations for formatting these models in
 //! various output formats like JSON, CSV, and tree representations.
+//! 
+//! The models follow a layered approach:
+//! - API response models (e.g., AssetResponse, FolderResponse) - direct mapping from API JSON
+//! - Internal models (e.g., Asset, Folder) - business logic models with additional functionality
+//! - Collection models (e.g., AssetList, FolderList) - collections of individual models
+//! 
+//! All models implement serialization/deserialization with serde,
+//! output formatting capabilities, and appropriate error handling.
 
 use crate::format::{
     CsvRecordProducer, FormattingError, JsonProducer, OutputFormat, OutputFormatter,
@@ -23,6 +31,31 @@ pub enum ModelError {
 }
 
 /// Represents a folder in the Physna system
+/// 
+/// This struct represents a folder entity in the Physna system with both
+/// internal tracking properties and API-related identifiers.
+/// 
+/// Folders form a hierarchical structure in Physna and can contain both
+/// subfolders and assets. The path property represents the full path to
+/// the folder from the root.
+/// 
+/// # Fields
+/// * `id` - Internal ID for the folder (optional, used for local tracking)
+/// * `uuid` - Unique identifier from the Physna API (required for API operations)
+/// * `name` - Display name of the folder
+/// * `path` - Full path of the folder in the hierarchy (e.g., "/Root/Parent/Child")
+/// 
+/// # Examples
+/// ```
+/// use pcli2::model::Folder;
+/// 
+/// let folder = Folder::new(
+///     Some(123), 
+///     Some("uuid-123".to_string()), 
+///     "My Folder".to_string(), 
+///     "/Root/My Folder".to_string()
+/// );
+/// ```
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Folder {
     /// Internal ID of the folder (optional)
@@ -689,6 +722,40 @@ pub struct PageData {
 // Asset models for Physna V3 API
 
 /// Represents an asset in the Physna system
+/// 
+/// This struct represents an asset entity in the Physna system with both
+/// internal tracking properties and API-related identifiers.
+/// 
+/// Assets are 3D models or other geometric files that can be stored in
+/// Physna folders and subjected to geometric analysis and matching.
+/// 
+/// # Fields
+/// * `id` - Internal ID for the asset (optional, derived from UUID hash for local tracking)
+/// * `uuid` - Unique identifier from the Physna API (required for API operations)
+/// * `name` - Display name of the asset (derived from the file name part of the path)
+/// * `path` - Full path of the asset in the folder hierarchy (e.g., "/Root/Folder/file.stl")
+/// * `file_size` - Size of the uploaded file in bytes (optional)
+/// * `file_type` - File type/extension (e.g., "stl", "step", "iges") (optional)
+/// * `processing_status` - Current processing status (e.g., "processed", "processing", "failed") (optional)
+/// * `created_at` - Creation timestamp (optional)
+/// * `updated_at` - Last update timestamp (optional)
+/// 
+/// # Examples
+/// ```
+/// use pcli2::model::Asset;
+/// 
+/// let asset = Asset::new(
+///     Some(456),
+///     Some("asset-uuid-456".to_string()),
+///     "model.stl".to_string(),
+///     "/Root/Models/model.stl".to_string(),
+///     Some(1024000), // 1MB
+///     Some("stl".to_string()),
+///     Some("processed".to_string()),
+///     None, // created_at
+///     None  // updated_at
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Asset {
     /// Internal ID of the asset (optional)
@@ -1268,6 +1335,26 @@ impl OutputFormatter for GeometricSearchResponse {
             OutputFormat::Tree => Ok(self.to_json()?), // For geometric search, tree format is the same as JSON
         }
     }
+}
+
+// Metadata field models for Physna V3 API
+
+/// Represents a metadata field definition
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataField {
+    /// The name of the metadata field
+    pub name: String,
+    /// The type of the metadata field (e.g., "text", "number", etc.)
+    #[serde(rename = "type")]
+    pub field_type: String,
+}
+
+/// Represents a response containing a list of metadata fields
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataFieldListResponse {
+    /// List of metadata fields
+    #[serde(rename = "metadataFields")]
+    pub metadata_fields: Vec<MetadataField>,
 }
 
 #[cfg(test)]

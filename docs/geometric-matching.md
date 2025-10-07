@@ -2,6 +2,27 @@
 
 PCLI2 provides powerful geometric matching capabilities to find similar assets in your Physna tenant. This feature leverages advanced algorithms to identify assets with similar geometries, regardless of their orientation, scale, or position.
 
+## Table of Contents
+- [Overview](#overview)
+- [Single Asset Matching](#single-asset-matching)
+- [Folder-Based Matching](#folder-based-matching)
+- [Threshold Settings](#threshold-settings)
+- [Performance Options](#performance-options)
+- [Error Handling](#error-handling)
+- [Best Practices](#best-practices)
+- [Advanced Usage](#advanced-usage)
+- [Troubleshooting](#troubleshooting)
+
+## Overview
+
+Geometric matching helps you:
+
+- Find duplicate or near-duplicate assets
+- Identify variations of the same part
+- Locate similar components across different projects
+- Reduce storage costs by identifying redundant assets
+- Improve design workflows by finding existing similar parts
+
 ## Overview
 
 Geometric matching helps you:

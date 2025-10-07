@@ -121,7 +121,8 @@ pub async fn execute_command(
         std::env::set_var("RUST_LOG", "debug");
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .init();
+            .try_init()
+            .ok(); // Silently handle if tracing is already initialized
     }
     
     trace!("Executing CLI command");

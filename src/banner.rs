@@ -4,12 +4,15 @@ use color_print::cprintln;
 pub fn print_banner() {
     cprintln!("<r>PCLI2</r> - Physna Command Line Interface v2\n");
     
-    // Print ASCII art spelling out "PCLI2" with gradient orange colors
-    cprintln!("<y>  PPPP   CCCC  L      III  2222 </y>");
-    cprintln!("<y>  P   P C      L       I      2 </y>");
-    cprintln!("<#FFA500>  PPPP  C      L       I   22  </#FFA500>");
-    cprintln!("<#FFA500>  P     C      L       I     2 </#FFA500>");
-    cprintln!("<#FF8C00>  P      CCCC  LLLLL  III  2222 </#FF8C00>");
+    // Print elegant ASCII art with a modern geometric design
+    cprintln!("<y>     ╔══════════════════════════════════════════════════════════════════╗</y>");
+    cprintln!("<#FFA500>     ║  ██████╗  ██████╗ ███████╗ ██████╗ ██████╗ ██████╗ ██╗  ██╗  ║</#FFA500>");
+    cprintln!("<#FFA500>     ║ ██╔════╝ ██╔═══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗╚██╗██╔╝  ║</#FFA500>");
+    cprintln!("<y>     ║ ███████╗ ██║   ██║█████╗  ██║     ██║   ██║██████╔╝ ╚███╔╝   ║</y>");
+    cprintln!("<y>     ║ ╚════██║ ██║   ██║██╔══╝  ██║     ██║   ██║██╔═══╝  ██╔██╗   ║</y>");
+    cprintln!("<#FF8C00>     ║ ███████║ ╚██████╔╝███████╗╚██████╗╚██████╔╝██║     ██╔╝ ██╗  ║</#FF8C00>");
+    cprintln!("<#FF8C00>     ║ ╚══════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝  ╚═╝  ║</#FF8C00>");
+    cprintln!("<y>     ╚══════════════════════════════════════════════════════════════════╝</y>");
     println!();
 }
 

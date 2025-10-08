@@ -432,11 +432,14 @@ impl PhysnaApiClient {
         
         // Build query parameters for pagination if provided
         let mut query_params = Vec::new();
-        if let Some(page) = page {
-            query_params.push(("page", page.to_string()));
+        let page_str = page.map(|p| p.to_string());
+        let per_page_str = per_page.map(|pp| pp.to_string());
+        
+        if let Some(ref page_val) = page_str {
+            query_params.push(("page", page_val.as_str()));
         }
-        if let Some(per_page) = per_page {
-            query_params.push(("per_page", per_page.to_string()));
+        if let Some(ref per_page_val) = per_page_str {
+            query_params.push(("per_page", per_page_val.as_str()));
         }
         
         // Add query parameters to URL if provided
@@ -450,6 +453,21 @@ impl PhysnaApiClient {
         self.get(&url).await
     }
     
+    /// List folders in a specific parent folder with optional pagination
+    /// 
+    /// This method lists folders that have a specific parent folder, allowing
+    /// for efficient traversal of the folder hierarchy without fetching all folders.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `parent_folder_id` - The ID of the parent folder (None for root level)
+    /// * `page` - Page number for pagination (optional)
+    /// * `per_page` - Number of items per page for pagination (optional)
+    /// 
+    /// # Returns
+    /// * `Ok(FolderListResponse)` - List of folders in the parent
+    /// * `Err(ApiError)` - If there was an error during API calls
+    
     /// Get details for a specific folder by ID
     /// 
     /// This method fetches detailed information about a specific folder by its ID.
@@ -458,6 +476,50 @@ impl PhysnaApiClient {
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the folder
     /// * `folder_id` - The UUID of the folder to retrieve
+    
+    /// List folders in a specific parent folder with optional pagination
+    /// 
+    /// This method lists folders that have a specific parent folder, allowing
+    /// for efficient traversal of the folder hierarchy without fetching all folders.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `parent_folder_id` - The ID of the parent folder (None for root level)
+    /// * `page` - Page number for pagination (optional)
+    /// * `per_page` - Number of items per page for pagination (optional)
+    /// 
+    /// # Returns
+    /// * `Ok(FolderListResponse)` - List of folders in the parent
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn list_folders_in_parent(&mut self, tenant_id: &str, parent_folder_id: Option<&str>, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders", self.base_url, tenant_id);
+        
+        // Build query parameters for parent filtering, pagination
+        let mut query_params = vec![("contentType", "folders")];
+        if let Some(parent_id) = parent_folder_id {
+            query_params.push(("parentFolderId", parent_id));
+        }
+        
+        // Store page and per_page as strings to avoid temporary value issues
+        let page_str = page.map(|p| p.to_string());
+        let per_page_str = per_page.map(|pp| pp.to_string());
+        
+        if let Some(ref page_val) = page_str {
+            query_params.push(("page", page_val.as_str()));
+        }
+        if let Some(ref per_page_val) = per_page_str {
+            query_params.push(("per_page", per_page_val.as_str()));
+        }
+        
+        // Add query parameters to URL if provided
+        let query_string = serde_urlencoded::to_string(&query_params).unwrap();
+        let url = format!("{}?{}", url, query_string);
+        
+        trace!("Making API call to list folders in parent: {}", url);
+        self.get(&url).await
+    }
+    
+
     /// 
     /// # Returns
     /// * `Ok(FolderResponse)` - Successfully fetched folder details
@@ -562,6 +624,290 @@ impl PhysnaApiClient {
         };
         
         self.get(&url).await
+    }
+    
+    /// List assets in a specific folder by folder ID
+    /// 
+    /// This method lists assets that are contained in a specific folder using the 
+    /// /tenants/{tenantId}/folders/{folderId}/contents endpoint with contentType=assets.
+    /// This is the efficient way to list assets in a specific folder, unlike the
+    /// list_assets method which fetches all assets in the tenant.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `folder_id` - The ID of the folder to list assets from
+    /// * `page` - Page number for pagination (optional)
+    /// * `per_page` - Number of items per page for pagination (optional)
+    /// 
+    /// # Returns
+    /// * `Ok(AssetListResponse)` - List of assets in the folder
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn list_assets_in_folder(&mut self, tenant_id: &str, folder_id: &str, page: Option<u32>, per_page: Option<u32>) -> Result<crate::model::AssetListResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders/{}/contents", self.base_url, tenant_id, folder_id);
+        
+        // Build query parameters
+        let mut query_params = vec![("contentType", "assets")];
+        
+        // Store page and per_page as strings to avoid temporary value issues
+        let page_str = page.map(|p| p.to_string());
+        let per_page_str = per_page.map(|pp| pp.to_string());
+        
+        if let Some(ref page_val) = page_str {
+            query_params.push(("page", page_val.as_str()));
+        }
+        if let Some(ref per_page_val) = per_page_str {
+            query_params.push(("per_page", per_page_val.as_str()));
+        }
+        
+        // Add query parameters to URL
+        let query_string = serde_urlencoded::to_string(&query_params).unwrap();
+        let url = format!("{}?{}", url, query_string);
+        
+        self.get(&url).await
+    }
+    
+    /// Get the folder ID for a given path by traversing the folder structure efficiently
+    /// 
+    /// This method efficiently resolves a folder path to its corresponding folder ID
+    /// by using the root/content and folderId/contents API endpoints, with content filtering.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `folder_path` - The path to resolve (e.g., "Root/Child/Grandchild" or "/Root/Child/Grandchild")
+    /// 
+    /// # Returns
+    /// * `Ok(Some(String))` - The folder ID if found
+    /// * `Ok(None)` - If the path doesn't exist
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn get_folder_id_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<Option<String>, ApiError> {
+        trace!("Resolving folder path: {} for tenant: {}", folder_path, tenant_id);
+        
+        // Normalize path by removing leading slash
+        // Treat both "path" and "/path" as equivalent (absolute from root)
+        let normalized_path = folder_path.strip_prefix('/').unwrap_or(folder_path);
+        trace!("Normalized path: '{}' (original: '{}')", normalized_path, folder_path);
+        
+        if normalized_path.is_empty() {
+            // For root path (empty or just "/"), get root contents
+            let root_response = self.get_root_contents(tenant_id, "folders", Some(1), Some(1000)).await?;
+            if root_response.folders.len() == 1 {
+                return Ok(Some(root_response.folders[0].id.clone()));
+            } else if root_response.folders.is_empty() {
+                return Ok(None); // No root folders
+            } else {
+                // Multiple root folders - return the first one
+                return Ok(Some(root_response.folders[0].id.clone()));
+            }
+        }
+        
+        // Split the path into components
+        let path_parts: Vec<&str> = normalized_path
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .collect();
+        
+        // Start with root level
+        let mut current_folder_id: Option<String> = None;
+        let mut current_path_index = 0;
+        
+        while current_path_index < path_parts.len() {
+            let target_name = path_parts[current_path_index];
+            trace!("Looking for folder '{}' at index {} (current parent: {:?})", target_name, current_path_index, current_folder_id);
+            
+            // Get contents of current folder, filtered to folders only
+            let child_folders = if current_folder_id.is_none() {
+                // Root level - use get_root_contents
+                trace!("Getting root contents for tenant: {}", tenant_id);
+                match self.get_root_contents(tenant_id, "folders", Some(1), Some(1000)).await {
+                    Ok(root_response) => {
+                        trace!("Got {} folders at root level", root_response.folders.len());
+                        for folder in &root_response.folders {
+                            trace!("  Root folder: '{}' (id: {})", folder.name, folder.id);
+                        }
+                        root_response.folders
+                    }
+                    Err(e) => {
+                        trace!("Failed to get root contents: {}", e);
+                        return Ok(None); // Return None to indicate path not found
+                    }
+                }
+            } else {
+                // Subfolder level - use get_folder_contents
+                trace!("Getting folder contents for folder: {}", current_folder_id.as_ref().unwrap());
+                match self.get_folder_contents(tenant_id, &current_folder_id.as_ref().unwrap(), "folders", Some(1), Some(1000)).await {
+                    Ok(folder_response) => {
+                        trace!("Got {} folders in folder {}", folder_response.folders.len(), current_folder_id.as_ref().unwrap());
+                        for folder in &folder_response.folders {
+                            trace!("  Subfolder: '{}' (id: {})", folder.name, folder.id);
+                        }
+                        folder_response.folders
+                    }
+                    Err(e) => {
+                        trace!("Failed to get folder contents: {}", e);
+                        return Ok(None); // Return None to indicate path not found
+                    }
+                }
+            };
+            
+            trace!("Found {} child folders at this level", child_folders.len());
+            for folder in &child_folders {
+                trace!("  Child folder: '{}' (id: {})", folder.name, folder.id);
+            }
+            
+            // Find the folder with the target name
+            let target_folder = child_folders.iter()
+                .find(|folder| folder.name == target_name);
+            
+            if let Some(folder) = target_folder {
+                trace!("Found target folder: '{}' (id: {})", folder.name, folder.id);
+                if current_path_index == path_parts.len() - 1 {
+                    // This is the final component, return its ID
+                    trace!("This is the final component, returning ID: {}", folder.id);
+                    return Ok(Some(folder.id.clone()));
+                } else {
+                    // Move to this folder as the parent for the next iteration
+                    trace!("Moving to next level with parent ID: {}", folder.id);
+                    current_folder_id = Some(folder.id.clone());
+                    current_path_index += 1;
+                }
+            } else {
+                // Folder not found in the path
+                trace!("Folder '{}' not found in path: {}", target_name, normalized_path);
+                return Ok(None);
+            }
+        }
+        
+        Ok(None)
+    }
+    
+    /// List folders in a specific parent folder
+    /// 
+    /// This method lists folders that have a specific parent folder, allowing
+    /// for efficient traversal of the folder hierarchy without fetching all folders.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `parent_folder_id` - The ID of the parent folder (None for root level)
+    /// * `page` - Page number for pagination (optional)
+    /// * `per_page` - Number of items per page for pagination (optional)
+    /// 
+    /// # Returns
+    /// * `Ok(FolderListResponse)` - List of folders in the parent
+    /// * `Err(ApiError)` - If there was an error during API calls
+    
+    /// Get contents of root folder by tenant ID, filtered by content type
+    /// 
+    /// This method gets contents of the root folder with a specific content type (folders only, assets only, or all).
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `content_type` - The type of content to return ("all", "assets", "folders")
+    /// * `page` - Page number for pagination (optional)
+    /// * `per_page` - Number of items per page for pagination (optional)
+    /// 
+    /// # Returns
+    /// * `Ok(FolderListResponse)` - List of contents in the root folder
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn get_root_contents(&mut self, tenant_id: &str, content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
+        // Use list_folders_in_parent with None parent to get root contents
+        self.list_folders_in_parent(tenant_id, None, page, per_page).await
+    }
+    
+    /// Get contents of a specific folder by ID, filtered by content type
+    /// 
+    /// This method gets contents of a specific folder with a specific content type (folders only, assets only, or all).
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `folder_id` - The ID of the folder to get contents from
+    /// * `content_type` - The type of content to return ("all", "assets", "folders")
+    /// * `page` - Page number for pagination (optional)
+    /// * `per_page` - Number of items per page for pagination (optional)
+    /// 
+    /// # Returns
+    /// * `Ok(FolderListResponse)` - List of contents in the folder
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn get_folder_contents(&mut self, tenant_id: &str, folder_id: &str, content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders/{}/contents", self.base_url, tenant_id, folder_id);
+        
+        // Build query parameters
+        let mut query_params = vec![("contentType", content_type)];
+        
+        // Store page and per_page as strings to avoid temporary value issues
+        let page_str = page.map(|p| p.to_string());
+        let per_page_str = per_page.map(|pp| pp.to_string());
+        
+        if let Some(ref page_val) = page_str {
+            query_params.push(("page", page_val.as_str()));
+        }
+        if let Some(ref per_page_val) = per_page_str {
+            query_params.push(("per_page", per_page_val.as_str()));
+        }
+        
+        // Add query parameters to URL
+        let query_string = serde_urlencoded::to_string(&query_params).unwrap();
+        let url = format!("{}?{}", url, query_string);
+        
+        self.get(&url).await
+    }
+    
+    /// List assets in a specific folder by path
+    /// 
+    /// This method efficiently lists assets in a specific folder by first
+    /// resolving the folder path to a folder ID and then listing assets in that folder.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `folder_path` - The path of the folder to list assets from
+    /// 
+    /// # Returns
+    /// * `Ok(AssetListResponse)` - List of assets in the folder
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn list_assets_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<crate::model::AssetListResponse, ApiError> {
+        trace!("Listing assets by path: {} for tenant: {}", folder_path, tenant_id);
+        
+        let folder_id = match self.get_folder_id_by_path(tenant_id, folder_path).await {
+            Ok(Some(id)) => id,
+            Ok(None) | Err(_) => {
+                return Err(ApiError::ConflictError(format!("Folder path '{}' not found", folder_path)));
+            }
+        };
+        
+        // Now list assets in this specific folder using the efficient API endpoint
+        self.list_assets_in_folder(tenant_id, &folder_id, Some(1), Some(1000)).await
+    }
+    
+    /// Get contents (both folders and assets) of a specific folder path
+    /// 
+    /// This method efficiently gets both subfolders and assets within a specific folder
+    /// by first resolving the path and then making separate API calls for each.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `folder_path` - The path of the folder to get contents from
+    /// 
+    /// # Returns
+    /// * `Ok((Vec<FolderResponse>, Vec<AssetResponse>))` - Folders and assets in the folder
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn get_folder_contents_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<(Vec<crate::model::FolderResponse>, Vec<crate::model::AssetResponse>), ApiError> {
+        trace!("Getting contents by path: {} for tenant: {}", folder_path, tenant_id);
+        
+        let folder_id = match self.get_folder_id_by_path(tenant_id, folder_path).await {
+            Ok(Some(id)) => id,
+            Ok(None) | Err(_) => {
+                return Err(ApiError::ConflictError(format!("Folder path '{}' not found", folder_path)));
+            }
+        };
+        
+        // Get subfolders in the folder using the more efficient content API
+        let subfolders_response = self.get_folder_contents(tenant_id, &folder_id, "folders", Some(1), Some(1000)).await?;
+        let subfolders = subfolders_response.folders;
+        
+        // Get assets in the folder
+        let assets_response = self.list_assets(tenant_id, Some(folder_id), Some(1), Some(1000)).await?;
+        let assets = assets_response.assets;
+        
+        Ok((subfolders, assets))
     }
     
     /// Get details for a specific asset by ID

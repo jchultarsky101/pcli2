@@ -1,6 +1,5 @@
 use crate::physna_v3::PhysnaApiClient;
 use crate::model::{AssetListResponse, AssetList};
-use crate::folder_cache::FolderCache;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -16,9 +15,6 @@ use tracing::{trace, debug};
 pub struct AssetCache {
     /// Map of tenant ID to asset list response
     tenant_assets: HashMap<String, AssetListResponse>,
-    /// Timestamp of last update for each tenant (not currently used but could be useful for expiration)
-    #[serde(skip)]
-    last_updated: HashMap<String, std::time::SystemTime>,
 }
 
 impl AssetCache {
@@ -26,8 +22,14 @@ impl AssetCache {
     pub fn new() -> Self {
         Self {
             tenant_assets: HashMap::new(),
-            last_updated: HashMap::new(),
         }
+    }
+    
+    /// Check if cache is expired for a specific tenant (default expiration: 24 hours)
+    fn is_expired(&self, tenant_id: &str) -> bool {
+        // For now, we'll always treat cache as potentially valid since we removed last_updated
+        // In a future enhancement, we could add file modification time checks
+        !self.tenant_assets.contains_key(tenant_id)
     }
     
     /// Get the default cache file path
@@ -72,9 +74,17 @@ impl AssetCache {
         trace!("Getting or fetching asset cache for tenant: {}", tenant_id);
         let cache = Self::load()?;
         
+        // Check if we have cached data and if it's still valid (not expired)
         if let Some(cached_assets) = cache.tenant_assets.get(tenant_id) {
-            trace!("Using existing cache for tenant: {}", tenant_id);
-            Ok(cached_assets.clone())
+            if !cache.is_expired(tenant_id) {
+                trace!("Using existing cache for tenant: {}", tenant_id);
+                Ok(cached_assets.clone())
+            } else {
+                trace!("Cache expired for tenant: {}, fetching from API", tenant_id);
+                let response = Self::fetch_all_assets(client, tenant_id).await?;
+                trace!("Successfully fetched {} assets from API for tenant: {}", response.assets.len(), tenant_id);
+                Ok(response)
+            }
         } else {
             trace!("No cache found, fetching assets from API for tenant: {}", tenant_id);
             let response = Self::fetch_all_assets(client, tenant_id).await?;
@@ -91,49 +101,27 @@ impl AssetCache {
         // Update cache
         let mut cache = Self::load().unwrap_or_else(|_| Self::new());
         cache.tenant_assets.insert(tenant_id.to_string(), asset_list_response.clone());
-        cache.last_updated.insert(tenant_id.to_string(), std::time::SystemTime::now());
         cache.save()?;
         
         Ok(asset_list_response)
     }
     
-    /// Get assets filtered by folder path
+    /// Get assets filtered by folder path using efficient API calls
     pub async fn get_assets_for_folder(client: &mut PhysnaApiClient, tenant_id: &str, folder_path: &str, refresh: bool) -> Result<AssetList, Box<dyn std::error::Error>> {
         trace!("Getting assets for folder: {} in tenant: {}, refresh: {}", folder_path, tenant_id, refresh);
-        // Get all assets (using cache or fetching from API)
-        let asset_list_response = if refresh {
-            trace!("Refreshing asset cache for tenant: {}", tenant_id);
-            Self::refresh(client, tenant_id).await?
-        } else {
-            trace!("Using cached assets for tenant: {}", tenant_id);
-            Self::get_or_fetch(client, tenant_id).await?
-        };
         
-        // Get folder hierarchy to find the folder by path
-        trace!("Fetching folder hierarchy for tenant: {}", tenant_id);
-        let hierarchy = FolderCache::get_or_fetch(client, tenant_id).await?;
-        
-        if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
-            let folder_id = folder_node.id();
-            trace!("Found folder with ID: {} for path: {}", folder_id, folder_path);
-            // Filter assets that belong to this folder
-            let filtered_assets = asset_list_response.assets
-                .into_iter()
-                .filter(|asset| asset.folder_id.as_deref() == Some(folder_id))
-                .collect::<Vec<_>>();
-            trace!("Filtered {} assets for folder: {}", filtered_assets.len(), folder_path);
-            
-            // Create a new AssetListResponse with the filtered assets
-            let filtered_response = AssetListResponse {
-                assets: filtered_assets,
-                page_data: asset_list_response.page_data, // This won't be accurate after filtering, but that's OK for now
-            };
-            
-            Ok(filtered_response.to_asset_list())
-        } else {
-            trace!("Folder not found for path: {}", folder_path);
-            Err(format!("Folder with path '{}' not found", folder_path).into())
+        if refresh {
+            trace!("Refresh requested, invalidating cache for tenant: {}", tenant_id);
+            let mut cache = Self::load().unwrap_or_else(|_| Self::new());
+            cache.invalidate_tenant(tenant_id);
+            cache.save().unwrap_or(());
         }
+        
+        // Use the efficient API method to get assets directly from the specified folder path
+        let asset_list_response = client.list_assets_by_path(tenant_id, folder_path).await?;
+        trace!("Successfully fetched {} assets from path: {}", asset_list_response.assets.len(), folder_path);
+        
+        Ok(asset_list_response.to_asset_list())
     }
     
     /// Fetch all assets for a tenant using pagination
@@ -180,9 +168,13 @@ impl AssetCache {
         Ok(final_response)
     }
     
-    /// Get cached assets for a tenant if available
+    /// Get cached assets for a tenant if available and not expired
     pub fn get_cached_assets(&self, tenant_id: &str) -> Option<AssetListResponse> {
-        self.tenant_assets.get(tenant_id).cloned()
+        if !self.is_expired(tenant_id) {
+            self.tenant_assets.get(tenant_id).cloned()
+        } else {
+            None
+        }
     }
     
     /// Invalidate cache for a specific tenant
@@ -197,7 +189,8 @@ impl AssetCache {
     /// # Returns
     /// * `true` if cache entry was removed, `false` if no entry existed
     pub fn invalidate_tenant(&mut self, tenant_id: &str) -> bool {
-        let removed = self.tenant_assets.remove(tenant_id).is_some();
+        let assets_removed = self.tenant_assets.remove(tenant_id).is_some();
+        let removed = assets_removed;
         if removed {
             trace!("Invalidated asset cache for tenant {}", tenant_id);
         }

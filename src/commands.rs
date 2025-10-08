@@ -41,13 +41,11 @@ pub const COMMAND_LOGIN: &str = "login";
 /// Command name for logout operations
 pub const COMMAND_LOGOUT: &str = "logout";
 
-// Config commands
-/// Command name for configuration operations
-pub const COMMAND_CONFIG: &str = "config";
-/// Command name for exporting configuration
-pub const COMMAND_EXPORT: &str = "export";
-/// Command name for importing configuration
-pub const COMMAND_IMPORT: &str = "import";
+// Cache commands
+/// Command name for cache operations
+pub const COMMAND_CACHE: &str = "cache";
+/// Command name for purging cache
+pub const COMMAND_PURGE: &str = "purge";
 
 // Context commands
 /// Command name for context operations
@@ -56,6 +54,14 @@ pub const COMMAND_CONTEXT: &str = "context";
 pub const COMMAND_SET: &str = "set";
 /// Command name for clearing context
 pub const COMMAND_CLEAR: &str = "clear";
+
+// Config commands
+/// Command name for configuration operations
+pub const COMMAND_CONFIG: &str = "config";
+/// Command name for exporting configuration
+pub const COMMAND_EXPORT: &str = "export";
+/// Command name for importing configuration
+pub const COMMAND_IMPORT: &str = "import";
 
 // Parameter names
 /// Parameter name for output format
@@ -268,6 +274,14 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .action(clap::ArgAction::SetTrue)
                                 .required(false)
                                 .help("Force refresh folder cache data from API"),
+                        )
+                        .arg(
+                            Arg::new("recursive")
+                                .short('R')
+                                .long("recursive")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Recursively list all subfolders (default: false for CSV/JSON, true for tree)"),
                         ),
                 )
                 
@@ -529,6 +543,18 @@ pub fn create_cli_commands() -> ArgMatches {
                         .subcommand(
                             Command::new("tenant").about("Clear active tenant"),
                         ),
+                ),
+        )
+        .subcommand(
+            // Cache commands
+            Command::new(COMMAND_CACHE)
+                .about("Cache management")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_PURGE)
+                        .about("Purge all cached data")
+                        .long_about("Delete all cached data including folder hierarchies and asset lists. \
+                                    This is useful for clearing stale cache data or preparing for uninstallation."),
                 ),
         )
         .subcommand(

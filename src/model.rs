@@ -90,7 +90,7 @@ impl Folder {
     pub fn from_folder_response(folder_response: FolderResponse, path: String) -> Folder {
         Folder { 
             id: None, 
-            uuid: Some(folder_response.id), 
+            uuid: Some(folder_response.id.into()), 
             name: folder_response.name, 
             path 
         }
@@ -625,7 +625,8 @@ pub struct SingleAssetResponse {
 /// Represents an asset list response from the Physna V3 API
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetListResponse {
-    /// The list of assets
+    /// The list of assets (can be named either "assets" or "contents" in API responses)
+    #[serde(alias = "contents")]
     pub assets: Vec<AssetResponse>,
     /// Pagination data
     #[serde(rename = "pageData")]
@@ -673,7 +674,8 @@ pub struct SingleFolderResponse {
 /// Represents a folder list response from the Physna V3 API
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FolderListResponse {
-    /// The list of folders
+    /// The list of folders (can be named either "folders" or "contents" in API responses)
+    #[serde(alias = "contents")]
     pub folders: Vec<FolderResponse>,
     /// Pagination data
     #[serde(rename = "pageData")]

@@ -16,6 +16,7 @@
 use configuration::{Configuration, ConfigurationError};
 use pcli2::{
     configuration,
+    error_utils,
 };
 use std::env;
 use thiserror::Error;
@@ -81,11 +82,19 @@ async fn main() -> Result<(), i32> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
+    // Clean expired cache files in the background (don't wait for it)
+    // This helps prevent the cache from growing indefinitely
+    let _cache_cleanup = tokio::spawn(async {
+        if let Err(e) = pcli2::folder_cache::FolderCache::clean_expired() {
+            tracing::warn!("Failed to clean expired folder cache: {}", e);
+        }
+    });
+
     // Get the configuration
     let configuration = match Configuration::load_default() {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("ERROR: Configuration error: {}", e);
+            error_utils::report_error_with_message(&e, "Configuration error occurred");
             return Err(PcliExitCode::ConfigError.code());
         }
     };
@@ -100,7 +109,7 @@ async fn main() -> Result<(), i32> {
             Ok(())
         },
         Err(e) => {
-            eprintln!("ERROR: {}", e);
+            error_utils::report_error(&e);
             let main_error = MainError::CliError(e);
             Err(main_error.exit_code())
         }

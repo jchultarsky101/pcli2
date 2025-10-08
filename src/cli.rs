@@ -16,8 +16,9 @@ use pcli2::commands::{
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
     PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
 };
+use pcli2::error_utils;
 use pcli2::exit_codes::PcliExitCode;
-use pcli2::model::{Asset, Folder, FolderGeometricMatch, FolderGeometricMatchResponse};
+use pcli2::model::{Asset, Folder, FolderGeometricMatch, FolderGeometricMatchResponse, FolderList};
 use pcli2::auth::AuthClient;
 use pcli2::physna_v3::ApiError;
 use std::time::Duration;
@@ -176,8 +177,7 @@ pub async fn execute_command(
                                     Ok(())
                                 }
                                 Err(e) => {
-                                    error!("Error fetching tenants: {}", e);
-                                    eprintln!("Error fetching tenants: {}", e);
+                                    error_utils::report_error(&e);
                                     Ok(())
                                 }
                             }
@@ -235,48 +235,121 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Build the folder hierarchy to get proper paths for all folders
-                            let result = if refresh_requested {
-                                trace!("Refresh requested, forcing API fetch");
-                                FolderCache::refresh(&mut client, &tenant).await
-                            } else {
-                                trace!("Using cache or fetching from API");
-                                FolderCache::get_or_fetch(&mut client, &tenant).await
-                            };
-                            
-                            match result {
-                                Ok(hierarchy) => {
-                                    // If a path is specified, filter the hierarchy to show only that subtree
-                                    let filtered_hierarchy = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
-                                        trace!("Filtering hierarchy by path: {}", path);
-                                        hierarchy.filter_by_path(path).unwrap_or_else(|| {
-                                            tracing::warn!("Folder path '{}' not found, showing full hierarchy", path);
-                                            hierarchy
-                                        })
-                                    } else {
-                                        hierarchy
-                                    };
-                                    
-                                    // If tree format is requested, display the hierarchical tree structure
-                                    if format == OutputFormat::Tree {
-                                        filtered_hierarchy.print_tree();
-                                        Ok(())
-                                    } else {
-                                        // For other formats (JSON, CSV), convert to folder list with paths
-                                        let folder_list = filtered_hierarchy.to_folder_list();
-                                        match folder_list.format(format) {
-                                            Ok(output) => {
-                                                println!("{}", output);
-                                                Ok(())
-                                            }
-                                            Err(e) => Err(CliError::FormattingError(e)),
-                                        }
+                            // Check if a specific path is provided
+                            if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                trace!("Listing folders for specific path: {} (refresh: {})", path, refresh_requested);
+                                
+                                if refresh_requested {
+                                    // If refresh requested, clear the cache for this tenant
+                                    if let Err(e) = FolderCache::invalidate(&tenant) {
+                                        debug!("Failed to invalidate folder cache: {}", e);
                                     }
                                 }
-                                Err(e) => {
-                                    error!("Error building folder hierarchy: {}", e);
-                                    eprintln!("Error building folder hierarchy: {}", e);
-                                    Ok(())
+                                
+                                // Build the folder hierarchy to get proper paths for all folders
+                                let result = if refresh_requested {
+                                    trace!("Refresh requested, forcing API fetch");
+                                    FolderCache::refresh(&mut client, &tenant).await
+                                } else {
+                                    trace!("Using cache or fetching from API");
+                                    FolderCache::get_or_fetch(&mut client, &tenant).await
+                                };
+                                
+                                match result {
+                                    Ok(hierarchy) => {
+                                        // If a path is specified, filter the hierarchy to show only that subtree
+                                        let filtered_hierarchy = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                            trace!("Filtering hierarchy by path: {}", path);
+                                            hierarchy.filter_by_path(path).unwrap_or_else(|| {
+                                                tracing::warn!("Folder path '{}' not found, showing full hierarchy", path);
+                                                hierarchy
+                                            })
+                                        } else {
+                                            hierarchy
+                                        };
+                                        
+                                        // If tree format is requested, display the hierarchical tree structure
+                                        if format == OutputFormat::Tree {
+                                            filtered_hierarchy.print_tree();
+                                            Ok(())
+                                        } else {
+                                            // For other formats (JSON, CSV), check if recursive is requested
+                                            let recursive_requested = sub_matches.get_flag("recursive");
+                                            
+                                            // Convert to folder list with only direct children if not recursive
+                                            let folder_list = if recursive_requested {
+                                                // Recursive - show all folders in the hierarchy (existing behavior)
+                                                filtered_hierarchy.to_folder_list()
+                                            } else {
+                                                // Non-recursive - show only direct children of the specified path
+                                                // In the filtered hierarchy, the root folders are the ones we want to show
+                                                // But we need to get their actual children, not the folders themselves
+                                                let mut direct_children_list = FolderList::empty();
+                                                
+                                                // For each root node in the filtered hierarchy, get its actual children
+                                                for root_id in &filtered_hierarchy.root_ids {
+                                                    if let Some(root_node) = filtered_hierarchy.nodes.get(root_id) {
+                                                        // Get the actual children of this root node
+                                                        for child_id in &root_node.children {
+                                                            if let Some(child_node) = filtered_hierarchy.nodes.get(child_id) {
+                                                                let child_path = filtered_hierarchy.get_path_for_folder(child_id).unwrap_or_else(|| child_node.name().to_string());
+                                                                let child_folder = Folder::from_folder_response(child_node.folder.clone(), child_path);
+                                                                direct_children_list.insert(child_folder);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                direct_children_list
+                                            };
+                                            
+                                            match folder_list.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error_utils::report_error(&e);
+                                        Ok(())
+                                    }
+                                }
+                            } else {
+                                // No specific path - list all root folders (still need hierarchy for full listing)
+                                trace!("Listing all folders for tenant: {} (refresh: {})", &tenant, refresh_requested);
+                                
+                                let result = if refresh_requested {
+                                    trace!("Refresh requested, forcing API fetch");
+                                    FolderCache::refresh(&mut client, &tenant).await
+                                } else {
+                                    trace!("Using cache or fetching from API");
+                                    FolderCache::get_or_fetch(&mut client, &tenant).await
+                                };
+                                
+                                match result {
+                                    Ok(hierarchy) => {
+                                        // If tree format is requested, display the hierarchical tree structure
+                                        if format == OutputFormat::Tree {
+                                            hierarchy.print_tree();
+                                            Ok(())
+                                        } else {
+                                            // For other formats (JSON, CSV), convert to folder list with paths
+                                            let folder_list = hierarchy.to_folder_list();
+                                            match folder_list.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error_utils::report_error(&e);
+                                        Ok(())
+                                    }
                                 }
                             }
                         }
@@ -285,7 +358,7 @@ pub async fn execute_command(
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&e);
                             Ok(())
                         }
                     }
@@ -383,8 +456,7 @@ pub async fn execute_command(
                                     }
                                 }
                                 Err(e) => {
-                                    error!("Error fetching folder: {}", e);
-                                    eprintln!("Error fetching folder: {}", e);
+                                    error_utils::report_error(&e);
                                     Ok(())
                                 }
                             }
@@ -508,8 +580,7 @@ pub async fn execute_command(
                                     }
                                 }
                                 Err(e) => {
-                                    error!("Error creating folder: {}", e);
-                                    eprintln!("Error creating folder: {}", e);
+                                    error_utils::report_error(&e);
                                     Ok(())
                                 }
                             }
@@ -1038,8 +1109,7 @@ pub async fn execute_command(
                                             }
                                         }
                                         Err(e) => {
-                                            error!("Error during batch processing: {}", e);
-                                            eprintln!("Error during batch processing: {}", e);
+                                            error_utils::report_error(&e);
                                             Ok(())
                                         }
                                     }
@@ -1987,7 +2057,7 @@ pub async fn execute_command(
                                             }
                                         }
                                         Err(e) => {
-                                            eprintln!("Error fetching tenants: {}", e);
+                                            error_utils::report_error(&e);
                                             Ok(())
                                         }
                                     }
@@ -2055,6 +2125,29 @@ pub async fn execute_command(
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
+                ))),
+            }
+        }
+        // Cache commands
+        Some((_command_cache, _sub_matches)) => {
+            match _sub_matches.subcommand() {
+                Some((_command_purge, _)) => {
+                    trace!("Executing cache purge command");
+                    
+                    // Purge all cached data
+                    match FolderCache::purge_all() {
+                        Ok(_) => {
+                            println!("Successfully purged all cached data");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&e);
+                            Ok(())
+                        }
+                    }
+                }
+                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                    _sub_matches,
                 ))),
             }
         }

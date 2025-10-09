@@ -808,7 +808,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderListResponse)` - List of contents in the root folder
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_root_contents(&mut self, tenant_id: &str, content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
+    pub async fn get_root_contents(&mut self, tenant_id: &str, _content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
         // Use list_folders_in_parent with None parent to get root contents
         self.list_folders_in_parent(tenant_id, None, page, per_page).await
     }

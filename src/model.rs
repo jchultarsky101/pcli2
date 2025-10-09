@@ -745,6 +745,9 @@ pub struct PageData {
 /// # Examples
 /// ```
 /// use pcli2::model::Asset;
+/// use std::collections::HashMap;
+/// 
+/// let metadata: Option<HashMap<String, serde_json::Value>> = None;
 /// 
 /// let asset = Asset::new(
 ///     Some(456),
@@ -755,7 +758,8 @@ pub struct PageData {
 ///     Some("stl".to_string()),
 ///     Some("processed".to_string()),
 ///     None, // created_at
-///     None  // updated_at
+///     None,  // updated_at
+///     metadata  // metadata
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -785,6 +789,9 @@ pub struct Asset {
     /// Last update timestamp of the asset (optional)
     #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
     updated_at: Option<String>,
+    /// Metadata associated with the asset (key-value pairs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 impl Asset {
@@ -800,7 +807,8 @@ impl Asset {
     /// * `processing_status` - Optional processing status of the asset
     /// * `created_at` - Optional creation timestamp of the asset
     /// * `updated_at` - Optional last update timestamp of the asset
-    pub fn new(id: Option<u32>, uuid: Option<String>, name: String, path: String, file_size: Option<u64>, file_type: Option<String>, processing_status: Option<String>, created_at: Option<String>, updated_at: Option<String>) -> Asset {
+    /// * `metadata` - Optional metadata key-value pairs for the asset
+    pub fn new(id: Option<u32>, uuid: Option<String>, name: String, path: String, file_size: Option<u64>, file_type: Option<String>, processing_status: Option<String>, created_at: Option<String>, updated_at: Option<String>, metadata: Option<std::collections::HashMap<String, serde_json::Value>>) -> Asset {
         Asset {
             id,
             uuid,
@@ -811,6 +819,7 @@ impl Asset {
             processing_status,
             created_at,
             updated_at,
+            metadata,
         }
     }
     
@@ -833,6 +842,7 @@ impl Asset {
             Some(asset_response.state),
             Some(asset_response.created_at),
             Some(asset_response.updated_at),
+            Some(asset_response.metadata),
         )
     }
 
@@ -894,6 +904,11 @@ impl Asset {
     pub fn updated_at(&self) -> Option<&String> {
         self.updated_at.as_ref()
     }
+    
+    /// Get the metadata of the asset
+    pub fn metadata(&self) -> Option<&std::collections::HashMap<String, serde_json::Value>> {
+        self.metadata.as_ref()
+    }
 }
 
 impl CsvRecordProducer for Asset {
@@ -911,6 +926,33 @@ impl CsvRecordProducer for Asset {
             self.processing_status().cloned().unwrap_or_default(),
             self.uuid().cloned().unwrap_or_default()
         ]]
+    }
+    
+    /// Get the extended CSV header row for Asset records including metadata
+    fn csv_header_with_metadata() -> Vec<String> {
+        let header = Self::csv_header();
+        // We'll add metadata columns dynamically when we know what metadata keys exist
+        header
+    }
+    
+    /// Convert the Asset to CSV records including metadata
+    fn as_csv_records_with_metadata(&self) -> Vec<Vec<String>> {
+        let record = vec![
+            self.name(), 
+            self.path(), 
+            self.file_type().cloned().unwrap_or_default(),
+            self.processing_status().cloned().unwrap_or_default(),
+            self.uuid().cloned().unwrap_or_default()
+        ];
+        
+        // Add metadata values if they exist
+        if let Some(_metadata) = self.metadata() {
+            // We'll need to collect all unique metadata keys when building the CSV
+            // For now, we just return the basic record without metadata columns
+            // The metadata will be added when building the full CSV with dynamic columns
+        }
+        
+        vec![record]
     }
 }
 
@@ -1040,6 +1082,123 @@ impl AssetList {
     /// A vector containing all assets in the AssetList
     pub fn get_all_assets(&self) -> Vec<&Asset> {
         self.assets.values().collect()
+    }
+    
+    /// Format the AssetList according to the specified output format with optional metadata
+    /// 
+    /// This method extends the standard format method to allow including metadata in the output.
+    /// For JSON output, metadata is always included if present.
+    /// For CSV output, metadata columns are added dynamically when include_metadata is true.
+    /// 
+    /// # Arguments
+    /// * `format` - The output format to use (JSON, CSV, or Tree)
+    /// * `include_metadata` - Whether to include metadata fields in the output (default: false)
+    /// 
+    /// # Returns
+    /// * `Ok(String)` - The formatted output
+    /// * `Err(FormattingError)` - If formatting fails
+    pub fn format_with_metadata(&self, format: OutputFormat, include_metadata: bool) -> Result<String, FormattingError> {
+        if include_metadata && format == OutputFormat::Csv {
+            // For CSV with metadata, we need to collect all unique metadata keys first
+            let mut metadata_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+            
+            // Collect all unique metadata keys
+            for asset in self.assets.values() {
+                if let Some(metadata) = asset.metadata() {
+                    for key in metadata.keys() {
+                        metadata_keys.insert(key.clone());
+                    }
+                }
+            }
+            
+            // Convert to sorted vector for consistent column ordering
+            let mut sorted_metadata_keys: Vec<String> = metadata_keys.into_iter().collect();
+            sorted_metadata_keys.sort();
+            
+            // Build CSV with metadata columns
+            let buf = BufWriter::new(Vec::new());
+            let mut wtr = Writer::from_writer(buf);
+            
+            // Build header with metadata columns
+            let mut header = Asset::csv_header();
+            for key in &sorted_metadata_keys {
+                header.push(key.clone());
+            }
+            wtr.write_record(&header).unwrap();
+            
+            // Sort records by asset path
+            let mut records = self.as_csv_records_with_metadata(&sorted_metadata_keys);
+            records.sort_by(|a, b| a[1].cmp(&b[1])); // Sort by PATH column (index 1)
+            
+            for record in records {
+                wtr.write_record(&record).unwrap();
+            }
+            
+            match wtr.flush() {
+                Ok(_) => {
+                    let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
+                    let csv = String::from_utf8(bytes).unwrap();
+                    Ok(csv.clone())
+                }
+                Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+            }
+        } else {
+            // For non-CSV or when not including metadata, use standard format method
+            self.format(format)
+        }
+    }
+    
+    /// Convert the AssetList to CSV records including metadata
+    /// 
+    /// This method converts the AssetList to CSV records with additional metadata columns.
+    /// 
+    /// # Arguments
+    /// * `metadata_keys` - Sorted list of metadata keys to include as columns
+    /// 
+    /// # Returns
+    /// Vector of CSV records with metadata columns
+    fn as_csv_records_with_metadata(&self, metadata_keys: &[String]) -> Vec<Vec<String>> {
+        let mut records: Vec<Vec<String>> = Vec::new();
+        
+        for asset in self.assets.values() {
+            // Start with standard asset record
+            let mut record = vec![
+                asset.name(), 
+                asset.path(), 
+                asset.file_type().cloned().unwrap_or_default(),
+                asset.processing_status().cloned().unwrap_or_default(),
+                asset.uuid().cloned().unwrap_or_default()
+            ];
+            
+            // Add metadata values for each key
+            if let Some(_metadata) = asset.metadata() {
+                for key in metadata_keys {
+                    if let Some(value) = _metadata.get(key) {
+                        // Convert JSON value to string representation
+                        let value_str = match value {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            serde_json::Value::Null => String::new(),
+                            _ => value.to_string(), // For arrays and objects, use JSON string representation
+                        };
+                        record.push(value_str);
+                    } else {
+                        // No value for this key, add empty string
+                        record.push(String::new());
+                    }
+                }
+            } else {
+                // No metadata, add empty strings for all metadata columns
+                for _ in metadata_keys {
+                    record.push(String::new());
+                }
+            }
+            
+            records.push(record);
+        }
+        
+        records
     }
 }
 

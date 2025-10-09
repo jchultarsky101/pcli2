@@ -1402,6 +1402,9 @@ pub async fn execute_command(
                     // Check if refresh is requested
                     let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
                     
+                    // Check if metadata should be included
+                    let _include_metadata = sub_matches.get_flag("metadata");
+                    
                     // Try to get access token and list assets from Physna V3 API
                     let mut keyring = Keyring::default();
                     match keyring.get("default", "access-token".to_string()) {
@@ -1445,7 +1448,10 @@ pub async fn execute_command(
                                 }
                             };
                             
-                            match asset_list.format(format) {
+                            // Check if metadata should be included
+                            let _include_metadata = sub_matches.get_flag("metadata");
+                            
+                            match asset_list.format_with_metadata(format, _include_metadata) {
                                 Ok(output) => {
                                     println!("{}", output);
                                     Ok(())

@@ -421,6 +421,13 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .required(false)
                                 .help("Force refresh asset cache data from API"),
                         )
+                        .arg(
+                            Arg::new("metadata")
+                                .long("metadata")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Include metadata fields in the output (adds metadata columns for CSV, metadata object for JSON)"),
+                        )
                         .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(

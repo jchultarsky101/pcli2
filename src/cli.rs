@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use futures::StreamExt;
 use inquire::Select;
 use pcli2::commands::{
-    create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
+    create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CACHE, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
     COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, 
     COMMAND_TENANT, COMMAND_MATCH,
@@ -2135,7 +2135,7 @@ pub async fn execute_command(
             }
         }
         // Cache commands
-        Some((_command_cache, _sub_matches)) => {
+        Some((COMMAND_CACHE, _sub_matches)) => {
             match _sub_matches.subcommand() {
                 Some((_command_purge, _)) => {
                     trace!("Executing cache purge command");

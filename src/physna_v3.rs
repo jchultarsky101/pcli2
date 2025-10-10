@@ -680,7 +680,7 @@ impl PhysnaApiClient {
     /// * `Ok(None)` - If the path doesn't exist
     /// * `Err(ApiError)` - If there was an error during API calls
     pub async fn get_folder_id_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<Option<String>, ApiError> {
-        trace!("Resolving folder path: {} for tenant: {}", folder_path, tenant_id);
+        debug!("Resolving folder path: {} for tenant: {}", folder_path, tenant_id);
         
         // Normalize path by removing leading slash
         // Treat both "path" and "/path" as equivalent (absolute from root)
@@ -722,7 +722,7 @@ impl PhysnaApiClient {
                     Ok(root_response) => {
                         debug!("Got {} folders at root level", root_response.folders.len());
                         for folder in &root_response.folders {
-                            trace!("  Root folder: '{}' (id: {})", folder.name, folder.id);
+                            debug!("Root folder: '{}' (id: {})", folder.name, folder.id);
                         }
                         root_response.folders
                     }
@@ -749,9 +749,9 @@ impl PhysnaApiClient {
                 }
             };
             
-            trace!("Found {} child folders at this level", child_folders.len());
+            debug!("Found {} child folders at this level", child_folders.len());
             for folder in &child_folders {
-                trace!("  Child folder: '{}' (id: {})", folder.name, folder.id);
+                debug!("Child folder: '{}' (id: {})", folder.name, folder.id);
             }
             
             // Find the folder with the target name

@@ -150,6 +150,7 @@ pub fn create_cli_commands() -> ArgMatches {
         .help("Resource ID");
         
     let uuid_parameter = Arg::new(PARAMETER_UUID)
+        .short('u')
         .long(PARAMETER_UUID)
         .num_args(1)
         .required(false)
@@ -184,6 +185,7 @@ pub fn create_cli_commands() -> ArgMatches {
         .help("Parent folder ID for creating subfolders");
         
     let path_parameter = Arg::new(PARAMETER_PATH)
+        .short('p')
         .long(PARAMETER_PATH)
         .num_args(1)
         .required(false)
@@ -223,6 +225,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all tenants")
+                        .visible_alias("ls")
                         .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(
@@ -234,6 +237,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_DELETE)
                         .about("Delete a tenant")
+                        .visible_alias("rm")
                         .arg(id_parameter.clone()),
                 ),
         )
@@ -266,6 +270,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all folders")
+                        .visible_alias("ls")
                         .arg(tenant_parameter.clone())
                         .arg(format_parameter.clone())
                         .arg(path_parameter.clone())
@@ -290,6 +295,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_DELETE)
                         .about("Delete a folder")
+                        .visible_alias("rm")
                         .arg(tenant_parameter.clone())
                         .arg(uuid_parameter.clone())
                         .arg(path_parameter.clone()),
@@ -371,6 +377,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all assets in a folder")
+                        .visible_alias("ls")
                         .arg(tenant_parameter.clone())
                         .arg(path_parameter.clone())
                         .arg(
@@ -383,6 +390,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         )
                         .arg(
                             Arg::new("metadata")
+                                .short('m')
                                 .long("metadata")
                                 .action(clap::ArgAction::SetTrue)
                                 .required(false)
@@ -406,6 +414,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_DELETE)
                         .about("Delete an asset")
+                        .visible_alias("rm")
                         .arg(tenant_parameter.clone())
                         .arg(uuid_parameter.clone())
                         .arg(path_parameter.clone())
@@ -529,6 +538,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         .subcommand(
                             Command::new(COMMAND_DELETE)
                                 .about("Delete specific metadata fields from an asset")
+                                .visible_alias("rm")
                                 .arg(tenant_parameter.clone())
                                 .arg(uuid_parameter.clone())
                                 .arg(path_parameter.clone())
@@ -646,6 +656,7 @@ pub fn create_cli_commands() -> ArgMatches {
                 .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List configuration")
+                        .visible_alias("ls")
                         .arg(format_parameter.clone()),
                 )
                 .subcommand(

@@ -1721,11 +1721,11 @@ pub async fn execute_command(
                             let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
                             
                             // Get metadata keys from command line as comma-separated string
-                            let metadata_keys_str = sub_matches.get_one::<String>("metadata-keys")
-                                .ok_or(CliError::MissingRequiredArgument("metadata-keys".to_string()))?;
+                            let metadata_names = sub_matches.get_one::<String>("name")
+                                .ok_or(CliError::MissingRequiredArgument("name".to_string()))?;
                             
                             // Split the comma-separated string into a vector of keys
-                            let metadata_keys: Vec<&str> = metadata_keys_str.split(',').map(|s| s.trim()).collect();
+                            let metadata_names: Vec<&str> = metadata_names.split(',').map(|s| s.trim()).collect();
                             
                             let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                             let format = OutputFormat::from_str(&format_str).unwrap();
@@ -1780,7 +1780,7 @@ pub async fn execute_command(
                                         return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
                                     };
                                     
-                                    match client.delete_asset_metadata(&tenant, &asset_id, metadata_keys).await {
+                                    match client.delete_asset_metadata(&tenant, &asset_id, metadata_names).await {
                                         Ok(()) => {
                                             // If successful, try to get the updated asset to format output
                                             match client.get_asset(&tenant, &asset_id).await {

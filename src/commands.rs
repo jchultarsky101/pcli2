@@ -32,6 +32,8 @@ pub const COMMAND_UPDATE: &str = "update";
 pub const COMMAND_DELETE: &str = "delete";
 /// Command name for matching assets geometrically
 pub const COMMAND_MATCH: &str = "geometric-match";
+/// Command name for metadata operations
+pub const COMMAND_METADATA: &str = "metadata";
 
 // Auth commands
 /// Command name for authentication operations
@@ -365,49 +367,7 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .help("Display progress bar during upload"),
                         ),
                 )
-                .subcommand(
-                    Command::new("create-metadata-batch")
-                        .about("Create metadata for multiple assets from a CSV file")
-                        .long_about(
-                            "Create metadata for multiple assets from a CSV file.\n\n\
-                            The CSV file must have the following columns in the specified order:\n\
-                            - ASSET_PATH: The full path of the asset in Physna\n\
-                            - NAME: The name of the metadata field to set\n\
-                            - VALUE: The value to set for the metadata field\n\n\
-                            CSV File Requirements:\n\
-                            - The first row must contain the headers ASSET_PATH,NAME,VALUE\n\
-                            - The file must be UTF-8 encoded\n\
-                            - Values containing commas, quotes, or newlines must be enclosed in double quotes\n\
-                            - Empty rows will be ignored\n\
-                            - Each row represents a single metadata field assignment for an asset\n\n\
-                            If an asset has multiple metadata fields to update, include multiple rows \n\
-                            with the same ASSET_PATH but different NAME and VALUE combinations.\n\n\
-                            Example CSV format:\n\
-                            ASSET_PATH,NAME,VALUE\n\
-                            folder/subfolder/asset1.stl,Material,Steel\n\
-                            folder/subfolder/asset1.stl,Weight,\"15.5 kg\"\n\
-                            folder/subfolder/asset2.ipt,Material,Aluminum\n\n\
-                            The command will group metadata by asset path and update all metadata \
-                            for each asset in a single API call."
-                        )
-                        .arg(tenant_parameter.clone())
-                        .arg(
-                            Arg::new("csv-file")
-                                .long("csv-file")
-                                .num_args(1)
-                                .required(true)
-                                .help("Path to the CSV file containing metadata entries")
-                                .value_parser(clap::value_parser!(PathBuf)),
-                        )
-                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
-                        .arg(
-                            Arg::new("progress")
-                                .long("progress")
-                                .action(clap::ArgAction::SetTrue)
-                                .required(false)
-                                .help("Display progress bar during processing"),
-                        ),
-                )
+
                 .subcommand(
                     Command::new(COMMAND_LIST)
                         .about("List all assets in a folder")
@@ -522,6 +482,114 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .required(false)
                                 .help("Display progress bar during processing"),
                         )
+                )
+                .subcommand(
+                    // Metadata commands - subcommands for managing asset metadata
+                    Command::new(COMMAND_METADATA)
+                        .about("Manage asset metadata")
+                        .subcommand_required(true)
+                        .subcommand(
+                            Command::new(COMMAND_CREATE)
+                                .about("Add metadata to an asset")
+                                .arg(tenant_parameter.clone())
+                                .arg(uuid_parameter.clone())
+                                .arg(path_parameter.clone())
+                                .arg(
+                                    Arg::new("name")
+                                        .long("name")
+                                        .num_args(1)
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(String))
+                                        .help("Metadata property name")
+                                )
+                                .arg(
+                                    Arg::new("value")
+                                        .long("value")
+                                        .num_args(1)
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(String))
+                                        .help("Metadata property value")
+                                )
+                                .arg(
+                                    Arg::new("type")
+                                        .long("type")
+                                        .num_args(1)
+                                        .required(false)
+                                        .value_parser(["text", "number", "boolean"])
+                                        .default_value("text")
+                                        .help("Metadata field type (text, number, boolean) - default: text")
+                                )
+                                .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                                .group(clap::ArgGroup::new("asset_identifier")
+                                    .args([PARAMETER_UUID, PARAMETER_PATH])
+                                    .multiple(false)
+                                    .required(true)
+                                ),
+                        )
+                        .subcommand(
+                            Command::new(COMMAND_DELETE)
+                                .about("Delete specific metadata fields from an asset")
+                                .arg(tenant_parameter.clone())
+                                .arg(uuid_parameter.clone())
+                                .arg(path_parameter.clone())
+                                .arg(
+                                    Arg::new("metadata-keys")
+                                        .long("metadata-keys")
+                                        .num_args(1)
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(String))
+                                        .help("Comma-separated list of metadata keys to delete: key1,key2,key3")
+                                )
+                                .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                                .group(clap::ArgGroup::new("asset_identifier")
+                                    .args([PARAMETER_UUID, PARAMETER_PATH])
+                                    .multiple(false)
+                                    .required(true)
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("create-batch")
+                                .about("Create metadata for multiple assets from a CSV file")
+                                .long_about(
+                                    "Create metadata for multiple assets from a CSV file.\n\n\
+                                    The CSV file must have the following columns in the specified order:\n\
+                                    - ASSET_PATH: The full path of the asset in Physna\n\
+                                    - NAME: The name of the metadata field to set\n\
+                                    - VALUE: The value to set for the metadata field\n\n\
+                                    CSV File Requirements:\n\
+                                    - The first row must contain the headers ASSET_PATH,NAME,VALUE\n\
+                                    - The file must be UTF-8 encoded\n\
+                                    - Values containing commas, quotes, or newlines must be enclosed in double quotes\n\
+                                    - Empty rows will be ignored\n\
+                                    - Each row represents a single metadata field assignment for an asset\n\n\
+                                    If an asset has multiple metadata fields to update, include multiple rows \n\
+                                    with the same ASSET_PATH but different NAME and VALUE combinations.\n\n\
+                                    Example CSV format:\n\
+                                    ASSET_PATH,NAME,VALUE\n\
+                                    folder/subfolder/asset1.stl,Material,Steel\n\
+                                    folder/subfolder/asset1.stl,Weight,\"15.5 kg\"\n\
+                                    folder/subfolder/asset2.ipt,Material,Aluminum\n\n\
+                                    The command will group metadata by asset path and update all metadata \
+                                    for each asset in a single API call."
+                                )
+                                .arg(tenant_parameter.clone())
+                                .arg(
+                                    Arg::new("csv-file")
+                                        .long("csv-file")
+                                        .num_args(1)
+                                        .required(true)
+                                        .help("Path to the CSV file containing metadata entries")
+                                        .value_parser(clap::value_parser!(PathBuf)),
+                                )
+                                .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                                .arg(
+                                    Arg::new("progress")
+                                        .long("progress")
+                                        .action(clap::ArgAction::SetTrue)
+                                        .required(false)
+                                        .help("Display progress bar during processing"),
+                                ),
+                        ),
                 ),
         )
         .subcommand(

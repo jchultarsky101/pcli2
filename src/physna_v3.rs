@@ -720,7 +720,7 @@ impl PhysnaApiClient {
                 trace!("Getting root contents for tenant: {}", tenant_id);
                 match self.get_root_contents(tenant_id, "folders", Some(1), Some(1000)).await {
                     Ok(root_response) => {
-                        trace!("Got {} folders at root level", root_response.folders.len());
+                        debug!("Got {} folders at root level", root_response.folders.len());
                         for folder in &root_response.folders {
                             trace!("  Root folder: '{}' (id: {})", folder.name, folder.id);
                         }
@@ -759,20 +759,20 @@ impl PhysnaApiClient {
                 .find(|folder| folder.name == target_name);
             
             if let Some(folder) = target_folder {
-                trace!("Found target folder: '{}' (id: {})", folder.name, folder.id);
+                debug!("Found target folder: '{}' (id: {})", folder.name, folder.id);
                 if current_path_index == path_parts.len() - 1 {
                     // This is the final component, return its ID
-                    trace!("This is the final component, returning ID: {}", folder.id);
+                    debug!("This is the final component, returning ID: {}", folder.id);
                     return Ok(Some(folder.id.clone()));
                 } else {
                     // Move to this folder as the parent for the next iteration
-                    trace!("Moving to next level with parent ID: {}", folder.id);
+                    debug!("Moving to next level with parent ID: {}", folder.id);
                     current_folder_id = Some(folder.id.clone());
                     current_path_index += 1;
                 }
             } else {
                 // Folder not found in the path
-                trace!("Folder '{}' not found in path: {}", target_name, normalized_path);
+                debug!("Folder '{}' not found in path: {}", target_name, normalized_path);
                 return Ok(None);
             }
         }
@@ -864,7 +864,7 @@ impl PhysnaApiClient {
     /// * `Ok(AssetListResponse)` - List of assets in the folder
     /// * `Err(ApiError)` - If there was an error during API calls
     pub async fn list_assets_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<crate::model::AssetListResponse, ApiError> {
-        trace!("Listing assets by path: {} for tenant: {}", folder_path, tenant_id);
+        debug!("Listing assets by path: {} for tenant: {}", folder_path, tenant_id);
         
         let folder_id = match self.get_folder_id_by_path(tenant_id, folder_path).await {
             Ok(Some(id)) => id,
@@ -890,7 +890,7 @@ impl PhysnaApiClient {
     /// * `Ok((Vec<FolderResponse>, Vec<AssetResponse>))` - Folders and assets in the folder
     /// * `Err(ApiError)` - If there was an error during API calls
     pub async fn get_folder_contents_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<(Vec<crate::model::FolderResponse>, Vec<crate::model::AssetResponse>), ApiError> {
-        trace!("Getting contents by path: {} for tenant: {}", folder_path, tenant_id);
+        debug!("Getting contents by path: {} for tenant: {}", folder_path, tenant_id);
         
         let folder_id = match self.get_folder_id_by_path(tenant_id, folder_path).await {
             Ok(Some(id)) => id,
@@ -920,10 +920,10 @@ impl PhysnaApiClient {
     /// * `Ok(crate::model::AssetResponse)` - Successfully fetched asset details
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn get_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<crate::model::AssetResponse, ApiError> {
-        trace!("Getting asset details for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
+        debug!("Getting asset details for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
         let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
         let response: crate::model::SingleAssetResponse = self.get(&url).await?;
-        trace!("Successfully retrieved asset details for asset_id: {}", asset_id);
+        debug!("Successfully retrieved asset details for asset_id: {}", asset_id);
         Ok(response.asset)
     }
     
@@ -979,9 +979,34 @@ impl PhysnaApiClient {
         });
         
         // Log the request body for debugging
-        trace!("Updating asset metadata with JSON body: {}", serde_json::to_string_pretty(&body).unwrap_or_else(|_| "Unable to serialize body".to_string()));
+        debug!("Updating asset metadata with JSON body: {}", serde_json::to_string_pretty(&body).unwrap_or_else(|_| "Unable to serialize body".to_string()));
         
         self.patch_no_response(&url, &body).await
+    }
+    
+    /// Delete specific metadata fields from an asset
+    /// 
+    /// This method deletes specific metadata fields from the specified asset.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_id` - The UUID of the asset to update
+    /// * `metadata_keys` - A vector of metadata field names to delete
+    /// 
+    /// # Returns
+    /// * `Ok(())` - Successfully deleted metadata from the asset
+    /// * `Err(ApiError)` - HTTP error or other error occurred
+    pub async fn delete_asset_metadata(&mut self, tenant_id: &str, asset_id: &str, metadata_keys: Vec<&str>) -> Result<(), ApiError> {
+        let url = format!("{}/tenants/{}/assets/{}/metadata", self.base_url, tenant_id, asset_id);
+        
+        let body = serde_json::json!({
+            "metadata": metadata_keys
+        });
+        
+        // Log the request body for debugging
+        debug!("Deleting asset metadata with JSON body: {}", serde_json::to_string_pretty(&body).unwrap_or_else(|_| "Unable to serialize body".to_string()));
+        
+        self.delete_with_body(&url, &body).await
     }
     
     /// Create a new metadata field for a tenant
@@ -1027,6 +1052,28 @@ impl PhysnaApiClient {
         B: serde::Serialize,
     {
         self.execute_request_no_response(|client| client.patch(url).json(body)).await
+    }
+    
+    /// Generic method to build and execute DELETE requests that may have a request body and return empty responses
+    /// 
+    /// This method is similar to the standard delete method but allows request bodies for DELETE operations.
+    /// It's useful for API endpoints like deleting specific metadata that require a body.
+    /// 
+    /// # Type Parameters
+    /// * `B` - The type of the request body (must implement `Serialize`)
+    /// 
+    /// # Arguments
+    /// * `url` - The URL to send the DELETE request to
+    /// * `body` - The request body to send with the DELETE request
+    /// 
+    /// # Returns
+    /// * `Ok(())` - Successfully executed request (empty response is considered success)
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    async fn delete_with_body<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
+    where
+        B: serde::Serialize,
+    {
+        self.execute_request_no_response(|client| client.delete(url).json(body)).await
     }
     
     /// Generic method to execute requests that may return empty responses
@@ -1376,7 +1423,7 @@ impl PhysnaApiClient {
     /// }
     /// ```
     pub async fn geometric_search(&mut self, tenant_id: &str, asset_id: &str, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {
-        trace!("Starting geometric search for tenant_id: {}, asset_id: {}, threshold: {}", tenant_id, asset_id, threshold);
+        debug!("Starting geometric search for tenant_id: {}, asset_id: {}, threshold: {}", tenant_id, asset_id, threshold);
         let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_id, asset_id);
         
         // Build request body with the correct structure
@@ -1392,10 +1439,10 @@ impl PhysnaApiClient {
             "minThreshold": threshold  // Use threshold directly as percentage
         });
         
-        trace!("Sending geometric search request to: {}", url);
+        debug!("Sending geometric search request to: {}", url);
         // Execute POST request
         let result = self.post(&url, &body).await;
-        trace!("Geometric search completed for asset_id: {}", asset_id);
+        debug!("Geometric search completed for asset_id: {}", asset_id);
         result
     }
     

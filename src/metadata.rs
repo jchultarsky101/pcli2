@@ -83,11 +83,10 @@ pub fn group_metadata_by_asset(entries: Vec<MetadataEntry>) -> HashMap<String, H
     grouped
 }
 
-/// Convert string metadata values to JSON values with sanitization
+/// Convert metadata string values to appropriate JSON types
 /// 
-/// This function converts string metadata values to appropriate JSON values,
-/// applying sanitization to handle special characters that might cause API issues.
-/// For now, all values are treated as strings to avoid type mismatch issues.
+/// This function converts string metadata values to appropriate JSON types (string, number, boolean)
+/// based on the provided type information. For now, it treats all values as strings for compatibility.
 /// 
 /// # Arguments
 /// * `metadata` - Map of metadata key-value pairs as strings
@@ -107,6 +106,55 @@ pub fn convert_metadata_to_json_values(metadata: &HashMap<String, String>) -> Ha
     }
     
     json_metadata
+}
+
+/// Convert a single metadata value to appropriate JSON type based on the specified meta-type
+/// 
+/// This function converts a single metadata value to the appropriate JSON type based on the 
+/// provided metadata type (text, number, boolean), with proper sanitization.
+/// 
+/// # Arguments
+/// * `name` - The metadata property name
+/// * `value` - The metadata property value as string
+/// * `metadata_type` - The expected type ("text", "number", "boolean")
+/// 
+/// # Returns
+/// * `Value` - The converted JSON value
+pub fn convert_single_metadata_to_json_value(_name: &str, value: &str, metadata_type: &str) -> Value {
+    match metadata_type {
+        "number" => {
+            // Try to parse as number (integer or float)
+            if let Ok(int_val) = value.parse::<i64>() {
+                serde_json::Value::Number(serde_json::Number::from(int_val))
+            } else if let Ok(float_val) = value.parse::<f64>() {
+                if float_val.fract() == 0.0 {
+                    serde_json::Value::Number(serde_json::Number::from(float_val as i64))
+                } else {
+                    serde_json::Number::from_f64(float_val)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::String(value.to_string()))
+                }
+            } else {
+                serde_json::Value::String(value.to_string())
+            }
+        }
+        "boolean" => {
+            let bool_val = match value.to_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => true,
+                "false" | "0" | "no" | "off" => false,
+                _ => {
+                    // Try to parse as boolean string
+                    value.parse::<bool>().unwrap_or(false)
+                }
+            };
+            serde_json::Value::Bool(bool_val)
+        }
+        "text" | _ => {
+            // Default to text/string type, with sanitization
+            let sanitized_value = sanitize_metadata_value(value);
+            serde_json::Value::String(sanitized_value)
+        }
+    }
 }
 
 /// Sanitize metadata values to handle special characters that might cause API issues

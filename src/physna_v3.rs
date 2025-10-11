@@ -990,6 +990,12 @@ impl PhysnaApiClient {
     /// The metadata keys are sent as a direct array in the request body.
     /// 
     /// # Arguments
+    /// Delete specific metadata fields from an asset
+    /// 
+    /// This method deletes specific metadata fields from the specified asset.
+    /// The metadata keys are sent as an object with a "metadataFieldNames" array.
+    /// 
+    /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the asset
     /// * `asset_id` - The UUID of the asset to update
     /// * `metadata_keys` - A vector of metadata field names to delete
@@ -1000,24 +1006,16 @@ impl PhysnaApiClient {
     pub async fn delete_asset_metadata(&mut self, tenant_id: &str, asset_id: &str, metadata_keys: Vec<&str>) -> Result<(), ApiError> {
         let url = format!("{}/tenants/{}/assets/{}/metadata", self.base_url, tenant_id, asset_id);
         
-        // Send metadata keys as a direct array, not wrapped in a "metadata" object
-        let body = serde_json::Value::Array(
-            metadata_keys.iter().map(|key| serde_json::Value::String(key.to_string())).collect()
-        );
+        // Send metadata keys wrapped in "metadataFieldNames" object as required by API
+        let body = serde_json::json!({
+            "metadataFieldNames": metadata_keys
+        });
         
         // Log the request body for debugging
         debug!("Deleting asset metadata with JSON body: {}", serde_json::to_string_pretty(&body).unwrap_or_else(|_| "Unable to serialize body".to_string()));
         
         self.delete_with_body(&url, &body).await
     }
-    
-    /// Create a new metadata field for a tenant
-    /// 
-    /// This method creates a new metadata field that can be used for assets in the specified tenant.
-    /// The field type is defaulted to "text" as specified.
-    /// 
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
     /// * `field_name` - The name of the metadata field to create
     /// 
     /// # Returns

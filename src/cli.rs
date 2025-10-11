@@ -1720,12 +1720,12 @@ pub async fn execute_command(
                             let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
                             let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
                             
-                            // Get metadata keys from command line as comma-separated string
-                            let metadata_names = sub_matches.get_one::<String>("name")
-                                .ok_or(CliError::MissingRequiredArgument("name".to_string()))?;
-                            
-                            // Split the comma-separated string into a vector of keys
-                            let metadata_names: Vec<&str> = metadata_names.split(',').map(|s| s.trim()).collect();
+                            // Get metadata names from command line (can be multiple occurrences or comma-separated)
+                            let metadata_name_strings: Vec<String> = sub_matches.get_many::<String>("name")
+                                .ok_or(CliError::MissingRequiredArgument("name".to_string()))?
+                                .flat_map(|name_str| name_str.split(',').map(|s| s.trim().to_string()))
+                                .collect();
+                            let metadata_names: Vec<&str> = metadata_name_strings.iter().map(|s| s.as_str()).collect();
                             
                             let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                             let format = OutputFormat::from_str(&format_str).unwrap();

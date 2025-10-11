@@ -987,6 +987,7 @@ impl PhysnaApiClient {
     /// Delete specific metadata fields from an asset
     /// 
     /// This method deletes specific metadata fields from the specified asset.
+    /// The metadata keys are sent as a direct array in the request body.
     /// 
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the asset
@@ -999,9 +1000,10 @@ impl PhysnaApiClient {
     pub async fn delete_asset_metadata(&mut self, tenant_id: &str, asset_id: &str, metadata_keys: Vec<&str>) -> Result<(), ApiError> {
         let url = format!("{}/tenants/{}/assets/{}/metadata", self.base_url, tenant_id, asset_id);
         
-        let body = serde_json::json!({
-            "metadata": metadata_keys
-        });
+        // Send metadata keys as a direct array, not wrapped in a "metadata" object
+        let body = serde_json::Value::Array(
+            metadata_keys.iter().map(|key| serde_json::Value::String(key.to_string())).collect()
+        );
         
         // Log the request body for debugging
         debug!("Deleting asset metadata with JSON body: {}", serde_json::to_string_pretty(&body).unwrap_or_else(|_| "Unable to serialize body".to_string()));

@@ -17,62 +17,141 @@ Based on lessons learned from the previous version, we have developed a new and 
 - **Export/Import** functionality for data migration
 - **Context management** for working with multiple tenants
 
-## Quick Start
+## Getting Started
 
-### Installation
+### Prerequisites
 
-See the [Installation Guide](docs/installation.md) for detailed installation instructions.
+Before using PCLI2, you will need:
+- Your Physna tenant's API client credentials (client ID and client secret)
+- A system with Rust installed (for building from source) or the pre-built binary
+
+### Initial Setup
+
+1. **Get Your API Credentials**
+   - Log in to your Physna account
+   - Navigate to Settings → API Keys
+   - Create a new API key pair or use an existing one
+   - Note down your Client ID and Client Secret
+
+2. **Installation**
+   
+   See the [Installation Guide](docs/installation.md) for detailed installation instructions.
+   
+   ```bash
+   # Clone the repository
+   git clone https://github.com/physna/pcli2.git
+   cd pcli2
+   
+   # Build the project
+   cargo build --release
+   
+   # The executable will be located at target/release/pcli2
+   ```
+
+3. **Authentication Setup**
+   
+   Authenticate with your Physna tenant:
+   
+   ```bash
+   # Login with client credentials
+   pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+   ```
+   
+   You'll only need to do this once per session. The credentials are securely stored using your system's keychain.
+
+4. **Verify Setup**
+   
+   Test that everything is working:
+   
+   ```bash
+   # Verify authentication
+   pcli2 auth get
+   
+   # List available tenants to confirm connection
+   pcli2 tenant list --format json
+   
+   # Verify access to your tenant
+   pcli2 folder list --format tree
+   ```
+
+### Basic Commands to Try
+
+Once authenticated, try these basic commands to verify functionality:
 
 ```bash
-# Clone the repository
-git clone https://github.com/physna/pcli2.git
-cd pcli2
+# List all folders in your tenant (tree view)
+pcli2 folder list --format tree
 
-# Build the project
-cargo build --release
-
-# The executable will be located at target/release/pcli2
-```
-
-### Authentication
-
-Before using most commands, you need to authenticate with your Physna tenant:
-
-```bash
-# Login with client credentials
-pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
-
-# Verify authentication
-pcli2 auth get
-```
-
-### Basic Asset Operations
-
-```bash
 # List assets in the root folder
 pcli2 asset list
 
-# Create a new asset
-pcli2 asset create --file path/to/your/file.stl --path /Root/MyFolder/
+# Upload a test file (replace with your own file)
+pcli2 asset create --file /path/to/test/file.stl --path /Root/Test/
 
-# Get asset details
-pcli2 asset get --path /Root/MyFolder/MyAsset.stl
+# Get details about your test asset
+pcli2 asset get --path /Root/Test/file.stl
 
-# Delete an asset
-pcli2 asset delete --path /Root/MyFolder/MyAsset.stl
+# Find geometrically similar assets (if you have multiple assets)
+pcli2 asset geometric-match --path /Root/Test/file.stl --threshold 80.0
 ```
 
-### Geometric Matching
+### Configuration Management
 
-Find similar assets using PCLI2's powerful geometric matching:
+PCLI2 automatically manages configuration for you, but you can view and manage it:
 
 ```bash
-# Find matches for a single asset
-pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 85.0
+# View current configuration
+pcli2 config get
 
-# Find matches for all assets in a folder (parallel processing)
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --progress
+# View configuration file path
+pcli2 config get path
+
+# Set active tenant context
+pcli2 context set tenant
 ```
+
+### Working with Verbose Output
+
+For debugging purposes, you can enable verbose output:
+
+```bash
+# Enable verbose output for debugging
+pcli2 --verbose asset list
+
+# Or using the short form
+pcli2 -v asset list
+```
+
+### Next Steps
+
+Now that you're set up:
+
+1. **Explore your data**: Use `pcli2 folder list --format tree` to explore your folder structure
+2. **Upload assets**: Use `pcli2 asset create --file path/to/file --path /Destination/Folder/` to upload files
+3. **Find similar items**: Use geometric matching to discover duplicates or similar assets
+4. **Automate**: Combine PCLI2 commands in scripts for batch processing
+
+For detailed command references, see the [Commands](#commands) section below.
+
+### Troubleshooting
+
+If you encounter issues:
+
+1. **Authentication problems**: 
+   - Ensure your client credentials are correct
+   - Try logging out and back in: `pcli2 auth logout` followed by `pcli2 auth login`
+   
+2. **Permission issues**:
+   - Verify your API key has the necessary permissions
+   - Contact your Physna administrator if needed
+
+3. **Network issues**:
+   - Check your internet connection
+   - Verify that Physna's API endpoints are accessible from your network
+
+4. **For detailed debugging**:
+   - Use the `--verbose` flag to see more detailed logs
+   - Check the logs in your system's temporary directory if issues persist
 
 ## Documentation
 
@@ -90,29 +169,34 @@ The application uses a hierarchy of commands:
 ```
 pcli2
 ├── asset
-│   ├── create           Create a new asset by uploading a file
-│   ├── create-batch     Create multiple assets by uploading files matching a glob pattern
-│   ├── list             List all assets in a folder
-│   ├── get              Get asset details
-│   ├── delete           Delete an asset
-│   ├── geometric-match  Find geometrically similar assets for a single asset
+│   ├── create              Create a new asset by uploading a file
+│   ├── create-batch        Create multiple assets by uploading files matching a glob pattern
+│   ├── create-metadata-batch  Create metadata for multiple assets from a CSV file
+│   ├── list                List all assets in a folder
+│   ├── get                 Get asset details
+│   ├── update              Update an asset's metadata
+│   ├── delete              Delete an asset
+│   ├── geometric-match     Find geometrically similar assets for a single asset
 │   └── geometric-match-folder  Find geometrically similar assets for all assets in a folder
 ├── folder
 │   ├── create           Create a new folder
 │   ├── list             List all folders in a parent folder
 │   ├── get              Get folder details
-│   ├── delete           Delete a folder
-│   └── update           Update folder details
+│   ├── update           Update folder details
+│   └── delete           Delete a folder
 ├── tenant
+│   ├── create           Create a new tenant (not supported via API)
 │   ├── list             List all available tenants
-│   └── get              Get current tenant information
+│   ├── get              Get specific tenant details
+│   ├── update           Update tenant configuration (not supported via API)
+│   └── delete           Delete a tenant (not supported via API)
 ├── auth
 │   ├── login            Authenticate with client credentials
 │   ├── logout           Clear authentication tokens
 │   └── get              Get current authentication status
 ├── config
-│   ├── show             Show current configuration
-│   ├── set              Set configuration values
+│   ├── get              Get configuration details
+│   ├── list             List configuration
 │   ├── export           Export configuration to a file
 │   └── import           Import configuration from a file
 ├── context
@@ -120,6 +204,125 @@ pcli2
 │   ├── get              Get current context
 │   └── clear            Clear active context
 └── help                 Show help information
+```
+
+## Usage Examples
+
+### Authentication
+```bash
+# Login with client credentials
+pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+
+# Verify authentication
+pcli2 auth get --format json
+
+# Logout
+pcli2 auth logout
+```
+
+### Tenant Management
+```bash
+# List available tenants
+pcli2 tenant list --format json
+
+# Get details for a specific tenant
+pcli2 tenant get --id YOUR_TENANT_ID --format csv
+```
+
+### Folder Management
+```bash
+# List all folders in the default tenant
+pcli2 folder list --format tree
+
+# List folders in a specific tenant
+pcli2 folder list --tenant YOUR_TENANT_ID --format json
+
+# List subfolders under a specific path
+pcli2 folder list --path /Root/MyFolder --format csv
+
+# Create a new folder
+pcli2 folder create --name "New Folder" --tenant YOUR_TENANT_ID
+
+# Create a subfolder
+pcli2 folder create --name "Sub Folder" --parent-folder-id PARENT_FOLDER_UUID
+
+# Create a subfolder using path
+pcli2 folder create --name "Sub Folder" --path "/Root/Parent"
+
+# Get folder details
+pcli2 folder get --uuid FOLDER_UUID --format json
+
+# Delete a folder
+pcli2 folder delete --path "/Root/FolderToDelete"
+```
+
+### Asset Management
+```bash
+# List all assets in a folder
+pcli2 asset list --path "/Root/MyFolder" --format json
+
+# Upload a single asset
+pcli2 asset create --file /path/to/model.stl --path "/Root/Uploads" --format json
+
+# Upload multiple assets using glob pattern
+pcli2 asset create-batch --files "models/*.stl" --path "/Root/BatchUpload" --concurrent 10 --progress
+
+# Get asset details by path
+pcli2 asset get --path "/Root/MyFolder/model.stl" --format json
+
+# Get asset details by UUID
+pcli2 asset get --uuid ASSET_UUID --format csv
+
+# Update asset metadata
+pcli2 asset update --path "/Root/MyFolder/model.stl" --name "New Name" --format json
+
+# Delete an asset
+pcli2 asset delete --path "/Root/MyFolder/model.stl"
+
+# Delete an asset by UUID
+pcli2 asset delete --uuid ASSET_UUID
+```
+
+### Geometric Matching
+```bash
+# Find similar assets for a single reference asset
+pcli2 asset geometric-match --path "/Root/Reference/model.stl" --threshold 85.0 --format json
+
+# Find similar assets by UUID with different threshold
+pcli2 asset geometric-match --uuid ASSET_UUID --threshold 90.0 --format csv
+
+# Find similar assets for all assets in a folder with progress tracking
+pcli2 asset geometric-match-folder --path "/Root/SearchFolder/" --threshold 80.0 --concurrent 8 --progress --format json
+```
+
+### Context Management
+```bash
+# Set active tenant context interactively
+pcli2 context set tenant
+
+# Set active tenant context explicitly
+pcli2 context set tenant --name "My Tenant"
+
+# Get current context
+pcli2 context get --format json
+
+# Clear active context
+pcli2 context clear tenant
+```
+
+### Configuration Management
+```bash
+# Show current configuration
+pcli2 config get --format json
+
+# Show configuration file path
+pcli2 config get path
+
+# Export configuration
+pcli2 config export --output config.yaml
+
+# Import configuration
+pcli2 config import --input config.yaml
 ```
 
 ## Development
@@ -157,168 +360,5 @@ cargo clippy
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Support
-=======
-The application uses a hierarchy of commands and sub-commands. Type the command first, followed by a sub-command (if any), followed by the arguments. See examples below.
-
-### Command "help"
-
-This command prints the usage help. For example:
-
-````
-pcli2 help
-````
-
-The output will be similer to this:
-
-````
-CLI client utility to the Physna public API
-
-Usage: pcli2 <COMMAND>
-
-Commands:
-  config   working with configuration
-  folders  lists all folders
-  login    attempts to login for this tenant
-  logoff   attempts to logoff for this tenant
-  help     Print this message or the help of the given subcommand(s)
-````
-
-You can see more detailed information for each of the commands by providing the command name:
-
-````
-pcli2 help config
-````
-
-````
-working with configuration
-
-Usage: pcli2 config <COMMAND>
-
-Commands:
-  show    displays configuration
-  export  exports the current configuration as a Yaml file
-  set     sets configuration property
-  delete  delete
-  help    Print this message or the help of the given subcommand(s)
-
-Options:
-  -h, --help     Print help
-  -V, --version  Print version
-````
-
-You can go one level further by providing the name of the sub-command:
-
-````
-pcli2 help config show
-````
-
-````
-displays configuration
-
-Usage: pcli2 config show [OPTIONS] [COMMAND]
-
-Commands:
-  path    show the configuration path
-  tenant  shows tenant configuration
-  help    Print this message or the help of the given subcommand(s)
-
-Options:
-  -f, --format <format>  Output data format [default: json] [possible values: json, csv]
-  -h, --help             Print help
-  -V, --version          Print versio
-````
-
-### Command "config"
-
-This command is used to manage the configuration. It can display details about the current configuration, but also allows you to modify it by adding new configuration elements and deleting existing ones.
-The data is stored in two locations:
-
-* System-specific user configuration directory
-* System-specific secure keyring
-
-The configuration directory location depends on your operating system. You can use the **path** sub-command to display the location It can display details about the current configuration, but also allows you to modify it by adding new configuration elements and deleting existing ones.
-
-The data is stored in two locations:
-
-* System-specific user configuration directory
-* System-specific secure keyring
-
-The configuration directory location depends on your operating system. You can use the **path** sub-command to display the location. You should not need to deal with the configuration file itself. The CLI provides commands to manipulate the data for you.
-
-Confidential entries such as OpenID Connect client secrets or your access tokens are stored in your operating system keyring. This is a protected area and the data is encrypted. You will be prompted to enter your user password from time to time when using it.
-
-#### Command "config show"
-
-This command outputs different elements of your configuration depending on what sub-command is used.
-
-If you use it without any sub-commands, it will print out the full list of all tenant configurations currently present:
-
-````
-pcli2 confg show
-````
-
-The output may look as shown below. Please, note that this is just an example. Your configuration would look different.
-
-````
-{
-  "tenants": {
-    "my-first-tenant": {
-      "tenant_id": "my-first-tenant",
-      "api_url": "https://api.physna.com/",
-      "oidc_url": "https://physna.okta.com/oauth2/default/v1/token",
-      "client_id": "1..."
-    }
-    "my-second-tenant": {
-      "tenant_id": "my-second-tenant",
-      "api_url": "https://api.physna.com/",
-      "oidc_url": "https://physna.okta.com/oauth2/default/v1/token",
-      "client_id": "2..."
-    }
-  }
-}
-````
-
-The **show** command takes an argument **--format**, which may have one of the following values: **json** or **csv**. The default is **json**. If you would like to output your configuration in CSV format instead, you can use the following:
-
-````
-pcli2 config show --format=csv
-````
-
-The **--format** argument is inherited by all sub-commands of **show**. More on that when we discuss the sub-command **tenant**. 
-
-##### Command "config show path"
-
-````
-pcli2 config show path
-````
-
-This command will output the configuration directory path on your system. For exampmyuser
-
-where "myuser" would be your file
-
-The configuration iteself is a text file in Yaml format. You can view it with any text editor. However, it is best to modify it via the CLI and not directly to avoid issue. If you do, please make a backup copy first.
-
- MacOS it may be similar to this:
-
-````
-````
-
-
-````
-pcli2 config show path
-````
-
-This command will output the configuration file path on your system. For example, on MacOS it may be similar to this:
-
-````
-/Users/myuser/Library/Application Support/pcli2/config.yml
-````
-
-where "myuser" would be your username.
-
-The configuration iteself is a text file in Yaml format. You can view it with any text editor. However, it is best to modify it via the CLI and not directly to avoid issue. If you do, please make a backup copy first.
-
 
 For support, please contact the Physna development team or open an issue on GitHub.
-
-

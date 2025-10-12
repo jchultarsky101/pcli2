@@ -5,25 +5,128 @@
 //! including tenant, folder, asset, authentication, context, and configuration operations.
 
 use clap::ArgMatches;
+use futures::StreamExt;
 use inquire::Select;
 use pcli2::commands::{
-    create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
+    create_cli_commands, COMMAND_ASSET, COMMAND_AUTH, COMMAND_CACHE, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, 
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
     COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, 
-    COMMAND_TENANT,
+    COMMAND_TENANT, COMMAND_MATCH, COMMAND_METADATA,
     PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID, 
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
     PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
 };
+use pcli2::error_utils;
 use pcli2::exit_codes::PcliExitCode;
-use pcli2::model::{Asset, Folder};
+use pcli2::model::{Asset, Folder, FolderGeometricMatch, FolderGeometricMatchResponse, FolderList};
 use pcli2::auth::AuthClient;
+use pcli2::physna_v3::ApiError;
+use std::time::Duration;
+use tokio::time::sleep;
 use pcli2::configuration::Configuration;
 use pcli2::folder_cache::FolderCache;
 use pcli2::asset_cache::AssetCache;
 use pcli2::folder_hierarchy::FolderHierarchy;
 use pcli2::keyring::Keyring;
 use pcli2::physna_v3::PhysnaApiClient;
+
+/// Efficiently resolve an asset path to its UUID by:
+/// 1. Splitting the path into folder path and asset name
+/// 2. Resolving the folder path to a folder ID
+/// 3. Listing only assets in that specific folder
+/// 4. Finding the asset by name within that folder
+/// 
+/// This is much more efficient than fetching all assets in the system and filtering locally.
+/// 
+/// # Arguments
+/// * `client` - The Physna API client
+/// * `tenant` - The tenant ID
+/// * `path` - The full path to the asset (e.g., "/Root/Folder/asset.stl")
+/// 
+/// # Returns
+/// * `Ok(String)` - The UUID of the asset if found
+/// * `Err(CliError)` - If the asset is not found or there's an error
+async fn resolve_asset_path_to_uuid(
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+    path: &str,
+) -> Result<String, CliError> {
+    debug!("Resolving asset path to UUID: {}", path);
+    
+    // Split the path into folder path and asset name
+    let (folder_path, asset_name) = if let Some(last_slash) = path.rfind('/') {
+        let folder_path = if last_slash == 0 { "/" } else { &path[..last_slash] };
+        let asset_name = &path[last_slash + 1..];
+        (folder_path, asset_name)
+    } else {
+        // No slashes, it's in the root folder
+        ("/", path)
+    };
+    
+    debug!("Split path into folder: '{}' and asset name: '{}'", folder_path, asset_name);
+    
+    // Get folder ID by path
+    match client.get_folder_id_by_path(tenant, folder_path).await {
+        Ok(Some(folder_id)) => {
+            debug!("Found folder ID: {} for path: {}", folder_id, folder_path);
+            // List assets in this specific folder only
+            match client.list_assets_in_folder(tenant, &folder_id, None, None).await {
+                Ok(asset_list_response) => {
+                    trace!("Found {} assets in folder {}", asset_list_response.assets.len(), folder_path);
+                    // Find the asset by name within this folder
+                    // Extract the asset name from each asset's path and compare with our target asset name
+                    if let Some(asset_response) = asset_list_response.assets.iter().find(|asset| {
+                        if let Some(last_slash) = asset.path.rfind('/') {
+                            let name = &asset.path[last_slash + 1..];
+                            name == asset_name
+                        } else {
+                            // No slashes in asset path, compare directly
+                            &asset.path == asset_name
+                        }
+                    }) {
+                        trace!("Found asset with UUID: {}", asset_response.id);
+                        Ok(asset_response.id.clone())
+                    } else {
+                        Err(CliError::ConfigurationError(
+                            pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                cause: Box::new(std::io::Error::new(
+                                    std::io::ErrorKind::NotFound,
+                                    format!("Asset '{}' not found in folder '{}'", asset_name, folder_path)
+                                ))
+                            }
+                        ))
+                    }
+                }
+                Err(e) => {
+                    error!("Error listing assets in folder '{}': {}", folder_path, e);
+                    Err(CliError::ConfigurationError(
+                        pcli2::configuration::ConfigurationError::FailedToLoadData {
+                            cause: Box::new(e)
+                        }
+                    ))
+                }
+            }
+        }
+        Ok(None) => {
+            Err(CliError::ConfigurationError(
+                pcli2::configuration::ConfigurationError::FailedToLoadData {
+                    cause: Box::new(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("Folder path '{}' not found", folder_path)
+                    ))
+                }
+            ))
+        }
+        Err(e) => {
+            error!("Error resolving folder path '{}': {}", folder_path, e);
+            Err(CliError::ConfigurationError(
+                pcli2::configuration::ConfigurationError::FailedToLoadData {
+                    cause: Box::new(e)
+                }
+            ))
+        }
+    }
+}
 use pcli2::format::{OutputFormat, OutputFormatter};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -109,8 +212,20 @@ pub async fn execute_command(
     mut configuration: Configuration,
     _api: (), // We're using Physna V3 API directly
 ) -> Result<(), CliError> {
-    trace!("Executing CLI command");
     let commands = create_cli_commands();
+    
+    // Check for verbose flag and set up tracing level accordingly
+    if commands.get_flag("verbose") {
+        // Set tracing level to debug if verbose flag is present
+        std::env::set_var("RUST_LOG", "debug");
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .try_init()
+            .ok(); // Silently handle if tracing is already initialized
+    }
+    
+    trace!("Executing CLI command");
+    trace!("Verbose mode enabled: {}", commands.get_flag("verbose"));
 
     match commands.subcommand() {
         // Tenant resource commands
@@ -120,14 +235,14 @@ pub async fn execute_command(
                     trace!("Executing tenant list command");
                     // Try to get access token and list tenants from Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -160,8 +275,7 @@ pub async fn execute_command(
                                     Ok(())
                                 }
                                 Err(e) => {
-                                    error!("Error fetching tenants: {}", e);
-                                    eprintln!("Error fetching tenants: {}", e);
+                                    error_utils::report_error(&e);
                                     Ok(())
                                 }
                             }
@@ -207,60 +321,133 @@ pub async fn execute_command(
                     
                     // Try to get access token and list folders from Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Build the folder hierarchy to get proper paths for all folders
-                            let result = if refresh_requested {
-                                trace!("Refresh requested, forcing API fetch");
-                                FolderCache::refresh(&mut client, &tenant).await
-                            } else {
-                                trace!("Using cache or fetching from API");
-                                FolderCache::get_or_fetch(&mut client, &tenant).await
-                            };
-                            
-                            match result {
-                                Ok(hierarchy) => {
-                                    // If a path is specified, filter the hierarchy to show only that subtree
-                                    let filtered_hierarchy = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
-                                        trace!("Filtering hierarchy by path: {}", path);
-                                        hierarchy.filter_by_path(path).unwrap_or_else(|| {
-                                            eprintln!("Warning: Folder path '{}' not found, showing full hierarchy", path);
-                                            hierarchy
-                                        })
-                                    } else {
-                                        hierarchy
-                                    };
-                                    
-                                    // If tree format is requested, display the hierarchical tree structure
-                                    if format == OutputFormat::Tree {
-                                        filtered_hierarchy.print_tree();
-                                        Ok(())
-                                    } else {
-                                        // For other formats (JSON, CSV), convert to folder list with paths
-                                        let folder_list = filtered_hierarchy.to_folder_list();
-                                        match folder_list.format(format) {
-                                            Ok(output) => {
-                                                println!("{}", output);
-                                                Ok(())
-                                            }
-                                            Err(e) => Err(CliError::FormattingError(e)),
-                                        }
+                            // Check if a specific path is provided
+                            if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                trace!("Listing folders for specific path: {} (refresh: {})", path, refresh_requested);
+                                
+                                if refresh_requested {
+                                    // If refresh requested, clear the cache for this tenant
+                                    if let Err(e) = FolderCache::invalidate(&tenant) {
+                                        debug!("Failed to invalidate folder cache: {}", e);
                                     }
                                 }
-                                Err(e) => {
-                                    error!("Error building folder hierarchy: {}", e);
-                                    eprintln!("Error building folder hierarchy: {}", e);
-                                    Ok(())
+                                
+                                // Build the folder hierarchy to get proper paths for all folders
+                                let result = if refresh_requested {
+                                    trace!("Refresh requested, forcing API fetch");
+                                    FolderCache::refresh(&mut client, &tenant).await
+                                } else {
+                                    trace!("Using cache or fetching from API");
+                                    FolderCache::get_or_fetch(&mut client, &tenant).await
+                                };
+                                
+                                match result {
+                                    Ok(hierarchy) => {
+                                        // If a path is specified, filter the hierarchy to show only that subtree
+                                        let filtered_hierarchy = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                                            trace!("Filtering hierarchy by path: {}", path);
+                                            hierarchy.filter_by_path(path).unwrap_or_else(|| {
+                                                tracing::warn!("Folder path '{}' not found, showing full hierarchy", path);
+                                                hierarchy
+                                            })
+                                        } else {
+                                            hierarchy
+                                        };
+                                        
+                                        // If tree format is requested, display the hierarchical tree structure
+                                        if format == OutputFormat::Tree {
+                                            filtered_hierarchy.print_tree();
+                                            Ok(())
+                                        } else {
+                                            // For other formats (JSON, CSV), check if recursive is requested
+                                            let recursive_requested = sub_matches.get_flag("recursive");
+                                            
+                                            // Convert to folder list with only direct children if not recursive
+                                            let folder_list = if recursive_requested {
+                                                // Recursive - show all folders in the hierarchy (existing behavior)
+                                                filtered_hierarchy.to_folder_list()
+                                            } else {
+                                                // Non-recursive - show only direct children of the specified path
+                                                // In the filtered hierarchy, the root folders are the ones we want to show
+                                                // But we need to get their actual children, not the folders themselves
+                                                let mut direct_children_list = FolderList::empty();
+                                                
+                                                // For each root node in the filtered hierarchy, get its actual children
+                                                for root_id in &filtered_hierarchy.root_ids {
+                                                    if let Some(root_node) = filtered_hierarchy.nodes.get(root_id) {
+                                                        // Get the actual children of this root node
+                                                        for child_id in &root_node.children {
+                                                            if let Some(child_node) = filtered_hierarchy.nodes.get(child_id) {
+                                                                let child_path = filtered_hierarchy.get_path_for_folder(child_id).unwrap_or_else(|| child_node.name().to_string());
+                                                                let child_folder = Folder::from_folder_response(child_node.folder.clone(), child_path);
+                                                                direct_children_list.insert(child_folder);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                direct_children_list
+                                            };
+                                            
+                                            match folder_list.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error_utils::report_error(&e);
+                                        Ok(())
+                                    }
+                                }
+                            } else {
+                                // No specific path - list all root folders (still need hierarchy for full listing)
+                                trace!("Listing all folders for tenant: {} (refresh: {})", &tenant, refresh_requested);
+                                
+                                let result = if refresh_requested {
+                                    trace!("Refresh requested, forcing API fetch");
+                                    FolderCache::refresh(&mut client, &tenant).await
+                                } else {
+                                    trace!("Using cache or fetching from API");
+                                    FolderCache::get_or_fetch(&mut client, &tenant).await
+                                };
+                                
+                                match result {
+                                    Ok(hierarchy) => {
+                                        // If tree format is requested, display the hierarchical tree structure
+                                        if format == OutputFormat::Tree {
+                                            hierarchy.print_tree();
+                                            Ok(())
+                                        } else {
+                                            // For other formats (JSON, CSV), convert to folder list with paths
+                                            let folder_list = hierarchy.to_folder_list();
+                                            match folder_list.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error_utils::report_error(&e);
+                                        Ok(())
+                                    }
                                 }
                             }
                         }
@@ -269,7 +456,7 @@ pub async fn execute_command(
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&e);
                             Ok(())
                         }
                     }
@@ -302,14 +489,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and get folder via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -367,8 +554,7 @@ pub async fn execute_command(
                                     }
                                 }
                                 Err(e) => {
-                                    error!("Error fetching folder: {}", e);
-                                    eprintln!("Error fetching folder: {}", e);
+                                    error_utils::report_error(&e);
                                     Ok(())
                                 }
                             }
@@ -415,14 +601,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and create folder via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -492,8 +678,7 @@ pub async fn execute_command(
                                     }
                                 }
                                 Err(e) => {
-                                    error!("Error creating folder: {}", e);
-                                    eprintln!("Error creating folder: {}", e);
+                                    error_utils::report_error(&e);
                                     Ok(())
                                 }
                             }
@@ -534,14 +719,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and delete folder via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -600,9 +785,500 @@ pub async fn execute_command(
                 ))),
             }
         }
-        // Asset resource commands
+        // Asset commands
         Some((COMMAND_ASSET, sub_matches)) => {
             match sub_matches.subcommand() {
+                Some((COMMAND_MATCH, sub_matches)) => {
+                    trace!("Executing asset match command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    // Get the reference asset identifier (either UUID or path)
+                    let asset_id = if let Some(uuid) = sub_matches.get_one::<String>(PARAMETER_UUID) {
+                        uuid.clone()
+                    } else if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
+                        debug!("Looking up asset by path: {}", path);
+                        // We need to look up the asset by path to get its UUID
+                        // Try to get access token
+                        let mut keyring = Keyring::default();
+                        match keyring.get("default", "access-token".to_string()) {
+                            Ok(Some(token)) => {
+                                let mut client = PhysnaApiClient::new().with_access_token(token);
+                                
+                                // Try to get client credentials for automatic token refresh
+                                if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                    keyring.get("default", "client-id".to_string()),
+                                    keyring.get("default", "client-secret".to_string())
+                                ) {
+                                    client = client.with_client_credentials(client_id, client_secret);
+                                }
+                                
+                                // Get asset cache or fetch assets from API
+                                match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                    Ok(asset_list_response) => {
+                                        // Convert to AssetList to use find_by_path
+                                        let asset_list = asset_list_response.to_asset_list();
+                                        // Find the asset by path
+                                        if let Some(asset) = asset_list.find_by_path(path) {
+                                            if let Some(uuid) = asset.uuid() {
+                                                trace!("Found asset with UUID: {}", uuid);
+                                                uuid.clone()
+                                            } else {
+                                                eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                return Ok(());
+                                            }
+                                        } else {
+                                            eprintln!("Asset not found by path '{}'", path);
+                                            return Ok(());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error fetching asset cache: {}", e);
+                                        eprintln!("Error fetching asset cache: {}", e);
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                            Ok(None) => {
+                                eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                eprintln!("Error retrieving access token: {}", e);
+                                return Ok(());
+                            }
+                        }
+                    } else {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    };
+                    
+                    // Get threshold parameter
+                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+                    
+                    // Validate threshold is between 0 and 100
+                    if !(0.0..=100.0).contains(&threshold) {
+                        eprintln!("Threshold must be between 0.00 and 100.00");
+                        return Ok(());
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    trace!("Performing geometric search for asset {} with threshold {}", asset_id, threshold);
+                    
+                    // Try to get access token and perform geometric search
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Try the geometric search with retry logic for 409 errors
+                            let mut retry_count = 0;
+                            let max_retries = 3;
+                            let search_result = loop {
+                                match client.geometric_search(&tenant, &asset_id, threshold).await {
+                                    Ok(result) => break Ok(result),
+                                    Err(e) => {
+                                        // Check if it's a 409 Conflict error and we should retry
+                                        if let ApiError::HttpError(http_err) = &e {
+                                            if http_err.status() == Some(reqwest::StatusCode::CONFLICT) && retry_count < max_retries {
+                                                retry_count += 1;
+                                                trace!("Received 409 Conflict for asset {}, retry {} after 500ms delay", asset_id, retry_count);
+                                                sleep(Duration::from_millis(500)).await;
+                                                continue;
+                                            }
+                                        }
+                                        // For all other errors or if we've exhausted retries, break with the error
+                                        break Err(e);
+                                    }
+                                }
+                            };
+                            
+                            match search_result {
+                                Ok(search_result) => {
+                                    trace!("Geometric search completed, processing {} matches", search_result.matches.len());
+                                    // Get the reference asset details
+                                    match client.get_asset(&tenant, &asset_id).await {
+                                        Ok(reference_asset) => {
+                                            trace!("Retrieved reference asset details");
+                                            // Convert GeometricSearchResponse to FolderGeometricMatchResponse format
+                                            let mut matches = Vec::new();
+                                            
+                                            // Extract the reference asset name from the path (last part after the last slash)
+                                            let reference_asset_name = reference_asset.path.split('/').next_back().unwrap_or(&reference_asset.path).to_string();
+                                            trace!("Reference asset name: {}", reference_asset_name);
+                                            
+                                            // Convert each geometric match to a folder match format
+                                            for (index, geometric_match) in search_result.matches.iter().enumerate() {
+                                                trace!("Processing match {} of {}: {} -> {}", index + 1, search_result.matches.len(), asset_id, geometric_match.asset.id);
+                                                // Skip self-matches
+                                                if geometric_match.asset.id != asset_id {
+                                                    let candidate_asset_name = geometric_match.asset.path.split('/').next_back().unwrap_or(&geometric_match.asset.path).to_string();
+                                                    trace!("Adding match: {} -> {} ({}%)", reference_asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                    // Generate comparison URL for single asset match
+                                                    let comparison_url = format!("https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                                                        tenant,
+                                                        asset_id,
+                                                        geometric_match.asset.id,
+                                                        tenant,
+                                                        tenant,
+                                                        geometric_match.match_percentage
+                                                    );
+                                                    
+                                                    let folder_match = FolderGeometricMatch {
+                                                        reference_asset_name: reference_asset_name.clone(),
+                                                        candidate_asset_name,
+                                                        match_percentage: geometric_match.match_percentage,
+                                                        reference_asset_path: reference_asset.path.clone(),
+                                                        candidate_asset_path: geometric_match.asset.path.clone(),
+                                                        reference_asset_uuid: asset_id.clone(),
+                                                        candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                        comparison_url,
+                                                    };
+                                                    matches.push(folder_match);
+                                                } else {
+                                                    trace!("Skipping self-match for asset {}", asset_id);
+                                                }
+                                            }
+                                            
+                                            trace!("Formatting {} matches for output", matches.len());
+                                            // Create the response object (now a simple vector)
+                                            let folder_match_response: FolderGeometricMatchResponse = matches;
+                                            
+                                            // Format and output the results
+                                            match folder_match_response.format(format) {
+                                                Ok(output) => {
+                                                    trace!("Output formatted successfully");
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error getting reference asset details: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error performing geometric search for asset {} after {} retries: {}", asset_id, retry_count, e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
+                Some(("geometric-match-folder", sub_matches)) => {
+                    trace!("Executing asset geometric-match-folder command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+
+                    // Get the source folder path
+                    let folder_path = sub_matches.get_one::<String>(PARAMETER_PATH)
+                        .ok_or(CliError::MissingRequiredArgument("folder path must be provided".to_string()))?
+                        .clone();
+                    trace!("Processing folder: {}", folder_path);
+
+                    // Get threshold parameter
+                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+
+                    // Validate threshold is between 0 and 100
+                    if !(0.0..=100.0).contains(&threshold) {
+                        eprintln!("Threshold must be between 0.00 and 100.00");
+                        return Ok(());
+                    }
+
+                    // Get concurrency parameter
+                    let concurrent = *sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
+                    trace!("Using concurrency level: {}", concurrent);
+
+                    // Get progress parameter
+                    let show_progress = sub_matches.get_flag("progress");
+                    trace!("Progress bar enabled: {}", show_progress);
+
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+
+                    trace!("Retrieving access token for tenant: {}", tenant);
+                    // Try to get access token and perform folder-based geometric search
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            // Get client credentials for creating multiple clients
+                            let client_credentials = if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                Some((client_id, client_secret))
+                            } else {
+                                None
+                            };
+
+                            trace!("Fetching assets for folder: {}", folder_path);
+                            // Create a client for initial operations
+                            let mut client = PhysnaApiClient::new().with_access_token(token.clone());
+                            if let Some((client_id, client_secret)) = &client_credentials {
+                                client = client.with_client_credentials(client_id.clone(), client_secret.clone());
+                            }
+
+                            // Get all assets in the specified folder
+                            match AssetCache::get_assets_for_folder(&mut client, &tenant, &folder_path, false).await {
+                                Ok(asset_list) => {
+                                    trace!("Found {} assets in folder", asset_list.len());
+                                    
+                                    // Get all assets from the AssetList
+                                    let assets = asset_list.get_all_assets();
+                                    trace!("Processing {} assets", assets.len());
+
+                                    // Create progress bar if requested
+                                    let progress_bar = if show_progress {
+                                        let pb = indicatif::ProgressBar::new(assets.len() as u64);
+                                        pb.set_style(
+                                            indicatif::ProgressStyle::default_bar()
+                                                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                                                .unwrap()
+                                                .progress_chars("#>-")
+                                        );
+                                        Some(pb)
+                                    } else {
+                                        None
+                                    };
+
+                                    // Create a stream of futures for processing assets concurrently
+                                    let base_url = "https://app-api.physna.com/v3".to_string(); // Use default base URL
+                                    let tenant_id = tenant.clone();
+                                    
+                                    let results: Result<Vec<_>, _> = futures::stream::iter(assets)
+                                        .map(|asset| {
+                                            let base_url = base_url.clone();
+                                            let tenant_id = tenant_id.clone();
+                                            let token = token.clone();
+                                            let client_credentials = client_credentials.clone();
+                                            let progress_bar = progress_bar.clone();
+                                            let asset_name = asset.name().to_string();
+                                            let asset_uuid = asset.uuid().cloned();
+                                            let asset_path = asset.path().to_string();
+
+                                            async move {
+                                                trace!("Processing asset: {} ({})", asset_name, asset_uuid.as_deref().unwrap_or("unknown"));
+                                                
+                                                if let Some(asset_uuid) = asset_uuid {
+                                                    // Create a new client for each request to avoid borrowing issues
+                                                    let mut client = PhysnaApiClient::new().with_base_url(base_url).with_access_token(token.clone());
+                                                    if let Some((client_id, client_secret)) = client_credentials.clone() {
+                                                        client = client.with_client_credentials(client_id, client_secret);
+                                                    }
+
+                                                    trace!("Performing geometric search for asset: {} ({})", asset_name, asset_uuid);
+                                                    // Try the geometric search with retry logic for 409 errors
+                                                    let mut retry_count = 0;
+                                                    let max_retries = 3;
+                                                    let search_result = loop {
+                                                        match client.geometric_search(&tenant_id, &asset_uuid, threshold).await {
+                                                            Ok(result) => break Ok(result),
+                                                            Err(e) => {
+                                                                // Check if it's a 409 Conflict error and we should retry
+                                                                if let ApiError::HttpError(http_err) = &e {
+                                                                    if http_err.status() == Some(reqwest::StatusCode::CONFLICT) && retry_count < max_retries {
+                                                                        retry_count += 1;
+                                                                        trace!("Received 409 Conflict for asset {}, retry {} after 500ms delay", asset_uuid, retry_count);
+                                                                        sleep(Duration::from_millis(500)).await;
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                                // For all other errors or if we've exhausted retries, break with the error
+                                                                break Err(e);
+                                                            }
+                                                        }
+                                                    };
+                                                    
+                                                    match search_result {
+                                                        Ok(search_result) => {
+                                                            trace!("Geometric search completed for {}, found {} matches", asset_uuid, search_result.matches.len());
+                                                            
+                                                            // Process matches, skipping self-matches
+                                                            let mut asset_matches = Vec::new();
+                                                            for geometric_match in search_result.matches {
+                                                                // Skip self-matches by comparing UUIDs
+                                                                if geometric_match.asset.id != asset_uuid {
+                                                                    let candidate_asset_name = geometric_match.asset.path.split('/').next_back().unwrap_or(&geometric_match.asset.path).to_string();
+                                                                    trace!("Adding match: {} -> {} ({}%)", asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                                    // Generate comparison URL
+                                                                    let comparison_url = format!("https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                                                                        tenant_id,
+                                                                        asset_uuid,
+                                                                        geometric_match.asset.id,
+                                                                        tenant_id,
+                                                                        tenant_id,
+                                                                        geometric_match.match_percentage
+                                                                    );
+                                                                    
+                                                                    let folder_match = FolderGeometricMatch {
+                                                                        reference_asset_name: asset_name.clone(),
+                                                                        candidate_asset_name,
+                                                                        match_percentage: geometric_match.match_percentage,
+                                                                        reference_asset_path: asset_path.clone(),
+                                                                        candidate_asset_path: geometric_match.asset.path.clone(),
+                                                                        reference_asset_uuid: asset_uuid.clone(),
+                                                                        candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                                        comparison_url,
+                                                                    };
+                                                                    asset_matches.push(folder_match);
+                                                                } else {
+                                                                    trace!("Skipping self-match for asset {}", asset_uuid);
+                                                                }
+                                                            }
+                                                            
+                                                            // Update progress bar if present
+                                                            if let Some(pb) = &progress_bar {
+                                                                pb.inc(1);
+                                                                pb.set_message(format!("Processed: {}", asset_name));
+                                                            }
+                                                            
+                                                            Ok(asset_matches)
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error performing geometric search for asset {} after {} retries: {}", asset_uuid, retry_count, e);
+                                                            
+                                                            // Update progress bar if present
+                                                            if let Some(pb) = &progress_bar {
+                                                                pb.inc(1);
+                                                                pb.set_message(format!("Failed: {}", asset_name));
+                                                            }
+                                                            
+                                                            Err(e)
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Update progress bar if present
+                                                    if let Some(pb) = &progress_bar {
+                                                        pb.inc(1);
+                                                        pb.set_message(format!("Skipped: {} (no UUID)", asset_name));
+                                                    }
+                                                    
+                                                    Err(ApiError::AuthError("Asset has no UUID".to_string()))
+                                                }
+                                            }
+                                        })
+                                        .buffer_unordered(concurrent)
+                                        .collect::<Vec<_>>()
+                                        .await
+                                        .into_iter()
+                                        .collect();
+
+                                    // Finish progress bar if present
+                                    if let Some(pb) = progress_bar {
+                                        pb.finish_with_message("Batch processing complete");
+                                    }
+
+                                    match results {
+                                        Ok(asset_match_results) => {
+                                            // Flatten all matches into a single vector
+                                            let all_matches: Vec<FolderGeometricMatch> = asset_match_results.into_iter().flatten().collect();
+                                            trace!("Processed all assets, found {} total matches", all_matches.len());
+
+                                            // Filter out duplicate pairs (A->B and B->A are the same match)
+                                            let mut unique_matches = Vec::new();
+                                            let mut seen_pairs = std::collections::HashSet::new();
+
+                                            for match_result in all_matches {
+                                                // Create a canonical pair identifier by sorting the UUIDs
+                                                let mut pair = vec![match_result.reference_asset_uuid.clone(), match_result.candidate_asset_uuid.clone()];
+                                                pair.sort();
+                                                let pair_key = format!("{}-{}", pair[0], pair[1]);
+
+                                                if !seen_pairs.contains(&pair_key) {
+                                                    seen_pairs.insert(pair_key);
+                                                    unique_matches.push(match_result);
+                                                }
+                                            }
+
+                                            // Sort the unique matches by match percentage (descending), then by reference asset path (ascending)
+                                            unique_matches.sort_by(|a, b| {
+                                                // First compare by match percentage (descending)
+                                                b.match_percentage
+                                                    .partial_cmp(&a.match_percentage)
+                                                    .unwrap_or(std::cmp::Ordering::Equal)
+                                                    .then_with(|| {
+                                                        // Then by reference asset path (ascending)
+                                                        a.reference_asset_path.cmp(&b.reference_asset_path)
+                                                    })
+                                            });
+
+                                            // Create the response object (now a simple vector)
+                                            let folder_match_response: FolderGeometricMatchResponse = unique_matches;
+
+                                            trace!("Formatting results for output");
+                                            // Format and output the results
+                                            match folder_match_response.format(format) {
+                                                Ok(output) => {
+                                                    trace!("Output formatted successfully");
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error_utils::report_error(&e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error getting assets for folder '{}': {}", folder_path, e);
+                                    eprintln!("Error getting assets for folder '{}': {}", folder_path, e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
                 Some((COMMAND_CREATE, sub_matches)) => {
                     trace!("Executing asset create command");
                     // Get tenant from explicit parameter or fall back to active tenant from configuration
@@ -634,14 +1310,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and create asset via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -752,14 +1428,14 @@ pub async fn execute_command(
 
                     // Try to get access token and create assets via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
 
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -874,16 +1550,19 @@ pub async fn execute_command(
                     // Check if refresh is requested
                     let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
                     
+                    // Check if metadata should be included
+                    let _include_metadata = sub_matches.get_flag("metadata");
+                    
                     // Try to get access token and list assets from Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -917,7 +1596,10 @@ pub async fn execute_command(
                                 }
                             };
                             
-                            match asset_list.format(format) {
+                            // Check if metadata should be included
+                            let _include_metadata = sub_matches.get_flag("metadata");
+                            
+                            match asset_list.format_with_metadata(format, _include_metadata) {
                                 Ok(output) => {
                                     println!("{}", output);
                                     Ok(())
@@ -933,6 +1615,283 @@ pub async fn execute_command(
                             eprintln!("Error retrieving access token: {}", e);
                             Ok(())
                         }
+                    }
+                }
+
+                Some((COMMAND_METADATA, sub_matches)) => {
+                    match sub_matches.subcommand() {
+                        // Handle asset metadata create
+                        Some((COMMAND_CREATE, sub_matches)) => {
+                            trace!("Executing asset metadata create command");
+                            // Get tenant from explicit parameter or fall back to active tenant from configuration
+                            let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                                Some(tenant_id) => tenant_id.clone(),
+                                None => {
+                                    // Try to get active tenant from configuration
+                                    if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                        active_tenant_id
+                                    } else {
+                                        return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                                    }
+                                }
+                            };
+                            
+                            let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                            let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                            
+                            // Get metadata parameters from command line
+                            let metadata_name = sub_matches.get_one::<String>("name")
+                                .ok_or(CliError::MissingRequiredArgument("name".to_string()))?;
+                            let metadata_value = sub_matches.get_one::<String>("value")
+                                .ok_or(CliError::MissingRequiredArgument("value".to_string()))?;
+                            let metadata_type = sub_matches.get_one::<String>("type")
+                                .map(|s| s.as_str())
+                                .unwrap_or("text");
+                            
+                            // Convert the single metadata entry to JSON value using shared function
+                            let json_value = pcli2::metadata::convert_single_metadata_to_json_value(
+                                metadata_name, 
+                                metadata_value, 
+                                metadata_type
+                            );
+                            
+                            // Create a HashMap with the single metadata entry
+                            let mut metadata: std::collections::HashMap<String, serde_json::Value> = 
+                                std::collections::HashMap::new();
+                            metadata.insert(metadata_name.clone(), json_value);
+                            
+                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                            let _format = OutputFormat::from_str(&format_str).unwrap();
+                            
+                            // Check if refresh is requested for metadata field cache
+                            let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
+                            
+                            // Try to get access token and update asset metadata via Physna V3 API
+                            let mut keyring = Keyring::default();
+                            match keyring.get("default", "access-token".to_string()) {
+                                Ok(Some(token)) => {
+                                    let mut client = PhysnaApiClient::new().with_access_token(token);
+                                    
+                                    // Try to get client credentials for automatic token refresh
+                                    if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                        keyring.get("default", "client-id".to_string()),
+                                        keyring.get("default", "client-secret".to_string())
+                                    ) {
+                                        client = client.with_client_credentials(client_id, client_secret);
+                                    }
+                                    
+                                    // Resolve asset ID from either UUID parameter or path
+                                    let asset_id = if let Some(id) = asset_uuid_param {
+                                        id.clone()
+                                    } else if let Some(path) = asset_path_param {
+                                        // Look up asset by path to get UUID
+                                        debug!("Looking up asset by path: {}", path);
+                                        // Get asset cache or fetch assets from API
+                                        match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                            Ok(asset_list_response) => {
+                                                // Convert to AssetList to use find_by_path
+                                                let asset_list = asset_list_response.to_asset_list();
+                                                // Find the asset by path
+                                                if let Some(asset) = asset_list.find_by_path(path) {
+                                                    if let Some(uuid) = asset.uuid() {
+                                                        trace!("Found asset with UUID: {}", uuid);
+                                                        uuid.clone()
+                                                    } else {
+                                                        eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                        return Ok(());
+                                                    }
+                                                } else {
+                                                    eprintln!("Asset not found by path '{}'", path);
+                                                    return Ok(());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error getting asset cache: {}", e);
+                                                eprintln!("Error getting asset cache: {}", e);
+                                                return Ok(());
+                                            }
+                                        }
+                                    } else {
+                                        // This shouldn't happen due to our earlier check, but just in case
+                                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                                    };
+                                    
+                                    // Get list of existing metadata fields to check if new ones need to be created
+                                    match pcli2::metadata_cache::MetadataCache::get_or_fetch(&mut client, &tenant, refresh_requested).await {
+                                        Ok(metadata_fields_response) => {
+                                            // Extract existing field names
+                                            let existing_field_names: std::collections::HashSet<String> = 
+                                                metadata_fields_response.metadata_fields
+                                                    .iter()
+                                                    .map(|field| field.name.clone())
+                                                    .collect();
+                                            
+                                            // Check for new metadata fields that need to be created
+                                            for (field_name, _value) in &metadata {
+                                                if !existing_field_names.contains(field_name) {
+                                                    trace!("Creating new metadata field: {}", field_name);
+                                                    // Use the provided type or default to "text"
+                                                    let field_type_opt = sub_matches.get_one::<String>("type");
+                                                    let field_type_str = field_type_opt.map(|s| s.as_str()).unwrap_or("text");
+                                                    match client.create_metadata_field(&tenant, field_name, Some(field_type_str)).await {
+                                                        Ok(_) => {
+                                                            debug!("Successfully created metadata field: {} with type {}", field_name, field_type_str);
+                                                            // Invalidate the cache since we've added a new field
+                                                            match pcli2::metadata_cache::MetadataCache::load() {
+                                                                Ok(mut cache) => {
+                                                                    cache.invalidate_tenant(&tenant);
+                                                                    if let Err(e) = cache.save() {
+                                                                        debug!("Failed to save invalidated metadata cache: {}", e);
+                                                                    }
+                                                                }
+                                                                Err(e) => {
+                                                                    debug!("Failed to load metadata cache for invalidation: {}", e);
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error creating metadata field '{}': {}", field_name, e);
+                                                            eprintln!("Error creating metadata field '{}': {}", field_name, e);
+                                                            return Ok(());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Now update the asset metadata with the new or existing fields
+                                            match client.update_asset_metadata(&tenant, &asset_id, &metadata).await {
+                                                Ok(()) => {
+                                                    // On successful metadata update, return no output as requested
+                                                    Ok(())
+                                                }
+                                                Err(e) => {
+                                                    error!("Error updating asset metadata: {}", e);
+                                                    eprintln!("Error updating asset metadata: {}", e);
+                                                    Ok(())
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error fetching metadata fields list: {}", e);
+                                            eprintln!("Error fetching metadata fields list: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    eprintln!("Error retrieving access token: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        // Handle asset metadata delete
+                        Some((COMMAND_DELETE, sub_matches)) => {
+                            trace!("Executing asset metadata delete command");
+                            // Get tenant from explicit parameter or fall back to active tenant from configuration
+                            let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                                Some(tenant_id) => tenant_id.clone(),
+                                None => {
+                                    // Try to get active tenant from configuration
+                                    if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                        active_tenant_id
+                                    } else {
+                                        return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                                    }
+                                }
+                            };
+                            
+                            let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                            let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                            
+                            // Get metadata names from command line (can be multiple occurrences or comma-separated)
+                            let metadata_name_strings: Vec<String> = sub_matches.get_many::<String>("name")
+                                .ok_or(CliError::MissingRequiredArgument("name".to_string()))?
+                                .flat_map(|name_str| name_str.split(',').map(|s| s.trim().to_string()))
+                                .collect();
+                            let metadata_names: Vec<&str> = metadata_name_strings.iter().map(|s| s.as_str()).collect();
+                            
+                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                            let _format = OutputFormat::from_str(&format_str).unwrap();
+                            
+                            // Try to get access token and delete asset metadata via Physna V3 API
+                            let mut keyring = Keyring::default();
+                            match keyring.get("default", "access-token".to_string()) {
+                                Ok(Some(token)) => {
+                                    let mut client = PhysnaApiClient::new().with_access_token(token);
+                                    
+                                    // Try to get client credentials for automatic token refresh
+                                    if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                        keyring.get("default", "client-id".to_string()),
+                                        keyring.get("default", "client-secret".to_string())
+                                    ) {
+                                        client = client.with_client_credentials(client_id, client_secret);
+                                    }
+                                    
+                                    // Resolve asset ID from either UUID parameter or path
+                                    let asset_id = if let Some(id) = asset_uuid_param {
+                                        id.clone()
+                                    } else if let Some(path) = asset_path_param {
+                                        // Look up asset by path to get UUID
+                                        debug!("Looking up asset by path: {}", path);
+                                        // Get asset cache or fetch assets from API
+                                        match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                            Ok(asset_list_response) => {
+                                                // Convert to AssetList to use find_by_path
+                                                let asset_list = asset_list_response.to_asset_list();
+                                                // Find the asset by path
+                                                if let Some(asset) = asset_list.find_by_path(path) {
+                                                    if let Some(uuid) = asset.uuid() {
+                                                        trace!("Found asset with UUID: {}", uuid);
+                                                        uuid.clone()
+                                                    } else {
+                                                        eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                        return Ok(());
+                                                    }
+                                                } else {
+                                                    eprintln!("Asset not found by path '{}'", path);
+                                                    return Ok(());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error getting asset cache: {}", e);
+                                                eprintln!("Error getting asset cache: {}", e);
+                                                return Ok(());
+                                            }
+                                        }
+                                    } else {
+                                        // This shouldn't happen due to our earlier check, but just in case
+                                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                                    };
+                                    
+                                    match client.delete_asset_metadata(&tenant, &asset_id, metadata_names).await {
+                                        Ok(()) => {
+                                            // On successful metadata deletion, return no output
+                                            Ok(())
+                                        }
+                                        Err(e) => {
+                                            error!("Error deleting asset metadata: {}", e);
+                                            eprintln!("Error deleting asset metadata: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    eprintln!("Error retrieving access token: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                            sub_matches,
+                        ))),
                     }
                 }
                 Some((COMMAND_GET, sub_matches)) => {
@@ -959,18 +1918,18 @@ pub async fn execute_command(
                     }
                     
                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let _format = OutputFormat::from_str(&format_str).unwrap();
                     
                     // Try to get access token and get asset via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -982,19 +1941,14 @@ pub async fn execute_command(
                                 // To resolve asset by path, we need to:
                                 // 1. Get all assets for the tenant
                                 // 2. Find the asset with matching path
+                                // Look up asset by path to get UUID (efficiently)
                                 trace!("Resolving asset by path: {}", path);
-                                match AssetCache::get_or_fetch(&mut client, &tenant).await {
-                                    Ok(asset_list_response) => {
-                                        // Find asset with matching path
-                                        if let Some(asset_response) = asset_list_response.assets.iter().find(|asset| asset.path == *path) {
-                                            asset_response.id.clone()
-                                        } else {
-                                            return Err(CliError::MissingRequiredArgument(format!("Asset with path '{}' not found", path)));
-                                        }
-                                    }
+                                match resolve_asset_path_to_uuid(&mut client, &tenant, path).await {
+                                    Ok(uuid) => uuid.clone(),
                                     Err(e) => {
-                                        error!("Error fetching assets for path resolution: {}", e);
-                                        return Err(CliError::MissingRequiredArgument("Failed to fetch assets for path resolution".to_string()));
+                                        error!("Error resolving asset path '{}': {}", path, e);
+                                        eprintln!("Error resolving asset path '{}': {}", path, e);
+                                        return Ok(());
                                     }
                                 }
                             } else {
@@ -1007,8 +1961,12 @@ pub async fn execute_command(
                             
                             match client.get_asset(&tenant, &asset_id).await {
                                 Ok(asset_response) => {
-                                    let asset = Asset::from_asset_response(asset_response, asset_id.clone());
-                                    match asset.format(format) {
+                                    // Convert AssetResponse to Asset
+                                    let asset = pcli2::model::Asset::from_asset_response(asset_response, asset_id.clone());
+                                    
+                                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                                    let _format = OutputFormat::from_str(&format_str).unwrap();
+                                    match asset.format(_format) {
                                         Ok(output) => {
                                             println!("{}", output);
                                             Ok(())
@@ -1018,7 +1976,25 @@ pub async fn execute_command(
                                 }
                                 Err(e) => {
                                     error!("Error fetching asset: {}", e);
-                                    eprintln!("Error fetching asset: {}", e);
+                                    match e {
+                                        pcli2::physna_v3::ApiError::RetryFailed(msg) => {
+                                            eprintln!("Error fetching asset: {}", msg);
+                                        }
+                                        pcli2::physna_v3::ApiError::HttpError(http_err) => {
+                                            if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                                eprintln!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
+                                            } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
+                                                eprintln!("Error: Unauthorized access. Please check your authentication credentials.");
+                                            } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+                                                eprintln!("Error: Access forbidden. You don't have permission to access this asset.");
+                                            } else {
+                                                eprintln!("Error fetching asset: HTTP error {}", http_err);
+                                            }
+                                        }
+                                        _ => {
+                                            eprintln!("Error fetching asset: {}", e);
+                                        }
+                                    }
                                     Ok(())
                                 }
                             }
@@ -1058,14 +2034,14 @@ pub async fn execute_command(
                     
                     // Try to get access token and delete asset via Physna V3 API
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             let mut client = PhysnaApiClient::new().with_access_token(token);
                             
                             // Try to get client credentials for automatic token refresh
                             if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                keyring.get(&"default".to_string(), "client-id".to_string()),
-                                keyring.get(&"default".to_string(), "client-secret".to_string())
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
@@ -1148,7 +2124,7 @@ pub async fn execute_command(
                         Some(id) => id.clone(),
                         None => {
                             // Try to get stored client ID
-                            match keyring.get(&"default".to_string(), "client-id".to_string()) {
+                            match keyring.get("default", "client-id".to_string()) {
                                 Ok(Some(stored_id)) => stored_id,
                                 _ => {
                                     return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_ID.to_string()));
@@ -1161,7 +2137,7 @@ pub async fn execute_command(
                         Some(secret) => secret.clone(),
                         None => {
                             // Try to get stored client secret
-                            match keyring.get(&"default".to_string(), "client-secret".to_string()) {
+                            match keyring.get("default", "client-secret".to_string()) {
                                 Ok(Some(stored_secret)) => stored_secret,
                                 _ => {
                                     return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_SECRET.to_string()));
@@ -1173,8 +2149,8 @@ pub async fn execute_command(
                     let auth_client = AuthClient::new(client_id.clone(), client_secret.clone());
                     
                     // Store the client credentials so they're available for token refresh
-                    let client_id_result = keyring.put(&"default".to_string(), "client-id".to_string(), client_id.clone());
-                    let client_secret_result = keyring.put(&"default".to_string(), "client-secret".to_string(), client_secret.clone());
+                    let client_id_result = keyring.put("default", "client-id".to_string(), client_id.clone());
+                    let client_secret_result = keyring.put("default", "client-secret".to_string(), client_secret.clone());
                     
                     if client_id_result.is_err() || client_secret_result.is_err() {
                         eprintln!("Error storing client credentials");
@@ -1184,7 +2160,7 @@ pub async fn execute_command(
                     match auth_client.get_access_token().await {
                         Ok(token) => {
                             // Store the access token
-                            let token_result = keyring.put(&"default".to_string(), "access-token".to_string(), token);
+                            let token_result = keyring.put("default", "access-token".to_string(), token);
                             
                             if token_result.is_ok() {
                                 Ok(())
@@ -1202,7 +2178,7 @@ pub async fn execute_command(
                 Some((COMMAND_LOGOUT, _)) => {
                     trace!("Executing logout command");
                     let mut keyring = Keyring::default();
-                    match keyring.delete(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.delete("default", "access-token".to_string()) {
                         Ok(()) => {
                             Ok(())
                         }
@@ -1220,7 +2196,7 @@ pub async fn execute_command(
                     
                     // Try to get access token from keyring
                     let mut keyring = Keyring::default();
-                    match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                    match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
                             // Output the token based on the requested format
                             match format {
@@ -1263,14 +2239,14 @@ pub async fn execute_command(
                             
                             // Try to get access token and fetch tenant info from Physna V3 API
                             let mut keyring = Keyring::default();
-                            match keyring.get(&"default".to_string(), "access-token".to_string()) {
+                            match keyring.get("default", "access-token".to_string()) {
                                 Ok(Some(token)) => {
                                     let mut client = PhysnaApiClient::new().with_access_token(token);
                                     
                                     // Try to get client credentials for automatic token refresh
                                     if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                                        keyring.get(&"default".to_string(), "client-id".to_string()),
-                                        keyring.get(&"default".to_string(), "client-secret".to_string())
+                                        keyring.get("default", "client-id".to_string()),
+                                        keyring.get("default", "client-secret".to_string())
                                     ) {
                                         client = client.with_client_credentials(client_id, client_secret);
                                     }
@@ -1336,7 +2312,7 @@ pub async fn execute_command(
                                             }
                                         }
                                         Err(e) => {
-                                            eprintln!("Error fetching tenants: {}", e);
+                                            error_utils::report_error(&e);
                                             Ok(())
                                         }
                                     }
@@ -1404,6 +2380,29 @@ pub async fn execute_command(
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
+                ))),
+            }
+        }
+        // Cache commands
+        Some((COMMAND_CACHE, _sub_matches)) => {
+            match _sub_matches.subcommand() {
+                Some((_command_purge, _)) => {
+                    trace!("Executing cache purge command");
+                    
+                    // Purge all cached data
+                    match FolderCache::purge_all() {
+                        Ok(_) => {
+                            println!("Successfully purged all cached data");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&e);
+                            Ok(())
+                        }
+                    }
+                }
+                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                    _sub_matches,
                 ))),
             }
         }

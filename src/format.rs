@@ -100,6 +100,16 @@ pub trait CsvRecordProducer {
     /// Converts the data into CSV records
     fn as_csv_records(&self) -> Vec<Vec<String>>;
 
+    /// Returns the header row for the CSV output with metadata columns
+    fn csv_header_with_metadata() -> Vec<String> {
+        Self::csv_header()
+    }
+
+    /// Converts the data into CSV records with metadata columns
+    fn as_csv_records_with_metadata(&self) -> Vec<Vec<String>> {
+        self.as_csv_records()
+    }
+
     /// Produces CSV output with a header row
     fn to_csv_with_header(&self) -> Result<String, FormattingError> {
         self.to_csv(true)

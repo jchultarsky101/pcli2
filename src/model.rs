@@ -1,9 +1,17 @@
 //! Data models for the Physna CLI client.
 //!
-//! This module contains all the data structures used in the application,
+//! This module contains all the data structures used throughout the application,
 //! including models for folders, assets, tenants, and API responses.
 //! It also includes implementations for formatting these models in
 //! various output formats like JSON, CSV, and tree representations.
+//! 
+//! The models follow a layered approach:
+//! - API response models (e.g., AssetResponse, FolderResponse) - direct mapping from API JSON
+//! - Internal models (e.g., Asset, Folder) - business logic models with additional functionality
+//! - Collection models (e.g., AssetList, FolderList) - collections of individual models
+//! 
+//! All models implement serialization/deserialization with serde,
+//! output formatting capabilities, and appropriate error handling.
 
 use crate::format::{
     CsvRecordProducer, FormattingError, JsonProducer, OutputFormat, OutputFormatter,
@@ -23,6 +31,31 @@ pub enum ModelError {
 }
 
 /// Represents a folder in the Physna system
+/// 
+/// This struct represents a folder entity in the Physna system with both
+/// internal tracking properties and API-related identifiers.
+/// 
+/// Folders form a hierarchical structure in Physna and can contain both
+/// subfolders and assets. The path property represents the full path to
+/// the folder from the root.
+/// 
+/// # Fields
+/// * `id` - Internal ID for the folder (optional, used for local tracking)
+/// * `uuid` - Unique identifier from the Physna API (required for API operations)
+/// * `name` - Display name of the folder
+/// * `path` - Full path of the folder in the hierarchy (e.g., "/Root/Parent/Child")
+/// 
+/// # Examples
+/// ```
+/// use pcli2::model::Folder;
+/// 
+/// let folder = Folder::new(
+///     Some(123), 
+///     Some("uuid-123".to_string()), 
+///     "My Folder".to_string(), 
+///     "/Root/My Folder".to_string()
+/// );
+/// ```
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Folder {
     /// Internal ID of the folder (optional)
@@ -57,7 +90,7 @@ impl Folder {
     pub fn from_folder_response(folder_response: FolderResponse, path: String) -> Folder {
         Folder { 
             id: None, 
-            uuid: Some(folder_response.id), 
+            uuid: Some(folder_response.id.into()), 
             name: folder_response.name, 
             path 
         }
@@ -117,7 +150,7 @@ impl CsvRecordProducer for Folder {
     /// Generate CSV output with a header row
     fn to_csv_with_header(&self) -> Result<String, FormattingError> {
         let mut wtr = Writer::from_writer(vec![]);
-        wtr.write_record(&Self::csv_header())
+        wtr.write_record(Self::csv_header())
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
         
         // Sort records by folder name
@@ -130,8 +163,8 @@ impl CsvRecordProducer for Folder {
         }
         let data = wtr.into_inner()
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
-        Ok(String::from_utf8(data)
-            .map_err(|e| FormattingError::Utf8Error(e))?)
+        String::from_utf8(data)
+            .map_err(FormattingError::Utf8Error)
     }
 
     /// Generate CSV output without a header row
@@ -148,8 +181,8 @@ impl CsvRecordProducer for Folder {
         }
         let data = wtr.into_inner()
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
-        Ok(String::from_utf8(data)
-            .map_err(|e| FormattingError::Utf8Error(e))?)
+        String::from_utf8(data)
+            .map_err(FormattingError::Utf8Error)
     }
 }
 
@@ -211,8 +244,8 @@ impl FolderBuilder {
     }
     
     /// Set the name of the folder
-    pub fn name(&mut self, name: &String) -> &mut FolderBuilder {
-        self.name = Some(name.clone());
+    pub fn name(&mut self, name: &str) -> &mut FolderBuilder {
+        self.name = Some(name.to_owned());
         self
     }
     
@@ -353,7 +386,7 @@ impl CsvRecordProducer for FolderList {
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         let mut records: Vec<Vec<String>> = Vec::new();
 
-        for (_, folder) in &self.folders {
+        for folder in self.folders.values() {
             records.push(folder.as_csv_records()[0].clone());
         }
 
@@ -363,7 +396,7 @@ impl CsvRecordProducer for FolderList {
     /// Generate CSV output with a header row
     fn to_csv_with_header(&self) -> Result<String, FormattingError> {
         let mut wtr = Writer::from_writer(vec![]);
-        wtr.write_record(&Self::csv_header())
+        wtr.write_record(Self::csv_header())
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
         
         // Sort records by folder name
@@ -376,8 +409,8 @@ impl CsvRecordProducer for FolderList {
         }
         let data = wtr.into_inner()
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
-        Ok(String::from_utf8(data)
-            .map_err(|e| FormattingError::Utf8Error(e))?)
+        String::from_utf8(data)
+            .map_err(FormattingError::Utf8Error)
     }
     
     /// Generate CSV output without a header row
@@ -394,8 +427,8 @@ impl CsvRecordProducer for FolderList {
         }
         let data = wtr.into_inner()
             .map_err(|e| FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e)))?;
-        Ok(String::from_utf8(data)
-            .map_err(|e| FormattingError::Utf8Error(e))?)
+        String::from_utf8(data)
+            .map_err(FormattingError::Utf8Error)
     }
 }
 
@@ -414,8 +447,8 @@ impl OutputFormatter for FolderList {
         match format {
             OutputFormat::Json => {
                 // convert to a simple vector for output, sorted by name
-                let mut folders: Vec<Folder> = self.folders.iter().map(|(_, f)| f.clone()).collect();
-                folders.sort_by(|a, b| a.name().cmp(&b.name()));
+                let mut folders: Vec<Folder> = self.folders.values().cloned().collect();
+                folders.sort_by_key(|a| a.name());
                 let json = serde_json::to_string_pretty(&folders);
                 match json {
                     Ok(json) => Ok(json),
@@ -430,8 +463,8 @@ impl OutputFormatter for FolderList {
                 // For folder list, tree format is the same as JSON
                 // In practice, tree format should be handled at the command level
                 // where we have access to the full hierarchy
-                let mut folders: Vec<Folder> = self.folders.iter().map(|(_, f)| f.clone()).collect();
-                folders.sort_by(|a, b| a.name().cmp(&b.name()));
+                let mut folders: Vec<Folder> = self.folders.values().cloned().collect();
+                folders.sort_by_key(|a| a.name());
                 let json = serde_json::to_string_pretty(&folders);
                 match json {
                     Ok(json) => Ok(json),
@@ -592,7 +625,8 @@ pub struct SingleAssetResponse {
 /// Represents an asset list response from the Physna V3 API
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetListResponse {
-    /// The list of assets
+    /// The list of assets (can be named either "assets" or "contents" in API responses)
+    #[serde(alias = "contents")]
     pub assets: Vec<AssetResponse>,
     /// Pagination data
     #[serde(rename = "pageData")]
@@ -640,7 +674,8 @@ pub struct SingleFolderResponse {
 /// Represents a folder list response from the Physna V3 API
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FolderListResponse {
-    /// The list of folders
+    /// The list of folders (can be named either "folders" or "contents" in API responses)
+    #[serde(alias = "contents")]
     pub folders: Vec<FolderResponse>,
     /// Pagination data
     #[serde(rename = "pageData")]
@@ -689,6 +724,44 @@ pub struct PageData {
 // Asset models for Physna V3 API
 
 /// Represents an asset in the Physna system
+/// 
+/// This struct represents an asset entity in the Physna system with both
+/// internal tracking properties and API-related identifiers.
+/// 
+/// Assets are 3D models or other geometric files that can be stored in
+/// Physna folders and subjected to geometric analysis and matching.
+/// 
+/// # Fields
+/// * `id` - Internal ID for the asset (optional, derived from UUID hash for local tracking)
+/// * `uuid` - Unique identifier from the Physna API (required for API operations)
+/// * `name` - Display name of the asset (derived from the file name part of the path)
+/// * `path` - Full path of the asset in the folder hierarchy (e.g., "/Root/Folder/file.stl")
+/// * `file_size` - Size of the uploaded file in bytes (optional)
+/// * `file_type` - File type/extension (e.g., "stl", "step", "iges") (optional)
+/// * `processing_status` - Current processing status (e.g., "processed", "processing", "failed") (optional)
+/// * `created_at` - Creation timestamp (optional)
+/// * `updated_at` - Last update timestamp (optional)
+/// 
+/// # Examples
+/// ```
+/// use pcli2::model::Asset;
+/// use std::collections::HashMap;
+/// 
+/// let metadata: Option<HashMap<String, serde_json::Value>> = None;
+/// 
+/// let asset = Asset::new(
+///     Some(456),
+///     Some("asset-uuid-456".to_string()),
+///     "model.stl".to_string(),
+///     "/Root/Models/model.stl".to_string(),
+///     Some(1024000), // 1MB
+///     Some("stl".to_string()),
+///     Some("processed".to_string()),
+///     None, // created_at
+///     None,  // updated_at
+///     metadata  // metadata
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Asset {
     /// Internal ID of the asset (optional)
@@ -716,6 +789,9 @@ pub struct Asset {
     /// Last update timestamp of the asset (optional)
     #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
     updated_at: Option<String>,
+    /// Metadata associated with the asset (key-value pairs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 impl Asset {
@@ -731,7 +807,8 @@ impl Asset {
     /// * `processing_status` - Optional processing status of the asset
     /// * `created_at` - Optional creation timestamp of the asset
     /// * `updated_at` - Optional last update timestamp of the asset
-    pub fn new(id: Option<u32>, uuid: Option<String>, name: String, path: String, file_size: Option<u64>, file_type: Option<String>, processing_status: Option<String>, created_at: Option<String>, updated_at: Option<String>) -> Asset {
+    /// * `metadata` - Optional metadata key-value pairs for the asset
+    pub fn new(id: Option<u32>, uuid: Option<String>, name: String, path: String, file_size: Option<u64>, file_type: Option<String>, processing_status: Option<String>, created_at: Option<String>, updated_at: Option<String>, metadata: Option<std::collections::HashMap<String, serde_json::Value>>) -> Asset {
         Asset {
             id,
             uuid,
@@ -742,6 +819,7 @@ impl Asset {
             processing_status,
             created_at,
             updated_at,
+            metadata,
         }
     }
     
@@ -752,7 +830,7 @@ impl Asset {
     /// * `path` - The full path for this asset
     pub fn from_asset_response(asset_response: AssetResponse, path: String) -> Asset {
         // Extract the name from the path (last part after the last slash)
-        let name = asset_response.path.split('/').last().unwrap_or(&asset_response.path).to_string();
+        let name = asset_response.path.split('/').next_back().unwrap_or(&asset_response.path).to_string();
         
         Asset::new(
             Some(asset_response.id.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))),
@@ -764,6 +842,7 @@ impl Asset {
             Some(asset_response.state),
             Some(asset_response.created_at),
             Some(asset_response.updated_at),
+            Some(asset_response.metadata),
         )
     }
 
@@ -825,12 +904,17 @@ impl Asset {
     pub fn updated_at(&self) -> Option<&String> {
         self.updated_at.as_ref()
     }
+    
+    /// Get the metadata of the asset
+    pub fn metadata(&self) -> Option<&std::collections::HashMap<String, serde_json::Value>> {
+        self.metadata.as_ref()
+    }
 }
 
 impl CsvRecordProducer for Asset {
     /// Get the CSV header row for Asset records
     fn csv_header() -> Vec<String> {
-        vec!["NAME".to_string(), "PATH".to_string(), "TYPE".to_string(), "STATE".to_string()]
+        vec!["NAME".to_string(), "PATH".to_string(), "TYPE".to_string(), "STATE".to_string(), "UUID".to_string()]
     }
 
     /// Convert the Asset to CSV records
@@ -839,8 +923,36 @@ impl CsvRecordProducer for Asset {
             self.name(), 
             self.path(), 
             self.file_type().cloned().unwrap_or_default(),
-            self.processing_status().cloned().unwrap_or_default()
+            self.processing_status().cloned().unwrap_or_default(),
+            self.uuid().cloned().unwrap_or_default()
         ]]
+    }
+    
+    /// Get the extended CSV header row for Asset records including metadata
+    fn csv_header_with_metadata() -> Vec<String> {
+        let header = Self::csv_header();
+        // We'll add metadata columns dynamically when we know what metadata keys exist
+        header
+    }
+    
+    /// Convert the Asset to CSV records including metadata
+    fn as_csv_records_with_metadata(&self) -> Vec<Vec<String>> {
+        let record = vec![
+            self.name(), 
+            self.path(), 
+            self.file_type().cloned().unwrap_or_default(),
+            self.processing_status().cloned().unwrap_or_default(),
+            self.uuid().cloned().unwrap_or_default()
+        ];
+        
+        // Add metadata values if they exist
+        if let Some(_metadata) = self.metadata() {
+            // We'll need to collect all unique metadata keys when building the CSV
+            // For now, we just return the basic record without metadata columns
+            // The metadata will be added when building the full CSV with dynamic columns
+        }
+        
+        vec![record]
     }
 }
 
@@ -963,6 +1075,131 @@ impl AssetList {
             None => None,
         }
     }
+    
+    /// Get all assets as a vector
+    /// 
+    /// # Returns
+    /// A vector containing all assets in the AssetList
+    pub fn get_all_assets(&self) -> Vec<&Asset> {
+        self.assets.values().collect()
+    }
+    
+    /// Format the AssetList according to the specified output format with optional metadata
+    /// 
+    /// This method extends the standard format method to allow including metadata in the output.
+    /// For JSON output, metadata is always included if present.
+    /// For CSV output, metadata columns are added dynamically when include_metadata is true.
+    /// 
+    /// # Arguments
+    /// * `format` - The output format to use (JSON, CSV, or Tree)
+    /// * `include_metadata` - Whether to include metadata fields in the output (default: false)
+    /// 
+    /// # Returns
+    /// * `Ok(String)` - The formatted output
+    /// * `Err(FormattingError)` - If formatting fails
+    pub fn format_with_metadata(&self, format: OutputFormat, include_metadata: bool) -> Result<String, FormattingError> {
+        if include_metadata && format == OutputFormat::Csv {
+            // For CSV with metadata, we need to collect all unique metadata keys first
+            let mut metadata_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+            
+            // Collect all unique metadata keys
+            for asset in self.assets.values() {
+                if let Some(metadata) = asset.metadata() {
+                    for key in metadata.keys() {
+                        metadata_keys.insert(key.clone());
+                    }
+                }
+            }
+            
+            // Convert to sorted vector for consistent column ordering
+            let mut sorted_metadata_keys: Vec<String> = metadata_keys.into_iter().collect();
+            sorted_metadata_keys.sort();
+            
+            // Build CSV with metadata columns
+            let buf = BufWriter::new(Vec::new());
+            let mut wtr = Writer::from_writer(buf);
+            
+            // Build header with metadata columns
+            let mut header = Asset::csv_header();
+            for key in &sorted_metadata_keys {
+                header.push(key.clone());
+            }
+            wtr.write_record(&header).unwrap();
+            
+            // Sort records by asset path
+            let mut records = self.as_csv_records_with_metadata(&sorted_metadata_keys);
+            records.sort_by(|a, b| a[1].cmp(&b[1])); // Sort by PATH column (index 1)
+            
+            for record in records {
+                wtr.write_record(&record).unwrap();
+            }
+            
+            match wtr.flush() {
+                Ok(_) => {
+                    let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
+                    let csv = String::from_utf8(bytes).unwrap();
+                    Ok(csv.clone())
+                }
+                Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+            }
+        } else {
+            // For non-CSV or when not including metadata, use standard format method
+            self.format(format)
+        }
+    }
+    
+    /// Convert the AssetList to CSV records including metadata
+    /// 
+    /// This method converts the AssetList to CSV records with additional metadata columns.
+    /// 
+    /// # Arguments
+    /// * `metadata_keys` - Sorted list of metadata keys to include as columns
+    /// 
+    /// # Returns
+    /// Vector of CSV records with metadata columns
+    fn as_csv_records_with_metadata(&self, metadata_keys: &[String]) -> Vec<Vec<String>> {
+        let mut records: Vec<Vec<String>> = Vec::new();
+        
+        for asset in self.assets.values() {
+            // Start with standard asset record
+            let mut record = vec![
+                asset.name(), 
+                asset.path(), 
+                asset.file_type().cloned().unwrap_or_default(),
+                asset.processing_status().cloned().unwrap_or_default(),
+                asset.uuid().cloned().unwrap_or_default()
+            ];
+            
+            // Add metadata values for each key
+            if let Some(_metadata) = asset.metadata() {
+                for key in metadata_keys {
+                    if let Some(value) = _metadata.get(key) {
+                        // Convert JSON value to string representation
+                        let value_str = match value {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            serde_json::Value::Null => String::new(),
+                            _ => value.to_string(), // For arrays and objects, use JSON string representation
+                        };
+                        record.push(value_str);
+                    } else {
+                        // No value for this key, add empty string
+                        record.push(String::new());
+                    }
+                }
+            } else {
+                // No metadata, add empty strings for all metadata columns
+                for _ in metadata_keys {
+                    record.push(String::new());
+                }
+            }
+            
+            records.push(record);
+        }
+        
+        records
+    }
 }
 
 impl Default for AssetList {
@@ -993,7 +1230,7 @@ impl CsvRecordProducer for AssetList {
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         let mut records: Vec<Vec<String>> = Vec::new();
 
-        for (_, asset) in &self.assets {
+        for asset in self.assets.values() {
             records.push(asset.as_csv_records()[0].clone());
         }
 
@@ -1016,8 +1253,8 @@ impl OutputFormatter for AssetList {
         match format {
             OutputFormat::Json => {
                 // convert to a simple vector for output and sort by path
-                let mut assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
-                assets.sort_by(|a, b| a.path().cmp(&b.path()));
+                let mut assets: Vec<Asset> = self.assets.values().cloned().collect();
+                assets.sort_by_key(|a| a.path());
                 let json = serde_json::to_string_pretty(&assets);
                 match json {
                     Ok(json) => Ok(json),
@@ -1027,7 +1264,7 @@ impl OutputFormatter for AssetList {
             OutputFormat::Csv => {
                 let buf = BufWriter::new(Vec::new());
                 let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(&Self::csv_header()).unwrap();
+                wtr.write_record(Self::csv_header()).unwrap();
                 
                 // Sort records by asset path
                 let mut records = self.as_csv_records();
@@ -1050,8 +1287,8 @@ impl OutputFormatter for AssetList {
                 // In practice, tree format should be handled at the command level
                 // where we have access to the full hierarchy
                 // convert to a simple vector for output and sort by path
-                let mut assets: Vec<Asset> = self.assets.iter().map(|(_, f)| f.clone()).collect();
-                assets.sort_by(|a, b| a.path().cmp(&b.path()));
+                let mut assets: Vec<Asset> = self.assets.values().cloned().collect();
+                assets.sort_by_key(|a| a.path());
                 let json = serde_json::to_string_pretty(&assets);
                 match json {
                     Ok(json) => Ok(json),
@@ -1060,6 +1297,230 @@ impl OutputFormatter for AssetList {
             }
         }
     }
+}
+
+// Geometric search models
+
+/// Represents a match result from the geometric search
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeometricMatch {
+    /// The matching asset details
+    pub asset: AssetResponse,
+    /// The similarity percentage
+    #[serde(rename = "matchPercentage")]
+    pub match_percentage: f64,
+    /// The transformation matrix for the match
+    #[serde(rename = "transformation")]
+    pub transformation: Option<TransformationMatrix>,
+}
+
+impl GeometricMatch {
+    /// Get the asset ID
+    pub fn asset_id(&self) -> &str {
+        &self.asset.id
+    }
+    
+    /// Get the asset path
+    pub fn path(&self) -> &str {
+        &self.asset.path
+    }
+    
+    /// Get the similarity score (0.0 to 100.0)
+    pub fn score(&self) -> f64 {
+        self.match_percentage
+    }
+}
+
+/// Represents a 4x4 transformation matrix
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TransformationMatrix {
+    /// The 4x4 matrix values in row-major order
+    pub matrix: [f64; 16],
+}
+
+/// Represents filter data in API responses
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilterData {
+    /// Extensions filter information
+    pub extensions: Vec<FilterCount>,
+    /// Folders filter information
+    pub folders: Vec<FilterCount>,
+    /// Metadata filter information
+    pub metadata: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Represents a filter and its count
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilterCount {
+    /// The filter value
+    pub filter: String,
+    /// The count of items matching this filter
+    pub count: u32,
+}
+
+/// Represents a matching pair from folder-based geometric matching
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderGeometricMatch {
+    /// Name of the reference asset (the one from the source folder)
+    #[serde(rename = "referenceAssetName")]
+    pub reference_asset_name: String,
+    /// Name of the candidate asset (the one that matched)
+    #[serde(rename = "candidateAssetName")]
+    pub candidate_asset_name: String,
+    /// Match percentage between the assets
+    #[serde(rename = "matchPercentage")]
+    pub match_percentage: f64,
+    /// Full path of the reference asset
+    #[serde(rename = "referenceAssetPath")]
+    pub reference_asset_path: String,
+    /// Full path of the candidate asset
+    #[serde(rename = "candidateAssetPath")]
+    pub candidate_asset_path: String,
+    /// UUID of the reference asset
+    #[serde(rename = "referenceAssetUuid")]
+    pub reference_asset_uuid: String,
+    /// UUID of the candidate asset
+    #[serde(rename = "candidateAssetUuid")]
+    pub candidate_asset_uuid: String,
+    /// URL to the Physna comparison viewer for these two assets
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: String,
+}
+
+impl CsvRecordProducer for FolderGeometricMatch {
+    /// Get the CSV header row for FolderGeometricMatch records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_NAME".to_string(),
+            "CANDIDATE_ASSET_NAME".to_string(),
+            "MATCH_PERCENTAGE".to_string(),
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
+        ]
+    }
+
+    /// Convert the FolderGeometricMatch to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.reference_asset_name.clone(),
+            self.candidate_asset_name.clone(),
+            format!("{:.2}", self.match_percentage),
+            self.reference_asset_path.clone(),
+            self.candidate_asset_path.clone(),
+            self.reference_asset_uuid.clone(),
+            self.candidate_asset_uuid.clone(),
+            self.comparison_url.clone(),
+        ]]
+    }
+}
+
+impl JsonProducer for FolderGeometricMatch {}
+
+/// Represents the response from folder-based geometric matching
+pub type FolderGeometricMatchResponse = Vec<FolderGeometricMatch>;
+
+// For FolderGeometricMatchResponse (Vec<FolderGeometricMatch>), we need to implement the traits manually
+impl CsvRecordProducer for FolderGeometricMatchResponse {
+    /// Get the CSV header row for FolderGeometricMatchResponse records
+    fn csv_header() -> Vec<String> {
+        FolderGeometricMatch::csv_header()
+    }
+
+    /// Convert the FolderGeometricMatchResponse to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.iter().flat_map(|m| m.as_csv_records()).collect()
+    }
+}
+
+impl JsonProducer for FolderGeometricMatchResponse {}
+
+impl OutputFormatter for FolderGeometricMatchResponse {
+    type Item = FolderGeometricMatchResponse;
+
+    /// Format the FolderGeometricMatchResponse according to the specified output format
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => Ok(self.to_json()?),
+            OutputFormat::Csv => Ok(self.to_csv_with_header()?),
+            _ => Err(FormattingError::UnsupportedOutputFormat { format: format.to_string() }),
+        }
+    }
+}
+
+/// Represents the response from the geometric search API
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeometricSearchResponse {
+    /// The list of matching assets
+    pub matches: Vec<GeometricMatch>,
+    /// Pagination information
+    #[serde(rename = "pageData")]
+    pub page_data: Option<PageData>,
+    /// Filter information
+    #[serde(rename = "filterData")]
+    pub filter_data: Option<FilterData>,
+}
+
+impl CsvRecordProducer for GeometricSearchResponse {
+    /// Get the CSV header row for GeometricSearchResponse records
+    fn csv_header() -> Vec<String> {
+        vec!["ASSET_ID".to_string(), "PATH".to_string(), "SCORE".to_string()]
+    }
+
+    /// Convert the GeometricSearchResponse to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.matches.iter().map(|m| {
+            vec![
+                m.asset_id().to_string(),
+                m.path().to_string(),
+                format!("{:.2}", m.score())
+            ]
+        }).collect()
+    }
+}
+
+impl JsonProducer for GeometricSearchResponse {}
+
+impl OutputFormatter for GeometricSearchResponse {
+    type Item = GeometricSearchResponse;
+
+    /// Format the GeometricSearchResponse according to the specified output format
+    /// 
+    /// # Arguments
+    /// * `format` - The output format to use (JSON, CSV)
+    /// 
+    /// # Returns
+    /// * `Ok(String)` - The formatted output
+    /// * `Err(FormattingError)` - If formatting fails
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => Ok(self.to_json()?),
+            OutputFormat::Csv => Ok(self.to_csv_with_header()?),
+            OutputFormat::Tree => Ok(self.to_json()?), // For geometric search, tree format is the same as JSON
+        }
+    }
+}
+
+// Metadata field models for Physna V3 API
+
+/// Represents a metadata field definition
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataField {
+    /// The name of the metadata field
+    pub name: String,
+    /// The type of the metadata field (e.g., "text", "number", etc.)
+    #[serde(rename = "type")]
+    pub field_type: String,
+}
+
+/// Represents a response containing a list of metadata fields
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataFieldListResponse {
+    /// List of metadata fields
+    #[serde(rename = "metadataFields")]
+    pub metadata_fields: Vec<MetadataField>,
 }
 
 #[cfg(test)]

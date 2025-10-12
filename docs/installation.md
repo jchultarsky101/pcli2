@@ -2,6 +2,21 @@
 
 This guide explains how to install and set up PCLI2 on your system.
 
+## Table of Contents
+- [Prerequisites](#prerequisites)
+- [Installation Methods](#installation-methods)
+- [Verifying Installation](#verifying-installation)
+- [Updating PCLI2](#updating-pcli2)
+- [Troubleshooting](#troubleshooting)
+
+## Prerequisites
+
+Before installing PCLI2, ensure you have the following:
+
+- **Rust toolchain** (latest stable version)
+- **Cargo package manager** (usually installed with Rust)
+- **Git** (for cloning the repository)
+
 ## Prerequisites
 
 Before installing PCLI2, ensure you have the following:

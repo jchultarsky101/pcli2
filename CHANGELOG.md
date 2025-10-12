@@ -16,13 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced output formats with full asset paths and consistent naming
 - Comprehensive trace logging for debugging
 - Test scripts for API endpoint verification
+- Missing methods to CsvRecordProducer trait: `csv_header_with_metadata()` and `as_csv_records_with_metadata()`
 
 ### Changed
 - Improved error handling with standardized logging
 - Enhanced JSON and CSV output formats for geometric matching results
 - Updated command-line interface with new options and flags
+- Updated trait implementations to support metadata-aware CSV output
 
 ### Fixed
+- Compilation errors related to missing trait methods in `CsvRecordProducer`
+- Unused variable warnings throughout the codebase
+- Mutability warnings by removing unnecessary `mut` keywords
+- Documentation example for `Asset::new` to include all required parameters
 - Duplicate error messages in geometric matching commands
 - Asset name extraction in geometric matching results
 

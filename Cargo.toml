@@ -3,7 +3,14 @@ name = "pcli2"
 version = "0.1.0"
 edition = "2021"
 authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
-description = "CLI client utility to the Physna public API"
+description = "CLI client for the Physna public API - Advanced 3D Geometry Search and Analysis"
+repository = "https://github.com/jchultarsky101/pcli2"
+
+[package.metadata.wix]
+upgrade-guid = "22C5CA5C-991B-4647-A7F7-2B3CE6BD6C83"
+path-guid = "A39581CB-4F22-4BBD-8FA8-4B99D16D6788"
+license = false
+eula = false
 
 [features]
 default = ["dev-keyring"]
@@ -12,6 +19,7 @@ dev-keyring = []
 [dependencies]
 bincode = "1.3.3"
 clap = { version = "4.5.45", features = ["derive"] }
+color-print = "0.3.4"
 dirs = "5.0.1"
 exitcode = "1.1.2"
 thiserror = "1.0.69"
@@ -42,3 +50,23 @@ predicates = "3.1.0"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 keyring = { version = "2.3.3", optional = false }
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+# Config for 'cargo dist'
+[workspace.metadata.dist]
+# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.22.1"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "msi"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = true

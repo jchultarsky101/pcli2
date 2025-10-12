@@ -49,9 +49,15 @@ impl FolderNode {
 #[derive(Serialize, Deserialize)]
 pub struct FolderHierarchy {
     /// Map of folder UUID to FolderNode
-    nodes: HashMap<String, FolderNode>,
+    pub nodes: HashMap<String, FolderNode>,
     /// Root folder IDs (folders with no parent)
-    root_ids: Vec<String>,
+    pub root_ids: Vec<String>,
+}
+
+impl Default for FolderHierarchy {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FolderHierarchy {
@@ -102,6 +108,9 @@ impl FolderHierarchy {
                     if let Some(parent_node) = hierarchy.nodes.get_mut(parent_id) {
                         parent_node.children.push(folder_id.clone());
                     }
+                } else {
+                    // No parent - this is a root folder
+                    hierarchy.root_ids.push(folder_id.clone());
                 }
             }
             
@@ -113,13 +122,6 @@ impl FolderHierarchy {
             }
             
             page += 1;
-        }
-        
-        // Identify root folders (folders with no parent or parent not in the list)
-        for (id, node) in &hierarchy.nodes {
-            if node.parent_id().is_none() || !hierarchy.nodes.contains_key(node.parent_id().unwrap()) {
-                hierarchy.root_ids.push(id.clone());
-            }
         }
         
         // Second pass to add children to parents that might have been processed after their children
@@ -147,24 +149,56 @@ impl FolderHierarchy {
         Ok(hierarchy)
     }
     
-    /// Convert the folder hierarchy to a flat FolderList
+    /// Convert the folder hierarchy to a flat FolderList containing only direct children of the root folder
     /// 
-    /// This method creates a FolderList with all folders in the hierarchy,
-    /// each with its full path computed from the hierarchy.
+    /// This method creates a FolderList with only the direct children of the root folders
+    /// in this hierarchy, rather than all folders. This is useful for efficient folder listing
+    /// when only immediate children are needed.
     /// 
     /// # Returns
-    /// A FolderList containing all folders with their computed paths
-    pub fn to_folder_list(&self) -> crate::model::FolderList {
+    /// A FolderList containing only direct children with their computed paths
+    pub fn to_direct_children_list(&self) -> crate::model::FolderList {
         let mut folder_list = crate::model::FolderList::empty();
         
-        // Process each node to create folders with proper paths
-        for (id, node) in &self.nodes {
-            let path = self.get_path_for_folder(id).unwrap_or_else(|| node.name().to_string());
-            let folder = crate::model::Folder::from_folder_response(node.folder.clone(), path);
-            folder_list.insert(folder);
+        // For each root folder, add it to the list
+        for root_id in &self.root_ids {
+            if let Some(root_node) = self.nodes.get(root_id) {
+                // Add the root folder itself
+                let root_path = self.get_path_for_folder(root_id).unwrap_or_else(|| root_node.name().to_string());
+                let root_folder = crate::model::Folder::from_folder_response(root_node.folder.clone(), root_path);
+                folder_list.insert(root_folder);
+            }
         }
         
         folder_list
+    }
+    
+    /// Get direct children of a folder by path
+    /// 
+    /// This method returns a FolderList containing only the direct children of the specified folder path.
+    /// This is useful for listing only immediate subfolders without recursively listing all descendants.
+    /// 
+    /// # Arguments
+    /// * `folder_path` - The path of the folder whose children to retrieve
+    /// 
+    /// # Returns
+    /// A FolderList containing only the direct children of the specified folder
+    pub fn get_children_by_path(&self, folder_path: &str) -> Option<crate::model::FolderList> {
+        // Find the folder node at the specified path
+        let target_node = self.get_folder_by_path(folder_path)?;
+        
+        let mut folder_list = crate::model::FolderList::empty();
+        
+        // Add only the direct children of this folder
+        for child_id in &target_node.children {
+            if let Some(child_node) = self.nodes.get(child_id) {
+                let child_path = self.get_path_for_folder(child_id).unwrap_or_else(|| child_node.name().to_string());
+                let child_folder = crate::model::Folder::from_folder_response(child_node.folder.clone(), child_path);
+                folder_list.insert(child_folder);
+            }
+        }
+        
+        Some(folder_list)
     }
     
     /// Get a folder node by its ID
@@ -376,6 +410,26 @@ impl FolderHierarchy {
         }
         
         tree.end_child();
+    }
+    
+    /// Convert the folder hierarchy to a flat FolderList
+    /// 
+    /// This method creates a FolderList with all folders in the hierarchy,
+    /// each with its full path computed from the hierarchy.
+    /// 
+    /// # Returns
+    /// A FolderList containing all folders with their computed paths
+    pub fn to_folder_list(&self) -> crate::model::FolderList {
+        let mut folder_list = crate::model::FolderList::empty();
+        
+        // Process each node to create folders with proper paths
+        for (id, node) in &self.nodes {
+            let path = self.get_path_for_folder(id).unwrap_or_else(|| node.name().to_string());
+            let folder = crate::model::Folder::from_folder_response(node.folder.clone(), path);
+            folder_list.insert(folder);
+        }
+        
+        folder_list
     }
 }
 

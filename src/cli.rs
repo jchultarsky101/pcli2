@@ -1189,8 +1189,20 @@ pub async fn execute_command(
                                     match results {
                                         Ok(asset_match_results) => {
                                             // Flatten all matches into a single vector
-                                            let all_matches: Vec<FolderGeometricMatch> = asset_match_results.into_iter().flatten().collect();
+                                            let mut all_matches: Vec<FolderGeometricMatch> = asset_match_results.into_iter().flatten().collect();
                                             trace!("Processed all assets, found {} total matches", all_matches.len());
+
+                                            // Sort matches first by match percentage (descending), then by reference asset path (ascending)
+                                            all_matches.sort_by(|a, b| {
+                                                // First compare by match percentage (descending)
+                                                b.match_percentage
+                                                    .partial_cmp(&a.match_percentage)
+                                                    .unwrap_or(std::cmp::Ordering::Equal)
+                                                    .then_with(|| {
+                                                        // Then by reference asset path (ascending)
+                                                        a.reference_asset_path.cmp(&b.reference_asset_path)
+                                                    })
+                                            });
 
                                             // Create the response object (now a simple vector)
                                             let folder_match_response: FolderGeometricMatchResponse = all_matches;

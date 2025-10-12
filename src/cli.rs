@@ -1611,7 +1611,7 @@ pub async fn execute_command(
                             metadata.insert(metadata_name.clone(), json_value);
                             
                             let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                            let format = OutputFormat::from_str(&format_str).unwrap();
+                            let _format = OutputFormat::from_str(&format_str).unwrap();
                             
                             // Check if refresh is requested for metadata field cache
                             let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
@@ -1765,7 +1765,7 @@ pub async fn execute_command(
                             let metadata_names: Vec<&str> = metadata_name_strings.iter().map(|s| s.as_str()).collect();
                             
                             let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                            let format = OutputFormat::from_str(&format_str).unwrap();
+                            let _format = OutputFormat::from_str(&format_str).unwrap();
                             
                             // Try to get access token and delete asset metadata via Physna V3 API
                             let mut keyring = Keyring::default();

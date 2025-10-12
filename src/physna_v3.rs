@@ -1017,16 +1017,18 @@ impl PhysnaApiClient {
         self.delete_with_body(&url, &body).await
     }
     /// * `field_name` - The name of the metadata field to create
+    /// * `field_type` - The type of the metadata field (e.g., "text", "number", "boolean") - defaults to "text"
     /// 
     /// # Returns
     /// * `Ok(serde_json::Value)` - Response from the API confirming the field was created
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn create_metadata_field(&mut self, tenant_id: &str, field_name: &str) -> Result<serde_json::Value, ApiError> {
+    pub async fn create_metadata_field(&mut self, tenant_id: &str, field_name: &str, field_type: Option<&str>) -> Result<serde_json::Value, ApiError> {
         let url = format!("{}/tenants/{}/metadata-fields", self.base_url, tenant_id);
         
+        let effective_type = field_type.unwrap_or("text");
         let body = serde_json::json!({
             "name": field_name,
-            "type": "text"  // Default to text as specified
+            "type": effective_type
         });
         
         self.post(&url, &body).await

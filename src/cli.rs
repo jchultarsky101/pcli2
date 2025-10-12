@@ -1613,6 +1613,9 @@ pub async fn execute_command(
                             let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                             let format = OutputFormat::from_str(&format_str).unwrap();
                             
+                            // Check if refresh is requested for metadata field cache
+                            let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
+                            
                             // Try to get access token and update asset metadata via Physna V3 API
                             let mut keyring = Keyring::default();
                             match keyring.get("default", "access-token".to_string()) {
@@ -1663,14 +1666,64 @@ pub async fn execute_command(
                                         return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
                                     };
                                     
-                                    match client.update_asset_metadata(&tenant, &asset_id, &metadata).await {
-                                        Ok(()) => {
-                                            // On successful metadata update, return no output as requested
-                                            Ok(())
+                                    // Get list of existing metadata fields to check if new ones need to be created
+                                    match pcli2::metadata_cache::MetadataCache::get_or_fetch(&mut client, &tenant, refresh_requested).await {
+                                        Ok(metadata_fields_response) => {
+                                            // Extract existing field names
+                                            let existing_field_names: std::collections::HashSet<String> = 
+                                                metadata_fields_response.metadata_fields
+                                                    .iter()
+                                                    .map(|field| field.name.clone())
+                                                    .collect();
+                                            
+                                            // Check for new metadata fields that need to be created
+                                            for (field_name, _value) in &metadata {
+                                                if !existing_field_names.contains(field_name) {
+                                                    trace!("Creating new metadata field: {}", field_name);
+                                                    // Use the provided type or default to "text"
+                                                    let field_type_opt = sub_matches.get_one::<String>("type");
+                                                    let field_type_str = field_type_opt.map(|s| s.as_str()).unwrap_or("text");
+                                                    match client.create_metadata_field(&tenant, field_name, Some(field_type_str)).await {
+                                                        Ok(_) => {
+                                                            debug!("Successfully created metadata field: {} with type {}", field_name, field_type_str);
+                                                            // Invalidate the cache since we've added a new field
+                                                            match pcli2::metadata_cache::MetadataCache::load() {
+                                                                Ok(mut cache) => {
+                                                                    cache.invalidate_tenant(&tenant);
+                                                                    if let Err(e) = cache.save() {
+                                                                        debug!("Failed to save invalidated metadata cache: {}", e);
+                                                                    }
+                                                                }
+                                                                Err(e) => {
+                                                                    debug!("Failed to load metadata cache for invalidation: {}", e);
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error creating metadata field '{}': {}", field_name, e);
+                                                            eprintln!("Error creating metadata field '{}': {}", field_name, e);
+                                                            return Ok(());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Now update the asset metadata with the new or existing fields
+                                            match client.update_asset_metadata(&tenant, &asset_id, &metadata).await {
+                                                Ok(()) => {
+                                                    // On successful metadata update, return no output as requested
+                                                    Ok(())
+                                                }
+                                                Err(e) => {
+                                                    error!("Error updating asset metadata: {}", e);
+                                                    eprintln!("Error updating asset metadata: {}", e);
+                                                    Ok(())
+                                                }
+                                            }
                                         }
                                         Err(e) => {
-                                            error!("Error updating asset metadata: {}", e);
-                                            eprintln!("Error updating asset metadata: {}", e);
+                                            error!("Error fetching metadata fields list: {}", e);
+                                            eprintln!("Error fetching metadata fields list: {}", e);
                                             Ok(())
                                         }
                                     }

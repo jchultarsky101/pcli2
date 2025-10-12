@@ -528,6 +528,13 @@ pub fn create_cli_commands() -> ArgMatches {
                                         .default_value("text")
                                         .help("Metadata field type (text, number, boolean) - default: text")
                                 )
+                                .arg(
+                                    Arg::new(PARAMETER_REFRESH)
+                                        .long(PARAMETER_REFRESH)
+                                        .required(false)
+                                        .action(clap::ArgAction::SetTrue)
+                                        .help("Force refresh metadata field cache from API")
+                                )
                                 .arg(format_parameter.clone().value_parser(["json", "csv"]))
                                 .group(clap::ArgGroup::new("asset_identifier")
                                     .args([PARAMETER_UUID, PARAMETER_PATH])

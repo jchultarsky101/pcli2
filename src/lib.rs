@@ -31,5 +31,6 @@ pub mod folder_path_cache;
 pub mod format;
 pub mod keyring;
 pub mod metadata;
+pub mod metadata_cache;
 pub mod model;
 pub mod physna_v3;

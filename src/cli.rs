@@ -1665,24 +1665,8 @@ pub async fn execute_command(
                                     
                                     match client.update_asset_metadata(&tenant, &asset_id, &metadata).await {
                                         Ok(()) => {
-                                            // If successful, try to get the updated asset to format output
-                                            match client.get_asset(&tenant, &asset_id).await {
-                                                Ok(asset_response) => {
-                                                    let asset = Asset::from_asset_response(asset_response, asset_path_param.cloned().unwrap_or_default());
-                                                    match asset.format(format) {
-                                                        Ok(output) => {
-                                                            println!("{}", output);
-                                                            Ok(())
-                                                        }
-                                                        Err(e) => Err(CliError::FormattingError(e)),
-                                                    }
-                                                }
-                                                Err(_) => {
-                                                    // If we can't get the asset after updating metadata, just return success message
-                                                    println!("Successfully updated metadata for asset: {}", asset_id);
-                                                    Ok(())
-                                                }
-                                            }
+                                            // On successful metadata update, return no output as requested
+                                            Ok(())
                                         }
                                         Err(e) => {
                                             error!("Error updating asset metadata: {}", e);
@@ -1782,24 +1766,8 @@ pub async fn execute_command(
                                     
                                     match client.delete_asset_metadata(&tenant, &asset_id, metadata_names).await {
                                         Ok(()) => {
-                                            // If successful, try to get the updated asset to format output
-                                            match client.get_asset(&tenant, &asset_id).await {
-                                                Ok(asset_response) => {
-                                                    let asset = Asset::from_asset_response(asset_response, asset_path_param.cloned().unwrap_or_default());
-                                                    match asset.format(format) {
-                                                        Ok(output) => {
-                                                            println!("{}", output);
-                                                            Ok(())
-                                                        }
-                                                        Err(e) => Err(CliError::FormattingError(e)),
-                                                    }
-                                                }
-                                                Err(_) => {
-                                                    // If we can't get the asset after deleting metadata, just return success message
-                                                    println!("Successfully deleted metadata from asset: {}", asset_id);
-                                                    Ok(())
-                                                }
-                                            }
+                                            // On successful metadata deletion, return no output
+                                            Ok(())
                                         }
                                         Err(e) => {
                                             error!("Error deleting asset metadata: {}", e);

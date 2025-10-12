@@ -1189,11 +1189,27 @@ pub async fn execute_command(
                                     match results {
                                         Ok(asset_match_results) => {
                                             // Flatten all matches into a single vector
-                                            let mut all_matches: Vec<FolderGeometricMatch> = asset_match_results.into_iter().flatten().collect();
+                                            let all_matches: Vec<FolderGeometricMatch> = asset_match_results.into_iter().flatten().collect();
                                             trace!("Processed all assets, found {} total matches", all_matches.len());
 
-                                            // Sort matches first by match percentage (descending), then by reference asset path (ascending)
-                                            all_matches.sort_by(|a, b| {
+                                            // Filter out duplicate pairs (A->B and B->A are the same match)
+                                            let mut unique_matches = Vec::new();
+                                            let mut seen_pairs = std::collections::HashSet::new();
+
+                                            for match_result in all_matches {
+                                                // Create a canonical pair identifier by sorting the UUIDs
+                                                let mut pair = vec![match_result.reference_asset_uuid.clone(), match_result.candidate_asset_uuid.clone()];
+                                                pair.sort();
+                                                let pair_key = format!("{}-{}", pair[0], pair[1]);
+
+                                                if !seen_pairs.contains(&pair_key) {
+                                                    seen_pairs.insert(pair_key);
+                                                    unique_matches.push(match_result);
+                                                }
+                                            }
+
+                                            // Sort the unique matches by match percentage (descending), then by reference asset path (ascending)
+                                            unique_matches.sort_by(|a, b| {
                                                 // First compare by match percentage (descending)
                                                 b.match_percentage
                                                     .partial_cmp(&a.match_percentage)
@@ -1205,7 +1221,7 @@ pub async fn execute_command(
                                             });
 
                                             // Create the response object (now a simple vector)
-                                            let folder_match_response: FolderGeometricMatchResponse = all_matches;
+                                            let folder_match_response: FolderGeometricMatchResponse = unique_matches;
 
                                             trace!("Formatting results for output");
                                             // Format and output the results

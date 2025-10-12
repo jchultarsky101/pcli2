@@ -1382,6 +1382,9 @@ pub struct FolderGeometricMatch {
     /// UUID of the candidate asset
     #[serde(rename = "candidateAssetUuid")]
     pub candidate_asset_uuid: String,
+    /// URL to the Physna comparison viewer for these two assets
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: String,
 }
 
 impl CsvRecordProducer for FolderGeometricMatch {
@@ -1395,6 +1398,7 @@ impl CsvRecordProducer for FolderGeometricMatch {
             "CANDIDATE_ASSET_PATH".to_string(),
             "REFERENCE_ASSET_UUID".to_string(),
             "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
         ]
     }
 
@@ -1408,6 +1412,7 @@ impl CsvRecordProducer for FolderGeometricMatch {
             self.candidate_asset_path.clone(),
             self.reference_asset_uuid.clone(),
             self.candidate_asset_uuid.clone(),
+            self.comparison_url.clone(),
         ]]
     }
 }

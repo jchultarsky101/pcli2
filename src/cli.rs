@@ -933,6 +933,16 @@ pub async fn execute_command(
                                                 if geometric_match.asset.id != asset_id {
                                                     let candidate_asset_name = geometric_match.asset.path.split('/').next_back().unwrap_or(&geometric_match.asset.path).to_string();
                                                     trace!("Adding match: {} -> {} ({}%)", reference_asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                    // Generate comparison URL for single asset match
+                                                    let comparison_url = format!("https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                                                        tenant,
+                                                        asset_id,
+                                                        geometric_match.asset.id,
+                                                        tenant,
+                                                        tenant,
+                                                        geometric_match.match_percentage
+                                                    );
+                                                    
                                                     let folder_match = FolderGeometricMatch {
                                                         reference_asset_name: reference_asset_name.clone(),
                                                         candidate_asset_name,
@@ -941,6 +951,7 @@ pub async fn execute_command(
                                                         candidate_asset_path: geometric_match.asset.path.clone(),
                                                         reference_asset_uuid: asset_id.clone(),
                                                         candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                        comparison_url,
                                                     };
                                                     matches.push(folder_match);
                                                 } else {
@@ -1129,6 +1140,16 @@ pub async fn execute_command(
                                                                 if geometric_match.asset.id != asset_uuid {
                                                                     let candidate_asset_name = geometric_match.asset.path.split('/').next_back().unwrap_or(&geometric_match.asset.path).to_string();
                                                                     trace!("Adding match: {} -> {} ({}%)", asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                                    // Generate comparison URL
+                                                                    let comparison_url = format!("https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                                                                        tenant_id,
+                                                                        asset_uuid,
+                                                                        geometric_match.asset.id,
+                                                                        tenant_id,
+                                                                        tenant_id,
+                                                                        geometric_match.match_percentage
+                                                                    );
+                                                                    
                                                                     let folder_match = FolderGeometricMatch {
                                                                         reference_asset_name: asset_name.clone(),
                                                                         candidate_asset_name,
@@ -1137,6 +1158,7 @@ pub async fn execute_command(
                                                                         candidate_asset_path: geometric_match.asset.path.clone(),
                                                                         reference_asset_uuid: asset_uuid.clone(),
                                                                         candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                                        comparison_url,
                                                                     };
                                                                     asset_matches.push(folder_match);
                                                                 } else {

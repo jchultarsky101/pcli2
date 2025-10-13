@@ -3,7 +3,7 @@ use color_print::cprintln;
 /// Display the ASCII art banner for PCLI2
 pub fn print_banner() {
     println!();
-    cprintln!("<r>PCLI2</r> - Physna Command Line Interface v2\\n");
+    cprintln!("<r>PCLI2</r> - Physna Command Line Interface v2");
     println!();
     
     // Print ASCII art spelling out "PCLI2" with reversed gradient orange colors (lighter on top)

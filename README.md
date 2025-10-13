@@ -1,5 +1,7 @@
 # PCLI2 - Physna Command Line Interface v2
 
+**Documentation**: [https://jchultarsky101.github.io/pcli2/](https://jchultarsky101.github.io/pcli2/)
+
 The goal of this project is to create version 2 of the Physna Command Line Interface client (PCLI2).
 
 Based on lessons learned from the previous version, we have developed a new and more ergonomic interface. It operates more like Git's excellent CLI, utilizing nested sub-commands, sensible defaults, and configuration.

@@ -34,6 +34,13 @@ impl AssetCache {
     
     /// Get the default cache file path
     fn get_cache_file_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        // Check for PCLI2_CACHE_DIR environment variable first
+        if let Ok(cache_dir_str) = std::env::var("PCLI2_CACHE_DIR") {
+            let mut cache_path = PathBuf::from(cache_dir_str);
+            cache_path.push("asset_cache.json");
+            return Ok(cache_path);
+        }
+        
         let mut path = dirs::data_dir().ok_or("Could not determine data directory")?;
         path.push("pcli2");
         path.push("asset_cache.json");

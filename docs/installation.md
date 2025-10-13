@@ -43,9 +43,32 @@ cargo --version
 
 ## Installation Methods
 
-### Method 1: Building from Source (Recommended)
+### Method 1: Pre-built Binaries (Recommended)
 
-This method gives you the latest version of PCLI2:
+PCLI2 provides pre-built binaries for Windows, macOS, and Linux through GitHub Releases:
+
+1. Visit the [Latest Release](https://github.com/physna/pcli2/releases/latest)
+2. Download the appropriate installer or binary for your platform:
+   - **Windows**: `pcli2-x86_64-pc-windows-msvc.msi` (Installer) or `pcli2-x86_64-pc-windows-msvc.zip` (ZIP)
+   - **macOS**: `pcli2-installer.sh` (Universal script) or platform-specific archives
+   - **Linux**: `pcli2-installer.sh` (Universal script) or `pcli2-x86_64-unknown-linux-gnu.tar.xz` (Archive)
+
+#### Using the Universal Installer Script:
+```bash
+# Download and run the installer script
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+```
+
+#### Manual Installation:
+```bash
+# Extract the archive (example for Linux)
+tar -xf pcli2-x86_64-unknown-linux-gnu.tar.xz
+sudo cp pcli2 /usr/local/bin/
+```
+
+### Method 2: Building from Source
+
+This method gives you the latest development version of PCLI2:
 
 ```bash
 # Clone the repository
@@ -63,7 +86,7 @@ sudo cp target/release/pcli2 /usr/local/bin/
 echo 'export PATH="$PATH:/path/to/pcli2/target/release"' >> ~/.bashrc
 ```
 
-### Method 2: Installing via Cargo
+### Method 3: Installing via Cargo
 
 If you want to install PCLI2 directly from crates.io (once published):
 

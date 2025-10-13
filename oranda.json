@@ -1,11 +1,25 @@
 {
+  "$schema": "https://opensource.axo.dev/oranda/oranda-config-schema.json",
+  "project": {
+    "name": "PCLI2",
+    "description": "Physna Command Line Interface v2 - Advanced 3D Geometry Search and Analysis",
+    "homepage": "https://jchultarsky101.github.io/pcli2",
+    "repository": "https://github.com/jchultarsky101/pcli2",
+    "license": "MIT"
+  },
+  "styles": {
+    "theme": "dark"
+  },
+  "components": {
+    "artifacts": {
+      "package_managers": {
+        "preferred": {
+          "cargo": "pcli2"
+        }
+      }
+    }
+  },
   "build": {
-    "path_prefix": "pcli2"
-  },
-	"styles": {
-    "theme": "axodark"
-  },
-	"components": {
-    "changelog": true
-	}
+    "dist_dir": "public"
+  }
 }

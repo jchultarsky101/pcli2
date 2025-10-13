@@ -1,0 +1,38 @@
+name: Update Latest Tag
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-latest-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest release tag
+        id: latest_tag
+        run: |
+          # Get the tag name from the release event
+          echo "tag_name=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          echo "Latest tag from release event: ${{ github.event.release.tag_name }}"
+
+      - name: Delete existing latest tag if it exists
+        run: |
+          git tag -d latest || true
+          git push origin :refs/tags/latest || true
+
+      - name: Create new latest tag
+        run: |
+          git tag -f latest ${{ github.sha }}
+          git push -f origin latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log completion
+        run: |
+          echo "Successfully updated 'latest' tag to ${{ github.event.release.tag_name }}"

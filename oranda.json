@@ -17,6 +17,10 @@
           "cargo": "pcli2"
         }
       }
+    },
+    "changelog": true,
+    "mdbook": {
+      "path": "docs"
     }
   },
   "build": {

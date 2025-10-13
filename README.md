@@ -25,30 +25,33 @@ Based on lessons learned from the previous version, we have developed a new and 
 ### Prerequisites
 
 Before using PCLI2, you will need:
-- Your Physna tenant's API client credentials (client ID and client secret)
-- A system with Rust installed (for building from source) or the pre-built binary
 
-### Initial Setup
+* Your Physna tenant's API client credentials (client ID and client secret)
+* PCLI2 installed on your system (see [Installation Guide](#installation-guide) below)
 
-1. **Get Your API Credentials**
-   - Log in to your Physna account
+### API Credentials
+
+* Log in to the [Physna OpenAPI Documentation page](https://app-api.physna.com/v3/docs/)
+* Authenticate with your Physna credentials
+* 
    - Navigate to Settings → API Keys
    - Create a new API key pair or use an existing one
    - Note down your Client ID and Client Secret
 
 2. **Installation**
    
-   For detailed installation instructions, please refer to the [Installation Guide](https://jchultarsky101.github.io/pcli2/book/installation.html) in our documentation website.
+   See the [Installation Guide](#installation-guide) section below for detailed installation instructions.
    
    ```bash
-   # Clone the repository
+   # For pre-built installers (recommended):
+   # Download and run the installer script
+   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+   
+   # For building from source (advanced users):
    git clone https://github.com/physna/pcli2.git
    cd pcli2
-   
-   # Build the project
    cargo build --release
-   
-   # The executable will be located at target/release/pcli2
+   sudo cp target/release/pcli2 /usr/local/bin/
    ```
 
 3. **Authentication Setup**
@@ -204,7 +207,114 @@ Now that you're set up:
 
 ## Installation Guide
 
-For detailed installation instructions, please refer to the [Installation Guide](https://jchultarsky101.github.io/pcli2/book/installation.html) in our documentation website.
+This guide explains how to install and set up PCLI2 on your system. We recommend using the pre-built installers for most users, with compilation from source as an advanced option.
+
+### Installation Methods
+
+#### Method 1: Pre-built Installers (Recommended for Most Users)
+
+PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub Releases:
+
+1. Visit the [Latest Release](https://github.com/physna/pcli2/releases/latest)
+2. Download the appropriate installer for your platform:
+   - **Windows**: `pcli2-x86_64-pc-windows-msvc.msi` (Installer)
+   - **macOS**: `pcli2-installer.sh` (Universal script)
+   - **Linux**: `pcli2-installer.sh` (Universal script)
+
+##### Using the Universal Installer Script (macOS/Linux):
+```bash
+# Download and run the installer script
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+```
+
+##### Manual Installation:
+```bash
+# Extract the archive (example for Linux)
+tar -xf pcli2-x86_64-unknown-linux-gnu.tar.xz
+sudo cp pcli2 /usr/local/bin/
+```
+
+#### Method 2: Installing via Cargo (Alternative Package Manager)
+
+If you have Rust installed, you can install PCLI2 directly from crates.io:
+
+```bash
+# Install PCLI2 globally
+cargo install pcli2
+
+# Verify the installation
+pcli2 --version
+```
+
+#### Method 3: Building from Source (Advanced Users)
+
+This method gives you the latest development version of PCLI2:
+
+```bash
+# Clone the repository
+git clone https://github.com/physna/pcli2.git
+cd pcli2
+
+# Build the project (this may take a few minutes)
+cargo build --release
+
+# The executable will be located at target/release/pcli2
+# You can copy it to a directory in your PATH
+sudo cp target/release/pcli2 /usr/local/bin/
+
+# Or add the target directory to your PATH in ~/.bashrc or ~/.zshrc
+echo 'export PATH="$PATH:/path/to/pcli2/target/release"' >> ~/.bashrc
+```
+
+### Verifying the Installation
+
+After installation, verify that PCLI2 is working correctly:
+
+```bash
+# Check the version
+pcli2 --version
+
+# View available commands
+pcli2 --help
+
+# View asset-related commands
+pcli2 asset --help
+```
+
+### Updating PCLI2
+
+To update PCLI2 when using pre-built installers:
+
+```bash
+# For installer script installations
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+
+# For Cargo installations
+cargo install pcli2 --force
+
+# For source builds
+cd /path/to/pcli2
+git pull
+cargo build --release
+sudo cp target/release/pcli2 /usr/local/bin/
+```
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **Permission denied when copying binary**: Use `sudo` or copy to a directory you own
+2. **Command not found**: Ensure the binary directory is in your PATH
+3. **Build failures**: Make sure you have the latest stable Rust version
+
+#### Getting Help
+
+If you encounter issues during installation:
+
+1. Check that all prerequisites are met
+2. Verify your Rust installation is working
+3. Consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page
+4. Contact the Physna development team for support
 
 ## Quick Start Guide
 

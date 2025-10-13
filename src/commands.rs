@@ -484,6 +484,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         .subcommand(
                             Command::new(COMMAND_CREATE)
                                 .about("Add metadata to an asset")
+                                .visible_alias("update")
                                 .arg(tenant_parameter.clone())
                                 .arg(uuid_parameter.clone())
                                 .arg(path_parameter.clone())
@@ -553,6 +554,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         .subcommand(
                             Command::new("create-batch")
                                 .about("Create metadata for multiple assets from a CSV file")
+                                .visible_alias("update-batch")
                                 .long_about(
                                     "Create metadata for multiple assets from a CSV file.\n\n\
                                     The CSV file must have the following columns in the specified order:\n\

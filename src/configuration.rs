@@ -2,7 +2,7 @@ use crate::format::{
     CsvRecordProducer, FormattingError, OutputFormat, OutputFormatter,
 };
 use csv::Writer;
-use dirs::{config_dir, home_dir};
+use dirs::{cache_dir, config_dir};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use serde_yaml;
@@ -44,14 +44,17 @@ pub struct Configuration {
 
 impl Default for Configuration {
     fn default() -> Self {
-        let home_directory = home_dir();
-        let home_directory = match home_directory {
-            Some(mut home_directory) => {
-                home_directory.push("pcli2.cache");
-                Some(home_directory.to_owned())
+        // Use proper cache directory from dirs crate
+        let cache_directory = cache_dir();
+        let cache_path = match cache_directory {
+            Some(mut cache_dir) => {
+                // Use standard cache directory structure: pcli2/cache
+                cache_dir.push("pcli2");
+                cache_dir.push("cache");
+                Some(cache_dir.to_owned())
             }
             None => {
-                trace!("Home directory is None!");
+                trace!("Cache directory is None!");
                 None
             }
         };
@@ -59,7 +62,7 @@ impl Default for Configuration {
         Self {
             active_tenant_id: None,
             active_tenant_name: None,
-            cache_path: home_directory,
+            cache_path,
         }
     }
 }

@@ -113,37 +113,73 @@ pcli2 config get path
 pcli2 context set tenant
 ```
 
-### Cross-Platform Configuration
+### Data Storage Locations
 
-PCLI2 supports cross-platform environments through environment variables:
+PCLI2 stores data in platform-specific standard directories to ensure proper cross-platform compatibility:
+
+#### Configuration Directory
+- **Windows**: `%APPDATA%\pcli2\config.yml`
+- **macOS**: `~/Library/Application Support/pcli2/config.yml`
+- **Linux**: `~/.config/pcli2/config.yml`
+
+#### Cache Directory
+- **Windows**: `%LOCALAPPDATA%\pcli2\cache\`
+- **macOS**: `~/Library/Caches/pcli2/cache/`
+- **Linux**: `~/.cache/pcli2/cache/`
+
+#### Data Directory
+- **Windows**: `%LOCALAPPDATA%\pcli2\data\`
+- **macOS**: `~/Library/Application Support/pcli2/data/`
+- **Linux**: `~/.local/share/pcli2/data/`
+
+#### Environment Variables
+
+You can override these default locations using environment variables:
 
 ```bash
-# Set custom configuration directory (cross-platform support)
+# Override configuration directory
 export PCLI2_CONFIG_DIR="/custom/path/to/config"
 
-# Set custom cache directory (for all cache files)
+# Override cache directory
 export PCLI2_CACHE_DIR="/custom/path/to/cache"
 
-# Useful for WSL users running Windows executables
-export PCLI2_CONFIG_DIR="/home/$USER/.pcli2"
-export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
+# Override data directory
+export PCLI2_DATA_DIR="/custom/path/to/data"
 ```
 
-Environment Variables:
-- `PCLI2_CONFIG_DIR`: Custom directory for configuration file (`config.yml`)
-- `PCLI2_CACHE_DIR`: Custom directory for all cache files (asset, metadata, folder caches)
+#### Cleaning Up
 
-Environment Variable Details:
-- `PCLI2_CONFIG_DIR`: Custom directory for configuration file (`config.yml`). If not set, uses the system's default configuration directory.
-- `PCLI2_CACHE_DIR`: Custom directory for all cache files (asset cache, metadata cache, folder cache). If not set, uses the system's default cache directory.
+To completely remove PCLI2 data:
 
-These environment variables allow PCLI2 to work seamlessly across different operating systems and environments, including:
-- Windows (native)
-- macOS (native) 
-- Linux (native)
-- Windows Subsystem for Linux (WSL)
-- Docker containers
-- CI/CD environments
+1. **Delete configuration file**:
+   ```bash
+   # Find configuration file location
+   pcli2 config get path
+   
+   # Delete the file and directory
+   rm -rf "$(dirname "$(pcli2 config get path)")"
+   ```
+
+2. **Delete cache directory**:
+   ```bash
+   # Find cache directory location (check config)
+   pcli2 config get | grep cache_path
+   
+   # Delete cache directory
+   rm -rf "/path/to/cache/directory/from/config"
+   ```
+
+3. **Manual cleanup** (if directories were created outside standard locations):
+   ```bash
+   # Check for any PCLI2 directories
+   find ~ -type d -name "*pcli2*" 2>/dev/null
+   
+   # Remove any found directories
+   rm -rf ~/pcli2.cache
+   rm -rf ~/.pcli2
+   ```
+
+PCLI2 follows standard platform conventions for data storage, so all data can be easily located and removed using standard file system operations.
 
 ### Working with Verbose Output
 

@@ -439,6 +439,112 @@ pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format
 pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 | grep "HighConfidencePart"
 ```
 
+### Working with Metadata
+
+Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata.
+
+#### Metadata Operations
+
+PCLI2 provides several commands for working with asset metadata:
+
+1. **Create/Update Individual Asset Metadata**:
+   ```bash
+   # Add or update a single metadata field on an asset
+   pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
+   
+   # Add or update a single metadata field on an asset by UUID
+   pcli2 asset metadata create --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Weight" --value "15.5" --type "number"
+   ```
+
+2. **Retrieve Asset Metadata**:
+   ```bash
+   # Get all metadata for an asset in JSON format (default)
+   pcli2 asset metadata get --path "/Root/Folder/Model.stl"
+   
+   # Get all metadata for an asset in CSV format (suitable for batch operations)
+   pcli2 asset metadata get --uuid "123e4567-e89b-12d3-a456-426614174000" --format csv
+   ```
+
+3. **Delete Asset Metadata**:
+   ```bash
+   # Delete specific metadata fields from an asset
+   pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
+   
+   # Delete metadata fields using comma-separated list
+   pcli2 asset metadata delete --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Material,Weight,Description"
+   ```
+
+4. **Create/Update Metadata for Multiple Assets**:
+   ```bash
+   # Create or update metadata for multiple assets from a CSV file
+   pcli2 asset metadata create-batch --csv-file "metadata.csv"
+   ```
+
+#### CSV Format for Batch Metadata Operations
+
+The CSV format used by `asset metadata get --format csv` and `asset metadata create-batch` is designed for seamless round-trip operations:
+
+```csv
+ASSET_PATH,NAME,VALUE
+/Root/Folder/Model1.stl,Material,Steel
+/Root/Folder/Model1.stl,Weight,"15.5 kg"
+/Root/Folder/Model2.ipt,Material,Aluminum
+/Root/Folder/Model2.ipt,Supplier,Richardson Electronics
+```
+
+The CSV format specifications:
+- **Header Row**: Must contain `ASSET_PATH,NAME,VALUE`
+- **ASSET_PATH**: Full path to the asset in Physna (e.g., `/Root/Folder/Model.stl`)
+- **NAME**: Name of the metadata field to set
+- **VALUE**: Value to assign to the metadata field
+- **Quoting**: Values containing commas, quotes, or newlines must be enclosed in double quotes
+- **Escaping**: Double quotes within values must be escaped by doubling them (e.g., `"15.5"" diameter"`)
+
+#### Advanced Metadata Workflow: Export, Modify, Reimport
+
+One of the most powerful features of PCLI2 is the ability to export metadata, modify it externally, and reimport it:
+
+1. **Export Metadata**:
+   ```bash
+   # Export all metadata for an asset to a CSV file
+   pcli2 asset metadata get --path "/Root/Folder/Model.stl" --format csv > model_metadata.csv
+   
+   # Export metadata for multiple assets in a folder
+   pcli2 asset list --path "/Root/Folder/" --metadata --format csv > folder_metadata.csv
+   ```
+
+2. **Modify Metadata Externally**:
+   - Open the CSV file in a spreadsheet application (Excel, Google Sheets, etc.)
+   - Make the desired changes to metadata values
+   - Save the file in CSV format
+
+3. **Reimport Modified Metadata**:
+   ```bash
+   # Update assets with modified metadata
+   pcli2 asset metadata create-batch --csv-file "modified_metadata.csv"
+   ```
+
+This workflow enables powerful bulk metadata operations while maintaining the flexibility to use familiar spreadsheet tools for data manipulation.
+
+#### Metadata Field Types
+
+PCLI2 supports three metadata field types:
+
+1. **Text** (default): String values
+   ```bash
+   pcli2 asset metadata create --path "/Root/Model.stl" --name "Description" --value "Sample part description" --type "text"
+   ```
+
+2. **Number**: Numeric values
+   ```bash
+   pcli2 asset metadata create --path "/Root/Model.stl" --name "Weight" --value "15.5" --type "number"
+   ```
+
+3. **Boolean**: True/False values
+   ```bash
+   pcli2 asset metadata create --path "/Root/Model.stl" --name "Approved" --value "true" --type "boolean"
+   ```
+
 #### Best Practices
 
 The following are just recommendations. You can use any threshold value you would like between 0%-100%:

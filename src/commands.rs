@@ -323,7 +323,6 @@ pub fn create_cli_commands() -> ArgMatches {
                 ),
         )
         .subcommand(
-            // Asset commands
             Command::new(COMMAND_ASSET)
                 .about("Manage assets")
                 .subcommand_required(true)
@@ -373,44 +372,6 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .help("Display progress bar during upload"),
                         ),
                 )
-
-                .subcommand(
-                    Command::new(COMMAND_LIST)
-                        .about("List all assets in a folder")
-                        .visible_alias("ls")
-                        .arg(tenant_parameter.clone())
-                        .arg(path_parameter.clone())
-                        .arg(
-                            Arg::new(PARAMETER_REFRESH)
-                                .short('r')
-                                .long(PARAMETER_REFRESH)
-                                .action(clap::ArgAction::SetTrue)
-                                .required(false)
-                                .help("Force refresh asset cache data from API"),
-                        )
-                        .arg(
-                            Arg::new("metadata")
-                                .short('m')
-                                .long("metadata")
-                                .action(clap::ArgAction::SetTrue)
-                                .required(false)
-                                .help("Include metadata fields in the output (adds metadata columns for CSV, metadata object for JSON)"),
-                        )
-                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
-                )
-                .subcommand(
-                    Command::new(COMMAND_GET)
-                        .about("Get asset details")
-                        .arg(tenant_parameter.clone())
-                        .arg(uuid_parameter.clone())
-                        .arg(path_parameter.clone())
-                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
-                        .group(clap::ArgGroup::new("asset_identifier")
-                            .args([PARAMETER_UUID, PARAMETER_PATH])
-                            .multiple(false)
-                            .required(true)
-                        ),
-                )
                 .subcommand(
                     Command::new(COMMAND_DELETE)
                         .about("Delete an asset")
@@ -441,20 +402,6 @@ pub fn create_cli_commands() -> ArgMatches {
                         )
                         .arg(format_parameter.clone().value_parser(["json", "csv"]))
                         .group(clap::ArgGroup::new("reference_asset")
-                            .args([PARAMETER_UUID, PARAMETER_PATH])
-                            .multiple(false)
-                            .required(true)
-                        ),
-                )
-                .subcommand(
-                    Command::new(COMMAND_UPDATE)
-                        .about("Update an asset's metadata")
-                        .arg(tenant_parameter.clone())
-                        .arg(uuid_parameter.clone())
-                        .arg(path_parameter.clone())
-                        .arg(name_parameter.clone())
-                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
-                        .group(clap::ArgGroup::new("asset_identifier")
                             .args([PARAMETER_UUID, PARAMETER_PATH])
                             .multiple(false)
                             .required(true)
@@ -493,13 +440,64 @@ pub fn create_cli_commands() -> ArgMatches {
                         )
                 )
                 .subcommand(
+                    Command::new(COMMAND_GET)
+                        .about("Get asset details")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
+                )
+                .subcommand(
+                    Command::new(COMMAND_LIST)
+                        .about("List all assets in a folder")
+                        .visible_alias("ls")
+                        .arg(tenant_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(
+                            Arg::new(PARAMETER_REFRESH)
+                                .short('r')
+                                .long(PARAMETER_REFRESH)
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Force refresh asset cache data from API"),
+                        )
+                        .arg(
+                            Arg::new("metadata")
+                                .short('m')
+                                .long("metadata")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Include metadata fields in the output (adds metadata columns for CSV, metadata object for JSON)"),
+                        )
+                        .arg(format_parameter.clone().value_parser(["json", "csv"])),
+                )
+                .subcommand(
                     // Metadata commands - subcommands for managing asset metadata
                     Command::new(COMMAND_METADATA)
                         .about("Manage asset metadata")
                         .subcommand_required(true)
                         .subcommand(
+                            Command::new("get")
+                                .about("Get metadata for an asset")
+                                .arg(tenant_parameter.clone())
+                                .arg(uuid_parameter.clone())
+                                .arg(path_parameter.clone())
+                                .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                                .group(clap::ArgGroup::new("asset_identifier")
+                                    .args([PARAMETER_UUID, PARAMETER_PATH])
+                                    .multiple(false)
+                                    .required(true)
+                                ),
+                        )
+                        .subcommand(
                             Command::new(COMMAND_CREATE)
                                 .about("Add metadata to an asset")
+                                .visible_alias("update")
                                 .arg(tenant_parameter.clone())
                                 .arg(uuid_parameter.clone())
                                 .arg(path_parameter.clone())
@@ -569,6 +567,7 @@ pub fn create_cli_commands() -> ArgMatches {
                         .subcommand(
                             Command::new("create-batch")
                                 .about("Create metadata for multiple assets from a CSV file")
+                                .visible_alias("update-batch")
                                 .long_about(
                                     "Create metadata for multiple assets from a CSV file.\n\n\
                                     The CSV file must have the following columns in the specified order:\n\
@@ -609,9 +608,22 @@ pub fn create_cli_commands() -> ArgMatches {
                                         .help("Display progress bar during processing"),
                                 ),
                         ),
+                )
+                .subcommand(
+                    Command::new(COMMAND_UPDATE)
+                        .about("Update an asset's metadata")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(name_parameter.clone())
+                        .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
                 ),
-        )
-        .subcommand(
+        )        .subcommand(
             // Context commands
             Command::new(COMMAND_CONTEXT)
                 .about("Context management")

@@ -1889,6 +1889,164 @@ pub async fn execute_command(
                                 }
                             }
                         }
+                        // Handle asset metadata get
+                        Some(("get", sub_matches)) => {
+                            trace!("Executing asset metadata get command");
+                            // Get tenant from explicit parameter or fall back to active tenant from configuration
+                            let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                                Some(tenant_id) => tenant_id.clone(),
+                                None => {
+                                    // Try to get active tenant from configuration
+                                    if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                        active_tenant_id
+                                    } else {
+                                        return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                                    }
+                                }
+                            };
+                            
+                            let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                            let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                            
+                            // Must provide either asset UUID or path
+                            if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                                return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                            }
+                            
+                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                            let format = OutputFormat::from_str(&format_str).unwrap();
+                            
+                            // Try to get access token and get asset metadata via Physna V3 API
+                            let mut keyring = Keyring::default();
+                            match keyring.get("default", "access-token".to_string()) {
+                                Ok(Some(token)) => {
+                                    let mut client = PhysnaApiClient::new().with_access_token(token);
+                                    
+                                    // Try to get client credentials for automatic token refresh
+                                    if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                        keyring.get("default", "client-id".to_string()),
+                                        keyring.get("default", "client-secret".to_string())
+                                    ) {
+                                        client = client.with_client_credentials(client_id, client_secret);
+                                    }
+                                    
+                                    // Resolve asset ID from either UUID parameter or path
+                                    let asset_id = if let Some(id) = asset_uuid_param {
+                                        id.clone()
+                                    } else if let Some(path) = asset_path_param {
+                                        // Look up asset by path to get UUID
+                                        debug!("Looking up asset by path: {}", path);
+                                        // Get asset cache or fetch assets from API
+                                        match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                            Ok(asset_list_response) => {
+                                                // Convert to AssetList to use find_by_path
+                                                let asset_list = asset_list_response.to_asset_list();
+                                                // Find the asset by path
+                                                if let Some(asset) = asset_list.find_by_path(path) {
+                                                    if let Some(uuid) = asset.uuid() {
+                                                        trace!("Found asset with UUID: {}", uuid);
+                                                        uuid.clone()
+                                                    } else {
+                                                        eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                        return Ok(());
+                                                    }
+                                                } else {
+                                                    eprintln!("Asset not found by path '{}'", path);
+                                                    return Ok(());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error getting asset cache: {}", e);
+                                                eprintln!("Error getting asset cache: {}", e);
+                                                return Ok(());
+                                            }
+                                        }
+                                    } else {
+                                        // This shouldn't happen due to our earlier check, but just in case
+                                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                                    };
+                                    
+                                    // Get the asset details which includes metadata
+                                    match client.get_asset(&tenant, &asset_id).await {
+                                        Ok(asset_response) => {
+                                            // Extract metadata from the asset response
+                                            let metadata = &asset_response.metadata;
+                                            
+                                            match format {
+                                                OutputFormat::Json => {
+                                                    // Output metadata as JSON
+                                                    match serde_json::to_string_pretty(metadata) {
+                                                        Ok(json_output) => {
+                                                            println!("{}", json_output);
+                                                            Ok(())
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error serializing metadata to JSON: {}", e);
+                                                            eprintln!("Error serializing metadata to JSON: {}", e);
+                                                            Ok(())
+                                                        }
+                                                    }
+                                                }
+                                                OutputFormat::Csv => {
+                                                    // Output metadata in CSV format that matches create-batch input
+                                                    let asset_path_for_csv = if let Some(path) = asset_path_param {
+                                                        path.to_string()
+                                                    } else {
+                                                        // Get the path from the asset response
+                                                        asset_response.path.clone()
+                                                    };
+                                                    
+                                                    // Output CSV header
+                                                    println!("ASSET_PATH,NAME,VALUE");
+                                                    
+                                                    // Output each metadata field as a row
+                                                    for (name, value) in metadata {
+                                                        // Convert JSON value to string representation for CSV
+                                                        let value_str = match value {
+                                                            serde_json::Value::String(s) => s.clone(),
+                                                            _ => value.to_string(),
+                                                        };
+                                                        
+                                                        // Escape quotes in the value for CSV
+                                                        let escaped_value = value_str.replace("\"", "\"\"");
+                                                        println!("{},\"{}\",\"{}\"", asset_path_for_csv, name, escaped_value);
+                                                    }
+                                                    Ok(())
+                                                }
+                                                OutputFormat::Tree => {
+                                                    // For tree format, we'll output a simple representation
+                                                    println!("Asset: {}", asset_id);
+                                                    let asset_path_for_display = if let Some(path) = asset_path_param {
+                                                        path.to_string()
+                                                    } else {
+                                                        asset_response.path.clone()
+                                                    };
+                                                    println!("Path: {}", asset_path_for_display);
+                                                    println!("Metadata:");
+                                                    for (name, value) in metadata {
+                                                        println!("  {}: {}", name, value);
+                                                    }
+                                                    Ok(())
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error fetching asset metadata: {}", e);
+                                            eprintln!("Error fetching asset metadata: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    eprintln!("Error retrieving access token: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
                         _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                             sub_matches,
                         ))),

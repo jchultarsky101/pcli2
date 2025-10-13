@@ -38,17 +38,34 @@ jobs:
 
       - name: Copy documentation files to ensure proper structure
         run: |
-          # Ensure docs/src directory exists and has proper structure
+          # Ensure docs/src directory exists with all necessary files
           mkdir -p docs/src
+          
           # Copy all documentation files to docs/src if they're not already there
           for file in docs/*.md; do
             if [ -f "$file" ]; then
               filename=$(basename "$file")
+              # Skip if already exists to preserve original content
               if [ ! -f "docs/src/$filename" ]; then
                 cp "$file" "docs/src/$filename"
               fi
             fi
           done
+          
+          # Ensure SUMMARY.md exists in docs/src
+          if [ ! -f "docs/src/SUMMARY.md" ]; then
+            echo "# Summary" > docs/src/SUMMARY.md
+            echo "" >> docs/src/SUMMARY.md
+            echo "[Introduction](README.md)" >> docs/src/SUMMARY.md
+            echo "" >> docs/src/SUMMARY.md
+            echo "- [Installation Guide](installation.md)" >> docs/src/SUMMARY.md
+            echo "- [Quick Start Guide](quickstart.md)" >> docs/src/SUMMARY.md
+            echo "- [Geometric Matching](geometric-matching.md)" >> docs/src/SUMMARY.md
+            echo "- [Cross-Platform Configuration](cross_platform.md)" >> docs/src/SUMMARY.md
+            echo "- [Documentation Deployment](documentation_deployment.md)" >> docs/src/SUMMARY.md
+            echo "" >> docs/src/SUMMARY.md
+            echo "<!-- This file is used by mdBook to generate the documentation navigation -->" >> docs/src/SUMMARY.md
+          fi
           
       - name: Build Documentation
         run: oranda build

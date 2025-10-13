@@ -20,6 +20,7 @@
     }
   },
   "build": {
-    "dist_dir": "public"
+    "dist_dir": "public",
+    "path_prefix": "pcli2"
   }
 }

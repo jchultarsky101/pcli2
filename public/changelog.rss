@@ -1,1 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>PCLI2 Changelog</title><link>http://127.0.0.1:7979/changelog</link><description>Changelog information for PCLI2</description><category domain="https://github.com/physna/pcli2">PCLI2 Changelog</category><atom:link href="http://127.0.0.1:7979/changelog.rss" rel="self"/></channel></rss>
+<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>PCLI2 Changelog</title><link>http://127.0.0.1:7979/pcli2/changelog</link><description>Changelog information for PCLI2</description><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><atom:link href="http://127.0.0.1:7979/pcli2/changelog.rss" rel="self"/><item><title>0.1.0 - 2023-01-17</title><link>http://127.0.0.1:7979/pcli2/changelog/v0.1.0</link><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><guid>http://127.0.0.1:7979/pcli2/changelog/v0.1.0</guid><content:encoded><![CDATA[<h3>Added</h3>
+<ul>
+<li>Initial release of PCLI2</li>
+<li>Basic asset management commands (create, list, get, delete)</li>
+<li>Folder management commands (create, list, get, delete, update)</li>
+<li>Tenant management functionality</li>
+<li>Authentication with OAuth2 client credentials flow</li>
+<li>Configuration management</li>
+<li>Context management for multi-tenant support</li>
+</ul>
+]]></content:encoded></item></channel></rss>

@@ -42,6 +42,19 @@ jobs:
       - name: Copy LICENSE file to documentation
         run: cp LICENSE public/
 
+      - name: Copy documentation files to public directory
+        run: |
+          mkdir -p public/docs
+          cp docs/*.md public/docs/
+          # Also copy any subdirectories that might exist
+          for dir in docs/*/; do
+            if [ -d "$dir" ]; then
+              dirname=$(basename "$dir")
+              mkdir -p "public/docs/$dirname"
+              cp "$dir"*.md "public/docs/$dirname/" 2>/dev/null || true
+            fi
+          done
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

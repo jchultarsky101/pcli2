@@ -23,8 +23,8 @@ Based on lessons learned from the previous version, we have developed a new and 
 
 - **Intuitive command structure** with nested sub-commands
 - **Configuration management** for persistent settings
-- **Asset operations** (create, list, get, delete, update)
-- **Folder operations** (create, list, get, delete, update)
+- **Asset operations** (create, list, get, delete, metadata operations)
+- **Folder operations** (create, list, get, delete)
 - **Tenant management** with multi-tenant support
 - **Authentication** with OAuth2 client credentials flow
 - **Batch operations** for processing multiple assets
@@ -237,8 +237,8 @@ pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
 # List all assets in a folder
 pcli2 asset list --path "/Root/MyFolder" --format json
 
-# Update asset metadata
-pcli2 asset update --path "/Root/MyFolder/model.stl" --metadata "new_metadata.json"
+# Update/create asset metadata
+pcli2 asset create-metadata-batch --csv-file "metadata.csv"
 
 # Upload asset with metadata
 pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/ --metadata "metadata.json"
@@ -267,9 +267,9 @@ Metadata is essential for organizing and searching your assets effectively. PCLI
    pcli2 asset create --file model.stl --path /Parts/Model --metadata "metadata.json"
    ```
 
-3. **Update existing asset metadata**:
+3. **Update/create existing asset metadata**:
    ```bash
-   pcli2 asset update --path "/Parts/Model.stl" --metadata "updated_metadata.json"
+   pcli2 asset create-metadata-batch --csv-file "updated_metadata.csv"
    ```
 
 ### Geometric Matching
@@ -512,7 +512,6 @@ pcli2
 │   ├── create-metadata-batch  Create metadata for multiple assets from a CSV file
 │   ├── list                List all assets in a folder
 │   ├── get                 Get asset details
-│   ├── update              Update an asset's metadata
 │   ├── delete              Delete an asset
 │   ├── geometric-match     Find geometrically similar assets for a single asset
 │   └── geometric-match-folder  Find geometrically similar assets for all assets in a folder
@@ -520,13 +519,11 @@ pcli2
 │   ├── create           Create a new folder
 │   ├── list             List all folders in a parent folder
 │   ├── get              Get folder details
-│   ├── update           Update folder details
 │   └── delete           Delete a folder
 ├── tenant
 │   ├── create           Create a new tenant (not supported via API)
 │   ├── list             List all available tenants
 │   ├── get              Get specific tenant details
-│   ├── update           Update tenant configuration (not supported via API)
 │   └── delete           Delete a tenant (not supported via API)
 ├── auth
 │   ├── login            Authenticate with client credentials

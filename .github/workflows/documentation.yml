@@ -36,24 +36,25 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/oranda/releases/latest/download/oranda-installer.sh | sh
 
+      - name: Copy documentation files to ensure proper structure
+        run: |
+          # Ensure docs/src directory exists and has proper structure
+          mkdir -p docs/src
+          # Copy all documentation files to docs/src if they're not already there
+          for file in docs/*.md; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              if [ ! -f "docs/src/$filename" ]; then
+                cp "$file" "docs/src/$filename"
+              fi
+            fi
+          done
+          
       - name: Build Documentation
         run: oranda build
       
       - name: Copy LICENSE file to documentation
         run: cp LICENSE public/
-
-      - name: Copy documentation files to public directory
-        run: |
-          mkdir -p public/docs
-          cp docs/*.md public/docs/
-          # Also copy any subdirectories that might exist
-          for dir in docs/*/; do
-            if [ -d "$dir" ]; then
-              dirname=$(basename "$dir")
-              mkdir -p "public/docs/$dirname"
-              cp "$dir"*.md "public/docs/$dirname/" 2>/dev/null || true
-            fi
-          done
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

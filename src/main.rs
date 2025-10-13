@@ -91,7 +91,7 @@ async fn main() -> Result<(), i32> {
     });
 
     // Get the configuration
-    let configuration = match Configuration::load_default() {
+    let configuration = match Configuration::load_or_create_default() {
         Ok(config) => config,
         Err(e) => {
             error_utils::report_error_with_message(&e, "Configuration error occurred");

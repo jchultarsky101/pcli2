@@ -160,6 +160,61 @@ impl Configuration {
         Configuration::load_from_file(default_file_path)
     }
 
+    /// Load default configuration, creating a default one if none exists
+    /// This is more user-friendly for first-time users
+    pub fn load_or_create_default() -> Result<Configuration, ConfigurationError> {
+        let default_file_path = Configuration::get_default_configuration_file_path()?;
+        debug!(
+            "Loading or creating configuration from {}...",
+            default_file_path
+                .clone()
+                .into_os_string()
+                .into_string()
+                .unwrap()
+        );
+        
+        // Try to load existing configuration
+        match Configuration::load_from_file(default_file_path.clone()) {
+            Ok(config) => Ok(config),
+            Err(e) => {
+                // Check if this is a "file not found" error
+                match &e {
+                    ConfigurationError::FailedToLoadData { cause } => {
+                        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+                            if io_err.kind() == std::io::ErrorKind::NotFound {
+                                debug!("Configuration file not found, creating default configuration");
+                                let default_config = Configuration::default();
+                                
+                                // Try to save the default configuration
+                                match default_config.save(&default_file_path) {
+                                    Ok(()) => {
+                                        debug!("Default configuration created successfully");
+                                        Ok(default_config)
+                                    },
+                                    Err(save_error) => {
+                                        // If we can't save, return the original error with more context
+                                        Err(ConfigurationError::FailedToLoadData {
+                                            cause: Box::new(std::io::Error::new(
+                                                std::io::ErrorKind::Other,
+                                                format!("Configuration file not found and failed to create default configuration. Tried to create at: {:?}. Error: {}", 
+                                                       default_file_path, save_error)
+                                            ))
+                                        })
+                                    }
+                                }
+                            } else {
+                                Err(e)
+                            }
+                        } else {
+                            Err(e)
+                        }
+                    },
+                    _ => Err(e)
+                }
+            }
+        }
+    }
+
     pub fn load_from_file(path: PathBuf) -> Result<Configuration, ConfigurationError> {
         match fs::read_to_string(path.clone()) {
             Ok(configuration) => {

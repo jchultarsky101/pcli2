@@ -511,6 +511,20 @@
 <p><strong>Documentation</strong>: <a href="https://jchultarsky101.github.io/pcli2/" rel="noopener noreferrer">https://jchultarsky101.github.io/pcli2/</a></p>
 <p>The goal of this project is to create version 2 of the Physna Command Line Interface client (PCLI2).</p>
 <p>Based on lessons learned from the previous version, we have developed a new and more ergonomic interface. It operates more like Git's excellent CLI, utilizing nested sub-commands, sensible defaults, and configuration.</p>
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#features" rel="noopener noreferrer">Features</a></li>
+<li><a href="#quick-start" rel="noopener noreferrer">Quick Start</a></li>
+<li><a href="#installation" rel="noopener noreferrer">Installation</a></li>
+<li><a href="#authentication" rel="noopener noreferrer">Authentication</a></li>
+<li><a href="#basic-usage" rel="noopener noreferrer">Basic Usage</a></li>
+<li><a href="#advanced-usage" rel="noopener noreferrer">Advanced Usage</a></li>
+<li><a href="#commands-reference" rel="noopener noreferrer">Commands Reference</a></li>
+<li><a href="#troubleshooting" rel="noopener noreferrer">Troubleshooting</a></li>
+<li><a href="#contributing" rel="noopener noreferrer">Contributing</a></li>
+<li><a href="#license" rel="noopener noreferrer">License</a></li>
+<li><a href="#support" rel="noopener noreferrer">Support</a></li>
+</ul>
 <h2>Features</h2>
 <ul>
 <li><strong>Intuitive command structure</strong> with nested sub-commands</li>
@@ -525,200 +539,161 @@
 <li><strong>Context management</strong> for working with multiple tenants</li>
 <li><strong>Cross-platform support</strong> with environment variable configuration</li>
 </ul>
-<h2>Getting Started</h2>
+<h2>Quick Start</h2>
+<p>Getting started with PCLI2 is straightforward. Follow these steps:</p>
+<ol>
+<li><strong>Get your API credentials</strong> by logging into the <a href="https://app-api.physna.com/v3/docs/" rel="noopener noreferrer">Physna OpenAPI Documentation page</a> and creating a service account</li>
+<li><strong>Install PCLI2</strong> using one of the methods described in <a href="#installation" rel="noopener noreferrer">Installation</a></li>
+<li><strong>Authenticate</strong> with your Physna tenant:
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 auth login</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">client-id</span><span style="color:#82aaff;"> YOUR_CLIENT_ID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">client-secret</span><span style="color:#82aaff;"> YOUR_CLIENT_SECRET
+</span></pre>
+
+</li>
+<li><strong>Verify your setup</strong>:
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 auth get
+</span></pre>
+
+</li>
+<li><strong>Start using PCLI2</strong> to manage your assets and folders</li>
+</ol>
+<h2>Installation</h2>
 <h3>Prerequisites</h3>
-<p>Before using PCLI2, you will need:</p>
+<p>Before installing PCLI2, you will need:</p>
 <ul>
 <li>Your Physna tenant's API client credentials (client ID and client secret)</li>
-<li>A system with Rust installed (for building from source) or the pre-built binary</li>
+<li>A compatible operating system (Windows, macOS, or Linux)</li>
 </ul>
-<h3>Initial Setup</h3>
+<h3>Installation Methods</h3>
+<h4>Method 1: Pre-built Installers (Recommended for Most Users)</h4>
+<p>PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub Releases:</p>
 <ol>
-<li>
-<p><strong>Get Your API Credentials</strong></p>
+<li>Visit the <a href="https://github.com/physna/pcli2/releases/latest" rel="noopener noreferrer">Latest Release</a></li>
+<li>Download the appropriate installer for your platform:
 <ul>
-<li>Log in to your Physna account</li>
-<li>Navigate to Settings → API Keys</li>
-<li>Create a new API key pair or use an existing one</li>
-<li>Note down your Client ID and Client Secret</li>
+<li><strong>Windows</strong>: <code>pcli2-x86_64-pc-windows-msvc.msi</code> (Installer)</li>
+<li><strong>macOS</strong>: <code>pcli2-installer.sh</code> (Universal script)</li>
+<li><strong>Linux</strong>: <code>pcli2-installer.sh</code> (Universal script)</li>
 </ul>
 </li>
-<li>
-<p><strong>Installation</strong></p>
-<p>For detailed installation instructions, please refer to the <a href="https://jchultarsky101.github.io/pcli2/book/installation.html" rel="noopener noreferrer">Installation Guide</a> in our documentation website.</p>
+</ol>
+<h5>Using the Universal Installer Script (macOS/Linux):</h5>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Download and run the installer script
+</span><span style="color:#82aaff;">curl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">proto </span><span style="color:#89ddff;">'</span><span style="color:#c3e88d;">=https</span><span style="color:#89ddff;">' --</span><span style="color:#f78c6c;">tlsv1</span><span style="color:#82aaff;">.2</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">LsSf</span><span style="color:#82aaff;"> https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh </span><span style="color:#89ddff;">| </span><span style="color:#82aaff;">sh
+</span></pre>
+
+<h4>Method 2: Manual Installation</h4>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Extract the archive (example for Linux)
+</span><span style="color:#82aaff;">tar</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">xf</span><span style="color:#82aaff;"> pcli2-x86_64-unknown-linux-gnu.tar.xz
+</span><span style="color:#82aaff;">sudo cp pcli2 /usr/local/bin/
+</span></pre>
+
+<h4>Method 3: Building from Source (Advanced Users)</h4>
+<p>This method gives you the latest development version of PCLI2:</p>
 <pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Clone the repository
 </span><span style="color:#82aaff;">git clone https://github.com/physna/pcli2.git
 </span><span style="color:#82aaff;">cd pcli2
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Build the project
+</span><span style="font-style:italic;color:#546e7a;"># Build the project (this may take a few minutes)
 </span><span style="color:#82aaff;">cargo build</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">release
 </span><span style="color:#eeffff;">
 </span><span style="font-style:italic;color:#546e7a;"># The executable will be located at target/release/pcli2
+</span><span style="font-style:italic;color:#546e7a;"># You can copy it to a directory in your PATH
+</span><span style="color:#82aaff;">sudo cp target/release/pcli2 /usr/local/bin/
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Or add the target directory to your PATH in ~/.bashrc or ~/.zshrc
+</span><span style="color:#82aaff;">echo </span><span style="color:#89ddff;">'</span><span style="color:#c3e88d;">export PATH="$PATH:/path/to/pcli2/target/release"</span><span style="color:#89ddff;">' &gt;&gt; </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/.bashrc
 </span></pre>
 
-</li>
-<li>
-<p><strong>Authentication Setup</strong></p>
-<p>Authenticate with your Physna tenant:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Login with client credentials
-</span><span style="color:#82aaff;">pcli2 auth login</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">client-id</span><span style="color:#82aaff;"> YOUR_CLIENT_ID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">client-secret</span><span style="color:#82aaff;"> YOUR_CLIENT_SECRET
+<h3>Verifying the Installation</h3>
+<p>After installation, verify that PCLI2 is working correctly:</p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Check the version
+</span><span style="color:#82aaff;">pcli2</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">version
 </span></pre>
 
-<p>You'll only need to do this once per session. The credentials are securely stored using your system's keychain.</p>
-</li>
-<li>
-<p><strong>Verify Setup</strong></p>
-<p>Test that everything is working:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Verify authentication
-</span><span style="color:#82aaff;">pcli2 auth get
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># List available tenants to confirm connection
-</span><span style="color:#82aaff;">pcli2 tenant list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Verify access to your tenant
-</span><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> tree
+<p>If successful, this should print the PCLI2 version.</p>
+<h3>Updating PCLI2</h3>
+<p>To update PCLI2 when using pre-built installers:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2-update
 </span></pre>
 
-</li>
-</ol>
-<h3>Basic Commands to Try</h3>
-<p>Once authenticated, try these basic commands to verify functionality:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># List all folders in your tenant (tree view)
-</span><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> tree
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># List assets in the root folder
-</span><span style="color:#82aaff;">pcli2 asset list
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Upload a test file (replace with your own file)
-</span><span style="color:#82aaff;">pcli2 asset create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">file</span><span style="color:#82aaff;"> /path/to/test/file.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Test/
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Get details about your test asset
-</span><span style="color:#82aaff;">pcli2 asset get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Test/file.stl
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Find geometrically similar assets (if you have multiple assets)
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Test/file.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0
+<p>This command should check if a new version is available and automatically install it.</p>
+<p>For manual update, simply execute the installer script:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">curl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">proto </span><span style="color:#89ddff;">'</span><span style="color:#c3e88d;">=https</span><span style="color:#89ddff;">' --</span><span style="color:#f78c6c;">tlsv1</span><span style="color:#82aaff;">.2</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">LsSf</span><span style="color:#82aaff;"> https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh </span><span style="color:#89ddff;">| </span><span style="color:#82aaff;">sh
 </span></pre>
 
-<h3>Configuration Management</h3>
-<p>PCLI2 automatically manages configuration for you, but you can view and manage it:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># View current configuration
-</span><span style="color:#82aaff;">pcli2 config get
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># View configuration file path
-</span><span style="color:#82aaff;">pcli2 config get path
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Set active tenant context
-</span><span style="color:#82aaff;">pcli2 context set tenant
+<p>For source builds:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">cd /path/to/pcli2
+</span><span style="color:#82aaff;">git pull
+</span><span style="color:#82aaff;">cargo build</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">release
+</span><span style="color:#82aaff;">sudo cp target/release/pcli2 /usr/local/bin/
 </span></pre>
 
-<h3>Data Storage Locations</h3>
-<p>PCLI2 stores data in platform-specific standard directories to ensure proper cross-platform compatibility:</p>
-<h4>Configuration Directory</h4>
-<ul>
-<li><strong>Windows</strong>: <code>%APPDATA%\pcli2\config.yml</code></li>
-<li><strong>macOS</strong>: <code>~/Library/Application Support/pcli2/config.yml</code></li>
-<li><strong>Linux</strong>: <code>~/.config/pcli2/config.yml</code></li>
-</ul>
-<h4>Cache Directory</h4>
-<ul>
-<li><strong>Windows</strong>: <code>%LOCALAPPDATA%\pcli2\cache\</code></li>
-<li><strong>macOS</strong>: <code>~/Library/Caches/pcli2/cache/</code></li>
-<li><strong>Linux</strong>: <code>~/.cache/pcli2/cache/</code></li>
-</ul>
-<h4>Data Directory</h4>
-<ul>
-<li><strong>Windows</strong>: <code>%LOCALAPPDATA%\pcli2\data\</code></li>
-<li><strong>macOS</strong>: <code>~/Library/Application Support/pcli2/data/</code></li>
-<li><strong>Linux</strong>: <code>~/.local/share/pcli2/data/</code></li>
-</ul>
-<h4>Environment Variables</h4>
-<p>You can override these default locations using environment variables:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Override configuration directory
-</span><span style="color:#c792ea;">export </span><span style="color:#eeffff;">PCLI2_CONFIG_DIR</span><span style="color:#89ddff;">="</span><span style="color:#c3e88d;">/custom/path/to/config</span><span style="color:#89ddff;">"
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Override cache directory
-</span><span style="color:#c792ea;">export </span><span style="color:#eeffff;">PCLI2_CACHE_DIR</span><span style="color:#89ddff;">="</span><span style="color:#c3e88d;">/custom/path/to/cache</span><span style="color:#89ddff;">"
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Override data directory
-</span><span style="color:#c792ea;">export </span><span style="color:#eeffff;">PCLI2_DATA_DIR</span><span style="color:#89ddff;">="</span><span style="color:#c3e88d;">/custom/path/to/data</span><span style="color:#89ddff;">"
-</span></pre>
-
-<h4>Cleaning Up</h4>
-<p>To completely remove PCLI2 data:</p>
+<h3>Installation Troubleshooting</h3>
 <ol>
-<li>
-<p><strong>Delete configuration file</strong>:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find configuration file location
-</span><span style="color:#82aaff;">pcli2 config get path
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Delete the file and directory
-</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="color:#89ddff;">"$(</span><span style="color:#82aaff;">dirname </span><span style="color:#89ddff;">"$(</span><span style="color:#82aaff;">pcli2 config get path</span><span style="color:#89ddff;">)")"
-</span></pre>
-
-</li>
-<li>
-<p><strong>Delete cache directory</strong>:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find cache directory location (check config)
-</span><span style="color:#82aaff;">pcli2 config get </span><span style="color:#89ddff;">| </span><span style="color:#82aaff;">grep cache_path
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Delete cache directory
-</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/path/to/cache/directory/from/config</span><span style="color:#89ddff;">"
-</span></pre>
-
-</li>
-<li>
-<p><strong>Manual cleanup</strong> (if directories were created outside standard locations):</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Check for any PCLI2 directories
-</span><span style="color:#82aaff;">find </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">type</span><span style="color:#82aaff;"> d</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">*pcli2*</span><span style="color:#89ddff;">" </span><span style="color:#f78c6c;">2</span><span style="color:#89ddff;">&gt;</span><span style="color:#82aaff;">/dev/null
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Remove any found directories
-</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/pcli2.cache
-</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/.pcli2
-</span></pre>
-
-</li>
+<li><strong>Permission denied when copying binary</strong>: Use <code>sudo</code> or copy to a directory you own</li>
+<li><strong>Command not found</strong>: Ensure the binary directory is in your PATH</li>
+<li><strong>Build failures</strong>: Make sure you have the latest stable Rust version</li>
 </ol>
-<p>PCLI2 follows standard platform conventions for data storage, so all data can be easily located and removed using standard file system operations.</p>
-<h3>Working with Verbose Output</h3>
-<p>For debugging purposes, you can enable verbose output:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Enable verbose output for debugging
-</span><span style="color:#82aaff;">pcli2</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">verbose</span><span style="color:#82aaff;"> asset list
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Or using the short form
-</span><span style="color:#82aaff;">pcli2</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">v</span><span style="color:#82aaff;"> asset list
-</span></pre>
-
-<h3>Next Steps</h3>
-<p>Now that you're set up:</p>
+<h2>Authentication</h2>
+<p>Before using most PCLI2 commands, you need to authenticate with Physna.</p>
+<h3>Getting API Credentials</h3>
 <ol>
-<li><strong>Explore your data</strong>: Use <code>pcli2 folder list --format tree</code> to explore your folder structure</li>
-<li><strong>Upload assets</strong>: Use <code>pcli2 asset create --file path/to/file --path /Destination/Folder/</code> to upload files</li>
-<li><strong>Find similar items</strong>: Use geometric matching to discover duplicates or similar assets</li>
-<li><strong>Automate</strong>: Combine PCLI2 commands in scripts for batch processing</li>
+<li>Log in to the <a href="https://app-api.physna.com/v3/docs/" rel="noopener noreferrer">Physna OpenAPI Documentation page</a></li>
+<li>Authenticate with your Physna credentials</li>
+<li>Execute the POST /users/me/service-accounts endpoint</li>
+<li>Note down your Client ID and Client Secret</li>
 </ol>
-<h2>Installation Guide</h2>
-<p>For detailed installation instructions, please refer to the <a href="https://jchultarsky101.github.io/pcli2/book/installation.html" rel="noopener noreferrer">Installation Guide</a> in our documentation website.</p>
-<h2>Quick Start Guide</h2>
-<p>This guide will help you get started with PCLI2 quickly by walking through common tasks.</p>
-<h3>Authentication</h3>
-<p>Before using most PCLI2 commands, you need to authenticate with your Physna tenant:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Login with client credentials
+<h3>Login</h3>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Login with client credentials (first time)
 </span><span style="color:#82aaff;">pcli2 auth login</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">client-id</span><span style="color:#82aaff;"> YOUR_CLIENT_ID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">client-secret</span><span style="color:#82aaff;"> YOUR_CLIENT_SECRET
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Login with cached credentials (after first time)
+</span><span style="color:#82aaff;">pcli2 auth login
 </span><span style="color:#eeffff;">
 </span><span style="font-style:italic;color:#546e7a;"># Verify authentication
 </span><span style="color:#82aaff;">pcli2 auth get
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Logout
+</span><span style="color:#82aaff;">pcli2 auth logout
 </span></pre>
 
-<h3>Basic Navigation</h3>
-<p>Learn to navigate your Physna tenant using PCLI2:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># List available tenants
-</span><span style="color:#82aaff;">pcli2 tenant list
+<p>You'll only need to login once per session, which is valid for several hours. The credentials are securely stored using your system's keychain. PCLI2 will automatically renew your access token if necessary.</p>
+<h2>Basic Usage</h2>
+<h3>Tenants</h3>
+<p>Physna is a multi-tenant system. Your organization may have multiple instances of Physna, which are called "tenants". Each tenant is separate by default, though cross-tenant queries can be configured.</p>
+<h4>List available tenants</h4>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 tenant list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
+</span></pre>
+
+<h4>Select active tenant</h4>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 context set tenant
+</span></pre>
+
+<p>You can also override the tenant for a command by explicitly specifying it with the <code>--tenant</code> argument:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 asset list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">tenant</span><span style="color:#82aaff;"> my_other_tenant_name
+</span></pre>
+
+<h3>Working with Folders</h3>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># List all folders in your tenant (tree view)
+</span><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> tree
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># List folders in the root directory
-</span><span style="color:#82aaff;">pcli2 folder list
+</span><span style="font-style:italic;color:#546e7a;"># List folders under the root folder in your active tenant
+</span><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># List assets in a specific folder
-</span><span style="color:#82aaff;">pcli2 asset list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/MyFolder/
+</span><span style="font-style:italic;color:#546e7a;"># List subfolders under a specific path
+</span><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/MyFolder</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Create a subfolder
+</span><span style="color:#82aaff;">pcli2 folder create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">Sub Folder</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">parent-folder-id</span><span style="color:#82aaff;"> PARENT_FOLDER_UUID
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Create a subfolder using path
+</span><span style="color:#82aaff;">pcli2 folder create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">Sub Folder</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/Parent</span><span style="color:#89ddff;">"
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Get folder details
+</span><span style="color:#82aaff;">pcli2 folder get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">uuid</span><span style="color:#82aaff;"> FOLDER_UUID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Delete a folder
+</span><span style="color:#82aaff;">pcli2 folder delete</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/FolderToDelete</span><span style="color:#89ddff;">"
 </span></pre>
 
 <h3>Working with Assets</h3>
@@ -734,8 +709,48 @@
 </span><span style="color:#eeffff;">
 </span><span style="font-style:italic;color:#546e7a;"># Upload multiple assets
 </span><span style="color:#82aaff;">pcli2 asset create-batch</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">files </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">models/*.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/BatchUpload/
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># List all assets in a folder
+</span><span style="color:#82aaff;">pcli2 asset list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Update asset metadata
+</span><span style="color:#82aaff;">pcli2 asset update</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/model.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">metadata </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">new_metadata.json</span><span style="color:#89ddff;">"
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Upload asset with metadata
+</span><span style="color:#82aaff;">pcli2 asset create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">file</span><span style="color:#82aaff;"> path/to/my/model.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/MyFolder/</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">metadata </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">metadata.json</span><span style="color:#89ddff;">"
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Create metadata for multiple assets from a CSV file
+</span><span style="color:#82aaff;">pcli2 asset create-metadata-batch</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">csv-file </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">metadata.csv</span><span style="color:#89ddff;">"
 </span></pre>
 
+<h4>Working with Metadata</h4>
+<p>Metadata is essential for organizing and searching your assets effectively. PCLI2 supports adding metadata via JSON files:</p>
+<ol>
+<li>
+<p><strong>Create a metadata JSON file</strong>:</p>
+<pre style="background-color:#263238;"><span style="color:#89ddff;">{
+</span><span style="color:#eeffff;">  </span><span style="color:#c792ea;">"part_number"</span><span style="color:#89ddff;">: "</span><span style="color:#c3e88d;">ABC123</span><span style="color:#89ddff;">",
+</span><span style="color:#eeffff;">  </span><span style="color:#c792ea;">"description"</span><span style="color:#89ddff;">: "</span><span style="color:#c3e88d;">Sample part description</span><span style="color:#89ddff;">",
+</span><span style="color:#eeffff;">  </span><span style="color:#c792ea;">"material"</span><span style="color:#89ddff;">: "</span><span style="color:#c3e88d;">Aluminum</span><span style="color:#89ddff;">",
+</span><span style="color:#eeffff;">  </span><span style="color:#c792ea;">"weight"</span><span style="color:#89ddff;">: </span><span style="color:#f78c6c;">1.25</span><span style="color:#89ddff;">,
+</span><span style="color:#eeffff;">  </span><span style="color:#c792ea;">"created_by"</span><span style="color:#89ddff;">: "</span><span style="color:#c3e88d;">engineering-team</span><span style="color:#89ddff;">"
+</span><span style="color:#89ddff;">}
+</span></pre>
+
+</li>
+<li>
+<p><strong>Apply metadata to an asset</strong>:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 asset create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">file</span><span style="color:#82aaff;"> model.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Parts/Model</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">metadata </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">metadata.json</span><span style="color:#89ddff;">"
+</span></pre>
+
+</li>
+<li>
+<p><strong>Update existing asset metadata</strong>:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 asset update</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Parts/Model.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">metadata </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">updated_metadata.json</span><span style="color:#89ddff;">"
+</span></pre>
+
+</li>
+</ol>
 <h3>Geometric Matching</h3>
 <p>Find similar assets using PCLI2's powerful geometric matching:</p>
 <pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find matches for a single asset
@@ -745,66 +760,58 @@
 </span><span style="color:#82aaff;">pcli2 asset geometric-match-folder</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/SearchFolder/</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 90.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">progress
 </span></pre>
 
-<h3>Configuration</h3>
-<p>Manage your PCLI2 configuration:</p>
+<h2>Advanced Usage</h2>
+<h3>Configuration Management</h3>
+<p>PCLI2 automatically manages configuration for you, but you can view and modify it:</p>
 <pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># View current configuration
-</span><span style="color:#82aaff;">pcli2 config show
+</span><span style="color:#82aaff;">pcli2 config get
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Set default tenant
-</span><span style="color:#82aaff;">pcli2 config set tenant.default YOUR_TENANT_ID
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Export configuration for backup
-</span><span style="color:#82aaff;">pcli2 config export</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">output</span><span style="color:#82aaff;"> my-config.yaml
+</span><span style="font-style:italic;color:#546e7a;"># View configuration file path
+</span><span style="color:#82aaff;">pcli2 config get path
 </span></pre>
 
-<h3>Context Management</h3>
-<p>Work with multiple tenants efficiently:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Set active context (tenant)
-</span><span style="color:#82aaff;">pcli2 context set</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">tenant</span><span style="color:#82aaff;"> YOUR_TENANT_ID
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># View current context
-</span><span style="color:#82aaff;">pcli2 context get
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Clear active context
-</span><span style="color:#82aaff;">pcli2 context clear tenant
-</span></pre>
-
-<h3>Getting Help</h3>
-<p>For help with any command, use the built-in help system:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># General help
-</span><span style="color:#82aaff;">pcli2</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">help
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Help for a specific command group
-</span><span style="color:#82aaff;">pcli2 asset</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">help
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Help for a specific command
-</span><span style="color:#82aaff;">pcli2 asset create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">help
-</span></pre>
-
-<p>You can also use the <code>-h</code> or <code>--help</code> flag with any command to get detailed usage information.</p>
-<h2>Geometric Matching</h2>
-<p>PCLI2 provides powerful geometric matching capabilities to find similar assets in your Physna tenant. This feature leverages advanced algorithms to identify assets with similar geometries, regardless of their orientation, scale, or position.</p>
-<h3>Overview</h3>
-<p>Geometric matching helps you:</p>
+<h4>Data Storage Locations</h4>
+<p>PCLI2 stores data in platform-specific standard directories to ensure proper cross-platform compatibility:</p>
+<h5>Configuration Directory</h5>
 <ul>
-<li>Find duplicate or near-duplicate assets</li>
-<li>Identify variations of the same part</li>
-<li>Locate similar components across different projects</li>
-<li>Reduce storage costs by identifying redundant assets</li>
-<li>Improve design workflows by finding existing similar parts</li>
+<li><strong>Windows</strong>: <code>%APPDATA%\pcli2\config.yml</code></li>
+<li><strong>macOS</strong>: <code>~/Library/Application Support/pcli2/config.yml</code></li>
+<li><strong>Linux</strong>: <code>~/.config/pcli2/config.yml</code></li>
 </ul>
-<h3>Single Asset Matching</h3>
-<p>Find geometrically similar assets for a specific reference asset.</p>
-<h4>Basic Usage</h4>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find matches for a specific asset
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Folder/ReferenceModel.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0
+<h5>Cache Directory</h5>
+<ul>
+<li><strong>Windows</strong>: <code>%LOCALAPPDATA%\pcli2\cache\</code></li>
+<li><strong>macOS</strong>: <code>~/Library/Caches/pcli2/cache/</code></li>
+<li><strong>Linux</strong>: <code>~/.cache/pcli2/cache/</code></li>
+</ul>
+<h5>Data Directory</h5>
+<ul>
+<li><strong>Windows</strong>: <code>%LOCALAPPDATA%\pcli2\data\</code></li>
+<li><strong>macOS</strong>: <code>~/Library/Application Support/pcli2/data/</code></li>
+<li><strong>Linux</strong>: <code>~/.local/share/pcli2/data/</code></li>
+</ul>
+<h5>Environment Variables</h5>
+<p>You can override these default locations using environment variables:</p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Override configuration directory
+</span><span style="color:#c792ea;">export </span><span style="color:#eeffff;">PCLI2_CONFIG_DIR</span><span style="color:#89ddff;">="</span><span style="color:#c3e88d;">/custom/path/to/config</span><span style="color:#89ddff;">"
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Using asset UUID instead of path
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">uuid</span><span style="color:#82aaff;"> 123e4567-e89b-12d3-a456-426614174000</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 85.0
+</span><span style="font-style:italic;color:#546e7a;"># Override cache directory
+</span><span style="color:#c792ea;">export </span><span style="color:#eeffff;">PCLI2_CACHE_DIR</span><span style="color:#89ddff;">="</span><span style="color:#c3e88d;">/custom/path/to/cache</span><span style="color:#89ddff;">"
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Override data directory
+</span><span style="color:#c792ea;">export </span><span style="color:#eeffff;">PCLI2_DATA_DIR</span><span style="color:#89ddff;">="</span><span style="color:#c3e88d;">/custom/path/to/data</span><span style="color:#89ddff;">"
 </span></pre>
 
-<h4>Output Formats</h4>
-<h5>JSON Format (Default)</h5>
+<h3>Output Formats</h3>
+<p>Most commands that produce output can use different data formats.</p>
+<h4>JSON Format (Default)</h4>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Folder/ReferenceModel.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0
+</span></pre>
+
+<p>The above is equivalent to:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Folder/ReferenceModel.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</span></pre>
+
 <pre style="background-color:#263238;"><span style="color:#89ddff;">[
 </span><span style="color:#eeffff;">  </span><span style="color:#89ddff;">{
 </span><span style="color:#eeffff;">    </span><span style="color:#ffcb6b;">"referenceAssetName"</span><span style="color:#89ddff;">: "</span><span style="color:#c3e88d;">ReferenceModel.stl</span><span style="color:#89ddff;">",
@@ -818,12 +825,31 @@
 </span><span style="color:#89ddff;">]
 </span></pre>
 
-<h5>CSV Format</h5>
+<h4>CSV Format</h4>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Folder/ReferenceModel.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
+</span></pre>
+
 <pre style="background-color:#263238;"><span style="color:#eeffff;">REFERENCE_ASSET_NAME,CANDIDATE_ASSET_NAME,MATCH_PERCENTAGE,REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID
 </span><span style="color:#eeffff;">ReferenceModel.stl,SimilarModel.stl,95.75,/Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9
 </span></pre>
 
-<h3>Threshold Settings</h3>
+<h4>Tree Format</h4>
+<p>Only the folder list command supports the tree format. It is used to show the hierarchy of folders.</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> tree
+</span></pre>
+
+<h3>Geometric Matching</h3>
+<p>PCLI2 provides powerful geometric matching capabilities to find similar assets in your Physna tenant. This feature leverages advanced algorithms to identify assets with similar geometries, regardless of their orientation, scale, or position.</p>
+<h4>Overview</h4>
+<p>Geometric matching helps you:</p>
+<ul>
+<li>Find duplicate or near-duplicate assets</li>
+<li>Identify variations of the same part</li>
+<li>Locate similar components across different projects</li>
+<li>Reduce storage costs by identifying redundant assets</li>
+<li>Improve design workflows by finding existing similar parts</li>
+</ul>
+<h4>Threshold Settings</h4>
 <p>The threshold parameter controls the minimum similarity percentage required for a match:</p>
 <ul>
 <li><strong>0.0</strong> - Return all possible matches (may include unrelated assets)</li>
@@ -832,13 +858,6 @@
 <li><strong>90.0</strong> - Strict matching (high confidence matches)</li>
 <li><strong>95.0+</strong> - Very strict matching (near duplicates only)</li>
 </ul>
-<h3>Folder-Based Matching</h3>
-<p>Find geometrically similar assets for all assets in a specified folder. This command processes assets in parallel for improved performance.</p>
-<h4>Basic Usage</h4>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find matches for all assets in a folder
-</span><span style="color:#82aaff;">pcli2 asset geometric-match-folder</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/SearchFolder/</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 85.0
-</span></pre>
-
 <h4>Performance Options</h4>
 <h5>Concurrency Control</h5>
 <p>Control how many simultaneous operations are performed:</p>
@@ -858,34 +877,7 @@
 </span><span style="color:#82aaff;">pcli2 asset geometric-match-folder</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/SearchFolder/</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">progress
 </span></pre>
 
-<h3>Output Formatting</h3>
-<p>The geometric matching commands support multiple output formats for integration with other tools:</p>
-<h4>JSON Format (Default)</h4>
-<p>JSON provides structured output that's easy to parse programmatically:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># JSON is the default format
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Reference.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Explicitly specify JSON format
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Reference.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span></pre>
-
-<h4>CSV Format</h4>
-<p>CSV is ideal for importing results into spreadsheets or databases:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Output in CSV format
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Reference.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
-</span></pre>
-
-<h4>Advanced Usage</h4>
-<h5>Filtering Results</h5>
-<p>Focus on the most relevant matches by adjusting thresholds and filtering:</p>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find only very high-confidence matches (95%+)
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Reference.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 95.0
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Find loose matches for broader similarity searches
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Reference.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 50.0
-</span></pre>
-
-<h5>Combining with Other Commands</h5>
+<h4>Combining with Other Commands</h4>
 <p>Chain commands together for powerful workflows:</p>
 <pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find matches and save to a file
 </span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Reference.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv </span><span style="color:#89ddff;">&gt;</span><span style="color:#82aaff;"> matches.csv
@@ -894,7 +886,8 @@
 </span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Reference.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0 </span><span style="color:#89ddff;">| </span><span style="color:#82aaff;">grep </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">HighConfidencePart</span><span style="color:#89ddff;">"
 </span></pre>
 
-<h3>Best Practices</h3>
+<h4>Best Practices</h4>
+<p>The following are just recommendations. You can use any threshold value you would like between 0%-100%:</p>
 <ol>
 <li><strong>Start with moderate thresholds</strong> (80-85%) for balanced results</li>
 <li><strong>Use folder-based matching for bulk operations</strong> to leverage parallel processing</li>
@@ -903,31 +896,46 @@
 <li><strong>Save results to files</strong> when performing extensive matching operations</li>
 <li><strong>Use appropriate output formats</strong> for your intended use case (JSON for scripting, CSV for spreadsheets)</li>
 </ol>
-<h3>Troubleshooting</h3>
-<h4>Common Issues</h4>
-<ol>
-<li><strong>API Rate Limiting</strong>: Reduce concurrency if you encounter rate limiting errors</li>
-<li><strong>Large Folder Processing</strong>: Break large folders into smaller batches for better performance</li>
-<li><strong>Timeout Errors</strong>: Use lower thresholds to reduce processing time per match</li>
-<li><strong>Memory Issues</strong>: Reduce concurrency for systems with limited RAM</li>
-</ol>
-<h4>Error Messages</h4>
-<ul>
-<li><strong>"Threshold must be between 0.00 and 100.00"</strong>: Adjust threshold to a value between 0 and 100</li>
-<li><strong>"Asset not found"</strong>: Verify the asset path exists in your tenant</li>
-<li><strong>"API rate limit exceeded"</strong>: Reduce concurrency or wait before retrying</li>
-<li><strong>"Connection timeout"</strong>: Check your network connection or reduce threshold values</li>
-</ul>
-<h4>Getting Help</h4>
-<p>If you encounter persistent issues with geometric matching:</p>
-<ol>
-<li><strong>Check your API credentials</strong> are still valid</li>
-<li><strong>Verify your tenant has geometric matching enabled</strong></li>
-<li><strong>Review the error messages</strong> for specific troubleshooting guidance</li>
-<li><strong>Consult the GitHub Issues</strong> page for known issues and solutions</li>
-<li><strong>Contact Physna support</strong> for assistance with tenant-specific configuration</li>
-</ol>
-<h2>Commands</h2>
+<h3>Command Aliases and Short Argument Names</h3>
+<p>Some commands have shorter aliases. For example <code>list</code> has an alias of <code>ls</code>. Similarly, some command arguments have short names too. For example <code>--path</code> can be provided as <code>-p</code>. See the help for details.</p>
+<h3>Working with Verbose Output</h3>
+<p>For debugging purposes, you can enable verbose output:</p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Enable verbose output for debugging
+</span><span style="color:#82aaff;">pcli2</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">verbose</span><span style="color:#82aaff;"> asset list
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Or using the short form
+</span><span style="color:#82aaff;">pcli2</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">v</span><span style="color:#82aaff;"> asset list
+</span></pre>
+
+<h3>Cleaning Up</h3>
+<p>To completely remove PCLI2 data:</p>
+<h4>Delete configuration file</h4>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find configuration file location
+</span><span style="color:#82aaff;">pcli2 config get path
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Delete the file and directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="color:#89ddff;">"$(</span><span style="color:#82aaff;">dirname </span><span style="color:#89ddff;">"$(</span><span style="color:#82aaff;">pcli2 config get path</span><span style="color:#89ddff;">)")"
+</span></pre>
+
+<h4>Delete cache directory</h4>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find cache directory location (check config)
+</span><span style="color:#82aaff;">pcli2 config get </span><span style="color:#89ddff;">| </span><span style="color:#82aaff;">grep cache_path
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Delete cache directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/path/to/cache/directory/from/config</span><span style="color:#89ddff;">"
+</span></pre>
+
+<h4>Manual cleanup (if directories were created outside standard locations)</h4>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Check for any PCLI2 directories
+</span><span style="color:#82aaff;">find </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">type</span><span style="color:#82aaff;"> d</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">*pcli2*</span><span style="color:#89ddff;">" </span><span style="color:#f78c6c;">2</span><span style="color:#89ddff;">&gt;</span><span style="color:#82aaff;">/dev/null
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Remove any found directories
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/pcli2.cache
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/.pcli2
+</span></pre>
+
+<p>PCLI2 follows standard platform conventions for data storage, so all data can be easily located and removed using standard file system operations.</p>
+<h2>Commands Reference</h2>
 <p>The application uses a hierarchy of commands:</p>
 <pre style="background-color:#263238;"><span style="color:#eeffff;">pcli2
 </span><span style="color:#eeffff;">├── asset
@@ -968,134 +976,85 @@
 </span><span style="color:#eeffff;">└── help                 Show help information
 </span></pre>
 
-<h2>Usage Examples</h2>
-<h3>Authentication</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Login with client credentials
-</span><span style="color:#82aaff;">pcli2 auth login</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">client-id</span><span style="color:#82aaff;"> YOUR_CLIENT_ID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">client-secret</span><span style="color:#82aaff;"> YOUR_CLIENT_SECRET
+<h3>Getting Help</h3>
+<p>For help with any command, use the built-in help system:</p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># General help
+</span><span style="color:#82aaff;">pcli2</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">help
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Verify authentication
-</span><span style="color:#82aaff;">pcli2 auth get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</span><span style="font-style:italic;color:#546e7a;"># Help for a specific command group
+</span><span style="color:#82aaff;">pcli2 asset</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">help
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Logout
-</span><span style="color:#82aaff;">pcli2 auth logout
+</span><span style="font-style:italic;color:#546e7a;"># Help for a specific command
+</span><span style="color:#82aaff;">pcli2 asset create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">help
 </span></pre>
 
-<h3>Tenant Management</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># List available tenants
-</span><span style="color:#82aaff;">pcli2 tenant list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Get details for a specific tenant
-</span><span style="color:#82aaff;">pcli2 tenant get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">id</span><span style="color:#82aaff;"> YOUR_TENANT_ID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
+<p>You can also use the <code>-h</code> or <code>--help</code> flag with any command to get detailed usage information.</p>
+<h2>Troubleshooting</h2>
+<h3>Common Issues</h3>
+<ol>
+<li><strong>API Rate Limiting</strong>: Reduce concurrency if you encounter rate limiting errors</li>
+<li><strong>Large Folder Processing</strong>: Break large folders into smaller batches for better performance</li>
+<li><strong>Timeout Errors</strong>: Use lower thresholds to reduce processing time per match</li>
+<li><strong>Memory Issues</strong>: Reduce concurrency for systems with limited RAM</li>
+<li><strong>Authentication Expired</strong>: Run <code>pcli2 auth login</code> to refresh your credentials</li>
+<li><strong>Path Not Found</strong>: Verify that folder paths exist and you have permissions to access them</li>
+<li><strong>File Upload Failures</strong>: Check that the file exists and is less than the maximum allowed size</li>
+<li><strong>Network Errors</strong>: Verify your internet connection and try again</li>
+</ol>
+<h3>Error Messages</h3>
+<ul>
+<li><strong>"Threshold must be between 0.00 and 100.00"</strong>: Adjust threshold to a value between 0 and 100</li>
+<li><strong>"Asset not found"</strong>: Verify the asset path exists in your tenant</li>
+<li><strong>"API rate limit exceeded"</strong>: Reduce concurrency or wait before retrying</li>
+<li><strong>"Connection timeout"</strong>: Check your network connection or reduce threshold values</li>
+<li><strong>"Permission denied"</strong>: Ensure you have the required permissions for the operation</li>
+<li><strong>"Invalid file format"</strong>: Ensure the file format is supported by Physna</li>
+<li><strong>"Configuration file not found"</strong>: Run <code>pcli2 config get path</code> to check config location</li>
+<li><strong>"Tenant not accessible"</strong>: Verify the tenant name and your access permissions</li>
+</ul>
+<h3>Debugging Tips</h3>
+<p>If you encounter unexpected behavior:</p>
+<ol>
+<li>
+<p><strong>Enable verbose output</strong>: Add the <code>--verbose</code> or <code>-v</code> flag to your commands to see detailed logs:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">verbose</span><span style="color:#82aaff;"> asset list
 </span></pre>
 
-<h3>Folder Management</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># List all folders in the default tenant
-</span><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> tree
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># List folders in a specific tenant
-</span><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">tenant</span><span style="color:#82aaff;"> YOUR_TENANT_ID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># List subfolders under a specific path
-</span><span style="color:#82aaff;">pcli2 folder list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/MyFolder</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Create a new folder
-</span><span style="color:#82aaff;">pcli2 folder create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">New Folder</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">tenant</span><span style="color:#82aaff;"> YOUR_TENANT_ID
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Create a subfolder
-</span><span style="color:#82aaff;">pcli2 folder create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">Sub Folder</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">parent-folder-id</span><span style="color:#82aaff;"> PARENT_FOLDER_UUID
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Create a subfolder using path
-</span><span style="color:#82aaff;">pcli2 folder create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">Sub Folder</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/Parent</span><span style="color:#89ddff;">"
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Get folder details
-</span><span style="color:#82aaff;">pcli2 folder get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">uuid</span><span style="color:#82aaff;"> FOLDER_UUID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Delete a folder
-</span><span style="color:#82aaff;">pcli2 folder delete</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/FolderToDelete</span><span style="color:#89ddff;">"
+</li>
+<li>
+<p><strong>Check your authentication status</strong>:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 auth get
 </span></pre>
 
-<h3>Asset Management</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># List all assets in a folder
-</span><span style="color:#82aaff;">pcli2 asset list</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Upload a single asset
-</span><span style="color:#82aaff;">pcli2 asset create</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">file</span><span style="color:#82aaff;"> /path/to/model.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/Uploads</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Upload multiple assets using glob pattern
-</span><span style="color:#82aaff;">pcli2 asset create-batch</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">files </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">models/*.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/BatchUpload</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">concurrent</span><span style="color:#82aaff;"> 10</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">progress
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Get asset details by path
-</span><span style="color:#82aaff;">pcli2 asset get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/model.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Get asset details by UUID
-</span><span style="color:#82aaff;">pcli2 asset get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">uuid</span><span style="color:#82aaff;"> ASSET_UUID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Update asset metadata
-</span><span style="color:#82aaff;">pcli2 asset update</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/model.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">New Name</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Delete an asset
-</span><span style="color:#82aaff;">pcli2 asset delete</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/model.stl</span><span style="color:#89ddff;">"
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Delete an asset by UUID
-</span><span style="color:#82aaff;">pcli2 asset delete</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">uuid</span><span style="color:#82aaff;"> ASSET_UUID
+</li>
+<li>
+<p><strong>Verify your current context</strong>:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 context get
 </span></pre>
 
-<h3>Geometric Matching</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find similar assets for a single reference asset
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/Reference/model.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 85.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Find similar assets by UUID with different threshold
-</span><span style="color:#82aaff;">pcli2 asset geometric-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">uuid</span><span style="color:#82aaff;"> ASSET_UUID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 90.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Find similar assets for all assets in a folder with progress tracking
-</span><span style="color:#82aaff;">pcli2 asset geometric-match-folder</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/SearchFolder/</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80.0</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">concurrent</span><span style="color:#82aaff;"> 8</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">progress</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</li>
+<li>
+<p><strong>Review the configuration</strong>:</p>
+<pre style="background-color:#263238;"><span style="color:#82aaff;">pcli2 config get
 </span></pre>
 
-<h3>Context Management</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Set active tenant context interactively
-</span><span style="color:#82aaff;">pcli2 context set tenant
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Set active tenant context explicitly
-</span><span style="color:#82aaff;">pcli2 context set tenant</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">My Tenant</span><span style="color:#89ddff;">"
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Get current context
-</span><span style="color:#82aaff;">pcli2 context get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Clear active context
-</span><span style="color:#82aaff;">pcli2 context clear tenant
-</span></pre>
-
-<h3>Configuration Management</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Show current configuration
-</span><span style="color:#82aaff;">pcli2 config get</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Show configuration file path
-</span><span style="color:#82aaff;">pcli2 config get path
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Export configuration
-</span><span style="color:#82aaff;">pcli2 config export</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">output</span><span style="color:#82aaff;"> config.yaml
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Import configuration
-</span><span style="color:#82aaff;">pcli2 config import</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">input</span><span style="color:#82aaff;"> config.yaml
-</span></pre>
-
-<h2>Development</h2>
-<h3>Running Tests</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Run all tests
-</span><span style="color:#82aaff;">cargo test
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Run tests with output
-</span><span style="color:#82aaff;">cargo test</span><span style="color:#89ddff;"> --</span><span style="color:#82aaff;"> --nocapture
-</span></pre>
-
-<h3>Code Quality</h3>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Format code
-</span><span style="color:#82aaff;">cargo fmt
-</span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Check for linting issues
-</span><span style="color:#82aaff;">cargo clippy
-</span></pre>
-
+</li>
+</ol>
+<h3>Getting Help</h3>
+<p>If you continue to experience issues:</p>
+<ol>
+<li>Check the <a href="https://github.com/physna/pcli2/issues" rel="noopener noreferrer">GitHub Issues</a> page for known issues</li>
+<li>Search for similar problems in the issue tracker</li>
+<li>If you can't find a solution, create a new issue with detailed information:
+<ul>
+<li>Your OS and PCLI2 version</li>
+<li>The command you're trying to execute</li>
+<li>The error message received</li>
+<li>Steps to reproduce the issue</li>
+<li>Verbose output if relevant</li>
+</ul>
+</li>
+</ol>
 <h2>Contributing</h2>
 <ol>
 <li>Fork the repository</li>
@@ -1107,7 +1066,7 @@
 <h2>License</h2>
 <p>This project is licensed under the Apache License 2.0 - see the <a href="LICENSE" rel="noopener noreferrer">LICENSE</a> file for details.</p>
 <h2>Support</h2>
-<p>For support, please contact the Physna development team or open an issue on GitHub.</p>
+<p>If you encounter issues consult the <a href="https://github.com/physna/pcli2/issues" rel="noopener noreferrer">GitHub Issues</a> page and submit an issue</p>
 
 
 

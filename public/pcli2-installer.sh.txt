@@ -23,7 +23,7 @@ has_local 2>/dev/null || alias local=typeset
 set -u
 
 APP_NAME="pcli2"
-APP_VERSION="0.1.0"
+APP_VERSION="0.1.1"
 # Look for GitHub Enterprise-style base URL first
 if [ -n "${PCLI2_INSTALLER_GHE_BASE_URL:-}" ]; then
     INSTALLER_BASE_URL="$PCLI2_INSTALLER_GHE_BASE_URL"
@@ -35,7 +35,7 @@ if [ -n "${PCLI2_DOWNLOAD_URL:-}" ]; then
 elif [ -n "${INSTALLER_DOWNLOAD_URL:-}" ]; then
     ARTIFACT_DOWNLOAD_URL="$INSTALLER_DOWNLOAD_URL"
 else
-    ARTIFACT_DOWNLOAD_URL="${INSTALLER_BASE_URL}/jchultarsky101/pcli2/releases/download/v0.1.0"
+    ARTIFACT_DOWNLOAD_URL="${INSTALLER_BASE_URL}/jchultarsky101/pcli2/releases/download/v0.1.1"
 fi
 if [ -n "${PCLI2_PRINT_VERBOSE:-}" ]; then
     PRINT_VERBOSE="$PCLI2_PRINT_VERBOSE"
@@ -65,7 +65,7 @@ fi
 AUTH_TOKEN="${PCLI2_GITHUB_TOKEN:-}"
 
 read -r RECEIPT <<EORECEIPT
-{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_layout":"unspecified","install_prefix":"AXO_INSTALL_PREFIX","modify_path":true,"provider":{"source":"cargo-dist","version":"0.30.0"},"source":{"app_name":"pcli2","name":"pcli2","owner":"jchultarsky101","release_type":"github"},"version":"0.1.0"}
+{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_layout":"unspecified","install_prefix":"AXO_INSTALL_PREFIX","modify_path":true,"provider":{"source":"cargo-dist","version":"0.30.0"},"source":{"app_name":"pcli2","name":"pcli2","owner":"jchultarsky101","release_type":"github"},"version":"0.1.1"}
 EORECEIPT
 
 # Some Linux distributions don't set HOME
@@ -100,10 +100,10 @@ usage() {
     cat <<EOF
 pcli2-installer.sh
 
-The installer for pcli2 0.1.0
+The installer for pcli2 0.1.1
 
 This script detects what platform you're on and fetches an appropriate archive from
-https://github.com/jchultarsky101/pcli2/releases/download/v0.1.0
+https://github.com/jchultarsky101/pcli2/releases/download/v0.1.1
 then unpacks the binaries and installs them to
 
     \$CARGO_HOME/bin (or \$HOME/.cargo/bin)
@@ -206,7 +206,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-apple-darwin"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="f4630a29c19549101ce9a02ab075aec4c7175b2b9af7458bdf319030caa4df4b"
+            _checksum_value="93f2d3d2bc00a49ab99c1fa628fc8cd16be8b80f17d74961f9a81c7580778942"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -220,7 +220,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-pc-windows-msvc"
             _zip_ext=".zip"
             _checksum_style="sha256"
-            _checksum_value="ee33b5381ed0fab24ca731fad29f8bd662dcb5322815ec2345212e3f5881d82c"
+            _checksum_value="93722f55a5fbbc033912918e716a7843bf7f247aeb75526cec81163b85c87aa2"
             _bins="pcli2.exe"
             _bins_js_array='"pcli2.exe"'
             _libs=""
@@ -234,7 +234,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-unknown-linux-gnu"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="e5856f69e203bd1b0f678ffbc9deb56a5f488b0425c57d515bbe809f14209fa6"
+            _checksum_value="0ce04806644c2cbe4c9af62e796e782af541222e0036014e6d04975ad7f50d5c"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""

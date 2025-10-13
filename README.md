@@ -6,6 +6,19 @@ The goal of this project is to create version 2 of the Physna Command Line Inter
 
 Based on lessons learned from the previous version, we have developed a new and more ergonomic interface. It operates more like Git's excellent CLI, utilizing nested sub-commands, sensible defaults, and configuration.
 
+## Table of Contents
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Authentication](#authentication)
+- [Basic Usage](#basic-usage)
+- [Advanced Usage](#advanced-usage)
+- [Commands Reference](#commands-reference)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+- [Support](#support)
+
 ## Features
 
 - **Intuitive command structure** with nested sub-commands
@@ -20,194 +33,29 @@ Based on lessons learned from the previous version, we have developed a new and 
 - **Context management** for working with multiple tenants
 - **Cross-platform support** with environment variable configuration
 
-## Getting Started
+## Quick Start
+
+Getting started with PCLI2 is straightforward. Follow these steps:
+
+1. **Get your API credentials** by logging into the [Physna OpenAPI Documentation page](https://app-api.physna.com/v3/docs/) and creating a service account
+2. **Install PCLI2** using one of the methods described in [Installation](#installation)
+3. **Authenticate** with your Physna tenant:
+   ```bash
+   pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+   ```
+4. **Verify your setup**:
+   ```bash
+   pcli2 auth get
+   ```
+5. **Start using PCLI2** to manage your assets and folders
+
+## Installation
 
 ### Prerequisites
 
-Before using PCLI2, you will need:
-
-* Your Physna tenant's API client credentials (client ID and client secret)
-* PCLI2 installed on your system (see [Installation Guide](#installation-guide) below)
-
-### API Credentials
-
-* Log in to the [Physna OpenAPI Documentation page](https://app-api.physna.com/v3/docs/)
-* Authenticate with your Physna credentials
-* 
-   - Navigate to Settings → API Keys
-   - Create a new API key pair or use an existing one
-   - Note down your Client ID and Client Secret
-
-2. **Installation**
-   
-   See the [Installation Guide](#installation-guide) section below for detailed installation instructions.
-   
-   ```bash
-   # For pre-built installers (recommended):
-   # Download and run the installer script
-   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
-   
-   # For building from source (advanced users):
-   git clone https://github.com/physna/pcli2.git
-   cd pcli2
-   cargo build --release
-   sudo cp target/release/pcli2 /usr/local/bin/
-   ```
-
-3. **Authentication Setup**
-   
-   Authenticate with your Physna tenant:
-   
-   ```bash
-   # Login with client credentials
-   pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
-   ```
-   
-   You'll only need to do this once per session. The credentials are securely stored using your system's keychain.
-
-4. **Verify Setup**
-   
-   Test that everything is working:
-   
-   ```bash
-   # Verify authentication
-   pcli2 auth get
-   
-   # List available tenants to confirm connection
-   pcli2 tenant list --format json
-   
-   # Verify access to your tenant
-   pcli2 folder list --format tree
-   ```
-
-### Basic Commands to Try
-
-Once authenticated, try these basic commands to verify functionality:
-
-```bash
-# List all folders in your tenant (tree view)
-pcli2 folder list --format tree
-
-# List assets in the root folder
-pcli2 asset list
-
-# Upload a test file (replace with your own file)
-pcli2 asset create --file /path/to/test/file.stl --path /Root/Test/
-
-# Get details about your test asset
-pcli2 asset get --path /Root/Test/file.stl
-
-# Find geometrically similar assets (if you have multiple assets)
-pcli2 asset geometric-match --path /Root/Test/file.stl --threshold 80.0
-```
-
-### Configuration Management
-
-PCLI2 automatically manages configuration for you, but you can view and manage it:
-
-```bash
-# View current configuration
-pcli2 config get
-
-# View configuration file path
-pcli2 config get path
-
-# Set active tenant context
-pcli2 context set tenant
-```
-
-### Data Storage Locations
-
-PCLI2 stores data in platform-specific standard directories to ensure proper cross-platform compatibility:
-
-#### Configuration Directory
-- **Windows**: `%APPDATA%\pcli2\config.yml`
-- **macOS**: `~/Library/Application Support/pcli2/config.yml`
-- **Linux**: `~/.config/pcli2/config.yml`
-
-#### Cache Directory
-- **Windows**: `%LOCALAPPDATA%\pcli2\cache\`
-- **macOS**: `~/Library/Caches/pcli2/cache/`
-- **Linux**: `~/.cache/pcli2/cache/`
-
-#### Data Directory
-- **Windows**: `%LOCALAPPDATA%\pcli2\data\`
-- **macOS**: `~/Library/Application Support/pcli2/data/`
-- **Linux**: `~/.local/share/pcli2/data/`
-
-#### Environment Variables
-
-You can override these default locations using environment variables:
-
-```bash
-# Override configuration directory
-export PCLI2_CONFIG_DIR="/custom/path/to/config"
-
-# Override cache directory
-export PCLI2_CACHE_DIR="/custom/path/to/cache"
-
-# Override data directory
-export PCLI2_DATA_DIR="/custom/path/to/data"
-```
-
-#### Cleaning Up
-
-To completely remove PCLI2 data:
-
-1. **Delete configuration file**:
-   ```bash
-   # Find configuration file location
-   pcli2 config get path
-   
-   # Delete the file and directory
-   rm -rf "$(dirname "$(pcli2 config get path)")"
-   ```
-
-2. **Delete cache directory**:
-   ```bash
-   # Find cache directory location (check config)
-   pcli2 config get | grep cache_path
-   
-   # Delete cache directory
-   rm -rf "/path/to/cache/directory/from/config"
-   ```
-
-3. **Manual cleanup** (if directories were created outside standard locations):
-   ```bash
-   # Check for any PCLI2 directories
-   find ~ -type d -name "*pcli2*" 2>/dev/null
-   
-   # Remove any found directories
-   rm -rf ~/pcli2.cache
-   rm -rf ~/.pcli2
-   ```
-
-PCLI2 follows standard platform conventions for data storage, so all data can be easily located and removed using standard file system operations.
-
-### Working with Verbose Output
-
-For debugging purposes, you can enable verbose output:
-
-```bash
-# Enable verbose output for debugging
-pcli2 --verbose asset list
-
-# Or using the short form
-pcli2 -v asset list
-```
-
-### Next Steps
-
-Now that you're set up:
-
-1. **Explore your data**: Use `pcli2 folder list --format tree` to explore your folder structure
-2. **Upload assets**: Use `pcli2 asset create --file path/to/file --path /Destination/Folder/` to upload files
-3. **Find similar items**: Use geometric matching to discover duplicates or similar assets
-4. **Automate**: Combine PCLI2 commands in scripts for batch processing
-
-## Installation Guide
-
-This guide explains how to install and set up PCLI2 on your system. We recommend using the pre-built installers for most users, with compilation from source as an advanced option.
+Before installing PCLI2, you will need:
+- Your Physna tenant's API client credentials (client ID and client secret)
+- A compatible operating system (Windows, macOS, or Linux)
 
 ### Installation Methods
 
@@ -227,23 +75,11 @@ PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
 
-##### Manual Installation:
+#### Method 2: Manual Installation
 ```bash
 # Extract the archive (example for Linux)
 tar -xf pcli2-x86_64-unknown-linux-gnu.tar.xz
 sudo cp pcli2 /usr/local/bin/
-```
-
-#### Method 2: Installing via Cargo (Alternative Package Manager)
-
-If you have Rust installed, you can install PCLI2 directly from crates.io:
-
-```bash
-# Install PCLI2 globally
-cargo install pcli2
-
-# Verify the installation
-pcli2 --version
 ```
 
 #### Method 3: Building from Source (Advanced Users)
@@ -273,78 +109,112 @@ After installation, verify that PCLI2 is working correctly:
 ```bash
 # Check the version
 pcli2 --version
-
-# View available commands
-pcli2 --help
-
-# View asset-related commands
-pcli2 asset --help
 ```
+If successful, this should print the PCLI2 version.
 
 ### Updating PCLI2
 
 To update PCLI2 when using pre-built installers:
+```bash
+pcli2-update
+```
+
+This command should check if a new version is available and automatically install it.
+
+For manual update, simply execute the installer script:
 
 ```bash
-# For installer script installations
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+```
 
-# For Cargo installations
-cargo install pcli2 --force
-
-# For source builds
+For source builds:
+```bash
 cd /path/to/pcli2
 git pull
 cargo build --release
 sudo cp target/release/pcli2 /usr/local/bin/
 ```
 
-### Troubleshooting
-
-#### Common Issues
+### Installation Troubleshooting
 
 1. **Permission denied when copying binary**: Use `sudo` or copy to a directory you own
 2. **Command not found**: Ensure the binary directory is in your PATH
 3. **Build failures**: Make sure you have the latest stable Rust version
 
-#### Getting Help
+## Authentication
 
-If you encounter issues during installation:
+Before using most PCLI2 commands, you need to authenticate with Physna.
 
-1. Check that all prerequisites are met
-2. Verify your Rust installation is working
-3. Consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page
-4. Contact the Physna development team for support
+### Getting API Credentials
 
-## Quick Start Guide
+1. Log in to the [Physna OpenAPI Documentation page](https://app-api.physna.com/v3/docs/)
+2. Authenticate with your Physna credentials
+3. Execute the POST /users/me/service-accounts endpoint
+4. Note down your Client ID and Client Secret
 
-This guide will help you get started with PCLI2 quickly by walking through common tasks.
-
-### Authentication
-
-Before using most PCLI2 commands, you need to authenticate with your Physna tenant:
+### Login
 
 ```bash
-# Login with client credentials
+# Login with client credentials (first time)
 pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+
+# Login with cached credentials (after first time)
+pcli2 auth login
 
 # Verify authentication
 pcli2 auth get
+
+# Logout
+pcli2 auth logout
 ```
 
-### Basic Navigation
+You'll only need to login once per session, which is valid for several hours. The credentials are securely stored using your system's keychain. PCLI2 will automatically renew your access token if necessary.
 
-Learn to navigate your Physna tenant using PCLI2:
+
+## Basic Usage
+
+### Tenants
+
+Physna is a multi-tenant system. Your organization may have multiple instances of Physna, which are called "tenants". Each tenant is separate by default, though cross-tenant queries can be configured.
+
+#### List available tenants
+```bash
+pcli2 tenant list --format csv
+```
+
+#### Select active tenant
+```bash
+pcli2 context set tenant
+```
+
+You can also override the tenant for a command by explicitly specifying it with the `--tenant` argument:
+```bash
+pcli2 asset list --tenant my_other_tenant_name
+```
+
+### Working with Folders
 
 ```bash
-# List available tenants
-pcli2 tenant list
+# List all folders in your tenant (tree view)
+pcli2 folder list --format tree
 
-# List folders in the root directory
-pcli2 folder list
+# List folders under the root folder in your active tenant
+pcli2 folder list --format json
 
-# List assets in a specific folder
-pcli2 asset list --path /Root/MyFolder/
+# List subfolders under a specific path
+pcli2 folder list --path /Root/MyFolder --format csv
+
+# Create a subfolder
+pcli2 folder create --name "Sub Folder" --parent-folder-id PARENT_FOLDER_UUID
+
+# Create a subfolder using path
+pcli2 folder create --name "Sub Folder" --path "/Root/Parent"
+
+# Get folder details
+pcli2 folder get --uuid FOLDER_UUID --format json
+
+# Delete a folder
+pcli2 folder delete --path "/Root/FolderToDelete"
 ```
 
 ### Working with Assets
@@ -363,7 +233,44 @@ pcli2 asset delete --path /Root/MyFolder/model.stl
 
 # Upload multiple assets
 pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
+
+# List all assets in a folder
+pcli2 asset list --path "/Root/MyFolder" --format json
+
+# Update asset metadata
+pcli2 asset update --path "/Root/MyFolder/model.stl" --metadata "new_metadata.json"
+
+# Upload asset with metadata
+pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/ --metadata "metadata.json"
+
+# Create metadata for multiple assets from a CSV file
+pcli2 asset create-metadata-batch --csv-file "metadata.csv"
 ```
+
+#### Working with Metadata
+
+Metadata is essential for organizing and searching your assets effectively. PCLI2 supports adding metadata via JSON files:
+
+1. **Create a metadata JSON file**:
+   ```json
+   {
+     "part_number": "ABC123",
+     "description": "Sample part description",
+     "material": "Aluminum",
+     "weight": 1.25,
+     "created_by": "engineering-team"
+   }
+   ```
+
+2. **Apply metadata to an asset**:
+   ```bash
+   pcli2 asset create --file model.stl --path /Parts/Model --metadata "metadata.json"
+   ```
+
+3. **Update existing asset metadata**:
+   ```bash
+   pcli2 asset update --path "/Parts/Model.stl" --metadata "updated_metadata.json"
+   ```
 
 ### Geometric Matching
 
@@ -377,84 +284,66 @@ pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 8
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
 ```
 
-### Configuration
+## Advanced Usage
 
-Manage your PCLI2 configuration:
+### Configuration Management
+
+PCLI2 automatically manages configuration for you, but you can view and modify it:
 
 ```bash
 # View current configuration
-pcli2 config show
+pcli2 config get
 
-# Set default tenant
-pcli2 config set tenant.default YOUR_TENANT_ID
-
-# Export configuration for backup
-pcli2 config export --output my-config.yaml
+# View configuration file path
+pcli2 config get path
 ```
 
-### Context Management
+#### Data Storage Locations
 
-Work with multiple tenants efficiently:
+PCLI2 stores data in platform-specific standard directories to ensure proper cross-platform compatibility:
+
+##### Configuration Directory
+- **Windows**: `%APPDATA%\pcli2\config.yml`
+- **macOS**: `~/Library/Application Support/pcli2/config.yml`
+- **Linux**: `~/.config/pcli2/config.yml`
+
+##### Cache Directory
+- **Windows**: `%LOCALAPPDATA%\pcli2\cache\`
+- **macOS**: `~/Library/Caches/pcli2/cache/`
+- **Linux**: `~/.cache/pcli2/cache/`
+
+##### Data Directory
+- **Windows**: `%LOCALAPPDATA%\pcli2\data\`
+- **macOS**: `~/Library/Application Support/pcli2/data/`
+- **Linux**: `~/.local/share/pcli2/data/`
+
+##### Environment Variables
+
+You can override these default locations using environment variables:
 
 ```bash
-# Set active context (tenant)
-pcli2 context set --tenant YOUR_TENANT_ID
+# Override configuration directory
+export PCLI2_CONFIG_DIR="/custom/path/to/config"
 
-# View current context
-pcli2 context get
+# Override cache directory
+export PCLI2_CACHE_DIR="/custom/path/to/cache"
 
-# Clear active context
-pcli2 context clear tenant
+# Override data directory
+export PCLI2_DATA_DIR="/custom/path/to/data"
 ```
 
-### Getting Help
+### Output Formats
 
-For help with any command, use the built-in help system:
+Most commands that produce output can use different data formats.
 
+#### JSON Format (Default)
 ```bash
-# General help
-pcli2 --help
-
-# Help for a specific command group
-pcli2 asset --help
-
-# Help for a specific command
-pcli2 asset create --help
-```
-
-You can also use the `-h` or `--help` flag with any command to get detailed usage information.
-
-## Geometric Matching
-
-PCLI2 provides powerful geometric matching capabilities to find similar assets in your Physna tenant. This feature leverages advanced algorithms to identify assets with similar geometries, regardless of their orientation, scale, or position.
-
-### Overview
-
-Geometric matching helps you:
-
-- Find duplicate or near-duplicate assets
-- Identify variations of the same part
-- Locate similar components across different projects
-- Reduce storage costs by identifying redundant assets
-- Improve design workflows by finding existing similar parts
-
-### Single Asset Matching
-
-Find geometrically similar assets for a specific reference asset.
-
-#### Basic Usage
-
-```bash
-# Find matches for a specific asset
 pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 80.0
-
-# Using asset UUID instead of path
-pcli2 asset geometric-match --uuid 123e4567-e89b-12d3-a456-426614174000 --threshold 85.0
 ```
-
-#### Output Formats
-
-##### JSON Format (Default)
+The above is equivalent to:
+```bash
+pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 80.0 --format json
+```
 
 ```json
 [
@@ -470,14 +359,39 @@ pcli2 asset geometric-match --uuid 123e4567-e89b-12d3-a456-426614174000 --thresh
 ]
 ```
 
-##### CSV Format
+#### CSV Format
+```bash
+pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 80.0 --format csv
+```
 
 ```csv
 REFERENCE_ASSET_NAME,CANDIDATE_ASSET_NAME,MATCH_PERCENTAGE,REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID
 ReferenceModel.stl,SimilarModel.stl,95.75,/Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9
 ```
 
-### Threshold Settings
+#### Tree Format
+
+Only the folder list command supports the tree format. It is used to show the hierarchy of folders.
+
+```bash
+pcli2 folder list --format tree
+```
+
+### Geometric Matching
+
+PCLI2 provides powerful geometric matching capabilities to find similar assets in your Physna tenant. This feature leverages advanced algorithms to identify assets with similar geometries, regardless of their orientation, scale, or position.
+
+#### Overview
+
+Geometric matching helps you:
+
+- Find duplicate or near-duplicate assets
+- Identify variations of the same part
+- Locate similar components across different projects
+- Reduce storage costs by identifying redundant assets
+- Improve design workflows by finding existing similar parts
+
+#### Threshold Settings
 
 The threshold parameter controls the minimum similarity percentage required for a match:
 
@@ -486,17 +400,6 @@ The threshold parameter controls the minimum similarity percentage required for 
 - **80.0** - Default setting (good balance of accuracy and recall)
 - **90.0** - Strict matching (high confidence matches)
 - **95.0+** - Very strict matching (near duplicates only)
-
-### Folder-Based Matching
-
-Find geometrically similar assets for all assets in a specified folder. This command processes assets in parallel for improved performance.
-
-#### Basic Usage
-
-```bash
-# Find matches for all assets in a folder
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 85.0
-```
 
 #### Performance Options
 
@@ -524,46 +427,7 @@ Monitor the progress of long-running folder-based operations:
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --progress
 ```
 
-### Output Formatting
-
-The geometric matching commands support multiple output formats for integration with other tools:
-
-#### JSON Format (Default)
-
-JSON provides structured output that's easy to parse programmatically:
-
-```bash
-# JSON is the default format
-pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0
-
-# Explicitly specify JSON format
-pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format json
-```
-
-#### CSV Format
-
-CSV is ideal for importing results into spreadsheets or databases:
-
-```bash
-# Output in CSV format
-pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format csv
-```
-
-#### Advanced Usage
-
-##### Filtering Results
-
-Focus on the most relevant matches by adjusting thresholds and filtering:
-
-```bash
-# Find only very high-confidence matches (95%+)
-pcli2 asset geometric-match --path /Root/Reference.stl --threshold 95.0
-
-# Find loose matches for broader similarity searches
-pcli2 asset geometric-match --path /Root/Reference.stl --threshold 50.0
-```
-
-##### Combining with Other Commands
+#### Combining with Other Commands
 
 Chain commands together for powerful workflows:
 
@@ -575,7 +439,9 @@ pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format
 pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 | grep "HighConfidencePart"
 ```
 
-### Best Practices
+#### Best Practices
+
+The following are just recommendations. You can use any threshold value you would like between 0%-100%:
 
 1. **Start with moderate thresholds** (80-85%) for balanced results
 2. **Use folder-based matching for bulk operations** to leverage parallel processing
@@ -584,33 +450,57 @@ pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 | grep "
 5. **Save results to files** when performing extensive matching operations
 6. **Use appropriate output formats** for your intended use case (JSON for scripting, CSV for spreadsheets)
 
-### Troubleshooting
+### Command Aliases and Short Argument Names
 
-#### Common Issues
+Some commands have shorter aliases. For example `list` has an alias of `ls`. Similarly, some command arguments have short names too. For example `--path` can be provided as `-p`. See the help for details.
 
-1. **API Rate Limiting**: Reduce concurrency if you encounter rate limiting errors
-2. **Large Folder Processing**: Break large folders into smaller batches for better performance
-3. **Timeout Errors**: Use lower thresholds to reduce processing time per match
-4. **Memory Issues**: Reduce concurrency for systems with limited RAM
+### Working with Verbose Output
 
-#### Error Messages
+For debugging purposes, you can enable verbose output:
 
-- **"Threshold must be between 0.00 and 100.00"**: Adjust threshold to a value between 0 and 100
-- **"Asset not found"**: Verify the asset path exists in your tenant
-- **"API rate limit exceeded"**: Reduce concurrency or wait before retrying
-- **"Connection timeout"**: Check your network connection or reduce threshold values
+```bash
+# Enable verbose output for debugging
+pcli2 --verbose asset list
 
-#### Getting Help
+# Or using the short form
+pcli2 -v asset list
+```
 
-If you encounter persistent issues with geometric matching:
+### Cleaning Up
 
-1. **Check your API credentials** are still valid
-2. **Verify your tenant has geometric matching enabled**
-3. **Review the error messages** for specific troubleshooting guidance
-4. **Consult the GitHub Issues** page for known issues and solutions
-5. **Contact Physna support** for assistance with tenant-specific configuration
+To completely remove PCLI2 data:
 
-## Commands
+#### Delete configuration file
+```bash
+# Find configuration file location
+pcli2 config get path
+
+# Delete the file and directory
+rm -rf "$(dirname "$(pcli2 config get path)")"
+```
+
+#### Delete cache directory
+```bash
+# Find cache directory location (check config)
+pcli2 config get | grep cache_path
+
+# Delete cache directory
+rm -rf "/path/to/cache/directory/from/config"
+```
+
+#### Manual cleanup (if directories were created outside standard locations)
+```bash
+# Check for any PCLI2 directories
+find ~ -type d -name "*pcli2*" 2>/dev/null
+
+# Remove any found directories
+rm -rf ~/pcli2.cache
+rm -rf ~/.pcli2
+```
+
+PCLI2 follows standard platform conventions for data storage, so all data can be easily located and removed using standard file system operations.
+
+## Commands Reference
 
 The application uses a hierarchy of commands:
 
@@ -654,146 +544,83 @@ pcli2
 └── help                 Show help information
 ```
 
-## Usage Examples
+### Getting Help
 
-### Authentication
-```bash
-# Login with client credentials
-pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
-
-# Verify authentication
-pcli2 auth get --format json
-
-# Logout
-pcli2 auth logout
-```
-
-### Tenant Management
-```bash
-# List available tenants
-pcli2 tenant list --format json
-
-# Get details for a specific tenant
-pcli2 tenant get --id YOUR_TENANT_ID --format csv
-```
-
-### Folder Management
-```bash
-# List all folders in the default tenant
-pcli2 folder list --format tree
-
-# List folders in a specific tenant
-pcli2 folder list --tenant YOUR_TENANT_ID --format json
-
-# List subfolders under a specific path
-pcli2 folder list --path /Root/MyFolder --format csv
-
-# Create a new folder
-pcli2 folder create --name "New Folder" --tenant YOUR_TENANT_ID
-
-# Create a subfolder
-pcli2 folder create --name "Sub Folder" --parent-folder-id PARENT_FOLDER_UUID
-
-# Create a subfolder using path
-pcli2 folder create --name "Sub Folder" --path "/Root/Parent"
-
-# Get folder details
-pcli2 folder get --uuid FOLDER_UUID --format json
-
-# Delete a folder
-pcli2 folder delete --path "/Root/FolderToDelete"
-```
-
-### Asset Management
-```bash
-# List all assets in a folder
-pcli2 asset list --path "/Root/MyFolder" --format json
-
-# Upload a single asset
-pcli2 asset create --file /path/to/model.stl --path "/Root/Uploads" --format json
-
-# Upload multiple assets using glob pattern
-pcli2 asset create-batch --files "models/*.stl" --path "/Root/BatchUpload" --concurrent 10 --progress
-
-# Get asset details by path
-pcli2 asset get --path "/Root/MyFolder/model.stl" --format json
-
-# Get asset details by UUID
-pcli2 asset get --uuid ASSET_UUID --format csv
-
-# Update asset metadata
-pcli2 asset update --path "/Root/MyFolder/model.stl" --name "New Name" --format json
-
-# Delete an asset
-pcli2 asset delete --path "/Root/MyFolder/model.stl"
-
-# Delete an asset by UUID
-pcli2 asset delete --uuid ASSET_UUID
-```
-
-### Geometric Matching
-```bash
-# Find similar assets for a single reference asset
-pcli2 asset geometric-match --path "/Root/Reference/model.stl" --threshold 85.0 --format json
-
-# Find similar assets by UUID with different threshold
-pcli2 asset geometric-match --uuid ASSET_UUID --threshold 90.0 --format csv
-
-# Find similar assets for all assets in a folder with progress tracking
-pcli2 asset geometric-match-folder --path "/Root/SearchFolder/" --threshold 80.0 --concurrent 8 --progress --format json
-```
-
-### Context Management
-```bash
-# Set active tenant context interactively
-pcli2 context set tenant
-
-# Set active tenant context explicitly
-pcli2 context set tenant --name "My Tenant"
-
-# Get current context
-pcli2 context get --format json
-
-# Clear active context
-pcli2 context clear tenant
-```
-
-### Configuration Management
-```bash
-# Show current configuration
-pcli2 config get --format json
-
-# Show configuration file path
-pcli2 config get path
-
-# Export configuration
-pcli2 config export --output config.yaml
-
-# Import configuration
-pcli2 config import --input config.yaml
-```
-
-## Development
-
-### Running Tests
+For help with any command, use the built-in help system:
 
 ```bash
-# Run all tests
-cargo test
+# General help
+pcli2 --help
 
-# Run tests with output
-cargo test -- --nocapture
+# Help for a specific command group
+pcli2 asset --help
+
+# Help for a specific command
+pcli2 asset create --help
 ```
 
-### Code Quality
+You can also use the `-h` or `--help` flag with any command to get detailed usage information.
 
-```bash
-# Format code
-cargo fmt
+## Troubleshooting
 
-# Check for linting issues
-cargo clippy
-```
+### Common Issues
+
+1. **API Rate Limiting**: Reduce concurrency if you encounter rate limiting errors
+2. **Large Folder Processing**: Break large folders into smaller batches for better performance
+3. **Timeout Errors**: Use lower thresholds to reduce processing time per match
+4. **Memory Issues**: Reduce concurrency for systems with limited RAM
+5. **Authentication Expired**: Run `pcli2 auth login` to refresh your credentials
+6. **Path Not Found**: Verify that folder paths exist and you have permissions to access them
+7. **File Upload Failures**: Check that the file exists and is less than the maximum allowed size
+8. **Network Errors**: Verify your internet connection and try again
+
+### Error Messages
+
+- **"Threshold must be between 0.00 and 100.00"**: Adjust threshold to a value between 0 and 100
+- **"Asset not found"**: Verify the asset path exists in your tenant
+- **"API rate limit exceeded"**: Reduce concurrency or wait before retrying
+- **"Connection timeout"**: Check your network connection or reduce threshold values
+- **"Permission denied"**: Ensure you have the required permissions for the operation
+- **"Invalid file format"**: Ensure the file format is supported by Physna
+- **"Configuration file not found"**: Run `pcli2 config get path` to check config location
+- **"Tenant not accessible"**: Verify the tenant name and your access permissions
+
+### Debugging Tips
+
+If you encounter unexpected behavior:
+
+1. **Enable verbose output**: Add the `--verbose` or `-v` flag to your commands to see detailed logs:
+   ```bash
+   pcli2 --verbose asset list
+   ```
+
+2. **Check your authentication status**:
+   ```bash
+   pcli2 auth get
+   ```
+
+3. **Verify your current context**:
+   ```bash
+   pcli2 context get
+   ```
+
+4. **Review the configuration**:
+   ```bash
+   pcli2 config get
+   ```
+
+### Getting Help
+
+If you continue to experience issues:
+
+1. Check the [GitHub Issues](https://github.com/physna/pcli2/issues) page for known issues
+2. Search for similar problems in the issue tracker
+3. If you can't find a solution, create a new issue with detailed information:
+   - Your OS and PCLI2 version
+   - The command you're trying to execute
+   - The error message received
+   - Steps to reproduce the issue
+   - Verbose output if relevant
 
 ## Contributing
 
@@ -809,4 +636,4 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Support
 
-For support, please contact the Physna development team or open an issue on GitHub.
+If you encounter issues consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page and submit an issue

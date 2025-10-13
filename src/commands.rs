@@ -482,6 +482,19 @@ pub fn create_cli_commands() -> ArgMatches {
                         .about("Manage asset metadata")
                         .subcommand_required(true)
                         .subcommand(
+                            Command::new("get")
+                                .about("Get metadata for an asset")
+                                .arg(tenant_parameter.clone())
+                                .arg(uuid_parameter.clone())
+                                .arg(path_parameter.clone())
+                                .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                                .group(clap::ArgGroup::new("asset_identifier")
+                                    .args([PARAMETER_UUID, PARAMETER_PATH])
+                                    .multiple(false)
+                                    .required(true)
+                                ),
+                        )
+                        .subcommand(
                             Command::new(COMMAND_CREATE)
                                 .about("Add metadata to an asset")
                                 .visible_alias("update")

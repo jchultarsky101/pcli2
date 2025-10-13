@@ -127,6 +127,13 @@ impl OutputFormatter for Configuration {
 
 impl Configuration {
     pub fn get_default_configuration_file_path() -> Result<PathBuf, ConfigurationError> {
+        // Check for PCLI2_CONFIG_DIR environment variable first
+        if let Ok(config_dir_str) = std::env::var("PCLI2_CONFIG_DIR") {
+            let mut config_path = PathBuf::from(config_dir_str);
+            config_path.push(DEFAULT_CONFIGURATION_FILE_NAME);
+            return Ok(config_path);
+        }
+        
         let configuration_directory = config_dir();
         match configuration_directory {
             Some(configuration_directory) => {

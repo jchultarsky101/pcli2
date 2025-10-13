@@ -16,6 +16,7 @@ Based on lessons learned from the previous version, we have developed a new and 
 - **Geometric matching** for finding similar assets
 - **Export/Import** functionality for data migration
 - **Context management** for working with multiple tenants
+- **Cross-platform support** with environment variable configuration
 
 ## Getting Started
 
@@ -110,6 +111,28 @@ pcli2 config get path
 pcli2 context set tenant
 ```
 
+### Cross-Platform Configuration
+
+PCLI2 supports cross-platform environments through environment variables:
+
+```bash
+# Set custom configuration directory (cross-platform support)
+export PCLI2_CONFIG_DIR="/custom/path/to/config"
+
+# Set custom cache directory (for all cache files)
+export PCLI2_CACHE_DIR="/custom/path/to/cache"
+
+# Useful for WSL users running Windows executables
+export PCLI2_CONFIG_DIR="/home/$USER/.pcli2"
+export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
+```
+
+Environment Variables:
+- `PCLI2_CONFIG_DIR`: Custom directory for configuration file (`config.yml`)
+- `PCLI2_CACHE_DIR`: Custom directory for all cache files (asset, metadata, folder caches)
+
+For detailed information about cross-platform configuration, see the [Cross-Platform Guide](docs/cross_platform.md).
+
 ### Working with Verbose Output
 
 For debugging purposes, you can enable verbose output:
@@ -160,6 +183,8 @@ Detailed documentation is available in the [docs](docs/) directory:
 - [Installation Guide](docs/installation.md) - How to install and set up PCLI2
 - [Quick Start Guide](docs/quickstart.md) - Getting started with basic commands
 - [Geometric Matching](docs/geometric-matching.md) - Comprehensive guide to finding similar assets
+- [Cross-Platform Configuration](docs/cross_platform.md) - Environment variables for cross-platform support
+- [Documentation Deployment](docs/documentation_deployment.md) - Setting up documentation website with Oranda and GitHub Pages
 - [Command Reference](docs/commands/) - Detailed reference for all commands (coming soon)
 
 ## Commands

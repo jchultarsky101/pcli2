@@ -61,6 +61,13 @@ impl MetadataCache {
     /// * `Ok(PathBuf)` - The path to the metadata cache file
     /// * `Err` - If there was an error getting the cache directory
     fn get_cache_file_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        // Check for PCLI2_CACHE_DIR environment variable first
+        if let Ok(cache_dir_str) = std::env::var("PCLI2_CACHE_DIR") {
+            let mut cache_path = PathBuf::from(cache_dir_str);
+            cache_path.push("metadata_cache.json");
+            return Ok(cache_path);
+        }
+        
         let mut path = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
         path.push("pcli2");
         path.push("metadata_cache.json");

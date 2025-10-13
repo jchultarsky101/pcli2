@@ -41,14 +41,16 @@ impl FolderCache {
     }
     
     /// Get the cache directory path
-    /// Get the cache directory path
     /// 
     /// In a test environment (when PCLI2_TEST_CACHE_DIR is set), it uses that directory.
+    /// For general cross-platform support (when PCLI2_CACHE_DIR is set), it uses that directory.
     /// Otherwise, it uses the system's cache directory with a "pcli2/folder_cache" subdirectory.
     pub fn get_cache_dir() -> PathBuf {
         // Check if we're in a test environment
         if let Ok(test_cache_dir) = std::env::var("PCLI2_TEST_CACHE_DIR") {
             PathBuf::from(test_cache_dir).join("folder_cache")
+        } else if let Ok(cache_dir_str) = std::env::var("PCLI2_CACHE_DIR") {
+            PathBuf::from(cache_dir_str).join("folder_cache")
         } else {
             let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
             cache_dir.join("pcli2").join("folder_cache")

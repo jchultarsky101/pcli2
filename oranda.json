@@ -5,7 +5,7 @@
     "description": "Physna Command Line Interface v2 - Advanced 3D Geometry Search and Analysis",
     "homepage": "https://jchultarsky101.github.io/pcli2",
     "repository": "https://github.com/jchultarsky101/pcli2",
-    "license": "MIT"
+    "license": "Apache-2.0"
   },
   "styles": {
     "theme": "dark"

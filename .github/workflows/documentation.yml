@@ -38,6 +38,9 @@ jobs:
 
       - name: Build Documentation
         run: oranda build
+      
+      - name: Copy LICENSE file to documentation
+        run: cp LICENSE public/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

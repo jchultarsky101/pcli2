@@ -38,7 +38,7 @@ Before using PCLI2, you will need:
 
 2. **Installation**
    
-   See the [Installation Guide](docs/installation.md) for detailed installation instructions.
+   See the Installation Guide section below for detailed installation instructions.
    
    ```bash
    # Clone the repository
@@ -133,7 +133,17 @@ Environment Variables:
 - `PCLI2_CONFIG_DIR`: Custom directory for configuration file (`config.yml`)
 - `PCLI2_CACHE_DIR`: Custom directory for all cache files (asset, metadata, folder caches)
 
-For detailed information about cross-platform configuration, see the [Cross-Platform Guide](docs/cross_platform.md).
+Environment Variable Details:
+- `PCLI2_CONFIG_DIR`: Custom directory for configuration file (`config.yml`). If not set, uses the system's default configuration directory.
+- `PCLI2_CACHE_DIR`: Custom directory for all cache files (asset cache, metadata cache, folder cache). If not set, uses the system's default cache directory.
+
+These environment variables allow PCLI2 to work seamlessly across different operating systems and environments, including:
+- Windows (native)
+- macOS (native) 
+- Linux (native)
+- Windows Subsystem for Linux (WSL)
+- Docker containers
+- CI/CD environments
 
 ### Working with Verbose Output
 
@@ -156,38 +166,432 @@ Now that you're set up:
 3. **Find similar items**: Use geometric matching to discover duplicates or similar assets
 4. **Automate**: Combine PCLI2 commands in scripts for batch processing
 
-For detailed command references, see the [Commands](#commands) section below.
+## Installation Guide
+
+### Prerequisites
+
+Before installing PCLI2, ensure you have the following:
+
+- **Rust toolchain** (latest stable version)
+- **Cargo package manager** (usually installed with Rust)
+- **Git** (for cloning the repository)
+
+### Installing Rust
+
+If you don't have Rust installed, you can install it using rustup:
+
+```bash
+# Install Rust using rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Reload your shell or source the rustup environment
+source ~/.cargo/env
+
+# Verify the installation
+rustc --version
+cargo --version
+```
+
+### Installation Methods
+
+#### Method 1: Pre-built Binaries (Recommended)
+
+PCLI2 provides pre-built binaries for Windows, macOS, and Linux through GitHub Releases:
+
+1. Visit the [Latest Release](https://github.com/physna/pcli2/releases/latest)
+2. Download the appropriate installer or binary for your platform:
+   - **Windows**: `pcli2-x86_64-pc-windows-msvc.msi` (Installer) or `pcli2-x86_64-pc-windows-msvc.zip` (ZIP)
+   - **macOS**: `pcli2-installer.sh` (Universal script) or platform-specific archives
+   - **Linux**: `pcli2-installer.sh` (Universal script) or `pcli2-x86_64-unknown-linux-gnu.tar.xz` (Archive)
+
+##### Using the Universal Installer Script:
+```bash
+# Download and run the installer script
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+```
+
+##### Manual Installation:
+```bash
+# Extract the archive (example for Linux)
+tar -xf pcli2-x86_64-unknown-linux-gnu.tar.xz
+sudo cp pcli2 /usr/local/bin/
+```
+
+#### Method 2: Building from Source
+
+This method gives you the latest development version of PCLI2:
+
+```bash
+# Clone the repository
+git clone https://github.com/physna/pcli2.git
+cd pcli2
+
+# Build the project (this may take a few minutes)
+cargo build --release
+
+# The executable will be located at target/release/pcli2
+# You can copy it to a directory in your PATH
+sudo cp target/release/pcli2 /usr/local/bin/
+
+# Or add the target directory to your PATH in ~/.bashrc or ~/.zshrc
+echo 'export PATH="$PATH:/path/to/pcli2/target/release"' >> ~/.bashrc
+```
+
+#### Method 3: Installing via Cargo
+
+If you want to install PCLI2 directly from crates.io (once published):
+
+```bash
+# Install PCLI2 globally
+cargo install pcli2
+
+# Verify the installation
+pcli2 --version
+```
+
+### Verifying the Installation
+
+After installation, verify that PCLI2 is working correctly:
+
+```bash
+# Check the version
+pcli2 --version
+
+# View available commands
+pcli2 --help
+
+# View asset-related commands
+pcli2 asset --help
+```
+
+### Updating PCLI2
+
+To update PCLI2 when building from source:
+
+```bash
+# Navigate to your PCLI2 directory
+cd /path/to/pcli2
+
+# Pull the latest changes
+git pull
+
+# Rebuild the project
+cargo build --release
+
+# Copy the updated binary (if needed)
+sudo cp target/release/pcli2 /usr/local/bin/
+```
 
 ### Troubleshooting
 
-If you encounter issues:
+#### Common Issues
 
-1. **Authentication problems**: 
-   - Ensure your client credentials are correct
-   - Try logging out and back in: `pcli2 auth logout` followed by `pcli2 auth login`
-   
-2. **Permission issues**:
-   - Verify your API key has the necessary permissions
-   - Contact your Physna administrator if needed
+1. **Permission denied when copying binary**: Use `sudo` or copy to a directory you own
+2. **Command not found**: Ensure the binary directory is in your PATH
+3. **Build failures**: Make sure you have the latest stable Rust version
 
-3. **Network issues**:
-   - Check your internet connection
-   - Verify that Physna's API endpoints are accessible from your network
+#### Getting Help
 
-4. **For detailed debugging**:
-   - Use the `--verbose` flag to see more detailed logs
-   - Check the logs in your system's temporary directory if issues persist
+If you encounter issues during installation:
 
-## Documentation
+1. Check that all prerequisites are met
+2. Verify your Rust installation is working
+3. Consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page
+4. Contact the Physna development team for support
 
-Detailed documentation is available in the [docs](docs/) directory:
+## Quick Start Guide
 
-- [Installation Guide](docs/installation.md) - How to install and set up PCLI2
-- [Quick Start Guide](docs/quickstart.md) - Getting started with basic commands
-- [Geometric Matching](docs/geometric-matching.md) - Comprehensive guide to finding similar assets
-- [Cross-Platform Configuration](docs/cross_platform.md) - Environment variables for cross-platform support
-- [Documentation Deployment](docs/documentation_deployment.md) - Setting up documentation website with Oranda and GitHub Pages
-- [Command Reference](docs/commands/) - Detailed reference for all commands (coming soon)
+This guide will help you get started with PCLI2 quickly by walking through common tasks.
+
+### Authentication
+
+Before using most PCLI2 commands, you need to authenticate with your Physna tenant:
+
+```bash
+# Login with client credentials
+pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+
+# Verify authentication
+pcli2 auth get
+```
+
+### Basic Navigation
+
+Learn to navigate your Physna tenant using PCLI2:
+
+```bash
+# List available tenants
+pcli2 tenant list
+
+# List folders in the root directory
+pcli2 folder list
+
+# List assets in a specific folder
+pcli2 asset list --path /Root/MyFolder/
+```
+
+### Working with Assets
+
+Common asset operations you'll perform regularly:
+
+```bash
+# Upload a single asset
+pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/
+
+# View asset details
+pcli2 asset get --path /Root/MyFolder/model.stl
+
+# Delete an asset
+pcli2 asset delete --path /Root/MyFolder/model.stl
+
+# Upload multiple assets
+pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
+```
+
+### Geometric Matching
+
+Find similar assets using PCLI2's powerful geometric matching:
+
+```bash
+# Find matches for a single asset
+pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 85.0
+
+# Find matches for all assets in a folder (parallel processing)
+pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+```
+
+### Configuration
+
+Manage your PCLI2 configuration:
+
+```bash
+# View current configuration
+pcli2 config show
+
+# Set default tenant
+pcli2 config set tenant.default YOUR_TENANT_ID
+
+# Export configuration for backup
+pcli2 config export --output my-config.yaml
+```
+
+### Context Management
+
+Work with multiple tenants efficiently:
+
+```bash
+# Set active context (tenant)
+pcli2 context set --tenant YOUR_TENANT_ID
+
+# View current context
+pcli2 context get
+
+# Clear active context
+pcli2 context clear tenant
+```
+
+### Getting Help
+
+For help with any command, use the built-in help system:
+
+```bash
+# General help
+pcli2 --help
+
+# Help for a specific command group
+pcli2 asset --help
+
+# Help for a specific command
+pcli2 asset create --help
+```
+
+You can also use the `-h` or `--help` flag with any command to get detailed usage information.
+
+## Geometric Matching
+
+PCLI2 provides powerful geometric matching capabilities to find similar assets in your Physna tenant. This feature leverages advanced algorithms to identify assets with similar geometries, regardless of their orientation, scale, or position.
+
+### Overview
+
+Geometric matching helps you:
+
+- Find duplicate or near-duplicate assets
+- Identify variations of the same part
+- Locate similar components across different projects
+- Reduce storage costs by identifying redundant assets
+- Improve design workflows by finding existing similar parts
+
+### Single Asset Matching
+
+Find geometrically similar assets for a specific reference asset.
+
+#### Basic Usage
+
+```bash
+# Find matches for a specific asset
+pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 80.0
+
+# Using asset UUID instead of path
+pcli2 asset geometric-match --uuid 123e4567-e89b-12d3-a456-426614174000 --threshold 85.0
+```
+
+#### Output Formats
+
+##### JSON Format (Default)
+
+```json
+[
+  {
+    "referenceAssetName": "ReferenceModel.stl",
+    "candidateAssetName": "SimilarModel.stl",
+    "matchPercentage": 95.75,
+    "referenceAssetPath": "/Root/Folder/ReferenceModel.stl",
+    "candidateAssetPath": "/Root/DifferentFolder/SimilarModel.stl",
+    "referenceAssetUuid": "123e4567-e89b-12d3-a456-426614174000",
+    "candidateAssetUuid": "987fc321-fedc-ba98-7654-43210fedcba9"
+  }
+]
+```
+
+##### CSV Format
+
+```csv
+REFERENCE_ASSET_NAME,CANDIDATE_ASSET_NAME,MATCH_PERCENTAGE,REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID
+ReferenceModel.stl,SimilarModel.stl,95.75,/Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9
+```
+
+### Threshold Settings
+
+The threshold parameter controls the minimum similarity percentage required for a match:
+
+- **0.0** - Return all possible matches (may include unrelated assets)
+- **50.0** - Very loose matching (many potential matches)
+- **80.0** - Default setting (good balance of accuracy and recall)
+- **90.0** - Strict matching (high confidence matches)
+- **95.0+** - Very strict matching (near duplicates only)
+
+### Folder-Based Matching
+
+Find geometrically similar assets for all assets in a specified folder. This command processes assets in parallel for improved performance.
+
+#### Basic Usage
+
+```bash
+# Find matches for all assets in a folder
+pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 85.0
+```
+
+#### Performance Options
+
+##### Concurrency Control
+
+Control how many simultaneous operations are performed:
+
+```bash
+# Process 5 assets simultaneously (default)
+pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 5
+
+# Process 10 assets simultaneously for faster results
+pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 10
+
+# Process 1 asset at a time for slower but more stable results
+pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 1
+```
+
+##### Progress Monitoring
+
+Monitor the progress of long-running folder-based operations:
+
+```bash
+# Show progress bar during folder matching
+pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --progress
+```
+
+### Output Formatting
+
+The geometric matching commands support multiple output formats for integration with other tools:
+
+#### JSON Format (Default)
+
+JSON provides structured output that's easy to parse programmatically:
+
+```bash
+# JSON is the default format
+pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0
+
+# Explicitly specify JSON format
+pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format json
+```
+
+#### CSV Format
+
+CSV is ideal for importing results into spreadsheets or databases:
+
+```bash
+# Output in CSV format
+pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format csv
+```
+
+#### Advanced Usage
+
+##### Filtering Results
+
+Focus on the most relevant matches by adjusting thresholds and filtering:
+
+```bash
+# Find only very high-confidence matches (95%+)
+pcli2 asset geometric-match --path /Root/Reference.stl --threshold 95.0
+
+# Find loose matches for broader similarity searches
+pcli2 asset geometric-match --path /Root/Reference.stl --threshold 50.0
+```
+
+##### Combining with Other Commands
+
+Chain commands together for powerful workflows:
+
+```bash
+# Find matches and save to a file
+pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format csv > matches.csv
+
+# Find matches and filter with grep
+pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 | grep "HighConfidencePart"
+```
+
+### Best Practices
+
+1. **Start with moderate thresholds** (80-85%) for balanced results
+2. **Use folder-based matching for bulk operations** to leverage parallel processing
+3. **Monitor progress** for long-running operations using the `--progress` flag
+4. **Adjust concurrency** based on your system's capabilities and API rate limits
+5. **Save results to files** when performing extensive matching operations
+6. **Use appropriate output formats** for your intended use case (JSON for scripting, CSV for spreadsheets)
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **API Rate Limiting**: Reduce concurrency if you encounter rate limiting errors
+2. **Large Folder Processing**: Break large folders into smaller batches for better performance
+3. **Timeout Errors**: Use lower thresholds to reduce processing time per match
+4. **Memory Issues**: Reduce concurrency for systems with limited RAM
+
+#### Error Messages
+
+- **"Threshold must be between 0.00 and 100.00"**: Adjust threshold to a value between 0 and 100
+- **"Asset not found"**: Verify the asset path exists in your tenant
+- **"API rate limit exceeded"**: Reduce concurrency or wait before retrying
+- **"Connection timeout"**: Check your network connection or reduce threshold values
+
+#### Getting Help
+
+If you encounter persistent issues with geometric matching:
+
+1. **Check your API credentials** are still valid
+2. **Verify your tenant has geometric matching enabled**
+3. **Review the error messages** for specific troubleshooting guidance
+4. **Consult the GitHub Issues** page for known issues and solutions
+5. **Contact Physna support** for assistance with tenant-specific configuration
 
 ## Commands
 

@@ -187,9 +187,14 @@ pcli2 tenant list --format csv
 pcli2 context set tenant
 ```
 
-You can also override the tenant for a command by explicitly specifying it with the `--tenant` argument:
+You can also override the tenant for a command by explicitly specifying it with the `--tenant` argument. You can use either the tenant name or tenant ID:
+
 ```bash
-pcli2 asset list --tenant my_other_tenant_name
+# Using tenant name
+pcli2 asset list --tenant "Demo Environment 1"
+
+# Using tenant ID (UUID)
+pcli2 asset list --tenant 123e4567-e89b-12d3-a456-426614174000
 ```
 
 ### Working with Folders

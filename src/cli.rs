@@ -2123,8 +2123,8 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Executing asset get command");
-                    // Get tenant from explicit parameter or fall back to active tenant from configuration
-                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
                         Some(tenant_id) => tenant_id.clone(),
                         None => {
                             // Try to get active tenant from configuration
@@ -2160,6 +2160,9 @@ pub async fn execute_command(
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
                             
                             // Resolve asset ID from either UUID parameter or path
                             let asset_id = if let Some(uuid) = asset_uuid_param {

@@ -7,7 +7,7 @@ description = "CLI client for the Physna public API - Advanced 3D Geometry Searc
 repository = "https://github.com/jchultarsky101/pcli2"
 
 [package.metadata.wix]
-upgrade-guid = "33D6DB6D-AA2C-5758-B8G8-3C4DF7CE7D94"
+upgrade-guid = "1A4B1568-B3A4-4FF3-8F28-7794C0181133"
 path-guid = "A39581CB-4F22-4BBD-8FA8-4B99D16D6788"
 license = false
 eula = false
@@ -56,7 +56,7 @@ keyring = { version = "2.3.3", optional = false }
 inherits = "release"
 lto = "thin"
 
-[package.metadata.dist.github-custom-runners]
+[workspace.metadata.dist.github-custom-runners]
 x86_64-unknown-linux-gnu = "ubuntu-22.04"
 aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 global = "ubuntu-22.04"

@@ -128,6 +128,58 @@ async fn resolve_asset_path_to_uuid(
     }
 }
 use pcli2::format::{OutputFormat, OutputFormatter};
+
+/// Resolve a tenant name or ID to a tenant ID
+/// 
+/// This function handles the case where users provide either a tenant name or ID
+/// via the --tenant parameter. It checks if the provided identifier looks like
+/// a UUID (tenant ID) or a human-readable name, and resolves names to IDs by
+/// calling the list_tenants API endpoint.
+/// 
+/// # Arguments
+/// * `client` - The Physna API client
+/// * `tenant_identifier` - The tenant name or ID to resolve
+/// 
+/// # Returns
+/// * `Ok(String)` - The resolved tenant ID
+/// * `Err(CliError)` - If the tenant cannot be found
+async fn resolve_tenant_identifier_to_id(
+    client: &mut PhysnaApiClient,
+    tenant_identifier: String,
+) -> Result<String, CliError> {
+    debug!("Resolving tenant identifier: {}", tenant_identifier);
+    
+    // First, try to list all tenants to see if we can resolve the identifier
+    let tenants = client.list_tenants().await.map_err(|e| {
+        CliError::ApiError {
+            context: "Failed to list tenants during resolution".to_string(),
+            source: Box::new(e),
+        }
+    })?;
+    
+    // Look for an exact match by tenant ID first
+    for tenant in &tenants {
+        if tenant.tenant_id == tenant_identifier {
+            debug!("Tenant identifier {} appears to be a direct ID match", tenant_identifier);
+            return Ok(tenant.tenant_id.clone());
+        }
+    }
+    
+    // Then look for a match by name
+    for tenant in &tenants {
+        if tenant.tenant_display_name == tenant_identifier || 
+           tenant.tenant_short_name.as_str() == tenant_identifier {
+            debug!("Resolved tenant identifier '{}' to ID '{}'", tenant_identifier, tenant.tenant_id);
+            return Ok(tenant.tenant_id.clone());
+        }
+    }
+    
+    // If we can't find the tenant, return an error
+    Err(CliError::TenantNotFound {
+        identifier: tenant_identifier,
+    })
+}
+
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
@@ -154,6 +206,12 @@ pub enum CliError {
     /// Error related to JSON serialization/deserialization
     #[error("JSON serialization error")]
     JsonError(#[from] serde_json::Error),
+    /// Error when a tenant cannot be found by name or ID
+    #[error("Tenant '{identifier}' not found")]
+    TenantNotFound { identifier: String },
+    /// Error when an API call fails
+    #[error("API error: {context}")]
+    ApiError { context: String, source: Box<dyn std::error::Error + Send + Sync> },
 }
 
 impl CliError {
@@ -172,6 +230,8 @@ impl CliError {
             CliError::SecurityError(_) => PcliExitCode::AuthError,
             CliError::MissingRequiredArgument(_) => PcliExitCode::UsageError,
             CliError::JsonError(_) => PcliExitCode::DataError,
+            CliError::TenantNotFound { .. } => PcliExitCode::UsageError,
+            CliError::ApiError { .. } => PcliExitCode::DataError,
         }
     }
 }
@@ -300,8 +360,8 @@ pub async fn execute_command(
             match sub_matches.subcommand() {
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing folder list command");
-                    // Get tenant from explicit parameter or fall back to active tenant from configuration
-                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
                         Some(tenant_id) => tenant_id.clone(),
                         None => {
                             // Try to get active tenant from configuration
@@ -332,6 +392,9 @@ pub async fn execute_command(
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
                             
                             // Check if a specific path is provided
                             if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
@@ -463,8 +526,8 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Executing folder get command");
-                    // Get tenant from explicit parameter or fall back to active tenant from configuration
-                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
                         Some(tenant_id) => tenant_id.clone(),
                         None => {
                             // Try to get active tenant from configuration
@@ -500,6 +563,9 @@ pub async fn execute_command(
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
                             
                             // Resolve folder ID from either ID parameter or path
                             let folder_id = if let Some(id) = folder_id_param {
@@ -1525,8 +1591,8 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing asset list command");
-                    // Get tenant from explicit parameter or fall back to active tenant from configuration
-                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
                         Some(tenant_id) => tenant_id.clone(),
                         None => {
                             // Try to get active tenant from configuration
@@ -1566,6 +1632,9 @@ pub async fn execute_command(
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
                             
                             // If a path is specified, get assets filtered by folder path
                             let asset_list = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
@@ -2054,8 +2123,8 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Executing asset get command");
-                    // Get tenant from explicit parameter or fall back to active tenant from configuration
-                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
                         Some(tenant_id) => tenant_id.clone(),
                         None => {
                             // Try to get active tenant from configuration
@@ -2091,6 +2160,9 @@ pub async fn execute_command(
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
                             
                             // Resolve asset ID from either UUID parameter or path
                             let asset_id = if let Some(uuid) = asset_uuid_param {
@@ -2169,8 +2241,8 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_DELETE, sub_matches)) => {
                     trace!("Executing asset delete command");
-                    // Get tenant from explicit parameter or fall back to active tenant from configuration
-                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
                         Some(tenant_id) => tenant_id.clone(),
                         None => {
                             // Try to get active tenant from configuration
@@ -2203,6 +2275,9 @@ pub async fn execute_command(
                             ) {
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
                             
                             // Resolve asset ID from either UUID parameter or path
                             let asset_id = if let Some(uuid) = asset_uuid_param {

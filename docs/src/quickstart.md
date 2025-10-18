@@ -78,8 +78,10 @@ Manage your PCLI2 configuration:
 # View current configuration
 pcli2 config show
 
-# Set default tenant
-pcli2 config set tenant.default YOUR_TENANT_ID
+# Set default tenant (using either tenant name or ID)
+pcli2 config set tenant.default "Demo Environment 1"
+# Or using tenant ID:
+# pcli2 config set tenant.default 123e4567-e89b-12d3-a456-426614174000
 
 # Export configuration for backup
 pcli2 config export --output my-config.yaml
@@ -90,8 +92,11 @@ pcli2 config export --output my-config.yaml
 Work with multiple tenants efficiently:
 
 ```bash
-# Set active context (tenant)
-pcli2 context set --tenant YOUR_TENANT_ID
+# Set active context (tenant) using either tenant name or ID
+pcli2 context set --tenant "Demo Environment 1"
+
+# Or using tenant ID
+pcli2 context set --tenant 123e4567-e89b-12d3-a456-426614174000
 
 # View current context
 pcli2 context get

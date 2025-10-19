@@ -212,11 +212,6 @@ pub fn create_cli_commands() -> ArgMatches {
                 .about("Manage tenants")
                 .subcommand_required(true)
                 .subcommand(
-                    Command::new(COMMAND_CREATE)
-                        .about("Create a new tenant")
-                        .arg(name_parameter.clone()),
-                )
-                .subcommand(
                     Command::new(COMMAND_GET)
                         .about("Get tenant details")
                         .arg(id_parameter.clone())
@@ -227,18 +222,6 @@ pub fn create_cli_commands() -> ArgMatches {
                         .about("List all tenants")
                         .visible_alias("ls")
                         .arg(format_parameter.clone().value_parser(["json", "csv"])),
-                )
-                .subcommand(
-                    Command::new(COMMAND_UPDATE)
-                        .about("Update tenant configuration")
-                        .arg(id_parameter.clone())
-                        .arg(name_parameter.clone()),
-                )
-                .subcommand(
-                    Command::new(COMMAND_DELETE)
-                        .about("Delete a tenant")
-                        .visible_alias("rm")
-                        .arg(id_parameter.clone()),
                 ),
         )
         .subcommand(

@@ -180,6 +180,37 @@ async fn resolve_tenant_identifier_to_id(
     })
 }
 
+/// Helper function to safely extract and parse format parameter with default fallback
+fn extract_format_param_with_default(sub_matches: &ArgMatches, param_name: &str) -> Result<OutputFormat, CliError> {
+    let format_str = sub_matches.get_one::<String>(param_name)
+        .ok_or_else(|| CliError::MissingRequiredArgument(param_name.to_string()))
+        .map(|s| s.clone())
+        .unwrap_or_else(|_| "json".to_string());
+    
+    OutputFormat::from_str(&format_str)
+        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_str)))
+}
+
+/// Helper function to get tenant from parameter or configuration with resolution
+async fn get_tenant_id(
+    client: &mut PhysnaApiClient,
+    sub_matches: &ArgMatches,
+    configuration: &Configuration,
+) -> Result<String, CliError> {
+    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+        Some(tenant_id) => tenant_id.clone(),
+        None => {
+            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                active_tenant_id
+            } else {
+                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+            }
+        }
+    };
+    
+    resolve_tenant_identifier_to_id(client, tenant_identifier).await
+}
+
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
@@ -309,8 +340,10 @@ pub async fn execute_command(
                             
                             match client.list_tenants().await {
                                 Ok(tenants) => {
-                                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-                                    let format = OutputFormat::from_str(format).unwrap();
+                                    let format_param = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))?;
+                                    let format = OutputFormat::from_str(format_param)
+                                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_param)))?;
                                     
                                     match format {
                                         OutputFormat::Json => {
@@ -360,21 +393,11 @@ pub async fn execute_command(
             match sub_matches.subcommand() {
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing folder list command");
-                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
-                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
-                        Some(tenant_id) => tenant_id.clone(),
-                        None => {
-                            // Try to get active tenant from configuration
-                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
-                                active_tenant_id
-                            } else {
-                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
-                            }
-                        }
-                    };
                     
-                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-                    let format = OutputFormat::from_str(format).unwrap();
+                    let format_param = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))?;
+                    let format = OutputFormat::from_str(format_param)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_param)))?;
                     
                     // Check if refresh is requested
                     let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
@@ -393,8 +416,8 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve tenant identifier to tenant ID
-                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
                             
                             // Check if a specific path is provided
                             if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
@@ -526,18 +549,6 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Executing folder get command");
-                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
-                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
-                        Some(tenant_id) => tenant_id.clone(),
-                        None => {
-                            // Try to get active tenant from configuration
-                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
-                                active_tenant_id
-                            } else {
-                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
-                            }
-                        }
-                    };
                     
                     let folder_id_param = sub_matches.get_one::<String>(PARAMETER_ID);
                     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
@@ -547,8 +558,12 @@ pub async fn execute_command(
                         return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
                     }
                     
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|_| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_str)))?;
                     
                     // Try to get access token and get folder via Physna V3 API
                     let mut keyring = Keyring::default();
@@ -564,8 +579,8 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve tenant identifier to tenant ID
-                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
                             
                             // Resolve folder ID from either ID parameter or path
                             let folder_id = if let Some(id) = folder_id_param {
@@ -657,9 +672,13 @@ pub async fn execute_command(
                     let parent_folder_id_param = sub_matches.get_one::<String>(PARAMETER_PARENT_FOLDER_ID);
                     let parent_folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
                     
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
-                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|_| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_str)))?;
+
                     // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
                     if parent_folder_id_param.is_some() && parent_folder_path_param.is_some() {
                         return Err(CliError::MissingRequiredArgument("Only one of --parent-folder-id or --path can be specified, not both".to_string()));
@@ -928,18 +947,19 @@ pub async fn execute_command(
                         return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
                     };
                     
-                    // Get threshold parameter
-                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+                    // Get threshold parameter with proper error handling
+                    let threshold_param = sub_matches.get_one::<f64>("threshold")
+                        .unwrap_or(&80.0);
+                    let threshold = *threshold_param;
                     
                     // Validate threshold is between 0 and 100
                     if !(0.0..=100.0).contains(&threshold) {
                         eprintln!("Threshold must be between 0.00 and 100.00");
                         return Ok(());
                     }
-                    
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
-                    
+
+                    let format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
+
                     trace!("Performing geometric search for asset {} with threshold {}", asset_id, threshold);
                     
                     // Try to get access token and perform geometric search
@@ -1082,8 +1102,10 @@ pub async fn execute_command(
                         .clone();
                     trace!("Processing folder: {}", folder_path);
 
-                    // Get threshold parameter
-                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+                    // Get threshold parameter with proper error handling
+                    let threshold_param = sub_matches.get_one::<f64>("threshold")
+                        .unwrap_or(&80.0);
+                    let threshold = *threshold_param;
 
                     // Validate threshold is between 0 and 100
                     if !(0.0..=100.0).contains(&threshold) {
@@ -1092,15 +1114,16 @@ pub async fn execute_command(
                     }
 
                     // Get concurrency parameter
-                    let concurrent = *sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
+                    let concurrent_param = sub_matches.get_one::<usize>("concurrent")
+                        .unwrap_or(&5);
+                    let concurrent = *concurrent_param;
                     trace!("Using concurrency level: {}", concurrent);
 
                     // Get progress parameter
                     let show_progress = sub_matches.get_flag("progress");
                     trace!("Progress bar enabled: {}", show_progress);
 
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
 
                     trace!("Retrieving access token for tenant: {}", tenant);
                     // Try to get access token and perform folder-based geometric search
@@ -1371,8 +1394,7 @@ pub async fn execute_command(
                                 .ok_or_else(|| CliError::MissingRequiredArgument("Invalid file name".to_string()))?
                                 .to_string();
                     
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
                     
                     // Try to get access token and create asset via Physna V3 API
                     let mut keyring = Keyring::default();
@@ -1486,10 +1508,16 @@ pub async fn execute_command(
                         .ok_or(CliError::MissingRequiredArgument("files".to_string()))?
                         .clone();
 
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|_| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_str)))?;
 
-                    let concurrent = sub_matches.get_one::<usize>("concurrent").copied().unwrap_or(5);
+                    let concurrent_param = sub_matches.get_one::<usize>("concurrent")
+                        .unwrap_or(&5);
+                    let concurrent = *concurrent_param;
                     let show_progress = sub_matches.get_flag("progress");
 
                     // Try to get access token and create assets via Physna V3 API
@@ -1591,21 +1619,11 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing asset list command");
-                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
-                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
-                        Some(tenant_id) => tenant_id.clone(),
-                        None => {
-                            // Try to get active tenant from configuration
-                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
-                                active_tenant_id
-                            } else {
-                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
-                            }
-                        }
-                    };
                     
-                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-                    let format = OutputFormat::from_str(format).unwrap();
+                    let format_param = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))?;
+                    let format = OutputFormat::from_str(format_param)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_param)))?;
                     
                     // Validate format - only JSON and CSV are supported for assets
                     if format == OutputFormat::Tree {
@@ -1633,8 +1651,8 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve tenant identifier to tenant ID
-                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
                             
                             // If a path is specified, get assets filtered by folder path
                             let asset_list = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
@@ -2241,18 +2259,6 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_DELETE, sub_matches)) => {
                     trace!("Executing asset delete command");
-                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
-                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
-                        Some(tenant_id) => tenant_id.clone(),
-                        None => {
-                            // Try to get active tenant from configuration
-                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
-                                active_tenant_id
-                            } else {
-                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
-                            }
-                        }
-                    };
                     
                     let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
                     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
@@ -2276,8 +2282,8 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve tenant identifier to tenant ID
-                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
                             
                             // Resolve asset ID from either UUID parameter or path
                             let asset_id = if let Some(uuid) = asset_uuid_param {

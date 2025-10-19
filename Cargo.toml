@@ -60,3 +60,6 @@ lto = "thin"
 x86_64-unknown-linux-gnu = "ubuntu-22.04"
 aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 global = "ubuntu-22.04"
+
+[dist]
+allow-dirty = true

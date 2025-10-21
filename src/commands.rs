@@ -590,6 +590,37 @@ pub fn create_cli_commands() -> ArgMatches {
                                         .required(false)
                                         .help("Display progress bar during processing"),
                                 ),
+                        )
+                        .subcommand(
+                            Command::new("inference")
+                                .about("Apply metadata from a reference asset to geometrically similar assets")
+                                .arg(path_parameter.clone().required(true))
+                                .arg(
+                                    Arg::new("name")
+                                        .long("name")
+                                        .num_args(1..)
+                                        .action(clap::ArgAction::Append)
+                                        .required(true)
+                                        .help("Metadata field name(s) to copy (can be specified multiple times or comma-separated)")
+                                )
+                                .arg(
+                                    Arg::new("threshold")
+                                        .long("threshold")
+                                        .num_args(1)
+                                        .required(false)
+                                        .default_value("80.0")
+                                        .help("Similarity threshold (0.00 to 100.00)")
+                                        .value_parser(clap::value_parser!(f64)),
+                                )
+                                .arg(
+                                    Arg::new("recursive")
+                                        .long("recursive")
+                                        .action(clap::ArgAction::SetTrue)
+                                        .required(false)
+                                        .help("Apply inference recursively to all found similar assets"),
+                                )
+                                .arg(tenant_parameter.clone())
+                                .arg(format_parameter.clone().value_parser(["json", "csv"]))
                         ),
                 )
                 .subcommand(

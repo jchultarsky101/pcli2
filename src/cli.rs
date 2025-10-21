@@ -2617,6 +2617,76 @@ pub async fn execute_command(
                         ))),
                     }
                 }
+                Some(("inference", sub_matches)) => {
+                    trace!("Executing asset metadata inference command");
+                    
+                    // Try to get access token and perform metadata inference
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Get tenant ID with resolution using helper function
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
+                            
+                            // Get parameters
+                            let asset_path = sub_matches.get_one::<String>(PARAMETER_PATH)
+                                .ok_or(CliError::MissingRequiredArgument("Asset path is required".to_string()))?;
+                            
+                            // Get metadata names - handle both repeated flags and comma-separated values
+                            let mut metadata_names = Vec::new();
+                            if let Some(name_values) = sub_matches.get_many::<String>("name") {
+                                for name_value in name_values {
+                                    // Split by comma to handle comma-separated names in a single parameter
+                                    let names: Vec<&str> = name_value.split(',').map(|s| s.trim()).collect();
+                                    for name in names {
+                                        if !name.is_empty() {
+                                            metadata_names.push(name.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if metadata_names.is_empty() {
+                                return Err(CliError::MissingRequiredArgument("At least one metadata name must be specified".to_string()));
+                            }
+                            
+                            let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+                            let recursive = sub_matches.get_flag("recursive");
+                            
+                            // Validate threshold is between 0 and 100
+                            if !(0.0..=100.0).contains(&threshold) {
+                                eprintln!("Threshold must be between 0.00 and 100.00");
+                                return Ok(());
+                            }
+                            
+                            let _format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
+                            
+                            trace!("Performing metadata inference for asset {} with threshold {} and {} metadata fields", asset_path, threshold, metadata_names.len());
+                            
+                            // Execute the metadata inference logic
+                            execute_metadata_inference(&mut client, &tenant, asset_path, &metadata_names, threshold, recursive).await?;
+                            
+                            Ok(())
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
@@ -2708,4 +2778,120 @@ pub async fn execute_command(
         }
         _ => Err(CliError::UnsupportedSubcommand(String::from("unknown"))),
     }
+}
+
+/// Execute the metadata inference logic
+/// 
+/// This function performs metadata inference by taking a reference asset, extracting specified
+/// metadata fields from it, finding geometrically similar assets, and applying those metadata
+/// fields to the matching assets.
+/// 
+/// # Arguments
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - Tenant ID to operate within
+/// * `reference_asset_path` - Path to the reference asset
+/// * `metadata_names` - Vector of metadata field names to copy
+/// * `threshold` - Geometric similarity threshold (0.00-100.00)
+/// * `recursive` - Whether to apply inference recursively to discovered matches
+/// 
+/// # Returns
+/// * `Ok(())` - Successfully completed metadata inference
+/// * `Err(CliError)` - If there was an error during inference
+async fn execute_metadata_inference(
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+    reference_asset_path: &str,
+    metadata_names: &[String],
+    threshold: f64,
+    recursive: bool,
+) -> Result<(), CliError> {
+    use std::collections::HashSet;
+    
+    // Queue for recursive processing
+    let mut to_process = vec![reference_asset_path.to_string()];
+    let mut processed_assets = HashSet::new();
+    
+    while let Some(current_asset_path) = to_process.pop() {
+        // Skip if already processed
+        if processed_assets.contains(&current_asset_path) {
+            continue;
+        }
+        
+        processed_assets.insert(current_asset_path.clone());
+        
+        trace!("Processing asset: {} for metadata inference", current_asset_path);
+        
+        // 1. Get the reference asset by path
+        let asset_uuid = match resolve_asset_path_to_uuid(client, tenant, &current_asset_path).await {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                error!("Reference asset not found: {}", current_asset_path);
+                continue;
+            }
+        };
+        
+        // 2. Get current metadata values from this asset
+        let mut reference_asset_metadata = std::collections::HashMap::new();
+        
+        match client.get_asset(tenant, &asset_uuid).await {
+            Ok(asset_response) => {
+                // Extract the requested metadata fields only
+                for metadata_name in metadata_names {
+                    if let Some(value) = asset_response.metadata.get(metadata_name) {
+                        reference_asset_metadata.insert(metadata_name.clone(), value.clone());
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Could not get asset details for '{}': {}", current_asset_path, e);
+                continue;
+            }
+        }
+        
+        if reference_asset_metadata.is_empty() {
+            trace!("No requested metadata found for asset: {}", current_asset_path);
+            continue;
+        }
+        
+        // 3. Perform geometric search for this asset at the specified threshold
+        let geometric_matches = match client.geometric_search(tenant, &asset_uuid, threshold).await {
+            Ok(matches) => matches,
+            Err(e) => {
+                error!("Geometric search failed for asset '{}': {}", current_asset_path, e);
+                continue;
+            }
+        };
+        
+        trace!("Found {} geometric matches for asset {}", geometric_matches.matches.len(), current_asset_path);
+        
+        // 4. Apply metadata to matching assets
+        for match_result in geometric_matches.matches {
+            let candidate_asset_id = &match_result.asset.id;
+            let candidate_asset_path = &match_result.asset.path;
+            
+            // Skip the original asset itself to avoid self-assignment if it appears in results
+            if candidate_asset_id == &asset_uuid {
+                continue;
+            }
+            
+            trace!("Applying metadata to candidate: {} (path: {})", candidate_asset_id, candidate_asset_path);
+            
+            // Update metadata for candidate asset using the reference metadata
+            match client.update_asset_metadata(tenant, candidate_asset_id, &reference_asset_metadata).await {
+                Ok(_) => {
+                    trace!("Updated metadata for asset {} (path: {})", candidate_asset_id, candidate_asset_path);
+                }
+                Err(e) => {
+                    error!("Failed to update metadata for asset '{}': {}", candidate_asset_path, e);
+                }
+            }
+            
+            // If recursive, add this candidate to the processing queue (if not already processed)
+            if recursive && !processed_assets.contains(candidate_asset_path) {
+                to_process.push(candidate_asset_path.clone());
+            }
+        }
+    }
+    
+    Ok(())
 }

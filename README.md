@@ -29,6 +29,7 @@ Based on lessons learned from the previous version, we have developed a new and 
 - **Authentication** with OAuth2 client credentials flow
 - **Batch operations** for processing multiple assets
 - **Geometric matching** for finding similar assets
+- **Metadata inference** for automatically propagating metadata to similar assets (`pcli2 asset metadata inference`)
 - **Export/Import** functionality for data migration
 - **Context management** for working with multiple tenants
 - **Cross-platform support** with environment variable configuration
@@ -63,7 +64,7 @@ Before installing PCLI2, you will need:
 
 PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub Releases:
 
-1. Visit the [Latest Release](https://github.com/physna/pcli2/releases/latest)
+1. Visit the [Latest Release](https://github.com/jchultarsky101/pcli2/releases/latest)
 2. Download the appropriate installer for your platform:
    - **Windows**: `pcli2-x86_64-pc-windows-msvc.msi` (Installer)
    - **macOS**: `pcli2-installer.sh` (Universal script)
@@ -72,7 +73,7 @@ PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub
 ##### Using the Universal Installer Script (macOS/Linux):
 ```bash
 # Download and run the installer script
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
 
 #### Method 2: Manual Installation
@@ -88,7 +89,7 @@ This method gives you the latest development version of PCLI2:
 
 ```bash
 # Clone the repository
-git clone https://github.com/physna/pcli2.git
+git clone https://github.com/jchultarsky101/pcli2.git
 cd pcli2
 
 # Build the project (this may take a few minutes)
@@ -124,7 +125,7 @@ This command should check if a new version is available and automatically instal
 For manual update, simply execute the installer script:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
 
 For source builds:
@@ -436,6 +437,24 @@ pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --progress
 
 Chain commands together for powerful workflows:
 
+
+### Metadata Inference
+
+Automatically apply metadata from a reference asset to geometrically similar assets using PCLI2's metadata inference capability:
+
+```bash
+# Apply specific metadata fields from a reference asset to similar assets
+pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Material,Cost" --threshold 90.0
+
+# Apply metadata recursively to create chains of similar assets
+pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Category" --threshold 85.0 --recursive
+
+# Apply multiple metadata fields with different thresholds
+pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
+```
+
+The metadata inference command helps you efficiently propagate metadata across geometrically similar assets, reducing manual work and ensuring consistency in your asset database.
+
 ```bash
 # Find matches and save to a file
 pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format csv > matches.csv
@@ -625,7 +644,13 @@ pcli2
 │   ├── get                 Get asset details
 │   ├── delete              Delete an asset
 │   ├── geometric-match     Find geometrically similar assets for a single asset
-│   └── geometric-match-folder  Find geometrically similar assets for all assets in a folder
+│   ├── geometric-match-folder  Find geometrically similar assets for all assets in a folder
+│   └── metadata
+│       ├── get             Get metadata for an asset
+│       ├── create          Add metadata to an asset
+│       ├── delete          Delete specific metadata fields from an asset
+│       ├── create-batch    Create metadata for multiple assets from a CSV file
+│       └── inference       Apply metadata from a reference asset to geometrically similar assets
 ├── folder
 │   ├── create           Create a new folder
 │   ├── list             List all folders in a parent folder
@@ -721,7 +746,7 @@ If you encounter unexpected behavior:
 
 If you continue to experience issues:
 
-1. Check the [GitHub Issues](https://github.com/physna/pcli2/issues) page for known issues
+1. Check the [GitHub Issues](https://github.com/jchultarsky101/pcli2/issues) page for known issues
 2. Search for similar problems in the issue tracker
 3. If you can't find a solution, create a new issue with detailed information:
    - Your OS and PCLI2 version
@@ -744,4 +769,4 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Support
 
-If you encounter issues consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page and submit an issue
+If you encounter issues consult the [GitHub Issues](https://github.com/jchultarsky101/pcli2/issues) page and submit an issue

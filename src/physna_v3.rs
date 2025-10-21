@@ -116,7 +116,10 @@ impl PhysnaApiClient {
             base_url: "https://app-api.physna.com/v3".to_string(),
             access_token: None,
             client_credentials: None,
-            http_client: reqwest::Client::new(),
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60)) // 60-second timeout for all requests
+                .build()
+                .expect("Failed to build HTTP client with timeout"),
         }
     }
     
@@ -1391,7 +1394,7 @@ impl PhysnaApiClient {
         }
     }
     
-    /// Perform a geometric search for similar assets
+    /// Perform a geometric search for similar assets with pagination support
     /// 
     /// This method searches for assets that are geometrically similar to the reference asset.
     /// It uses Physna's advanced geometric matching algorithms to find assets with similar
@@ -1428,24 +1431,71 @@ impl PhysnaApiClient {
         debug!("Starting geometric search for tenant_id: {}, asset_id: {}, threshold: {}", tenant_id, asset_id, threshold);
         let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_id, asset_id);
         
-        // Build request body with the correct structure
-        let body = serde_json::json!({
-            "page": 1,
-            "perPage": 20,
-            "searchQuery": "",
-            "filters": {
-                "folders": [],
-                "metadata": {},
-                "extensions": []  // Empty array as requested
-            },
-            "minThreshold": threshold  // Use threshold directly as percentage
-        });
+        // Initialize with page 1 and reasonable page size
+        let mut all_matches = Vec::new();
+        let mut page = 1;
+        let per_page = 100; // Larger page size for efficiency
         
-        debug!("Sending geometric search request to: {}", url);
-        // Execute POST request
-        let result = self.post(&url, &body).await;
-        debug!("Geometric search completed for asset_id: {}", asset_id);
-        result
+        loop {
+            debug!("Fetching page {} of geometric search results", page);
+            
+            // Build request body with the correct structure
+            let body = serde_json::json!({
+                "page": page,
+                "perPage": per_page,
+                "searchQuery": "",
+                "filters": {
+                    "folders": [],
+                    "metadata": {},
+                    "extensions": []  // Empty array as requested
+                },
+                "minThreshold": threshold  // Use threshold directly as percentage
+            });
+            
+            debug!("Sending geometric search request to: {}", url);
+            // Execute POST request
+            let result: Result<crate::model::GeometricSearchResponse, ApiError> = self.post(&url, &body).await;
+            
+            match result {
+                Ok(response) => {
+                    // Check if we have pagination data
+                    if let Some(page_data) = &response.page_data {
+                        debug!("Page {}/{} with {} total matches", page_data.current_page, page_data.last_page, page_data.total);
+                        
+                        // Add matches from this page to our collection
+                        all_matches.extend(response.matches);
+                        
+                        // Check if we've reached the last page
+                        if page_data.current_page >= page_data.last_page {
+                            debug!("Reached last page of results");
+                            break;
+                        }
+                        
+                        // Move to next page
+                        page += 1;
+                    } else {
+                        // No pagination data - just return the response as-is
+                        debug!("No pagination data in response, returning single page");
+                        return Ok(response);
+                    }
+                }
+                Err(e) => {
+                    // Return error immediately
+                    debug!("Geometric search failed: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+        
+        // Create a response with all matches and combined pagination data
+        let final_response = crate::model::GeometricSearchResponse {
+            matches: all_matches,
+            page_data: None, // We've aggregated all pages
+            filter_data: None,
+        };
+        
+        debug!("Geometric search completed for asset_id: {} with {} total matches", asset_id, final_response.matches.len());
+        Ok(final_response)
     }
     
     /// Create multiple assets by uploading files matching a glob pattern

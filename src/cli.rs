@@ -180,6 +180,37 @@ async fn resolve_tenant_identifier_to_id(
     })
 }
 
+/// Helper function to safely extract and parse format parameter with default fallback
+fn extract_format_param_with_default(sub_matches: &ArgMatches, param_name: &str) -> Result<OutputFormat, CliError> {
+    let format_str = sub_matches.get_one::<String>(param_name)
+        .ok_or_else(|| CliError::MissingRequiredArgument(param_name.to_string()))
+        .map(|s| s.clone())
+        .unwrap_or_else(|_| "json".to_string());
+    
+    OutputFormat::from_str(&format_str)
+        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_str)))
+}
+
+/// Helper function to get tenant from parameter or configuration with resolution
+async fn get_tenant_id(
+    client: &mut PhysnaApiClient,
+    sub_matches: &ArgMatches,
+    configuration: &Configuration,
+) -> Result<String, CliError> {
+    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+        Some(tenant_id) => tenant_id.clone(),
+        None => {
+            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                active_tenant_id
+            } else {
+                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+            }
+        }
+    };
+    
+    resolve_tenant_identifier_to_id(client, tenant_identifier).await
+}
+
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
@@ -309,8 +340,10 @@ pub async fn execute_command(
                             
                             match client.list_tenants().await {
                                 Ok(tenants) => {
-                                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-                                    let format = OutputFormat::from_str(format).unwrap();
+                                    let format_param = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))?;
+                                    let format = OutputFormat::from_str(format_param)
+                                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_param)))?;
                                     
                                     match format {
                                         OutputFormat::Json => {
@@ -360,21 +393,11 @@ pub async fn execute_command(
             match sub_matches.subcommand() {
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing folder list command");
-                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
-                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
-                        Some(tenant_id) => tenant_id.clone(),
-                        None => {
-                            // Try to get active tenant from configuration
-                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
-                                active_tenant_id
-                            } else {
-                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
-                            }
-                        }
-                    };
                     
-                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-                    let format = OutputFormat::from_str(format).unwrap();
+                    let format_param = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))?;
+                    let format = OutputFormat::from_str(format_param)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_param)))?;
                     
                     // Check if refresh is requested
                     let refresh_requested = sub_matches.get_flag(PARAMETER_REFRESH);
@@ -393,8 +416,8 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve tenant identifier to tenant ID
-                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
                             
                             // Check if a specific path is provided
                             if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
@@ -526,18 +549,6 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Executing folder get command");
-                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
-                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
-                        Some(tenant_id) => tenant_id.clone(),
-                        None => {
-                            // Try to get active tenant from configuration
-                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
-                                active_tenant_id
-                            } else {
-                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
-                            }
-                        }
-                    };
                     
                     let folder_id_param = sub_matches.get_one::<String>(PARAMETER_ID);
                     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
@@ -547,8 +558,12 @@ pub async fn execute_command(
                         return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
                     }
                     
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|_| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_str)))?;
                     
                     // Try to get access token and get folder via Physna V3 API
                     let mut keyring = Keyring::default();
@@ -564,8 +579,8 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve tenant identifier to tenant ID
-                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
                             
                             // Resolve folder ID from either ID parameter or path
                             let folder_id = if let Some(id) = folder_id_param {
@@ -657,9 +672,13 @@ pub async fn execute_command(
                     let parent_folder_id_param = sub_matches.get_one::<String>(PARAMETER_PARENT_FOLDER_ID);
                     let parent_folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
                     
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
-                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|_| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_str)))?;
+
                     // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
                     if parent_folder_id_param.is_some() && parent_folder_path_param.is_some() {
                         return Err(CliError::MissingRequiredArgument("Only one of --parent-folder-id or --path can be specified, not both".to_string()));
@@ -928,18 +947,19 @@ pub async fn execute_command(
                         return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
                     };
                     
-                    // Get threshold parameter
-                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+                    // Get threshold parameter with proper error handling
+                    let threshold_param = sub_matches.get_one::<f64>("threshold")
+                        .unwrap_or(&80.0);
+                    let threshold = *threshold_param;
                     
                     // Validate threshold is between 0 and 100
                     if !(0.0..=100.0).contains(&threshold) {
                         eprintln!("Threshold must be between 0.00 and 100.00");
                         return Ok(());
                     }
-                    
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
-                    
+
+                    let format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
+
                     trace!("Performing geometric search for asset {} with threshold {}", asset_id, threshold);
                     
                     // Try to get access token and perform geometric search
@@ -1082,8 +1102,10 @@ pub async fn execute_command(
                         .clone();
                     trace!("Processing folder: {}", folder_path);
 
-                    // Get threshold parameter
-                    let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+                    // Get threshold parameter with proper error handling
+                    let threshold_param = sub_matches.get_one::<f64>("threshold")
+                        .unwrap_or(&80.0);
+                    let threshold = *threshold_param;
 
                     // Validate threshold is between 0 and 100
                     if !(0.0..=100.0).contains(&threshold) {
@@ -1092,15 +1114,16 @@ pub async fn execute_command(
                     }
 
                     // Get concurrency parameter
-                    let concurrent = *sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
+                    let concurrent_param = sub_matches.get_one::<usize>("concurrent")
+                        .unwrap_or(&5);
+                    let concurrent = *concurrent_param;
                     trace!("Using concurrency level: {}", concurrent);
 
                     // Get progress parameter
                     let show_progress = sub_matches.get_flag("progress");
                     trace!("Progress bar enabled: {}", show_progress);
 
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
 
                     trace!("Retrieving access token for tenant: {}", tenant);
                     // Try to get access token and perform folder-based geometric search
@@ -1371,8 +1394,7 @@ pub async fn execute_command(
                                 .ok_or_else(|| CliError::MissingRequiredArgument("Invalid file name".to_string()))?
                                 .to_string();
                     
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
                     
                     // Try to get access token and create asset via Physna V3 API
                     let mut keyring = Keyring::default();
@@ -1486,10 +1508,16 @@ pub async fn execute_command(
                         .ok_or(CliError::MissingRequiredArgument("files".to_string()))?
                         .clone();
 
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|_| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_str)))?;
 
-                    let concurrent = sub_matches.get_one::<usize>("concurrent").copied().unwrap_or(5);
+                    let concurrent_param = sub_matches.get_one::<usize>("concurrent")
+                        .unwrap_or(&5);
+                    let concurrent = *concurrent_param;
                     let show_progress = sub_matches.get_flag("progress");
 
                     // Try to get access token and create assets via Physna V3 API
@@ -1591,21 +1619,11 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing asset list command");
-                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
-                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
-                        Some(tenant_id) => tenant_id.clone(),
-                        None => {
-                            // Try to get active tenant from configuration
-                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
-                                active_tenant_id
-                            } else {
-                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
-                            }
-                        }
-                    };
                     
-                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-                    let format = OutputFormat::from_str(format).unwrap();
+                    let format_param = sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                        .ok_or_else(|| CliError::MissingRequiredArgument(PARAMETER_FORMAT.to_string()))?;
+                    let format = OutputFormat::from_str(format_param)
+                        .map_err(|_| CliError::MissingRequiredArgument(format!("Invalid format: {}", format_param)))?;
                     
                     // Validate format - only JSON and CSV are supported for assets
                     if format == OutputFormat::Tree {
@@ -1633,8 +1651,8 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve tenant identifier to tenant ID
-                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
                             
                             // If a path is specified, get assets filtered by folder path
                             let asset_list = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
@@ -2241,18 +2259,6 @@ pub async fn execute_command(
                 }
                 Some((COMMAND_DELETE, sub_matches)) => {
                     trace!("Executing asset delete command");
-                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
-                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
-                        Some(tenant_id) => tenant_id.clone(),
-                        None => {
-                            // Try to get active tenant from configuration
-                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
-                                active_tenant_id
-                            } else {
-                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
-                            }
-                        }
-                    };
                     
                     let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
                     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
@@ -2276,8 +2282,8 @@ pub async fn execute_command(
                                 client = client.with_client_credentials(client_id, client_secret);
                             }
                             
-                            // Resolve tenant identifier to tenant ID
-                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
                             
                             // Resolve asset ID from either UUID parameter or path
                             let asset_id = if let Some(uuid) = asset_uuid_param {
@@ -2611,6 +2617,76 @@ pub async fn execute_command(
                         ))),
                     }
                 }
+                Some(("inference", sub_matches)) => {
+                    trace!("Executing asset metadata inference command");
+                    
+                    // Try to get access token and perform metadata inference
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Get tenant ID with resolution using helper function
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
+                            
+                            // Get parameters
+                            let asset_path = sub_matches.get_one::<String>(PARAMETER_PATH)
+                                .ok_or(CliError::MissingRequiredArgument("Asset path is required".to_string()))?;
+                            
+                            // Get metadata names - handle both repeated flags and comma-separated values
+                            let mut metadata_names = Vec::new();
+                            if let Some(name_values) = sub_matches.get_many::<String>("name") {
+                                for name_value in name_values {
+                                    // Split by comma to handle comma-separated names in a single parameter
+                                    let names: Vec<&str> = name_value.split(',').map(|s| s.trim()).collect();
+                                    for name in names {
+                                        if !name.is_empty() {
+                                            metadata_names.push(name.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if metadata_names.is_empty() {
+                                return Err(CliError::MissingRequiredArgument("At least one metadata name must be specified".to_string()));
+                            }
+                            
+                            let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
+                            let recursive = sub_matches.get_flag("recursive");
+                            
+                            // Validate threshold is between 0 and 100
+                            if !(0.0..=100.0).contains(&threshold) {
+                                eprintln!("Threshold must be between 0.00 and 100.00");
+                                return Ok(());
+                            }
+                            
+                            let _format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
+                            
+                            trace!("Performing metadata inference for asset {} with threshold {} and {} metadata fields", asset_path, threshold, metadata_names.len());
+                            
+                            // Execute the metadata inference logic
+                            execute_metadata_inference(&mut client, &tenant, asset_path, &metadata_names, threshold, recursive).await?;
+                            
+                            Ok(())
+                        }
+                        Ok(None) => {
+                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving access token: {}", e);
+                            Ok(())
+                        }
+                    }
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
@@ -2702,4 +2778,120 @@ pub async fn execute_command(
         }
         _ => Err(CliError::UnsupportedSubcommand(String::from("unknown"))),
     }
+}
+
+/// Execute the metadata inference logic
+/// 
+/// This function performs metadata inference by taking a reference asset, extracting specified
+/// metadata fields from it, finding geometrically similar assets, and applying those metadata
+/// fields to the matching assets.
+/// 
+/// # Arguments
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - Tenant ID to operate within
+/// * `reference_asset_path` - Path to the reference asset
+/// * `metadata_names` - Vector of metadata field names to copy
+/// * `threshold` - Geometric similarity threshold (0.00-100.00)
+/// * `recursive` - Whether to apply inference recursively to discovered matches
+/// 
+/// # Returns
+/// * `Ok(())` - Successfully completed metadata inference
+/// * `Err(CliError)` - If there was an error during inference
+async fn execute_metadata_inference(
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+    reference_asset_path: &str,
+    metadata_names: &[String],
+    threshold: f64,
+    recursive: bool,
+) -> Result<(), CliError> {
+    use std::collections::HashSet;
+    
+    // Queue for recursive processing
+    let mut to_process = vec![reference_asset_path.to_string()];
+    let mut processed_assets = HashSet::new();
+    
+    while let Some(current_asset_path) = to_process.pop() {
+        // Skip if already processed
+        if processed_assets.contains(&current_asset_path) {
+            continue;
+        }
+        
+        processed_assets.insert(current_asset_path.clone());
+        
+        trace!("Processing asset: {} for metadata inference", current_asset_path);
+        
+        // 1. Get the reference asset by path
+        let asset_uuid = match resolve_asset_path_to_uuid(client, tenant, &current_asset_path).await {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                error!("Reference asset not found: {}", current_asset_path);
+                continue;
+            }
+        };
+        
+        // 2. Get current metadata values from this asset
+        let mut reference_asset_metadata = std::collections::HashMap::new();
+        
+        match client.get_asset(tenant, &asset_uuid).await {
+            Ok(asset_response) => {
+                // Extract the requested metadata fields only
+                for metadata_name in metadata_names {
+                    if let Some(value) = asset_response.metadata.get(metadata_name) {
+                        reference_asset_metadata.insert(metadata_name.clone(), value.clone());
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Could not get asset details for '{}': {}", current_asset_path, e);
+                continue;
+            }
+        }
+        
+        if reference_asset_metadata.is_empty() {
+            trace!("No requested metadata found for asset: {}", current_asset_path);
+            continue;
+        }
+        
+        // 3. Perform geometric search for this asset at the specified threshold
+        let geometric_matches = match client.geometric_search(tenant, &asset_uuid, threshold).await {
+            Ok(matches) => matches,
+            Err(e) => {
+                error!("Geometric search failed for asset '{}': {}", current_asset_path, e);
+                continue;
+            }
+        };
+        
+        trace!("Found {} geometric matches for asset {}", geometric_matches.matches.len(), current_asset_path);
+        
+        // 4. Apply metadata to matching assets
+        for match_result in geometric_matches.matches {
+            let candidate_asset_id = &match_result.asset.id;
+            let candidate_asset_path = &match_result.asset.path;
+            
+            // Skip the original asset itself to avoid self-assignment if it appears in results
+            if candidate_asset_id == &asset_uuid {
+                continue;
+            }
+            
+            trace!("Applying metadata to candidate: {} (path: {})", candidate_asset_id, candidate_asset_path);
+            
+            // Update metadata for candidate asset using the reference metadata
+            match client.update_asset_metadata(tenant, candidate_asset_id, &reference_asset_metadata).await {
+                Ok(_) => {
+                    trace!("Updated metadata for asset {} (path: {})", candidate_asset_id, candidate_asset_path);
+                }
+                Err(e) => {
+                    error!("Failed to update metadata for asset '{}': {}", candidate_asset_path, e);
+                }
+            }
+            
+            // If recursive, add this candidate to the processing queue (if not already processed)
+            if recursive && !processed_assets.contains(candidate_asset_path) {
+                to_process.push(candidate_asset_path.clone());
+            }
+        }
+    }
+    
+    Ok(())
 }

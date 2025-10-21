@@ -33,6 +33,15 @@ Geometric matching helps you:
 - Reduce storage costs by identifying redundant assets
 - Improve design workflows by finding existing similar parts
 
+## Related Features
+
+Geometric matching serves as the foundation for other powerful capabilities:
+
+- **Metadata Inference**: Automatically propagate metadata from reference assets to geometrically similar assets using `pcli2 asset metadata inference`
+- **Part Family Management**: Organize and categorize groups of similar components
+- **Design Optimization**: Identify opportunities for part consolidation and standardization
+
+
 ## Single Asset Matching
 
 Find geometrically similar assets for a specific reference asset.

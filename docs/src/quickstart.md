@@ -70,6 +70,23 @@ pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 8
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
 ```
 
+## Metadata Inference
+
+Automatically apply metadata from a reference asset to geometrically similar assets using PCLI2's metadata inference capability:
+
+```bash
+# Apply specific metadata fields from a reference asset to similar assets
+pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material,Cost" --threshold 85.0
+
+# Apply metadata recursively to create chains of similar assets
+pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Category" --threshold 90.0 --recursive
+
+# Apply multiple metadata fields with different thresholds
+pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
+```
+
+The metadata inference command helps you efficiently propagate metadata across geometrically similar assets, reducing manual work and ensuring consistency in your asset database.
+
 ## Configuration
 
 Manage your PCLI2 configuration:

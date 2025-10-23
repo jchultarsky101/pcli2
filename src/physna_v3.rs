@@ -758,8 +758,20 @@ impl PhysnaApiClient {
             }
             
             // Find the folder with the target name
+            trace!("Looking for folder '{}' in {} child folders", target_name, child_folders.len());
+            for folder in &child_folders {
+                trace!("Checking folder: '{}' (id: {})", folder.name, folder.id);
+                if folder.name == target_name {
+                    trace!("Found matching folder: '{}' (id: {})", folder.name, folder.id);
+                }
+            }
+            
             let target_folder = child_folders.iter()
-                .find(|folder| folder.name == target_name);
+                .find(|folder| {
+                    let matches = folder.name == target_name;
+                    trace!("Folder comparison: '{}' == '{}' -> {}", folder.name, target_name, matches);
+                    matches
+                });
             
             if let Some(folder) = target_folder {
                 debug!("Found target folder: '{}' (id: {})", folder.name, folder.id);

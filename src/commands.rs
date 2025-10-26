@@ -248,7 +248,12 @@ pub fn create_cli_commands() -> ArgMatches {
                         .arg(tenant_parameter.clone())
                         .arg(uuid_parameter.clone())
                         .arg(path_parameter.clone())
-                        .arg(format_parameter.clone()),
+                        .arg(format_parameter.clone())
+                        .group(clap::ArgGroup::new("folder_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
                 )
                 .subcommand(
                     Command::new(COMMAND_LIST)

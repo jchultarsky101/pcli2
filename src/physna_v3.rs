@@ -527,7 +527,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderResponse)` - Successfully fetched folder details
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn get_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<crate::model::FolderResponse, ApiError> {
+    pub async fn get_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<crate::model::SingleFolderResponse, ApiError> {
         let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_id, folder_id);
         self.get(&url).await
     }
@@ -768,8 +768,8 @@ impl PhysnaApiClient {
             
             let target_folder = child_folders.iter()
                 .find(|folder| {
-                    let matches = folder.name == target_name;
-                    trace!("Folder comparison: '{}' == '{}' -> {}", folder.name, target_name, matches);
+                    let matches = folder.name.eq_ignore_ascii_case(target_name);
+                    trace!("Folder comparison (case-insensitive): '{}' == '{}' -> {}", folder.name, target_name, matches);
                     matches
                 });
             
@@ -788,6 +788,15 @@ impl PhysnaApiClient {
             } else {
                 // Folder not found in the path
                 debug!("Folder '{}' not found in path: {}", target_name, normalized_path);
+                // Add more detailed logging for debugging
+                if child_folders.is_empty() {
+                    debug!("No child folders found at this level");
+                } else {
+                    debug!("Available folders at this level:");
+                    for folder in &child_folders {
+                        debug!("  - '{}' (id: {})", folder.name, folder.id);
+                    }
+                }
                 return Ok(None);
             }
         }
@@ -884,6 +893,18 @@ impl PhysnaApiClient {
         let folder_id = match self.get_folder_id_by_path(tenant_id, folder_path).await {
             Ok(Some(id)) => id,
             Ok(None) | Err(_) => {
+                // Get available folders at this level for debugging
+                match self.get_root_contents(tenant_id, "folders", Some(1), Some(1000)).await {
+                    Ok(root_response) => {
+                        debug!("Available root folders:");
+                        for folder in &root_response.folders {
+                            debug!("  - '{}' (id: {})", folder.name, folder.id);
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Failed to get root folders for debugging: {}", e);
+                    }
+                }
                 return Err(ApiError::ConflictError(format!("Folder path '{}' not found", folder_path)));
             }
         };

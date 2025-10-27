@@ -12,7 +12,7 @@ use pcli2::commands::{
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, 
     COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, 
     COMMAND_TENANT, COMMAND_MATCH, COMMAND_METADATA,
-    PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_ID, 
+    PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, 
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
     PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
 };
@@ -550,12 +550,12 @@ pub async fn execute_command(
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Executing folder get command");
                     
-                    let folder_id_param = sub_matches.get_one::<String>(PARAMETER_ID);
+                    let folder_id_param = sub_matches.get_one::<String>(PARAMETER_UUID);
                     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
                     
-                    // Must provide either ID or path
+                    // Must provide either UUID or path
                     if folder_id_param.is_none() && folder_path_param.is_none() {
-                        return Err(CliError::MissingRequiredArgument("Either folder ID or path must be provided".to_string()));
+                        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
                     }
                     
                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT)
@@ -606,12 +606,12 @@ pub async fn execute_command(
                             };
                             
                             match client.get_folder(&tenant, &folder_id).await {
-                                Ok(folder_response) => {
+                                Ok(single_folder_response) => {
                                     // Build hierarchy to get the path for this folder
                                     match FolderHierarchy::build_from_api(&mut client, &tenant).await {
                                         Ok(hierarchy) => {
-                                            let path = hierarchy.get_path_for_folder(&folder_id).unwrap_or_else(|| folder_response.name.clone());
-                                            let folder = Folder::from_folder_response(folder_response, path);
+                                            let path = hierarchy.get_path_for_folder(&folder_id).unwrap_or_else(|| single_folder_response.folder.name.clone());
+                                            let folder = Folder::from_folder_response(single_folder_response.folder, path);
                                             match folder.format(format) {
                                                 Ok(output) => {
                                                     println!("{}", output);
@@ -623,7 +623,7 @@ pub async fn execute_command(
                                         Err(e) => {
                                             error!("Error building folder hierarchy: {}", e);
                                             // Fallback to folder without path
-                                            let folder = Folder::from_folder_response(folder_response.clone(), folder_response.name.clone());
+                                            let folder = Folder::from_folder_response(single_folder_response.folder.clone(), single_folder_response.folder.name.clone());
                                             match folder.format(format) {
                                                 Ok(output) => {
                                                     println!("{}", output);

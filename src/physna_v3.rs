@@ -1,4 +1,5 @@
 use crate::auth::AuthClient;
+use crate::folder_hierarchy::FolderHierarchy;
 use crate::model::{CurrentUserResponse, FolderListResponse};
 use reqwest;
 use serde_json;
@@ -669,6 +670,62 @@ impl PhysnaApiClient {
         self.get(&url).await
     }
     
+    /// List all assets in a specific folder using pagination
+    ///
+    /// This method lists all assets that have a specific parent folder by fetching
+    /// all pages of results using pagination. It handles large numbers of assets
+    /// in a folder by automatically fetching all pages.
+    ///
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant
+    /// * `folder_id` - The ID of the parent folder
+    ///
+    /// # Returns
+    /// * `Ok(AssetListResponse)` - List of all assets in the folder
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn list_all_assets_in_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<crate::model::AssetListResponse, ApiError> {
+        let mut all_assets = Vec::new();
+        let mut page = 1;
+        let per_page = 200; // Fetch 200 assets per page for better performance (API max is 1000)
+        
+        loop {
+            trace!("Fetching asset page {} for folder {} in tenant {} ({} assets so far)", page, folder_id, tenant_id, all_assets.len());
+            let response = self.list_assets_in_folder(tenant_id, folder_id, Some(page), Some(per_page)).await?;
+            
+            let assets_on_page = response.assets.len();
+            all_assets.extend(response.assets);
+            
+            trace!("Fetched {} assets on page {}, total so far: {}", assets_on_page, page, all_assets.len());
+            
+            // Check if we've reached the last page
+            // The API uses 1-based indexing for pages
+            if response.page_data.current_page >= response.page_data.last_page {
+                trace!("Reached last page of assets for folder {} in tenant {} after {} pages", folder_id, tenant_id, page);
+                break;
+            }
+            
+            page += 1;
+        }
+        
+        // Store the total count before moving all_assets
+        let total_count = all_assets.len();
+        
+        // Create a combined response with all assets
+        let final_response = crate::model::AssetListResponse {
+            assets: all_assets,
+            page_data: crate::model::PageData {
+                total: total_count,
+                per_page: total_count,
+                current_page: 1,
+                last_page: 1,
+                start_index: 1,
+                end_index: total_count,
+            },
+        };
+        
+        Ok(final_response)
+    }
+    
     /// Get the folder ID for a given path by traversing the folder structure efficiently
     /// 
     /// This method efficiently resolves a folder path to its corresponding folder ID
@@ -683,125 +740,25 @@ impl PhysnaApiClient {
     /// * `Ok(None)` - If the path doesn't exist
     /// * `Err(ApiError)` - If there was an error during API calls
     pub async fn get_folder_id_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<Option<String>, ApiError> {
-        debug!("Resolving folder path: {} for tenant: {}", folder_path, tenant_id);
+        debug!("Resolving folder path: {} for tenant: {} using FolderHierarchy", folder_path, tenant_id);
         
-        // Normalize path by removing leading slash
-        // Treat both "path" and "/path" as equivalent (absolute from root)
-        let normalized_path = folder_path.strip_prefix('/').unwrap_or(folder_path);
-        trace!("Normalized path: '{}' (original: '{}')", normalized_path, folder_path);
-        
-        if normalized_path.is_empty() {
-            // For root path (empty or just "/"), get root contents
-            let root_response = self.get_root_contents(tenant_id, "folders", Some(1), Some(1000)).await?;
-            if root_response.folders.len() == 1 {
-                return Ok(Some(root_response.folders[0].id.clone()));
-            } else if root_response.folders.is_empty() {
-                return Ok(None); // No root folders
-            } else {
-                // Multiple root folders - return the first one
-                return Ok(Some(root_response.folders[0].id.clone()));
+        // Use the proven FolderHierarchy implementation to resolve the path
+        match FolderHierarchy::build_from_api(self, tenant_id).await {
+            Ok(hierarchy) => {
+                // Use the hierarchy to find the folder by path
+                if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
+                    debug!("Found folder at path '{}': {}", folder_path, folder_node.folder.id);
+                    Ok(Some(folder_node.folder.id.clone()))
+                } else {
+                    debug!("Folder not found at path: {}", folder_path);
+                    Ok(None)
+                }
+            }
+            Err(e) => {
+                error!("Error building folder hierarchy: {}", e);
+                Err(ApiError::ConflictError(format!("Failed to build folder hierarchy: {}", e)))
             }
         }
-        
-        // Split the path into components
-        let path_parts: Vec<&str> = normalized_path
-            .split('/')
-            .filter(|part| !part.is_empty())
-            .collect();
-        
-        // Start with root level
-        let mut current_folder_id: Option<String> = None;
-        let mut current_path_index = 0;
-        
-        while current_path_index < path_parts.len() {
-            let target_name = path_parts[current_path_index];
-            trace!("Looking for folder '{}' at index {} (current parent: {:?})", target_name, current_path_index, current_folder_id);
-            
-            // Get contents of current folder, filtered to folders only
-            let child_folders = if current_folder_id.is_none() {
-                // Root level - use get_root_contents
-                trace!("Getting root contents for tenant: {}", tenant_id);
-                match self.get_root_contents(tenant_id, "folders", Some(1), Some(1000)).await {
-                    Ok(root_response) => {
-                        debug!("Got {} folders at root level", root_response.folders.len());
-                        for folder in &root_response.folders {
-                            debug!("Root folder: '{}' (id: {})", folder.name, folder.id);
-                        }
-                        root_response.folders
-                    }
-                    Err(e) => {
-                        trace!("Failed to get root contents: {}", e);
-                        return Ok(None); // Return None to indicate path not found
-                    }
-                }
-            } else {
-                // Subfolder level - use get_folder_contents
-                trace!("Getting folder contents for folder: {}", current_folder_id.as_ref().unwrap());
-                match self.get_folder_contents(tenant_id, &current_folder_id.as_ref().unwrap(), "folders", Some(1), Some(1000)).await {
-                    Ok(folder_response) => {
-                        trace!("Got {} folders in folder {}", folder_response.folders.len(), current_folder_id.as_ref().unwrap());
-                        for folder in &folder_response.folders {
-                            trace!("  Subfolder: '{}' (id: {})", folder.name, folder.id);
-                        }
-                        folder_response.folders
-                    }
-                    Err(e) => {
-                        trace!("Failed to get folder contents: {}", e);
-                        return Ok(None); // Return None to indicate path not found
-                    }
-                }
-            };
-            
-            debug!("Found {} child folders at this level", child_folders.len());
-            for folder in &child_folders {
-                debug!("Child folder: '{}' (id: {})", folder.name, folder.id);
-            }
-            
-            // Find the folder with the target name
-            trace!("Looking for folder '{}' in {} child folders", target_name, child_folders.len());
-            for folder in &child_folders {
-                trace!("Checking folder: '{}' (id: {})", folder.name, folder.id);
-                if folder.name == target_name {
-                    trace!("Found matching folder: '{}' (id: {})", folder.name, folder.id);
-                }
-            }
-            
-            let target_folder = child_folders.iter()
-                .find(|folder| {
-                    let matches = folder.name.eq_ignore_ascii_case(target_name);
-                    trace!("Folder comparison (case-insensitive): '{}' == '{}' -> {}", folder.name, target_name, matches);
-                    matches
-                });
-            
-            if let Some(folder) = target_folder {
-                debug!("Found target folder: '{}' (id: {})", folder.name, folder.id);
-                if current_path_index == path_parts.len() - 1 {
-                    // This is the final component, return its ID
-                    debug!("This is the final component, returning ID: {}", folder.id);
-                    return Ok(Some(folder.id.clone()));
-                } else {
-                    // Move to this folder as the parent for the next iteration
-                    debug!("Moving to next level with parent ID: {}", folder.id);
-                    current_folder_id = Some(folder.id.clone());
-                    current_path_index += 1;
-                }
-            } else {
-                // Folder not found in the path
-                debug!("Folder '{}' not found in path: {}", target_name, normalized_path);
-                // Add more detailed logging for debugging
-                if child_folders.is_empty() {
-                    debug!("No child folders found at this level");
-                } else {
-                    debug!("Available folders at this level:");
-                    for folder in &child_folders {
-                        debug!("  - '{}' (id: {})", folder.name, folder.id);
-                    }
-                }
-                return Ok(None);
-            }
-        }
-        
-        Ok(None)
     }
     
     /// List folders in a specific parent folder
@@ -909,8 +866,8 @@ impl PhysnaApiClient {
             }
         };
         
-        // Now list assets in this specific folder using the efficient API endpoint
-        self.list_assets_in_folder(tenant_id, &folder_id, Some(1), Some(1000)).await
+        // Now list all assets in this specific folder using the efficient API endpoint with pagination
+        self.list_all_assets_in_folder(tenant_id, &folder_id).await
     }
     
     /// Get contents (both folders and assets) of a specific folder path

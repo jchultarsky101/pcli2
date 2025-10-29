@@ -90,7 +90,7 @@ impl Folder {
     pub fn from_folder_response(folder_response: FolderResponse, path: String) -> Folder {
         Folder { 
             id: None, 
-            uuid: Some(folder_response.id.into()), 
+            uuid: Some(folder_response.id), 
             name: folder_response.name, 
             path 
         }

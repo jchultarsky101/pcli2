@@ -240,6 +240,9 @@ pub enum CliError {
     /// Error when a tenant cannot be found by name or ID
     #[error("Tenant '{identifier}' not found")]
     TenantNotFound { identifier: String },
+    /// Error when a folder cannot be found by path or ID
+    #[error("Folder '{identifier}' not found")]
+    FolderNotFound { identifier: String },
     /// Error when an API call fails
     #[error("API error: {context}")]
     ApiError { context: String, source: Box<dyn std::error::Error + Send + Sync> },
@@ -262,6 +265,7 @@ impl CliError {
             CliError::MissingRequiredArgument(_) => PcliExitCode::UsageError,
             CliError::JsonError(_) => PcliExitCode::DataError,
             CliError::TenantNotFound { .. } => PcliExitCode::UsageError,
+            CliError::FolderNotFound { .. } => PcliExitCode::UsageError,
             CliError::ApiError { .. } => PcliExitCode::DataError,
         }
     }
@@ -374,11 +378,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -538,7 +542,7 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
@@ -592,7 +596,7 @@ pub async fn execute_command(
                                         if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
                                             folder_node.folder.id.clone()
                                         } else {
-                                            return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", path)));
+                                            return Err(CliError::FolderNotFound { identifier: path.to_string() });
                                         }
                                     }
                                     Err(e) => {
@@ -641,11 +645,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -769,11 +773,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -826,7 +830,7 @@ pub async fn execute_command(
                                         if let Some(folder_node) = hierarchy.get_folder_by_path(path) {
                                             folder_node.folder.id.clone()
                                         } else {
-                                            return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", path)));
+                                            return Err(CliError::FolderNotFound { identifier: path.to_string() });
                                         }
                                     }
                                     Err(e) => {
@@ -850,17 +854,17 @@ pub async fn execute_command(
                                 }
                                 Err(e) => {
                                     error!("Error deleting folder: {}", e);
-                                    eprintln!("Error deleting folder: {}", e);
+                                    error_utils::report_error(&CliError::ConfigurationError(pcli2::configuration::ConfigurationError::FailedToFindConfigurationDirectory));
                                     Ok(())
                                 }
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -919,7 +923,7 @@ pub async fn execute_command(
                                                 trace!("Found asset with UUID: {}", uuid);
                                                 uuid.clone()
                                             } else {
-                                                eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                error_utils::report_error(&CliError::MissingRequiredArgument(format!("Asset found by path '{}' but has no UUID", path)));
                                                 return Ok(());
                                             }
                                         } else {
@@ -935,11 +939,11 @@ pub async fn execute_command(
                                 }
                             }
                             Ok(None) => {
-                                eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                                 return Ok(());
                             }
                             Err(e) => {
-                                eprintln!("Error retrieving access token: {}", e);
+                                error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                                 return Ok(());
                             }
                         }
@@ -1072,11 +1076,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -1359,11 +1363,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -1433,7 +1437,7 @@ pub async fn execute_command(
                                             if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
                                                 Some(folder_node.folder.id.clone())
                                             } else {
-                                                return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", folder_path)));
+                                                return Err(CliError::FolderNotFound { identifier: folder_path.to_string() });
                                             }
                                         }
                                         Err(e) => {
@@ -1452,7 +1456,7 @@ pub async fn execute_command(
                                 Ok(asset_response) => {
                                     // Invalidate cache for this tenant since we've modified asset state
                                     match AssetCache::load() {
-                                        Ok(mut cache) => {
+                                        Ok(cache) => {
                                             cache.invalidate_tenant(&tenant);
                                             if let Err(e) = cache.save() {
                                                 debug!("Failed to save invalidated cache: {}", e);
@@ -1480,11 +1484,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -1546,7 +1550,7 @@ pub async fn execute_command(
                                                 Some(folder_node.folder.id.clone())
                                             } else {
                                                 debug!("Folder not found at path: {}", folder_path);
-                                                return Err(CliError::MissingRequiredArgument(format!("Folder not found at path: {}", folder_path)));
+                                                return Err(CliError::FolderNotFound { identifier: folder_path.to_string() });
                                             }
                                         }
                                         Err(e) => {
@@ -1567,7 +1571,7 @@ pub async fn execute_command(
                                 Ok(asset_responses) => {
                                     // Invalidate cache for this tenant since we've modified asset state
                                     match AssetCache::load() {
-                                        Ok(mut cache) => {
+                                        Ok(cache) => {
                                             cache.invalidate_tenant(&tenant);
                                             if let Err(e) = cache.save() {
                                                 debug!("Failed to save invalidated cache: {}", e);
@@ -1608,11 +1612,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -1695,11 +1699,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -1825,9 +1829,10 @@ pub async fn execute_command(
                                                             debug!("Successfully created metadata field: {} with type {}", field_name, field_type_str);
                                                             // Invalidate the cache since we've added a new field
                                                             match pcli2::metadata_cache::MetadataCache::load() {
-                                                                Ok(mut cache) => {
-                                                                    cache.invalidate_tenant(&tenant);
-                                                                    if let Err(e) = cache.save() {
+                                                                Ok(cache) => {
+                                                                    let mut mutable_cache = cache;
+                                                                    mutable_cache.invalidate_tenant(&tenant);
+                                                                    if let Err(e) = mutable_cache.save() {
                                                                         debug!("Failed to save invalidated metadata cache: {}", e);
                                                                     }
                                                                 }
@@ -1866,11 +1871,11 @@ pub async fn execute_command(
                                     }
                                 }
                                 Ok(None) => {
-                                    eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                    error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                                     Ok(())
                                 }
                                 Err(e) => {
-                                    eprintln!("Error retrieving access token: {}", e);
+                                    error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                                     Ok(())
                                 }
                             }
@@ -1967,11 +1972,11 @@ pub async fn execute_command(
                                     }
                                 }
                                 Ok(None) => {
-                                    eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                    error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                                     Ok(())
                                 }
                                 Err(e) => {
-                                    eprintln!("Error retrieving access token: {}", e);
+                                    error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                                     Ok(())
                                 }
                             }
@@ -2125,11 +2130,11 @@ pub async fn execute_command(
                                     }
                                 }
                                 Ok(None) => {
-                                    eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                    error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                                     Ok(())
                                 }
                                 Err(e) => {
-                                    eprintln!("Error retrieving access token: {}", e);
+                                    error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                                     Ok(())
                                 }
                             }
@@ -2248,11 +2253,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -2316,7 +2321,7 @@ pub async fn execute_command(
                                 Ok(()) => {
                                     // Invalidate cache for this tenant since we've modified asset state
                                     match AssetCache::load() {
-                                        Ok(mut cache) => {
+                                        Ok(cache) => {
                                             cache.invalidate_tenant(&tenant);
                                             if let Err(e) = cache.save() {
                                                 debug!("Failed to save invalidated cache: {}", e);
@@ -2337,11 +2342,11 @@ pub async fn execute_command(
                             }
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -2457,7 +2462,7 @@ pub async fn execute_command(
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }
@@ -2557,11 +2562,11 @@ pub async fn execute_command(
                                     }
                                 }
                                 Ok(None) => {
-                                    eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                                    error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                                     Ok(())
                                 }
                                 Err(e) => {
-                                    eprintln!("Error retrieving access token: {}", e);
+                                    error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                                     Ok(())
                                 }
                             }
@@ -2678,11 +2683,11 @@ pub async fn execute_command(
                             Ok(())
                         }
                         Ok(None) => {
-                            eprintln!("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'");
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error retrieving access token: {}", e);
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
                         }
                     }

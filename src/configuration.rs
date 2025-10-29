@@ -197,8 +197,7 @@ impl Configuration {
                                     Err(save_error) => {
                                         // If we can't save, return the original error with more context
                                         Err(ConfigurationError::FailedToLoadData {
-                                            cause: Box::new(std::io::Error::new(
-                                                std::io::ErrorKind::Other,
+                                            cause: Box::new(std::io::Error::other(
                                                 format!("Configuration file not found and failed to create default configuration. Tried to create at: {:?}. Error: {}", 
                                                        default_file_path, save_error)
                                             ))

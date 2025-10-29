@@ -196,6 +196,17 @@ impl PhysnaApiClient {
         }
     }
     
+    /// Get the current access token from the client
+    /// 
+    /// This method allows external code to retrieve the current access token,
+    /// which is useful for persisting updated tokens after refresh operations.
+    /// 
+    /// # Returns
+    /// * `Option<String>` - The current access token if available, None otherwise
+    pub fn get_access_token(&self) -> Option<String> {
+        self.access_token.clone()
+    }
+    
     /// Generic method to build and execute HTTP requests with automatic token refresh on 401/403 errors
     /// 
     /// This method provides a unified interface for making HTTP requests to the Physna V3 API.
@@ -434,24 +445,18 @@ impl PhysnaApiClient {
     pub async fn list_folders(&mut self, tenant_id: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
         let url = format!("{}/tenants/{}/folders", self.base_url, tenant_id);
         
-        // Build query parameters for pagination if provided
-        let mut query_params = Vec::new();
-        let page_str = page.map(|p| p.to_string());
-        let per_page_str = per_page.map(|pp| pp.to_string());
+        // Handle defaults - always provide values to avoid API defaulting to 20
+        let page_val = page.unwrap_or(1).to_string();
+        let per_page_val = per_page.unwrap_or(200).to_string(); // Default to 200 instead of API's default of 20
         
-        if let Some(ref page_val) = page_str {
-            query_params.push(("page", page_val.as_str()));
-        }
-        if let Some(ref per_page_val) = per_page_str {
-            query_params.push(("per_page", per_page_val.as_str()));
-        }
+        // Build query parameters for pagination with defaults
+        let query_params = vec![
+            ("page", page_val.as_str()),
+            ("perPage", per_page_val.as_str()),
+        ];
         
-        // Add query parameters to URL if provided
-        let url = if !query_params.is_empty() {
-            format!("{}?{}", url, serde_urlencoded::to_string(query_params).unwrap())
-        } else {
-            url
-        };
+        // Add query parameters to URL
+        let url = format!("{}?{}", url, serde_urlencoded::to_string(&query_params).unwrap());
         
         // Execute GET request to fetch folders
         self.get(&url).await
@@ -504,18 +509,14 @@ impl PhysnaApiClient {
             query_params.push(("parentFolderId", parent_id));
         }
         
-        // Store page and per_page as strings to avoid temporary value issues
-        let page_str = page.map(|p| p.to_string());
-        let per_page_str = per_page.map(|pp| pp.to_string());
+        // Handle defaults - always provide values to avoid API defaulting to 20
+        let page_val = page.unwrap_or(1).to_string();
+        let per_page_val = per_page.unwrap_or(200).to_string(); // Default to 200 instead of API's default of 20
         
-        if let Some(ref page_val) = page_str {
-            query_params.push(("page", page_val.as_str()));
-        }
-        if let Some(ref per_page_val) = per_page_str {
-            query_params.push(("per_page", per_page_val.as_str()));
-        }
+        query_params.push(("page", page_val.as_str()));
+        query_params.push(("perPage", per_page_val.as_str()));
         
-        // Add query parameters to URL if provided
+        // Add query parameters to URL
         let query_string = serde_urlencoded::to_string(&query_params).unwrap();
         let url = format!("{}?{}", url, query_string);
         
@@ -608,24 +609,18 @@ impl PhysnaApiClient {
     pub async fn list_assets(&mut self, tenant_id: &str, folder_id: Option<String>, page: Option<u32>, per_page: Option<u32>) -> Result<crate::model::AssetListResponse, ApiError> {
         let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
         
-        // Build query parameters for pagination and filtering if provided
+        // Build query parameters for pagination and filtering
         let mut query_params = Vec::new();
         if let Some(folder_id) = folder_id {
             query_params.push(("folderId", folder_id));
         }
-        if let Some(page) = page {
-            query_params.push(("page", page.to_string()));
-        }
-        if let Some(per_page) = per_page {
-            query_params.push(("per_page", per_page.to_string()));
-        }
         
-        // Add query parameters to URL if provided
-        let url = if !query_params.is_empty() {
-            format!("{}?{}", url, serde_urlencoded::to_string(query_params).unwrap())
-        } else {
-            url
-        };
+        // Handle defaults - always provide values to avoid API defaulting to 20
+        query_params.push(("page", page.unwrap_or(1).to_string()));
+        query_params.push(("perPage", per_page.unwrap_or(200).to_string())); // Default to 200 instead of API's default of 20
+        
+        // Add query parameters to URL
+        let url = format!("{}?{}", url, serde_urlencoded::to_string(&query_params).unwrap());
         
         self.get(&url).await
     }
@@ -652,21 +647,18 @@ impl PhysnaApiClient {
         // Build query parameters
         let mut query_params = vec![("contentType", "assets")];
         
-        // Store page and per_page as strings to avoid temporary value issues
-        let page_str = page.map(|p| p.to_string());
-        let per_page_str = per_page.map(|pp| pp.to_string());
+        // Handle defaults - always provide values to avoid API defaulting to 20
+        let page_str = page.unwrap_or(1).to_string();
+        let per_page_str = per_page.unwrap_or(200).to_string(); // Default to 200 instead of API's default of 20
         
-        if let Some(ref page_val) = page_str {
-            query_params.push(("page", page_val.as_str()));
-        }
-        if let Some(ref per_page_val) = per_page_str {
-            query_params.push(("per_page", per_page_val.as_str()));
-        }
+        query_params.push(("page", page_str.as_str()));
+        query_params.push(("perPage", per_page_str.as_str()));
         
         // Add query parameters to URL
         let query_string = serde_urlencoded::to_string(&query_params).unwrap();
         let url = format!("{}?{}", url, query_string);
         
+        trace!("Constructed URL for asset listing: {}", url);
         self.get(&url).await
     }
     
@@ -686,7 +678,7 @@ impl PhysnaApiClient {
     pub async fn list_all_assets_in_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<crate::model::AssetListResponse, ApiError> {
         let mut all_assets = Vec::new();
         let mut page = 1;
-        let per_page = 200; // Fetch 200 assets per page for better performance (API max is 1000)
+        let per_page = 1000; // Fetch 1000 assets per page for better performance (API max is 1000)
         
         loop {
             trace!("Fetching asset page {} for folder {} in tenant {} ({} assets so far)", page, folder_id, tenant_id, all_assets.len());
@@ -791,6 +783,7 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - If there was an error during API calls
     pub async fn get_root_contents(&mut self, tenant_id: &str, _content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
         // Use list_folders_in_parent with None parent to get root contents
+        // The list_folders_in_parent function now handles default values
         self.list_folders_in_parent(tenant_id, None, page, per_page).await
     }
     
@@ -814,21 +807,18 @@ impl PhysnaApiClient {
         // Build query parameters
         let mut query_params = vec![("contentType", content_type)];
         
-        // Store page and per_page as strings to avoid temporary value issues
-        let page_str = page.map(|p| p.to_string());
-        let per_page_str = per_page.map(|pp| pp.to_string());
+        // Handle defaults - always provide values to avoid API defaulting to 20
+        let page_str = page.unwrap_or(1).to_string();
+        let per_page_str = per_page.unwrap_or(200).to_string(); // Default to 200 instead of API's default of 20
         
-        if let Some(ref page_val) = page_str {
-            query_params.push(("page", page_val.as_str()));
-        }
-        if let Some(ref per_page_val) = per_page_str {
-            query_params.push(("per_page", per_page_val.as_str()));
-        }
+        query_params.push(("page", page_str.as_str()));
+        query_params.push(("perPage", per_page_str.as_str()));
         
         // Add query parameters to URL
         let query_string = serde_urlencoded::to_string(&query_params).unwrap();
         let url = format!("{}?{}", url, query_string);
         
+        trace!("Constructed URL for folder contents listing: {}", url);
         self.get(&url).await
     }
     
@@ -850,18 +840,6 @@ impl PhysnaApiClient {
         let folder_id = match self.get_folder_id_by_path(tenant_id, folder_path).await {
             Ok(Some(id)) => id,
             Ok(None) | Err(_) => {
-                // Get available folders at this level for debugging
-                match self.get_root_contents(tenant_id, "folders", Some(1), Some(1000)).await {
-                    Ok(root_response) => {
-                        debug!("Available root folders:");
-                        for folder in &root_response.folders {
-                            debug!("  - '{}' (id: {})", folder.name, folder.id);
-                        }
-                    }
-                    Err(e) => {
-                        debug!("Failed to get root folders for debugging: {}", e);
-                    }
-                }
                 return Err(ApiError::ConflictError(format!("Folder path '{}' not found", folder_path)));
             }
         };
@@ -1598,6 +1576,35 @@ impl PhysnaApiClient {
         }
         
         results
+    }
+
+    /// Get dependencies for a specific asset by path
+    /// 
+    /// This method retrieves all dependencies for the specified asset from the Physna API.
+    /// The dependencies represent other assets that are related to this asset, such as
+    /// components in an assembly or referenced assets.
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_path` - The path of the asset to retrieve dependencies for (e.g., "/Root/Folder/assembly.stl")
+    /// 
+    /// # Returns
+    /// * `Ok(AssetDependenciesResponse)` - Successfully fetched asset dependencies
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn get_asset_dependencies(&mut self, tenant_id: &str, asset_path: &str) -> Result<crate::model::AssetDependenciesResponse, ApiError> {
+        debug!("Getting asset dependencies for tenant_id: {}, asset_path: {}", tenant_id, asset_path);
+        
+        // URL encode the asset path to handle special characters
+        let encoded_asset_path = url::form_urlencoded::byte_serialize(asset_path.as_bytes()).collect::<String>();
+        
+        let url = format!("{}/tenants/{}/asset/{}/dependencies", self.base_url, tenant_id, encoded_asset_path);
+        debug!("Dependencies request URL: {}", url);
+        
+        // Execute the GET request using the generic method
+        let response: crate::model::AssetDependenciesResponse = self.get(&url).await?;
+        debug!("Successfully retrieved {} dependencies for asset: {}", response.dependencies.len(), asset_path);
+        
+        Ok(response)
     }
 }
 

@@ -30,103 +30,7 @@ use pcli2::folder_hierarchy::FolderHierarchy;
 use pcli2::keyring::Keyring;
 use pcli2::physna_v3::PhysnaApiClient;
 
-/// Efficiently resolve an asset path to its UUID by:
-/// 1. Splitting the path into folder path and asset name
-/// 2. Resolving the folder path to a folder ID
-/// 3. Listing only assets in that specific folder
-/// 4. Finding the asset by name within that folder
-/// 
-/// This is much more efficient than fetching all assets in the system and filtering locally.
-/// 
-/// # Arguments
-/// * `client` - The Physna API client
-/// * `tenant` - The tenant ID
-/// * `path` - The full path to the asset (e.g., "/Root/Folder/asset.stl")
-/// 
-/// # Returns
-/// * `Ok(String)` - The UUID of the asset if found
-/// * `Err(CliError)` - If the asset is not found or there's an error
-async fn resolve_asset_path_to_uuid(
-    client: &mut PhysnaApiClient,
-    tenant: &str,
-    path: &str,
-) -> Result<String, CliError> {
-    debug!("Resolving asset path to UUID: {}", path);
-    
-    // Split the path into folder path and asset name
-    let (folder_path, asset_name) = if let Some(last_slash) = path.rfind('/') {
-        let folder_path = if last_slash == 0 { "/" } else { &path[..last_slash] };
-        let asset_name = &path[last_slash + 1..];
-        (folder_path, asset_name)
-    } else {
-        // No slashes, it's in the root folder
-        ("/", path)
-    };
-    
-    debug!("Split path into folder: '{}' and asset name: '{}'", folder_path, asset_name);
-    
-    // Get folder ID by path
-    match client.get_folder_id_by_path(tenant, folder_path).await {
-        Ok(Some(folder_id)) => {
-            debug!("Found folder ID: {} for path: {}", folder_id, folder_path);
-            // List assets in this specific folder only
-            match client.list_assets_in_folder(tenant, &folder_id, None, None).await {
-                Ok(asset_list_response) => {
-                    trace!("Found {} assets in folder {}", asset_list_response.assets.len(), folder_path);
-                    // Find the asset by name within this folder
-                    // Extract the asset name from each asset's path and compare with our target asset name
-                    if let Some(asset_response) = asset_list_response.assets.iter().find(|asset| {
-                        if let Some(last_slash) = asset.path.rfind('/') {
-                            let name = &asset.path[last_slash + 1..];
-                            name == asset_name
-                        } else {
-                            // No slashes in asset path, compare directly
-                            &asset.path == asset_name
-                        }
-                    }) {
-                        trace!("Found asset with UUID: {}", asset_response.id);
-                        Ok(asset_response.id.clone())
-                    } else {
-                        Err(CliError::ConfigurationError(
-                            pcli2::configuration::ConfigurationError::FailedToLoadData {
-                                cause: Box::new(std::io::Error::new(
-                                    std::io::ErrorKind::NotFound,
-                                    format!("Asset '{}' not found in folder '{}'", asset_name, folder_path)
-                                ))
-                            }
-                        ))
-                    }
-                }
-                Err(e) => {
-                    error!("Error listing assets in folder '{}': {}", folder_path, e);
-                    Err(CliError::ConfigurationError(
-                        pcli2::configuration::ConfigurationError::FailedToLoadData {
-                            cause: Box::new(e)
-                        }
-                    ))
-                }
-            }
-        }
-        Ok(None) => {
-            Err(CliError::ConfigurationError(
-                pcli2::configuration::ConfigurationError::FailedToLoadData {
-                    cause: Box::new(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("Folder path '{}' not found", folder_path)
-                    ))
-                }
-            ))
-        }
-        Err(e) => {
-            error!("Error resolving folder path '{}': {}", folder_path, e);
-            Err(CliError::ConfigurationError(
-                pcli2::configuration::ConfigurationError::FailedToLoadData {
-                    cause: Box::new(e)
-                }
-            ))
-        }
-    }
-}
+
 use pcli2::format::{OutputFormat, OutputFormatter};
 
 /// Resolve a tenant name or ID to a tenant ID
@@ -214,7 +118,7 @@ async fn get_tenant_id(
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
-use tracing::{debug, trace, error};
+use tracing::{debug, trace, error, warn};
 
 /// Error types that can occur during CLI command execution
 #[derive(Debug, Error)]
@@ -616,6 +520,13 @@ pub async fn execute_command(
                                         Ok(hierarchy) => {
                                             let path = hierarchy.get_path_for_folder(&folder_id).unwrap_or_else(|| single_folder_response.folder.name.clone());
                                             let folder = Folder::from_folder_response(single_folder_response.folder, path);
+                                            // Persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", e);
+                                                }
+                                            }
+                                            
                                             match folder.format(format) {
                                                 Ok(output) => {
                                                     println!("{}", output);
@@ -628,6 +539,13 @@ pub async fn execute_command(
                                             error!("Error building folder hierarchy: {}", e);
                                             // Fallback to folder without path
                                             let folder = Folder::from_folder_response(single_folder_response.folder.clone(), single_folder_response.folder.name.clone());
+                                            // Persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", e);
+                                                }
+                                            }
+                                            
                                             match folder.format(format) {
                                                 Ok(output) => {
                                                     println!("{}", output);
@@ -1690,6 +1608,13 @@ pub async fn execute_command(
                             // Check if metadata should be included
                             let _include_metadata = sub_matches.get_flag("metadata");
                             
+                            // Persist the potentially updated access token back to keyring
+                            if let Some(updated_token) = client.get_access_token() {
+                                if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                    warn!("Failed to persist updated access token: {}", e);
+                                }
+                            }
+                            
                             match asset_list.format_with_metadata(format, _include_metadata) {
                                 Ok(output) => {
                                     println!("{}", output);
@@ -2196,11 +2121,33 @@ pub async fn execute_command(
                                 // 2. Find the asset with matching path
                                 // Look up asset by path to get UUID (efficiently)
                                 trace!("Resolving asset by path: {}", path);
-                                match resolve_asset_path_to_uuid(&mut client, &tenant, path).await {
-                                    Ok(uuid) => uuid.clone(),
+                                debug!("About to call resolve_asset_path_to_uuid for path: {}", path);
+                                match pcli2::resolution_utils::resolve_asset_path_to_uuid(&mut client, &tenant, path).await {
+                                    Ok(uuid) => {
+                                        // Path resolution succeeded, but token might have been refreshed during the process
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        uuid
+                                    },
                                     Err(e) => {
-                                        error!("Error resolving asset path '{}': {}", path, e);
-                                        eprintln!("Error resolving asset path '{}': {}", path, e);
+                                        // Even if path resolution failed, persist the potentially updated access token back to keyring
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        
+                                        // Convert ApiError to CliError
+                                        let cli_error = CliError::ConfigurationError(
+                                            pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                cause: Box::new(e)
+                                            }
+                                        );
+                                        
+                                        eprintln!("Error resolving asset path '{}': {}", path, cli_error);
                                         return Ok(());
                                     }
                                 }
@@ -2219,6 +2166,13 @@ pub async fn execute_command(
                                     
                                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                                     let _format = OutputFormat::from_str(&format_str).unwrap();
+                                    // Persist the potentially updated access token back to keyring
+                                    if let Some(updated_token) = client.get_access_token() {
+                                        if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                            warn!("Failed to persist updated access token: {}", e);
+                                        }
+                                    }
+                                    
                                     match asset.format(_format) {
                                         Ok(output) => {
                                             println!("{}", output);
@@ -2228,6 +2182,13 @@ pub async fn execute_command(
                                     }
                                 }
                                 Err(e) => {
+                                    // Even if the operation failed, persist the potentially updated access token back to keyring
+                                    if let Some(updated_token) = client.get_access_token() {
+                                        if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                            warn!("Failed to persist updated access token: {}", token_err);
+                                        }
+                                    }
+                                    
                                     error!("Error fetching asset: {}", e);
                                     match e {
                                         pcli2::physna_v3::ApiError::RetryFailed(msg) => {
@@ -2827,7 +2788,7 @@ async fn execute_metadata_inference(
         trace!("Processing asset: {} for metadata inference", current_asset_path);
         
         // 1. Get the reference asset by path
-        let asset_uuid = match resolve_asset_path_to_uuid(client, tenant, &current_asset_path).await {
+        let asset_uuid = match pcli2::resolution_utils::resolve_asset_path_to_uuid(client, tenant, &current_asset_path).await {
             Ok(uuid) => uuid,
             Err(_) => {
                 error!("Reference asset not found: {}", current_asset_path);

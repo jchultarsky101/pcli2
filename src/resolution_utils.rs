@@ -91,20 +91,22 @@ pub async fn resolve_asset_path_to_uuid(
     match client.get_folder_id_by_path(tenant, folder_path).await {
         Ok(Some(folder_id)) => {
             debug!("Found folder ID: {} for path: {}", folder_id, folder_path);
-            // List assets in this specific folder only
-            match client.list_assets_in_folder(tenant, &folder_id, None, None).await {
+            // List ALL assets in this specific folder to ensure we find the target asset even if it's on another page
+            match client.list_all_assets_in_folder(tenant, &folder_id).await {
                 Ok(asset_list_response) => {
                     trace!("Found {} assets in folder {}", asset_list_response.assets.len(), folder_path);
+                    
                     // Find the asset by name within this folder
                     // Extract the asset name from each asset's path and compare with our target asset name
                     if let Some(asset_response) = asset_list_response.assets.iter().find(|asset| {
-                        if let Some(last_slash) = asset.path.rfind('/') {
+                        let extracted_name = if let Some(last_slash) = asset.path.rfind('/') {
                             let name = &asset.path[last_slash + 1..];
                             name == asset_name
                         } else {
                             // No slashes in asset path, compare directly
-                            asset.path == asset_name
-                        }
+                            &asset.path == asset_name
+                        };
+                        extracted_name
                     }) {
                         trace!("Found asset with UUID: {}", asset_response.id);
                         Ok(asset_response.id.clone())
@@ -115,7 +117,7 @@ pub async fn resolve_asset_path_to_uuid(
                     }
                 }
                 Err(e) => {
-                    debug!("Error listing assets in folder '{}': {}", folder_path, e);
+                    debug!("Error listing all assets in folder '{}': {}", folder_path, e);
                     Err(e)
                 }
             }

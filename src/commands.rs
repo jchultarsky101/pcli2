@@ -629,6 +629,20 @@ pub fn create_cli_commands() -> ArgMatches {
                         ),
                 )
                 .subcommand(
+                    Command::new("dependencies")
+                        .about("Get dependencies for an asset")
+                        .visible_alias("dep")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone().value_parser(["json", "csv", "tree"]))
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
+                        ),
+                )
+                .subcommand(
                     Command::new(COMMAND_UPDATE)
                         .about("Update an asset's metadata")
                         .arg(tenant_parameter.clone())

@@ -1523,6 +1523,116 @@ pub struct MetadataFieldListResponse {
     pub metadata_fields: Vec<MetadataField>,
 }
 
+/// Represents a dependency relationship for an asset
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetDependency {
+    /// The UUID of the dependent asset
+    pub id: String,
+    /// The path of the dependent asset
+    pub path: String,
+    /// The name of the dependent asset
+    pub name: String,
+    /// The type of dependency (e.g., "assembly", "subcomponent", etc.)
+    #[serde(rename = "dependencyType")]
+    pub dependency_type: String,
+    /// Optional metadata associated with the dependency
+    pub metadata: Option<std::collections::HashMap<String, serde_json::Value>>,
+}
+
+/// Represents the response from the asset dependencies API endpoint
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetDependenciesResponse {
+    /// List of assets that depend on this asset
+    pub dependencies: Vec<AssetDependency>,
+    /// Information about the parent asset
+    pub parent_asset: Option<Asset>,
+    /// Total count of dependencies
+    pub total_count: usize,
+}
+
+impl CsvRecordProducer for AssetDependenciesResponse {
+    fn csv_header() -> Vec<String> {
+        vec![
+            "ID".to_string(),
+            "PATH".to_string(),
+            "NAME".to_string(),
+            "DEPENDENCY_TYPE".to_string(),
+        ]
+    }
+
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.dependencies
+            .iter()
+            .map(|dep| {
+                vec![
+                    dep.id.clone(),
+                    dep.path.clone(),
+                    dep.name.clone(),
+                    dep.dependency_type.clone(),
+                ]
+            })
+            .collect()
+    }
+}
+
+impl OutputFormatter for AssetDependenciesResponse {
+    type Item = AssetDependenciesResponse;
+
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => {
+                let json = serde_json::to_string_pretty(self);
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv => {
+                use csv::Writer;
+                use std::io::BufWriter;
+                
+                let buf = BufWriter::new(Vec::new());
+                let mut wtr = Writer::from_writer(buf);
+                
+                wtr.write_record(Self::csv_header())
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+                
+                for record in self.as_csv_records() {
+                    wtr.write_record(&record)
+                        .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+                }
+                
+                wtr.flush()
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+                
+                let bytes = wtr.into_inner()
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?
+                    .into_inner()
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+                
+                String::from_utf8(bytes)
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(std::io::Error::other(e)) })
+            }
+            OutputFormat::Tree => {
+                // Create a tree representation of the dependencies
+                let mut output = String::new();
+                
+                if let Some(parent) = &self.parent_asset {
+                    output.push_str(&format!("Asset: {} ({})\n", parent.name(), parent.path()));
+                } else {
+                    output.push_str("Asset Dependencies:\n");
+                }
+                
+                for dep in &self.dependencies {
+                    output.push_str(&format!("├── {} ({}) [{}]\n", dep.name, dep.path, dep.dependency_type));
+                }
+                
+                Ok(output)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

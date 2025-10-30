@@ -636,6 +636,14 @@ pub fn create_cli_commands() -> ArgMatches {
                         .arg(uuid_parameter.clone())
                         .arg(path_parameter.clone())
                         .arg(format_parameter.clone().value_parser(["json", "csv", "tree"]))
+                        .arg(
+                            Arg::new("recursive")
+                                .short('R')
+                                .long("recursive")
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Recursively retrieve all dependencies of dependencies"),
+                        )
                         .group(clap::ArgGroup::new("asset_identifier")
                             .args([PARAMETER_UUID, PARAMETER_PATH])
                             .multiple(false)

@@ -2361,37 +2361,79 @@ pub async fn execute_command(
                             // Resolve asset path to get dependencies
                             if let Some(path) = asset_path_param {
                                 trace!("Getting dependencies for asset by path: {}", path);
-                                match client.get_asset_dependencies_by_path(&tenant, path).await {
-                                    Ok(mut dependencies_response) => {
-                                        // Set the original asset path for tree formatting
-                                        dependencies_response.original_asset_path = path.to_string();
-                                        
-                                        // Even if the API call succeeded, persist the potentially updated access token back to keyring
-                                        if let Some(updated_token) = client.get_access_token() {
-                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
-                                                warn!("Failed to persist updated access token: {}", token_err);
+                                
+                                // Check if recursive flag is set
+                                let recursive = sub_matches.get_flag("recursive");
+                                
+                                if recursive {
+                                    // Handle recursive dependencies
+                                    match get_asset_dependencies_recursive(&mut client, &tenant, path).await {
+                                        Ok(mut dependencies_response) => {
+                                            // Set the original asset path for tree formatting
+                                            dependencies_response.original_asset_path = path.to_string();
+                                            
+                                            // Even if the API call succeeded, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            match dependencies_response.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
                                             }
                                         }
-                                        
-                                        match dependencies_response.format(format) {
-                                            Ok(output) => {
-                                                println!("{}", output);
-                                                Ok(())
+                                        Err(e) => {
+                                            // Even if the recursive call failed, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
                                             }
-                                            Err(e) => Err(CliError::FormattingError(e)),
+                                            
+                                            error!("Error getting recursive asset dependencies for path '{}': {}", path, e);
+                                            eprintln!("Error getting recursive asset dependencies for path '{}': {}", path, e);
+                                            Ok(())
                                         }
                                     }
-                                    Err(e) => {
-                                        // Even if the API call failed, persist the potentially updated access token back to keyring
-                                        if let Some(updated_token) = client.get_access_token() {
-                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
-                                                warn!("Failed to persist updated access token: {}", token_err);
+                                } else {
+                                    // Handle non-recursive dependencies (original behavior)
+                                    match client.get_asset_dependencies_by_path(&tenant, path).await {
+                                        Ok(mut dependencies_response) => {
+                                            // Set the original asset path for tree formatting
+                                            dependencies_response.original_asset_path = path.to_string();
+                                            
+                                            // Even if the API call succeeded, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            match dependencies_response.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
                                             }
                                         }
-                                        
-                                        error!("Error getting asset dependencies for path '{}': {}", path, e);
-                                        eprintln!("Error getting asset dependencies for path '{}': {}", path, e);
-                                        Ok(())
+                                        Err(e) => {
+                                            // Even if the API call failed, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            error!("Error getting asset dependencies for path '{}': {}", path, e);
+                                            eprintln!("Error getting asset dependencies for path '{}': {}", path, e);
+                                            Ok(())
+                                        }
                                     }
                                 }
                             } else if let Some(uuid) = asset_uuid_param {
@@ -2965,4 +3007,77 @@ async fn execute_metadata_inference(
     }
     
     Ok(())
+}
+
+/// Get asset dependencies recursively
+/// 
+/// This function fetches all dependencies of an asset including dependencies of dependencies
+/// by making multiple API calls to build a complete dependency tree.
+/// 
+/// # Arguments
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - The tenant ID
+/// * `asset_path` - The path of the asset to get dependencies for
+/// 
+/// # Returns
+/// * `Ok(AssetDependenciesResponse)` - The complete dependency tree response
+/// * `Err(CliError)` - If there was an error during API calls
+async fn get_asset_dependencies_recursive(
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+    asset_path: &str,
+) -> Result<pcli2::model::AssetDependenciesResponse, CliError> {
+    use std::collections::HashSet;
+    
+    let mut all_dependencies = Vec::new();
+    let mut to_process = vec![asset_path.to_string()];
+    let mut processed_assets = HashSet::new();
+    
+    while let Some(current_path) = to_process.pop() {
+        // Skip if already processed to avoid cycles
+        if processed_assets.contains(&current_path) {
+            continue;
+        }
+        
+        processed_assets.insert(current_path.clone());
+        
+        match client.get_asset_dependencies_by_path(tenant, &current_path).await {
+            Ok(deps_response) => {
+                for dep in deps_response.dependencies {
+                    all_dependencies.push(dep.clone());
+                    // Add dependency to queue for further processing if not already processed
+                    if !processed_assets.contains(&dep.asset.path) {
+                        to_process.push(dep.asset.path.clone());
+                    }
+                }
+            }
+            Err(_) => {
+                // If we can't get dependencies for this asset, just continue
+                continue;
+            }
+        }
+    }
+    
+    // Remove duplicates while preserving order
+    let mut seen_paths = HashSet::new();
+    let unique_dependencies: Vec<_> = all_dependencies
+        .into_iter()
+        .filter(|dep| seen_paths.insert(dep.asset.path.clone()))
+        .collect();
+    
+    let total_count = unique_dependencies.len();
+    
+    // Create the final response with all dependencies
+    Ok(pcli2::model::AssetDependenciesResponse {
+        dependencies: unique_dependencies,
+        page_data: pcli2::model::PageData {
+            total: total_count,
+            per_page: total_count,
+            current_page: 1,
+            last_page: 1,
+            start_index: 1,
+            end_index: total_count,
+        },
+        original_asset_path: asset_path.to_string(),
+    })
 }

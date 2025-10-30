@@ -14,7 +14,7 @@ use pcli2::commands::{
     COMMAND_TENANT, COMMAND_MATCH, COMMAND_METADATA,
     PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, 
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
-    PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
+    PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID, PARAMETER_RECURSIVE,
 };
 use pcli2::error_utils;
 use pcli2::exit_codes::PcliExitCode;
@@ -369,7 +369,7 @@ pub async fn execute_command(
                                             Ok(())
                                         } else {
                                             // For other formats (JSON, CSV), check if recursive is requested
-                                            let recursive_requested = sub_matches.get_flag("recursive");
+                                            let recursive_requested = sub_matches.get_flag(PARAMETER_RECURSIVE);
                                             
                                             // Convert to folder list with only direct children if not recursive
                                             let folder_list = if recursive_requested {
@@ -2363,7 +2363,7 @@ pub async fn execute_command(
                                 trace!("Getting dependencies for asset by path: {}", path);
                                 
                                 // Check if recursive flag is set
-                                let recursive = sub_matches.get_flag("recursive");
+                                let recursive = sub_matches.get_flag(PARAMETER_RECURSIVE);
                                 
                                 if recursive {
                                     // Handle recursive dependencies
@@ -2773,7 +2773,7 @@ pub async fn execute_command(
                             }
                             
                             let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
-                            let recursive = sub_matches.get_flag("recursive");
+                            let recursive = sub_matches.get_flag(PARAMETER_RECURSIVE);
                             
                             // Validate threshold is between 0 and 100
                             if !(0.0..=100.0).contains(&threshold) {

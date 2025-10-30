@@ -95,6 +95,9 @@ pub const PARAMETER_REFRESH: &str = "refresh";
 /// Parameter name for file to upload
 pub const PARAMETER_FILE: &str = "file";
 
+/// Parameter name for recursive operations
+pub const PARAMETER_RECURSIVE: &str = "recursive";
+
 /// Create and configure all CLI commands and their arguments.
 ///
 /// This function defines the entire command-line interface for the Physna CLI,
@@ -271,9 +274,9 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .help("Force refresh folder cache data from API"),
                         )
                         .arg(
-                            Arg::new("recursive")
+                            Arg::new(PARAMETER_RECURSIVE)
                                 .short('R')
-                                .long("recursive")
+                                .long(PARAMETER_RECURSIVE)
                                 .action(clap::ArgAction::SetTrue)
                                 .required(false)
                                 .help("Recursively list all subfolders (default: false for CSV/JSON, true for tree)"),
@@ -326,7 +329,7 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .help("Path to the file to upload")
                                 .value_parser(clap::value_parser!(PathBuf)),
                         )
-                        .arg(path_parameter.clone())
+                        .arg(path_parameter.clone().required(true))
                         .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(
@@ -618,14 +621,36 @@ pub fn create_cli_commands() -> ArgMatches {
                                         .value_parser(clap::value_parser!(f64)),
                                 )
                                 .arg(
-                                    Arg::new("recursive")
-                                        .long("recursive")
+                                    Arg::new(PARAMETER_RECURSIVE)
+                                        .long(PARAMETER_RECURSIVE)
                                         .action(clap::ArgAction::SetTrue)
                                         .required(false)
                                         .help("Apply inference recursively to all found similar assets"),
                                 )
                                 .arg(tenant_parameter.clone())
                                 .arg(format_parameter.clone().value_parser(["json", "csv"]))
+                        ),
+                )
+                .subcommand(
+                    Command::new("dependencies")
+                        .about("Get dependencies for an asset")
+                        .visible_alias("dep")
+                        .arg(tenant_parameter.clone())
+                        .arg(uuid_parameter.clone())
+                        .arg(path_parameter.clone())
+                        .arg(format_parameter.clone().value_parser(["json", "csv", "tree"]))
+                        .arg(
+                            Arg::new(PARAMETER_RECURSIVE)
+                                .short('R')
+                                .long(PARAMETER_RECURSIVE)
+                                .action(clap::ArgAction::SetTrue)
+                                .required(false)
+                                .help("Recursively retrieve all dependencies of dependencies"),
+                        )
+                        .group(clap::ArgGroup::new("asset_identifier")
+                            .args([PARAMETER_UUID, PARAMETER_PATH])
+                            .multiple(false)
+                            .required(true)
                         ),
                 )
                 .subcommand(

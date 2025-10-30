@@ -23,7 +23,7 @@ Based on lessons learned from the previous version, we have developed a new and 
 
 - **Intuitive command structure** with nested sub-commands
 - **Configuration management** for persistent settings
-- **Asset operations** (create, list, get, delete, metadata operations)
+- **Asset operations** (create, list, get, delete, dependencies, metadata operations)
 - **Folder operations** (create, list, get, delete)
 - **Tenant management** with multi-tenant support
 - **Authentication** with OAuth2 client credentials flow
@@ -242,6 +242,12 @@ pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
 
 # List all assets in a folder
 pcli2 asset list --path "/Root/MyFolder" --format json
+
+# Get asset dependencies (components in assemblies, referenced assets)
+pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --format json
+
+# Get asset dependencies by UUID (path-based lookup is preferred)
+pcli2 asset dependencies --uuid ASSET_UUID --format json
 
 # Update/create asset metadata
 pcli2 asset create-metadata-batch --csv-file "metadata.csv"
@@ -640,6 +646,7 @@ pcli2
 │   ├── create              Create a new asset by uploading a file
 │   ├── create-batch        Create multiple assets by uploading files matching a glob pattern
 │   ├── create-metadata-batch  Create metadata for multiple assets from a CSV file
+│   ├── dependencies        Get dependencies for an asset (components in assemblies, referenced assets) (alias: dep)
 │   ├── list                List all assets in a folder
 │   ├── get                 Get asset details
 │   ├── delete              Delete an asset

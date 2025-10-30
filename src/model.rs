@@ -1523,6 +1523,119 @@ pub struct MetadataFieldListResponse {
     pub metadata_fields: Vec<MetadataField>,
 }
 
+/// Represents a dependency relationship for an asset
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetDependency {
+    /// The path of the dependent asset
+    pub path: String,
+    /// The asset details
+    pub asset: AssetResponse,
+    /// Number of occurrences
+    pub occurrences: u32,
+    /// Whether the dependency has its own dependencies
+    #[serde(rename = "hasDependencies")]
+    pub has_dependencies: bool,
+}
+
+/// Represents the response from the asset dependencies API endpoint
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetDependenciesResponse {
+    /// List of assets that depend on this asset
+    pub dependencies: Vec<AssetDependency>,
+    /// Pagination data for the response
+    #[serde(rename = "pageData")]
+    pub page_data: PageData,
+    /// The path of the original asset that was queried (for tree formatting)
+    #[serde(skip_serializing, skip_deserializing)]
+    pub original_asset_path: String,
+}
+
+impl CsvRecordProducer for AssetDependenciesResponse {
+    fn csv_header() -> Vec<String> {
+        vec![
+            "PATH".to_string(),
+            "ASSET_ID".to_string(),
+            "ASSET_NAME".to_string(),
+            "OCCURRENCES".to_string(),
+            "HAS_DEPENDENCIES".to_string(),
+        ]
+    }
+
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.dependencies
+            .iter()
+            .map(|dep| {
+                vec![
+                    dep.path.clone(),
+                    dep.asset.id.clone(),
+                    dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path).to_string(), // Just the filename
+                    dep.occurrences.to_string(),
+                    dep.has_dependencies.to_string(),
+                ]
+            })
+            .collect()
+    }
+}
+
+impl OutputFormatter for AssetDependenciesResponse {
+    type Item = AssetDependenciesResponse;
+
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json => {
+                let json = serde_json::to_string_pretty(self);
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv => {
+                use csv::Writer;
+                use std::io::BufWriter;
+                
+                let buf = BufWriter::new(Vec::new());
+                let mut wtr = Writer::from_writer(buf);
+                
+                wtr.write_record(Self::csv_header())
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+                
+                for record in self.as_csv_records() {
+                    wtr.write_record(&record)
+                        .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+                }
+                
+                wtr.flush()
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+                
+                let bytes = wtr.into_inner()
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?
+                    .into_inner()
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+                
+                String::from_utf8(bytes)
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(std::io::Error::other(e)) })
+            }
+            OutputFormat::Tree => {
+                // Create a tree representation of the dependencies with original asset as root
+                let mut output = String::new();
+                
+                // Extract the original asset name from the path (last part after the last slash)
+                let original_asset_name = self.original_asset_path.split('/').next_back().unwrap_or(&self.original_asset_path);
+                
+                output.push_str(&format!("{}\n", original_asset_name));
+                
+                for dep in &self.dependencies {
+                    let asset_name = dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path);
+                    output.push_str(&format!("├── {} ({} occurrences)\n", 
+                        asset_name, dep.occurrences));
+                }
+                
+                Ok(output)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

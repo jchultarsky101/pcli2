@@ -14,7 +14,7 @@ use pcli2::commands::{
     COMMAND_TENANT, COMMAND_MATCH, COMMAND_METADATA,
     PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, 
     PARAMETER_INPUT, PARAMETER_NAME, PARAMETER_OUTPUT, PARAMETER_PARENT_FOLDER_ID, 
-    PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID,
+    PARAMETER_PATH, PARAMETER_REFRESH, PARAMETER_TENANT, PARAMETER_UUID, PARAMETER_RECURSIVE,
 };
 use pcli2::error_utils;
 use pcli2::exit_codes::PcliExitCode;
@@ -30,103 +30,7 @@ use pcli2::folder_hierarchy::FolderHierarchy;
 use pcli2::keyring::Keyring;
 use pcli2::physna_v3::PhysnaApiClient;
 
-/// Efficiently resolve an asset path to its UUID by:
-/// 1. Splitting the path into folder path and asset name
-/// 2. Resolving the folder path to a folder ID
-/// 3. Listing only assets in that specific folder
-/// 4. Finding the asset by name within that folder
-/// 
-/// This is much more efficient than fetching all assets in the system and filtering locally.
-/// 
-/// # Arguments
-/// * `client` - The Physna API client
-/// * `tenant` - The tenant ID
-/// * `path` - The full path to the asset (e.g., "/Root/Folder/asset.stl")
-/// 
-/// # Returns
-/// * `Ok(String)` - The UUID of the asset if found
-/// * `Err(CliError)` - If the asset is not found or there's an error
-async fn resolve_asset_path_to_uuid(
-    client: &mut PhysnaApiClient,
-    tenant: &str,
-    path: &str,
-) -> Result<String, CliError> {
-    debug!("Resolving asset path to UUID: {}", path);
-    
-    // Split the path into folder path and asset name
-    let (folder_path, asset_name) = if let Some(last_slash) = path.rfind('/') {
-        let folder_path = if last_slash == 0 { "/" } else { &path[..last_slash] };
-        let asset_name = &path[last_slash + 1..];
-        (folder_path, asset_name)
-    } else {
-        // No slashes, it's in the root folder
-        ("/", path)
-    };
-    
-    debug!("Split path into folder: '{}' and asset name: '{}'", folder_path, asset_name);
-    
-    // Get folder ID by path
-    match client.get_folder_id_by_path(tenant, folder_path).await {
-        Ok(Some(folder_id)) => {
-            debug!("Found folder ID: {} for path: {}", folder_id, folder_path);
-            // List assets in this specific folder only
-            match client.list_assets_in_folder(tenant, &folder_id, None, None).await {
-                Ok(asset_list_response) => {
-                    trace!("Found {} assets in folder {}", asset_list_response.assets.len(), folder_path);
-                    // Find the asset by name within this folder
-                    // Extract the asset name from each asset's path and compare with our target asset name
-                    if let Some(asset_response) = asset_list_response.assets.iter().find(|asset| {
-                        if let Some(last_slash) = asset.path.rfind('/') {
-                            let name = &asset.path[last_slash + 1..];
-                            name == asset_name
-                        } else {
-                            // No slashes in asset path, compare directly
-                            &asset.path == asset_name
-                        }
-                    }) {
-                        trace!("Found asset with UUID: {}", asset_response.id);
-                        Ok(asset_response.id.clone())
-                    } else {
-                        Err(CliError::ConfigurationError(
-                            pcli2::configuration::ConfigurationError::FailedToLoadData {
-                                cause: Box::new(std::io::Error::new(
-                                    std::io::ErrorKind::NotFound,
-                                    format!("Asset '{}' not found in folder '{}'", asset_name, folder_path)
-                                ))
-                            }
-                        ))
-                    }
-                }
-                Err(e) => {
-                    error!("Error listing assets in folder '{}': {}", folder_path, e);
-                    Err(CliError::ConfigurationError(
-                        pcli2::configuration::ConfigurationError::FailedToLoadData {
-                            cause: Box::new(e)
-                        }
-                    ))
-                }
-            }
-        }
-        Ok(None) => {
-            Err(CliError::ConfigurationError(
-                pcli2::configuration::ConfigurationError::FailedToLoadData {
-                    cause: Box::new(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("Folder path '{}' not found", folder_path)
-                    ))
-                }
-            ))
-        }
-        Err(e) => {
-            error!("Error resolving folder path '{}': {}", folder_path, e);
-            Err(CliError::ConfigurationError(
-                pcli2::configuration::ConfigurationError::FailedToLoadData {
-                    cause: Box::new(e)
-                }
-            ))
-        }
-    }
-}
+
 use pcli2::format::{OutputFormat, OutputFormatter};
 
 /// Resolve a tenant name or ID to a tenant ID
@@ -214,7 +118,7 @@ async fn get_tenant_id(
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
-use tracing::{debug, trace, error};
+use tracing::{debug, trace, error, warn};
 
 /// Error types that can occur during CLI command execution
 #[derive(Debug, Error)]
@@ -448,10 +352,13 @@ pub async fn execute_command(
                                         // If a path is specified, filter the hierarchy to show only that subtree
                                         let filtered_hierarchy = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
                                             trace!("Filtering hierarchy by path: {}", path);
-                                            hierarchy.filter_by_path(path).unwrap_or_else(|| {
-                                                tracing::warn!("Folder path '{}' not found, showing full hierarchy", path);
-                                                hierarchy
-                                            })
+                                            match hierarchy.filter_by_path(path) {
+                                                Some(filtered_hierarchy) => filtered_hierarchy,
+                                                None => {
+                                                    eprintln!("Error: Folder path '{}' not found", path);
+                                                    return Err(CliError::FolderNotFound { identifier: path.to_string() });
+                                                }
+                                            }
                                         } else {
                                             hierarchy
                                         };
@@ -462,7 +369,7 @@ pub async fn execute_command(
                                             Ok(())
                                         } else {
                                             // For other formats (JSON, CSV), check if recursive is requested
-                                            let recursive_requested = sub_matches.get_flag("recursive");
+                                            let recursive_requested = sub_matches.get_flag(PARAMETER_RECURSIVE);
                                             
                                             // Convert to folder list with only direct children if not recursive
                                             let folder_list = if recursive_requested {
@@ -616,6 +523,13 @@ pub async fn execute_command(
                                         Ok(hierarchy) => {
                                             let path = hierarchy.get_path_for_folder(&folder_id).unwrap_or_else(|| single_folder_response.folder.name.clone());
                                             let folder = Folder::from_folder_response(single_folder_response.folder, path);
+                                            // Persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", e);
+                                                }
+                                            }
+                                            
                                             match folder.format(format) {
                                                 Ok(output) => {
                                                     println!("{}", output);
@@ -628,6 +542,13 @@ pub async fn execute_command(
                                             error!("Error building folder hierarchy: {}", e);
                                             // Fallback to folder without path
                                             let folder = Folder::from_folder_response(single_folder_response.folder.clone(), single_folder_response.folder.name.clone());
+                                            // Persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", e);
+                                                }
+                                            }
+                                            
                                             match folder.format(format) {
                                                 Ok(output) => {
                                                     println!("{}", output);
@@ -1690,6 +1611,13 @@ pub async fn execute_command(
                             // Check if metadata should be included
                             let _include_metadata = sub_matches.get_flag("metadata");
                             
+                            // Persist the potentially updated access token back to keyring
+                            if let Some(updated_token) = client.get_access_token() {
+                                if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                    warn!("Failed to persist updated access token: {}", e);
+                                }
+                            }
+                            
                             match asset_list.format_with_metadata(format, _include_metadata) {
                                 Ok(output) => {
                                     println!("{}", output);
@@ -2196,11 +2124,33 @@ pub async fn execute_command(
                                 // 2. Find the asset with matching path
                                 // Look up asset by path to get UUID (efficiently)
                                 trace!("Resolving asset by path: {}", path);
-                                match resolve_asset_path_to_uuid(&mut client, &tenant, path).await {
-                                    Ok(uuid) => uuid.clone(),
+                                debug!("About to call resolve_asset_path_to_uuid for path: {}", path);
+                                match pcli2::resolution_utils::resolve_asset_path_to_uuid(&mut client, &tenant, path).await {
+                                    Ok(uuid) => {
+                                        // Path resolution succeeded, but token might have been refreshed during the process
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        uuid
+                                    },
                                     Err(e) => {
-                                        error!("Error resolving asset path '{}': {}", path, e);
-                                        eprintln!("Error resolving asset path '{}': {}", path, e);
+                                        // Even if path resolution failed, persist the potentially updated access token back to keyring
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        
+                                        // Convert ApiError to CliError
+                                        let cli_error = CliError::ConfigurationError(
+                                            pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                cause: Box::new(e)
+                                            }
+                                        );
+                                        
+                                        eprintln!("Error resolving asset path '{}': {}", path, cli_error);
                                         return Ok(());
                                     }
                                 }
@@ -2219,6 +2169,13 @@ pub async fn execute_command(
                                     
                                     let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
                                     let _format = OutputFormat::from_str(&format_str).unwrap();
+                                    // Persist the potentially updated access token back to keyring
+                                    if let Some(updated_token) = client.get_access_token() {
+                                        if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                            warn!("Failed to persist updated access token: {}", e);
+                                        }
+                                    }
+                                    
                                     match asset.format(_format) {
                                         Ok(output) => {
                                             println!("{}", output);
@@ -2228,6 +2185,13 @@ pub async fn execute_command(
                                     }
                                 }
                                 Err(e) => {
+                                    // Even if the operation failed, persist the potentially updated access token back to keyring
+                                    if let Some(updated_token) = client.get_access_token() {
+                                        if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                            warn!("Failed to persist updated access token: {}", token_err);
+                                        }
+                                    }
+                                    
                                     error!("Error fetching asset: {}", e);
                                     match e {
                                         pcli2::physna_v3::ApiError::RetryFailed(msg) => {
@@ -2351,7 +2315,170 @@ pub async fn execute_command(
                         }
                     }
                 }
-                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                Some(("dependencies", sub_matches)) => {
+                    trace!("Executing asset dependencies command");
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    // Must provide either asset UUID or path
+                    if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token and get asset dependencies via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            
+                            // Resolve asset path to get dependencies
+                            if let Some(path) = asset_path_param {
+                                trace!("Getting dependencies for asset by path: {}", path);
+                                
+                                // Check if recursive flag is set
+                                let recursive = sub_matches.get_flag(PARAMETER_RECURSIVE);
+                                
+                                if recursive {
+                                    // Handle recursive dependencies
+                                    match get_asset_dependencies_recursive(&mut client, &tenant, path).await {
+                                        Ok(mut dependencies_response) => {
+                                            // Set the original asset path for tree formatting
+                                            dependencies_response.original_asset_path = path.to_string();
+                                            
+                                            // Even if the API call succeeded, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            // For recursive tree, CSV, and JSON formats, we need special hierarchical formatting
+                                            if format == OutputFormat::Tree {
+                                                // Build and print hierarchical tree
+                                                let tree_output = build_hierarchical_dependency_tree(&path, &mut client, &tenant).await?;
+                                                println!("{}", tree_output);
+                                                Ok(())
+                                            } else if format == OutputFormat::Csv {
+                                                // Build and print hierarchical CSV with parent information
+                                                let csv_output = build_hierarchical_dependency_csv(&path, &mut client, &tenant).await?;
+                                                println!("{}", csv_output);
+                                                Ok(())
+                                            } else if format == OutputFormat::Json {
+                                                // Build and print hierarchical JSON with parent information
+                                                let json_output = build_hierarchical_dependency_json(&path, &mut client, &tenant).await?;
+                                                println!("{}", json_output);
+                                                Ok(())
+                                            } else {
+                                                // For other formats, use the standard formatter
+                                                match dependencies_response.format(format) {
+                                                    Ok(output) => {
+                                                        println!("{}", output);
+                                                        Ok(())
+                                                    }
+                                                    Err(e) => Err(CliError::FormattingError(e)),
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            // Even if the recursive call failed, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            error!("Error getting recursive asset dependencies for path '{}': {}", path, e);
+                                            eprintln!("Error getting recursive asset dependencies for path '{}': {}", path, e);
+                                            Ok(())
+                                        }
+                                    }
+                                } else {
+                                    // Handle non-recursive dependencies (original behavior)
+                                    match client.get_asset_dependencies_by_path(&tenant, path).await {
+                                        Ok(mut dependencies_response) => {
+                                            // Set the original asset path for tree formatting
+                                            dependencies_response.original_asset_path = path.to_string();
+                                            
+                                            // Even if the API call succeeded, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            match dependencies_response.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            // Even if the API call failed, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            error!("Error getting asset dependencies for path '{}': {}", path, e);
+                                            eprintln!("Error getting asset dependencies for path '{}': {}", path, e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                            } else if let Some(uuid) = asset_uuid_param {
+                                trace!("Getting dependencies for asset by UUID: {}", uuid);
+                                // For UUID-based lookup, we would need a different API endpoint
+                                // For now, we'll implement only path-based dependency lookup
+                                error!("UUID-based dependency lookup not yet implemented");
+                                eprintln!("Error: UUID-based dependency lookup not yet implemented. Please use --path instead.");
+                                Ok(())
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                error!("Either asset UUID or path must be provided");
+                                eprintln!("Error: Either asset UUID or path must be provided");
+                                Ok(())
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                }                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
             }
@@ -2665,7 +2792,7 @@ pub async fn execute_command(
                             }
                             
                             let threshold = *sub_matches.get_one::<f64>("threshold").unwrap_or(&80.0);
-                            let recursive = sub_matches.get_flag("recursive");
+                            let recursive = sub_matches.get_flag(PARAMETER_RECURSIVE);
                             
                             // Validate threshold is between 0 and 100
                             if !(0.0..=100.0).contains(&threshold) {
@@ -2827,7 +2954,7 @@ async fn execute_metadata_inference(
         trace!("Processing asset: {} for metadata inference", current_asset_path);
         
         // 1. Get the reference asset by path
-        let asset_uuid = match resolve_asset_path_to_uuid(client, tenant, &current_asset_path).await {
+        let asset_uuid = match pcli2::resolution_utils::resolve_asset_path_to_uuid(client, tenant, &current_asset_path).await {
             Ok(uuid) => uuid,
             Err(_) => {
                 error!("Reference asset not found: {}", current_asset_path);
@@ -2899,4 +3026,373 @@ async fn execute_metadata_inference(
     }
     
     Ok(())
+}
+
+/// Get asset dependencies recursively
+/// 
+/// This function fetches all dependencies of an asset including dependencies of dependencies
+/// by making multiple API calls to build a complete dependency tree.
+/// 
+/// # Arguments
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - The tenant ID
+/// * `asset_path` - The path of the asset to get dependencies for
+/// 
+/// # Returns
+/// * `Ok(AssetDependenciesResponse)` - The complete dependency tree response
+/// * `Err(CliError)` - If there was an error during API calls
+async fn get_asset_dependencies_recursive(
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+    asset_path: &str,
+) -> Result<pcli2::model::AssetDependenciesResponse, CliError> {
+    use std::collections::HashSet;
+    
+    let mut all_dependencies = Vec::new();
+    let mut to_process = vec![asset_path.to_string()];
+    let mut processed_assets = HashSet::new();
+    
+    while let Some(current_path) = to_process.pop() {
+        // Skip if already processed to avoid cycles
+        if processed_assets.contains(&current_path) {
+            continue;
+        }
+        
+        processed_assets.insert(current_path.clone());
+        
+        match client.get_asset_dependencies_by_path(tenant, &current_path).await {
+            Ok(deps_response) => {
+                for dep in deps_response.dependencies {
+                    all_dependencies.push(dep.clone());
+                    // Add dependency to queue for further processing if not already processed
+                    if !processed_assets.contains(&dep.asset.path) {
+                        to_process.push(dep.asset.path.clone());
+                    }
+                }
+            }
+            Err(_) => {
+                // If we can't get dependencies for this asset, just continue
+                continue;
+            }
+        }
+    }
+    
+    // Remove duplicates while preserving order
+    let mut seen_paths = HashSet::new();
+    let unique_dependencies: Vec<_> = all_dependencies
+        .into_iter()
+        .filter(|dep| seen_paths.insert(dep.asset.path.clone()))
+        .collect();
+    
+    let total_count = unique_dependencies.len();
+    
+    // Create the final response with all dependencies
+    Ok(pcli2::model::AssetDependenciesResponse {
+        dependencies: unique_dependencies,
+        page_data: pcli2::model::PageData {
+            total: total_count,
+            per_page: total_count,
+            current_page: 1,
+            last_page: 1,
+            start_index: 1,
+            end_index: total_count,
+        },
+        original_asset_path: asset_path.to_string(),
+    })
+}
+
+/// Build a hierarchical CSV representation of recursive asset dependencies
+/// 
+/// This function creates a CSV format that includes parent-child relationship information
+/// to preserve the hierarchical structure when using recursive dependencies.
+/// 
+/// # Arguments
+/// * `root_asset_path` - The path of the root asset
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - The tenant ID
+/// 
+/// # Returns
+/// * `Ok(String)` - The hierarchical CSV representation
+/// * `Err(CliError)` - If there was an error during API calls
+async fn build_hierarchical_dependency_csv(
+    root_asset_path: &str,
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+) -> Result<String, CliError> {
+    use std::collections::HashSet;
+    
+    // Struct to hold dependency with parent information
+    #[derive(Debug, Clone)]
+    struct HierarchicalDependency {
+        path: String,
+        parent_path: String,
+        asset_id: String,
+        asset_name: String,
+        occurrences: u32,
+        has_dependencies: bool,
+    }
+    
+    let mut all_dependencies = Vec::new();
+    let mut processed_assets = HashSet::new();
+    let mut queued_assets = HashSet::new(); // Track assets that have been queued for processing
+    let mut to_process = vec![root_asset_path.to_string()]; // Assets to process for their dependencies
+    
+    // Mark the root asset as queued to prevent it from being requeued
+    queued_assets.insert(root_asset_path.to_string());
+    
+    // Process all dependencies recursively
+    while let Some(current_path) = to_process.pop() {
+        // Skip if already processed to avoid cycles
+        if processed_assets.contains(&current_path) {
+            continue;
+        }
+        
+        // Mark as processed
+        processed_assets.insert(current_path.clone());
+        
+        // Get dependencies of this asset
+        match client.get_asset_dependencies_by_path(tenant, &current_path).await {
+            Ok(deps_response) => {
+                for dep in deps_response.dependencies {
+                    // Determine the parent path for this dependency
+                    let parent_path = if current_path == root_asset_path {
+                        // If this is a direct dependency of the root, parent is the root
+                        root_asset_path.to_string()
+                    } else {
+                        // Otherwise parent is the current asset being processed
+                        current_path.clone()
+                    };
+                    
+                    // Create dependency record with parent information
+                    let dep_info = HierarchicalDependency {
+                        path: dep.asset.path.clone(),
+                        parent_path: parent_path,
+                        asset_id: dep.asset.id.clone(),
+                        asset_name: dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path).to_string(),
+                        occurrences: dep.occurrences,
+                        has_dependencies: dep.has_dependencies,
+                    };
+                    all_dependencies.push(dep_info.clone());
+                    
+                    // Add to processing queue if this dependency has its own dependencies and hasn't been queued yet
+                    if dep.has_dependencies && !queued_assets.contains(&dep.asset.path) {
+                        to_process.push(dep.asset.path.clone());
+                        queued_assets.insert(dep.asset.path.clone());
+                    }
+                }
+            }
+            Err(_) => {
+                // If we can't get dependencies for this asset, just continue
+                continue;
+            }
+        }
+    }
+    
+    // Build CSV output
+    let mut csv_output = String::new();
+    csv_output.push_str("PATH,PARENT_PATH,ASSET_ID,ASSET_NAME,OCCURRENCES,HAS_DEPENDENCIES\n");
+    
+    for dep in all_dependencies {
+        csv_output.push_str(&format!("{},{},{},{},{},{}\n",
+            dep.path,
+            dep.parent_path,
+            dep.asset_id,
+            dep.asset_name,
+            dep.occurrences,
+            dep.has_dependencies
+        ));
+    }
+    
+    Ok(csv_output)
+}
+
+/// Build a hierarchical JSON representation of recursive asset dependencies
+/// 
+/// This function creates a JSON format that includes parent-child relationship information
+/// to preserve the hierarchical structure when using recursive dependencies.
+/// 
+/// # Arguments
+/// * `root_asset_path` - The path of the root asset
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - The tenant ID
+/// 
+/// # Returns
+/// * `Ok(String)` - The hierarchical JSON representation
+/// * `Err(CliError)` - If there was an error during API calls
+async fn build_hierarchical_dependency_json(
+    root_asset_path: &str,
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+) -> Result<String, CliError> {
+    use std::collections::HashSet;
+    use serde::{Serialize};
+    
+    // Struct to hold dependency with parent information for JSON serialization
+    #[derive(Debug, Clone, Serialize)]
+    struct HierarchicalDependency {
+        path: String,
+        #[serde(rename = "parentPath")]
+        parent_path: String,
+        asset: pcli2::model::AssetResponse,
+        occurrences: u32,
+        #[serde(rename = "hasDependencies")]
+        has_dependencies: bool,
+    }
+    
+    let mut all_dependencies = Vec::new();
+    let mut processed_assets = HashSet::new();
+    let mut queued_assets = HashSet::new(); // Track assets that have been queued for processing
+    let mut to_process = vec![root_asset_path.to_string()]; // Assets to process for their dependencies
+    
+    // Mark the root asset as queued to prevent it from being requeued
+    queued_assets.insert(root_asset_path.to_string());
+    
+    // Process all dependencies recursively
+    while let Some(current_path) = to_process.pop() {
+        // Skip if already processed to avoid cycles
+        if processed_assets.contains(&current_path) {
+            continue;
+        }
+        
+        // Mark as processed
+        processed_assets.insert(current_path.clone());
+        
+        // Get dependencies of this asset
+        match client.get_asset_dependencies_by_path(tenant, &current_path).await {
+            Ok(deps_response) => {
+                for dep in deps_response.dependencies {
+                    // Determine the parent path for this dependency
+                    let parent_path = if current_path == root_asset_path {
+                        // If this is a direct dependency of the root, parent is the root
+                        root_asset_path.to_string()
+                    } else {
+                        // Otherwise parent is the current asset being processed
+                        current_path.clone()
+                    };
+                    
+                    // Create dependency record with parent information
+                    let dep_info = HierarchicalDependency {
+                        path: dep.asset.path.clone(),
+                        parent_path: parent_path,
+                        asset: dep.asset.clone(),
+                        occurrences: dep.occurrences,
+                        has_dependencies: dep.has_dependencies,
+                    };
+                    all_dependencies.push(dep_info.clone());
+                    
+                    // Add to processing queue if this dependency has its own dependencies and hasn't been queued yet
+                    if dep.has_dependencies && !queued_assets.contains(&dep.asset.path) {
+                        to_process.push(dep.asset.path.clone());
+                        queued_assets.insert(dep.asset.path.clone());
+                    }
+                }
+            }
+            Err(_) => {
+                // If we can't get dependencies for this asset, just continue
+                continue;
+            }
+        }
+    }
+    
+    // Build JSON output with hierarchical dependencies
+    #[derive(Serialize)]
+    struct HierarchicalDependenciesResponse {
+        dependencies: Vec<HierarchicalDependency>,
+    }
+    
+    let response = HierarchicalDependenciesResponse {
+        dependencies: all_dependencies,
+    };
+    
+    match serde_json::to_string_pretty(&response) {
+        Ok(json) => Ok(json),
+        Err(e) => Err(CliError::FormattingError(pcli2::format::FormattingError::FormatFailure {
+            cause: Box::new(e),
+        })),
+    }
+}
+
+/// Build a hierarchical tree representation of recursive asset dependencies
+/// 
+/// This function creates a proper tree structure showing parent-child relationships
+/// between assemblies and their components.
+/// 
+/// # Arguments
+/// * `root_asset_path` - The path of the root asset
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - The tenant ID
+/// 
+/// # Returns
+/// * `Ok(String)` - The hierarchical tree representation
+/// * `Err(CliError)` - If there was an error during API calls
+async fn build_hierarchical_dependency_tree(
+    root_asset_path: &str,
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+) -> Result<String, CliError> {
+    // use std::collections::HashMap; // Unused import
+    
+    // Get the original asset name from the path
+    let root_asset_name = root_asset_path.split('/').next_back().unwrap_or(root_asset_path);
+    
+    // Build dependency mapping: which assets are dependencies of which parent
+    // First, get direct dependencies of the root asset 
+    // Then for each dependency, check if it has its own dependencies
+    let mut output = String::new();
+    output.push_str(&format!("{}\n", root_asset_name));
+    
+    // Get direct dependencies of the root asset
+    let root_deps_response = match client.get_asset_dependencies_by_path(tenant, root_asset_path).await {
+        Ok(response) => response,
+        Err(e) => {
+            return Err(CliError::ApiError {
+                context: "Failed to get root asset dependencies".to_string(),
+                source: Box::new(e),
+            });
+        }
+    };
+    
+    // For each direct dependency, check if it has its own dependencies
+    for dep in &root_deps_response.dependencies {
+        output.push_str(&format!("├── {} ({})\n", 
+            dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path),
+            dep.occurrences
+        ));
+        
+        // Check if this dependency has its own dependencies (making it a subassembly)
+        // We need to see if this dependency appears as a "parent" in the full dependency list
+        let sub_deps_response = match client.get_asset_dependencies_by_path(tenant, &dep.asset.path).await {
+            Ok(response) => response,
+            Err(_) => {
+                // If we can't get dependencies for this asset, just skip it
+                continue;
+            }
+        };
+        if !sub_deps_response.dependencies.is_empty() {
+            // This dependency is a subassembly - list its dependencies under it
+            for sub_dep in &sub_deps_response.dependencies {
+                output.push_str(&format!("│   ├── {} ({})\n", 
+                    sub_dep.asset.path.split('/').next_back().unwrap_or(&sub_dep.asset.path),
+                    sub_dep.occurrences
+                ));
+                
+                // Check if these sub-dependencies have their own dependencies
+                let sub_sub_deps_response = match client.get_asset_dependencies_by_path(tenant, &sub_dep.asset.path).await {
+                    Ok(response) => response,
+                    Err(_) => {
+                        // If we can't get dependencies for this asset, just skip it
+                        continue;
+                    }
+                };
+                for sub_sub_dep in &sub_sub_deps_response.dependencies {
+                    output.push_str(&format!("│   │   ├── {} ({})\n", 
+                        sub_sub_dep.asset.path.split('/').next_back().unwrap_or(&sub_sub_dep.asset.path),
+                        sub_sub_dep.occurrences
+                    ));
+                }
+            }
+        }
+    }
+    
+    Ok(output)
 }

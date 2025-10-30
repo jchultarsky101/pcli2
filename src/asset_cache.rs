@@ -130,7 +130,7 @@ impl AssetCache {
     async fn fetch_all_assets(client: &mut PhysnaApiClient, tenant_id: &str) -> Result<AssetListResponse, Box<dyn std::error::Error + Send + Sync>> {
         let mut all_assets = Vec::new();
         let mut page = 1;
-        let per_page = 200; // Fetch 200 assets per page for better performance (API max is 1000)
+        let per_page = 1000; // Fetch 1000 assets per page for better performance (API max is 1000)
         
         loop {
             trace!("Fetching asset page {} for tenant {} ({} assets so far)", page, tenant_id, all_assets.len());

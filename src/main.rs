@@ -19,6 +19,7 @@ use pcli2::{
     error_utils,
 };
 use std::env;
+use std::process;
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
@@ -70,7 +71,7 @@ impl MainError {
 /// * `Ok(())` - If the command executed successfully (exit code 0)
 /// * `Err(i32)` - If an error occurred, with the appropriate exit code for the error type
 #[tokio::main]
-async fn main() -> Result<(), i32> {
+async fn main() {
     // Check if help is requested to show banner
     let args: Vec<String> = env::args().collect();
     if banner::has_help_flag(&args) {
@@ -94,8 +95,8 @@ async fn main() -> Result<(), i32> {
     let configuration = match Configuration::load_or_create_default() {
         Ok(config) => config,
         Err(e) => {
-            error_utils::report_error_with_message(&e, "Configuration error occurred");
-            return Err(PcliExitCode::ConfigError.code());
+            error_utils::report_error(&e);
+            process::exit(PcliExitCode::ConfigError.code());
         }
     };
 
@@ -106,12 +107,12 @@ async fn main() -> Result<(), i32> {
     match execute_command(configuration, api).await {
         Ok(()) => {
             // Success - exit with code 0
-            Ok(())
+            process::exit(0);
         },
         Err(e) => {
             error_utils::report_error(&e);
             let main_error = MainError::CliError(e);
-            Err(main_error.exit_code())
+            process::exit(main_error.exit_code());
         }
     }
 }

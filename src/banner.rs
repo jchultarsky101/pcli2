@@ -23,7 +23,7 @@ pub fn print_banner() {
 /// Check if the command line arguments include help request
 pub fn has_help_flag(args: &[String]) -> bool {
     for arg in args.iter() {
-        if arg == "--help" || arg == "-h" {
+        if arg == "--help" || arg == "-h" || arg == "help" {
             return true;
         }
     }

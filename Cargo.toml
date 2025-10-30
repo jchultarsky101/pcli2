@@ -1,6 +1,6 @@
 [package]
 name = "pcli2"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
 description = "CLI client for the Physna public API - Advanced 3D Geometry Search and Analysis"
@@ -27,6 +27,7 @@ serde_yaml = "0.9.34"
 serde = { version = "1.0.219", features = ["derive"] }
 tempfile = "3.10.1"
 url = { version = "2.5.0", features = ["serde"] }
+urlencoding = "2.1.0"
 reqwest = { version = "0.12.23", features = ["json", "multipart"] }
 serde_urlencoded = "0.7.1"
 strum = { version = "0.26.2", features = ["strum_macros", "derive"] }

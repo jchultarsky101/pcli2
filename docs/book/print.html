@@ -83,7 +83,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">1.</strong> Installation Guide</a></li><li class="chapter-item expanded "><a href="quickstart.html"><strong aria-hidden="true">2.</strong> Quick Start Guide</a></li><li class="chapter-item expanded "><a href="geometric-matching.html"><strong aria-hidden="true">3.</strong> Geometric Matching</a></li><li class="chapter-item expanded "><a href="cross_platform.html"><strong aria-hidden="true">4.</strong> Cross-Platform Configuration</a></li><li class="chapter-item expanded "><a href="documentation_deployment.html"><strong aria-hidden="true">5.</strong> Documentation Deployment</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">1.</strong> Installation Guide</a></li><li class="chapter-item expanded "><a href="quickstart.html"><strong aria-hidden="true">2.</strong> Quick Start Guide</a></li><li class="chapter-item expanded "><a href="geometric-matching.html"><strong aria-hidden="true">3.</strong> Geometric Matching</a></li><li class="chapter-item expanded "><a href="metadata-inference.html"><strong aria-hidden="true">4.</strong> Metadata Inference</a></li><li class="chapter-item expanded "><a href="cross_platform.html"><strong aria-hidden="true">5.</strong> Cross-Platform Configuration</a></li><li class="chapter-item expanded "><a href="documentation_deployment.html"><strong aria-hidden="true">6.</strong> Documentation Deployment</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -352,21 +352,38 @@ pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 8
 # Find matches for all assets in a folder (parallel processing)
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
 </code></pre>
+<h2 id="metadata-inference"><a class="header" href="#metadata-inference">Metadata Inference</a></h2>
+<p>Automatically apply metadata from a reference asset to geometrically similar assets using PCLI2's metadata inference capability:</p>
+<pre><code class="language-bash"># Apply specific metadata fields from a reference asset to similar assets
+pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material,Cost" --threshold 85.0
+
+# Apply metadata recursively to create chains of similar assets
+pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Category" --threshold 90.0 --recursive
+
+# Apply multiple metadata fields with different thresholds
+pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
+</code></pre>
+<p>The metadata inference command helps you efficiently propagate metadata across geometrically similar assets, reducing manual work and ensuring consistency in your asset database.</p>
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>Manage your PCLI2 configuration:</p>
 <pre><code class="language-bash"># View current configuration
 pcli2 config show
 
-# Set default tenant
-pcli2 config set tenant.default YOUR_TENANT_ID
+# Set default tenant (using either tenant name or ID)
+pcli2 config set tenant.default "Demo Environment 1"
+# Or using tenant ID:
+# pcli2 config set tenant.default 123e4567-e89b-12d3-a456-426614174000
 
 # Export configuration for backup
 pcli2 config export --output my-config.yaml
 </code></pre>
 <h2 id="context-management"><a class="header" href="#context-management">Context Management</a></h2>
 <p>Work with multiple tenants efficiently:</p>
-<pre><code class="language-bash"># Set active context (tenant)
-pcli2 context set --tenant YOUR_TENANT_ID
+<pre><code class="language-bash"># Set active context (tenant) using either tenant name or ID
+pcli2 context set --tenant "Demo Environment 1"
+
+# Or using tenant ID
+pcli2 context set --tenant 123e4567-e89b-12d3-a456-426614174000
 
 # View current context
 pcli2 context get
@@ -425,6 +442,13 @@ pcli2 asset create --help
 <li>Locate similar components across different projects</li>
 <li>Reduce storage costs by identifying redundant assets</li>
 <li>Improve design workflows by finding existing similar parts</li>
+</ul>
+<h2 id="related-features"><a class="header" href="#related-features">Related Features</a></h2>
+<p>Geometric matching serves as the foundation for other powerful capabilities:</p>
+<ul>
+<li><strong>Metadata Inference</strong>: Automatically propagate metadata from reference assets to geometrically similar assets using <code>pcli2 asset metadata inference</code></li>
+<li><strong>Part Family Management</strong>: Organize and categorize groups of similar components</li>
+<li><strong>Design Optimization</strong>: Identify opportunities for part consolidation and standardization</li>
 </ul>
 <h2 id="single-asset-matching"><a class="header" href="#single-asset-matching">Single Asset Matching</a></h2>
 <p>Find geometrically similar assets for a specific reference asset.</p>
@@ -592,6 +616,143 @@ Write-Host "Deduplication complete. Results saved to CSV files."
 <li><code>asset get</code> - Get detailed asset information</li>
 </ul>
 <p>Use <code>pcli2 asset geometric-match --help</code> and <code>pcli2 asset geometric-match-folder --help</code> for detailed command information.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="metadata-inference-1"><a class="header" href="#metadata-inference-1">Metadata Inference</a></h1>
+<p>The metadata inference feature allows you to automatically apply metadata from a reference asset to geometrically similar assets, significantly reducing manual metadata entry work.</p>
+<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
+<p>Metadata inference works by:</p>
+<ol>
+<li>Taking a reference asset and specified metadata fields</li>
+<li>Finding geometrically similar assets using the Physna geometric search</li>
+<li>Applying the reference metadata to matching assets</li>
+<li>Optionally continuing the process recursively for discovered matches</li>
+</ol>
+<p>This is particularly useful for applying common metadata like materials, categories, suppliers, or costs to families of similar parts.</p>
+<h2 id="basic-usage-2"><a class="header" href="#basic-usage-2">Basic Usage</a></h2>
+<p>Apply metadata from a reference asset to similar assets:</p>
+<pre><code class="language-bash">pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Material" --threshold 90.0
+</code></pre>
+<p>This command will:</p>
+<ul>
+<li>Find the asset at <code>/Root/Parts/Bolt-M8x20.stl</code></li>
+<li>Extract the "Material" metadata field value</li>
+<li>Find all assets with 90% or higher geometric similarity</li>
+<li>Apply the same "Material" value to all matching assets</li>
+</ul>
+<h2 id="specifying-multiple-metadata-fields"><a class="header" href="#specifying-multiple-metadata-fields">Specifying Multiple Metadata Fields</a></h2>
+<p>You can apply multiple metadata fields in a single operation:</p>
+<pre><code class="language-bash"># Using comma-separated values
+pcli2 asset metadata inference --path /Root/Parts/BaseModel.stl --name "Material,Cost,Supplier" --threshold 85.0
+
+# Using multiple --name flags
+pcli2 asset metadata inference --path /Root/Parts/BaseModel.stl --name "Material" --name "Cost" --name "Supplier" --threshold 85.0
+</code></pre>
+<h2 id="recursive-processing"><a class="header" href="#recursive-processing">Recursive Processing</a></h2>
+<p>Enable recursive processing to apply metadata inference to discovered matches:</p>
+<pre><code class="language-bash">pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Category" --threshold 80.0 --recursive
+</code></pre>
+<p>With the <code>--recursive</code> flag, the system will:</p>
+<ol>
+<li>Process the initial reference asset</li>
+<li>Find and process similar assets (first level)</li>
+<li>Continue finding and processing matches of those matches (second level)</li>
+<li>And so on, until no new assets are discovered</li>
+</ol>
+<p>The system automatically prevents infinite loops by tracking processed assets.</p>
+<h2 id="threshold-values"><a class="header" href="#threshold-values">Threshold Values</a></h2>
+<p>The threshold parameter controls the similarity requirement for matching assets:</p>
+<ul>
+<li><strong>Range</strong>: 0.00 to 100.00</li>
+<li><strong>Higher values</strong>: More stringent matching (fewer but more similar matches)</li>
+<li><strong>Lower values</strong>: More permissive matching (more but less similar matches)</li>
+<li><strong>Recommended starting point</strong>: 80.00-85.00 for most use cases</li>
+</ul>
+<pre><code class="language-bash"># Very strict matching (high similarity required)
+pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "CriticalField" --threshold 95.0
+
+# Liberal matching (find more potential matches)
+pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "GeneralField" --threshold 75.0
+</code></pre>
+<h2 id="practical-examples"><a class="header" href="#practical-examples">Practical Examples</a></h2>
+<h3 id="applying-standard-materials"><a class="header" href="#applying-standard-materials">Applying Standard Materials</a></h3>
+<pre><code class="language-bash"># Apply standard material to a family of similar bolts
+pcli2 asset metadata inference --path /Root/StandardParts/Bolt-M8x20.stl --name "Material" --threshold 92.0 --recursive
+</code></pre>
+<h3 id="categorizing-product-lines"><a class="header" href="#categorizing-product-lines">Categorizing Product Lines</a></h3>
+<pre><code class="language-bash"># Assign category and supplier information to a product family
+pcli2 asset metadata inference --path /Root/ProductLine/MainAssembly.stl --name "Category,Supplier,Division" --threshold 85.0
+</code></pre>
+<h3 id="cost-propagation"><a class="header" href="#cost-propagation">Cost Propagation</a></h3>
+<pre><code class="language-bash"># Apply estimated costs to similar components
+pcli2 asset metadata inference --path /Root/Components/ReferenceBracket.stl --name "EstimatedCost,Currency" --threshold 88.0
+</code></pre>
+<h2 id="best-practices-1"><a class="header" href="#best-practices-1">Best Practices</a></h2>
+<h3 id="1-start-with-conservative-thresholds"><a class="header" href="#1-start-with-conservative-thresholds">1. Start with Conservative Thresholds</a></h3>
+<p>Begin with higher threshold values (85-90%) to ensure high-quality matches, then adjust based on results:</p>
+<pre><code class="language-bash">pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Material" --threshold 90.0
+</code></pre>
+<h3 id="2-test-with-non-critical-metadata"><a class="header" href="#2-test-with-non-critical-metadata">2. Test with Non-Critical Metadata</a></h3>
+<p>Start by applying metadata to non-critical fields to understand the matching behavior:</p>
+<pre><code class="language-bash">pcli2 asset metadata inference --path /Root/Test/Reference.stl --name "TestTag" --threshold 85.0
+</code></pre>
+<h3 id="3-use-recursive-carefully"><a class="header" href="#3-use-recursive-carefully">3. Use Recursive Carefully</a></h3>
+<p>Recursive processing can be powerful but may affect many assets. Always review the scope first:</p>
+<pre><code class="language-bash"># First, see what would be affected without actually applying changes
+pcli2 asset geometric-match --path /Root/Parts/Reference.stl --threshold 80.0 --format csv &gt; potential_matches.csv
+
+# Then proceed with metadata inference if results look good
+pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Category" --threshold 80.0 --recursive
+</code></pre>
+<h3 id="4-combine-with-geometric-matching"><a class="header" href="#4-combine-with-geometric-matching">4. Combine with Geometric Matching</a></h3>
+<p>Use geometric matching first to preview results, then apply metadata inference:</p>
+<pre><code class="language-bash"># Preview matches
+pcli2 asset geometric-match --path /Root/Parts/Reference.stl --threshold 85.0 --format csv
+
+# Apply metadata if preview looks good
+pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Material" --threshold 85.0
+</code></pre>
+<h2 id="error-handling-1"><a class="header" href="#error-handling-1">Error Handling</a></h2>
+<p>The metadata inference command is designed to be resilient:</p>
+<ul>
+<li>Continues processing even if individual asset operations fail</li>
+<li>Provides detailed error messages for troubleshooting</li>
+<li>Automatically skips inaccessible assets</li>
+<li>Prevents infinite loops in recursive mode</li>
+</ul>
+<p>Common error scenarios and their handling:</p>
+<ul>
+<li><strong>Missing reference asset</strong>: Command aborts with clear error message</li>
+<li><strong>Network failures</strong>: Individual operations retry, overall process continues</li>
+<li><strong>Permission issues</strong>: Skips problematic assets with warning messages</li>
+<li><strong>Invalid metadata</strong>: Logs error but continues processing other assets</li>
+</ul>
+<h2 id="performance-considerations"><a class="header" href="#performance-considerations">Performance Considerations</a></h2>
+<h3 id="large-scale-operations"><a class="header" href="#large-scale-operations">Large-Scale Operations</a></h3>
+<p>For bulk metadata inference operations:</p>
+<pre><code class="language-bash"># Process during off-peak hours
+pcli2 asset metadata inference --path /Root/LargeAssembly/Reference.stl --name "Category" --threshold 80.0 --recursive
+</code></pre>
+<h3 id="monitoring-progress"><a class="header" href="#monitoring-progress">Monitoring Progress</a></h3>
+<p>Use the <code>--verbose</code> flag to monitor progress during long-running operations:</p>
+<pre><code class="language-bash">pcli2 --verbose asset metadata inference --path /Root/Parts/Reference.stl --name "Material" --threshold 85.0 --recursive
+</code></pre>
+<h2 id="integration-with-other-commands"><a class="header" href="#integration-with-other-commands">Integration with Other Commands</a></h2>
+<p>Metadata inference works seamlessly with other PCLI2 commands:</p>
+<pre><code class="language-bash"># Chain with folder operations
+pcli2 folder list --path /Root/ProductLine/ | \
+pcli2 asset metadata inference --name "ProductLine" --threshold 85.0 --recursive
+
+# Export results for auditing
+pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Category" --threshold 85.0 --recursive \
+  --format csv &gt; metadata_propagation_log.csv
+</code></pre>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<ol>
+<li><strong>API Rate Limits</strong>: Extensive recursive operations may be rate-limited by the Physna API</li>
+<li><strong>Processing Time</strong>: Large recursive operations can take considerable time</li>
+<li><strong>Metadata Types</strong>: Only supports text, number, and boolean metadata fields</li>
+<li><strong>Asset Access</strong>: Can only process assets accessible to your authenticated user</li>
+</ol>
+<p>Always test operations on a small scale before running them on large datasets.</p>
 <div style="break-before: page; page-break-before: always;"></div><h2 id="cross-platform-configuration"><a class="header" href="#cross-platform-configuration">Cross-Platform Configuration</a></h2>
 <p>PCLI2 supports cross-platform environments through environment variables, which is especially useful for WSL users running Windows executables or users who want to customize where configuration and cache files are stored.</p>
 <h3 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h3>

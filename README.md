@@ -23,7 +23,7 @@ Based on lessons learned from the previous version, we have developed a new and 
 
 - **Intuitive command structure** with nested sub-commands
 - **Configuration management** for persistent settings
-- **Asset operations** (create, list, get, delete, metadata operations)
+- **Asset operations** (create, list, get, delete, dependencies, metadata operations)
 - **Folder operations** (create, list, get, delete)
 - **Tenant management** with multi-tenant support
 - **Authentication** with OAuth2 client credentials flow
@@ -243,6 +243,19 @@ pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
 # List all assets in a folder
 pcli2 asset list --path "/Root/MyFolder" --format json
 
+# Get asset dependencies (components in assemblies, referenced assets)
+pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --format json
+
+# Get asset dependencies by UUID (path-based lookup is preferred)
+pcli2 asset dependencies --uuid ASSET_UUID --format json
+
+# Get asset dependencies recursively to show full hierarchy
+pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format tree
+
+# Get asset dependencies recursively in machine-readable formats
+pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format json
+pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format csv
+
 # Update/create asset metadata
 pcli2 asset create-metadata-batch --csv-file "metadata.csv"
 
@@ -253,7 +266,41 @@ pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/ --metadata
 pcli2 asset create-metadata-batch --csv-file "metadata.csv"
 ```
 
-#### Working with Metadata
+### Working with Asset Dependencies
+
+Asset dependencies represent the relationships between assemblies and their components. When you have an assembly (like a CAD model that consists of multiple parts), the dependencies show which parts make up that assembly.
+
+#### Basic Dependency Queries
+
+```bash
+# Get direct dependencies for an asset
+pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --format json
+
+# Get dependencies by UUID (path-based lookup is preferred)
+pcli2 asset dependencies --uuid ASSET_UUID --format json
+```
+
+#### Recursive Dependency Queries
+
+For complex assemblies with nested subassemblies, you can use the `--recursive` flag to traverse the entire dependency tree:
+
+```bash
+# Get all dependencies recursively, showing the full hierarchy
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format tree
+
+# Get all dependencies recursively in machine-readable JSON format with parent-child relationships
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format json
+
+# Get all dependencies recursively in CSV format with parent-child relationships
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format csv
+```
+
+The recursive mode preserves parent-child relationships in the output:
+- **Tree format**: Shows proper hierarchical indentation structure
+- **JSON format**: Includes `parentPath` field to show which asset is the parent of each dependency
+- **CSV format**: Includes `PARENT_PATH` column to show parent-child relationships
+
+This allows you to understand the complete assembly structure and perform bill-of-materials analysis.
 
 Metadata is essential for organizing and searching your assets effectively. PCLI2 supports adding metadata via JSON files:
 
@@ -640,6 +687,7 @@ pcli2
 │   ├── create              Create a new asset by uploading a file
 │   ├── create-batch        Create multiple assets by uploading files matching a glob pattern
 │   ├── create-metadata-batch  Create metadata for multiple assets from a CSV file
+│   ├── dependencies        Get dependencies for an asset (components in assemblies, referenced assets) with --recursive flag for full hierarchy (alias: dep)
 │   ├── list                List all assets in a folder
 │   ├── get                 Get asset details
 │   ├── delete              Delete an asset

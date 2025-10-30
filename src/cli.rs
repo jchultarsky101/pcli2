@@ -2379,12 +2379,21 @@ pub async fn execute_command(
                                                 }
                                             }
                                             
-                                            match dependencies_response.format(format) {
-                                                Ok(output) => {
-                                                    println!("{}", output);
-                                                    Ok(())
+                                            // For recursive tree format, we need special hierarchical formatting
+                                            if format == OutputFormat::Tree {
+                                                // Build and print hierarchical tree
+                                                let tree_output = build_hierarchical_dependency_tree(&path, &mut client, &tenant).await?;
+                                                println!("{}", tree_output);
+                                                Ok(())
+                                            } else {
+                                                // For other formats (JSON, CSV), use the standard formatter
+                                                match dependencies_response.format(format) {
+                                                    Ok(output) => {
+                                                        println!("{}", output);
+                                                        Ok(())
+                                                    }
+                                                    Err(e) => Err(CliError::FormattingError(e)),
                                                 }
-                                                Err(e) => Err(CliError::FormattingError(e)),
                                             }
                                         }
                                         Err(e) => {
@@ -3080,4 +3089,89 @@ async fn get_asset_dependencies_recursive(
         },
         original_asset_path: asset_path.to_string(),
     })
+}
+
+/// Build a hierarchical tree representation of recursive asset dependencies
+/// 
+/// This function creates a proper tree structure showing parent-child relationships
+/// between assemblies and their components.
+/// 
+/// # Arguments
+/// * `root_asset_path` - The path of the root asset
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - The tenant ID
+/// 
+/// # Returns
+/// * `Ok(String)` - The hierarchical tree representation
+/// * `Err(CliError)` - If there was an error during API calls
+async fn build_hierarchical_dependency_tree(
+    root_asset_path: &str,
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+) -> Result<String, CliError> {
+    // use std::collections::HashMap; // Unused import
+    
+    // Get the original asset name from the path
+    let root_asset_name = root_asset_path.split('/').next_back().unwrap_or(root_asset_path);
+    
+    // Build dependency mapping: which assets are dependencies of which parent
+    // First, get direct dependencies of the root asset 
+    // Then for each dependency, check if it has its own dependencies
+    let mut output = String::new();
+    output.push_str(&format!("{}\n", root_asset_name));
+    
+    // Get direct dependencies of the root asset
+    let root_deps_response = match client.get_asset_dependencies_by_path(tenant, root_asset_path).await {
+        Ok(response) => response,
+        Err(e) => {
+            return Err(CliError::ApiError {
+                context: "Failed to get root asset dependencies".to_string(),
+                source: Box::new(e),
+            });
+        }
+    };
+    
+    // For each direct dependency, check if it has its own dependencies
+    for dep in &root_deps_response.dependencies {
+        output.push_str(&format!("├── {} ({})\n", 
+            dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path),
+            dep.occurrences
+        ));
+        
+        // Check if this dependency has its own dependencies (making it a subassembly)
+        // We need to see if this dependency appears as a "parent" in the full dependency list
+        let sub_deps_response = match client.get_asset_dependencies_by_path(tenant, &dep.asset.path).await {
+            Ok(response) => response,
+            Err(_) => {
+                // If we can't get dependencies for this asset, just skip it
+                continue;
+            }
+        };
+        if !sub_deps_response.dependencies.is_empty() {
+            // This dependency is a subassembly - list its dependencies under it
+            for sub_dep in &sub_deps_response.dependencies {
+                output.push_str(&format!("│   ├── {} ({})\n", 
+                    sub_dep.asset.path.split('/').next_back().unwrap_or(&sub_dep.asset.path),
+                    sub_dep.occurrences
+                ));
+                
+                // Check if these sub-dependencies have their own dependencies
+                let sub_sub_deps_response = match client.get_asset_dependencies_by_path(tenant, &sub_dep.asset.path).await {
+                    Ok(response) => response,
+                    Err(_) => {
+                        // If we can't get dependencies for this asset, just skip it
+                        continue;
+                    }
+                };
+                for sub_sub_dep in &sub_sub_deps_response.dependencies {
+                    output.push_str(&format!("│   │   ├── {} ({})\n", 
+                        sub_sub_dep.asset.path.split('/').next_back().unwrap_or(&sub_sub_dep.asset.path),
+                        sub_sub_dep.occurrences
+                    ));
+                }
+            }
+        }
+    }
+    
+    Ok(output)
 }

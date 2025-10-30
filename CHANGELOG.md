@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Asset dependencies command to retrieve component relationships and referenced assets for assemblies
+- Recursive dependency traversal with `--recursive` flag to show full assembly hierarchies
+- Enhanced JSON output with `parentPath` field to preserve parent-child relationships in recursive mode
+- Enhanced CSV output with `PARENT_PATH` column to preserve parent-child relationships in recursive mode
+- Hierarchical tree visualization for recursive dependencies showing proper indentation structure
+- Cycle detection and deduplication to prevent infinite loops during recursive traversal
+- Consistent parameter handling with `PARAMETER_RECURSIVE` constant for reuse across commands
+
+### Changed
+- Improved tree format for asset dependencies to show original asset as root instead of generic "Asset Dependencies"
+- Updated API client to use asset path instead of asset ID in dependencies endpoint URL as per API specification
+- Enhanced error handling for invalid folder paths in folder list command to return appropriate error messages
+- Standardized command structure with consistent parameter naming and help text
+
+### Fixed
+- Asset dependencies endpoint URL construction to use asset path instead of asset ID as required by API
+- Folder list command to return error for invalid paths instead of showing all root folders
+- Banner display consistency to show for both `help` subcommand and `--help` flag
+- Compilation warnings and improved code safety throughout the codebase
 
 ## [0.1.7] - 2025-10-29
 

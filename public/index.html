@@ -848,6 +848,13 @@
 </span><span style="font-style:italic;color:#546e7a;"># Get asset dependencies by UUID (path-based lookup is preferred)
 </span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">uuid</span><span style="color:#82aaff;"> ASSET_UUID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
 </span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Get asset dependencies recursively to show full hierarchy
+</span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/assembly.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">recursive</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> tree
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Get asset dependencies recursively in machine-readable formats
+</span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/assembly.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">recursive</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/assembly.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">recursive</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
+</span><span style="color:#eeffff;">
 </span><span style="font-style:italic;color:#546e7a;"># Update/create asset metadata
 </span><span style="color:#82aaff;">pcli2 asset create-metadata-batch</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">csv-file </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">metadata.csv</span><span style="color:#89ddff;">"
 </span><span style="color:#eeffff;">
@@ -858,7 +865,35 @@
 </span><span style="color:#82aaff;">pcli2 asset create-metadata-batch</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">csv-file </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">metadata.csv</span><span style="color:#89ddff;">"
 </span></pre>
 
-<h4>Working with Metadata</h4>
+<h3>Working with Asset Dependencies</h3>
+<p>Asset dependencies represent the relationships between assemblies and their components. When you have an assembly (like a CAD model that consists of multiple parts), the dependencies show which parts make up that assembly.</p>
+<h4>Basic Dependency Queries</h4>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Get direct dependencies for an asset
+</span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/assembly.stl</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Get dependencies by UUID (path-based lookup is preferred)
+</span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">uuid</span><span style="color:#82aaff;"> ASSET_UUID</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</span></pre>
+
+<h4>Recursive Dependency Queries</h4>
+<p>For complex assemblies with nested subassemblies, you can use the <code>--recursive</code> flag to traverse the entire dependency tree:</p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Get all dependencies recursively, showing the full hierarchy
+</span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/complex_assembly.asm</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">recursive</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> tree
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Get all dependencies recursively in machine-readable JSON format with parent-child relationships
+</span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/complex_assembly.asm</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">recursive</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> json
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Get all dependencies recursively in CSV format with parent-child relationships
+</span><span style="color:#82aaff;">pcli2 asset dependencies</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/Root/MyFolder/complex_assembly.asm</span><span style="color:#89ddff;">" --</span><span style="color:#f78c6c;">recursive</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv
+</span></pre>
+
+<p>The recursive mode preserves parent-child relationships in the output:</p>
+<ul>
+<li><strong>Tree format</strong>: Shows proper hierarchical indentation structure</li>
+<li><strong>JSON format</strong>: Includes <code>parentPath</code> field to show which asset is the parent of each dependency</li>
+<li><strong>CSV format</strong>: Includes <code>PARENT_PATH</code> column to show parent-child relationships</li>
+</ul>
+<p>This allows you to understand the complete assembly structure and perform bill-of-materials analysis.</p>
 <p>Metadata is essential for organizing and searching your assets effectively. PCLI2 supports adding metadata via JSON files:</p>
 <ol>
 <li>
@@ -1203,7 +1238,7 @@
 </span><span style="color:#eeffff;">│   ├── create              Create a new asset by uploading a file
 </span><span style="color:#eeffff;">│   ├── create-batch        Create multiple assets by uploading files matching a glob pattern
 </span><span style="color:#eeffff;">│   ├── create-metadata-batch  Create metadata for multiple assets from a CSV file
-</span><span style="color:#eeffff;">│   ├── dependencies        Get dependencies for an asset (components in assemblies, referenced assets) (alias: dep)
+</span><span style="color:#eeffff;">│   ├── dependencies        Get dependencies for an asset (components in assemblies, referenced assets) with --recursive flag for full hierarchy (alias: dep)
 </span><span style="color:#eeffff;">│   ├── list                List all assets in a folder
 </span><span style="color:#eeffff;">│   ├── get                 Get asset details
 </span><span style="color:#eeffff;">│   ├── delete              Delete an asset

@@ -1578,28 +1578,32 @@ impl PhysnaApiClient {
         results
     }
 
-    /// Get dependencies for a specific asset by UUID
+    /// Get dependencies for a specific asset by path
     /// 
     /// This method retrieves all dependencies for the specified asset from the Physna API.
     /// The dependencies represent other assets that are related to this asset, such as
     /// components in an assembly or referenced assets.
     /// 
+    /// IMPORTANT: Despite the parameter name, this endpoint expects the asset path,
+    /// not the asset ID/UUID. The Physna API uses the path in the URL for this endpoint.
+    /// 
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the asset
-    /// * `asset_id` - The UUID of the asset to retrieve dependencies for
+    /// * `asset_path` - The path of the asset to retrieve dependencies for (e.g., "/Root/Folder/assembly.stl")
     /// 
     /// # Returns
     /// * `Ok(AssetDependenciesResponse)` - Successfully fetched asset dependencies
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_asset_dependencies(&mut self, tenant_id: &str, asset_id: &str) -> Result<crate::model::AssetDependenciesResponse, ApiError> {
-        debug!("Getting asset dependencies for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
+    pub async fn get_asset_dependencies(&mut self, tenant_id: &str, asset_path: &str) -> Result<crate::model::AssetDependenciesResponse, ApiError> {
+        debug!("Getting asset dependencies for tenant_id: {}, asset_path: {}", tenant_id, asset_path);
         
-        let url = format!("{}/tenants/{}/assets/{}/dependencies", self.base_url, tenant_id, asset_id);
+        let encoded_asset_path = urlencoding::encode(asset_path);
+        let url = format!("{}/tenants/{}/assets/{}/dependencies", self.base_url, tenant_id, encoded_asset_path);
         debug!("Dependencies request URL: {}", url);
         
         // Execute the GET request using the generic method
         let response: crate::model::AssetDependenciesResponse = self.get(&url).await?;
-        debug!("Successfully retrieved {} dependencies for asset_id: {}", response.dependencies.len(), asset_id);
+        debug!("Successfully retrieved {} dependencies for asset_path: {}", response.dependencies.len(), asset_path);
         
         Ok(response)
     }
@@ -1610,7 +1614,8 @@ impl PhysnaApiClient {
     /// The dependencies represent other assets that are related to this asset, such as
     /// components in an assembly or referenced assets.
     /// 
-    /// This method first resolves the asset path to an asset UUID and then retrieves dependencies.
+    /// This method uses the path directly in the API endpoint, as the dependencies endpoint
+    /// specifically requires the asset path rather than the asset ID.
     /// 
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the asset
@@ -1622,32 +1627,17 @@ impl PhysnaApiClient {
     pub async fn get_asset_dependencies_by_path(&mut self, tenant_id: &str, asset_path: &str) -> Result<crate::model::AssetDependenciesResponse, ApiError> {
         debug!("Getting asset dependencies by path for tenant_id: {}, asset_path: {}", tenant_id, asset_path);
         
-        // First, we need to resolve the asset path to get the asset UUID
-        // We can do this by using the asset cache to get all assets and finding the one with the matching path
-        match crate::asset_cache::AssetCache::get_or_fetch(self, tenant_id).await {
-            Ok(asset_list_response) => {
-                // Convert to AssetList to use find_by_path
-                let asset_list = asset_list_response.to_asset_list();
-                // Find the asset by path
-                if let Some(asset) = asset_list.find_by_path(asset_path) {
-                    if let Some(asset_id) = asset.uuid() {
-                        debug!("Found asset with UUID: {} for path: {}", asset_id, asset_path);
-                        // Now call the UUID-based dependencies endpoint
-                        self.get_asset_dependencies(tenant_id, &asset_id).await
-                    } else {
-                        error!("Asset found by path '{}' but has no UUID", asset_path);
-                        Err(ApiError::ConflictError(format!("Asset found by path '{}' but has no UUID", asset_path)))
-                    }
-                } else {
-                    error!("No asset found by path: {}", asset_path);
-                    Err(ApiError::ConflictError(format!("No asset found by path: {}", asset_path)))
-                }
-            }
-            Err(e) => {
-                error!("Error fetching asset cache to resolve path '{}': {}", asset_path, e);
-                Err(ApiError::RetryFailed(format!("Error fetching asset cache to resolve path '{}': {}", asset_path, e)))
-            }
-        }
+        // URL encode the asset path to handle special characters properly
+        let encoded_asset_path = urlencoding::encode(asset_path);
+        
+        let url = format!("{}/tenants/{}/assets/{}/dependencies", self.base_url, tenant_id, encoded_asset_path);
+        debug!("Dependencies request URL: {}", url);
+        
+        // Execute the GET request using the generic method
+        let response: crate::model::AssetDependenciesResponse = self.get(&url).await?;
+        debug!("Successfully retrieved {} dependencies for asset_path: {}", response.dependencies.len(), asset_path);
+        
+        Ok(response)
     }
 }
 

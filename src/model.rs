@@ -1526,17 +1526,15 @@ pub struct MetadataFieldListResponse {
 /// Represents a dependency relationship for an asset
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetDependency {
-    /// The UUID of the dependent asset
-    pub id: String,
     /// The path of the dependent asset
     pub path: String,
-    /// The name of the dependent asset
-    pub name: String,
-    /// The type of dependency (e.g., "assembly", "subcomponent", etc.)
-    #[serde(rename = "dependencyType")]
-    pub dependency_type: String,
-    /// Optional metadata associated with the dependency
-    pub metadata: Option<std::collections::HashMap<String, serde_json::Value>>,
+    /// The asset details
+    pub asset: AssetResponse,
+    /// Number of occurrences
+    pub occurrences: u32,
+    /// Whether the dependency has its own dependencies
+    #[serde(rename = "hasDependencies")]
+    pub has_dependencies: bool,
 }
 
 /// Represents the response from the asset dependencies API endpoint
@@ -1544,19 +1542,19 @@ pub struct AssetDependency {
 pub struct AssetDependenciesResponse {
     /// List of assets that depend on this asset
     pub dependencies: Vec<AssetDependency>,
-    /// Information about the parent asset
-    pub parent_asset: Option<Asset>,
-    /// Total count of dependencies
-    pub total_count: usize,
+    /// Pagination data for the response
+    #[serde(rename = "pageData")]
+    pub page_data: PageData,
 }
 
 impl CsvRecordProducer for AssetDependenciesResponse {
     fn csv_header() -> Vec<String> {
         vec![
-            "ID".to_string(),
             "PATH".to_string(),
-            "NAME".to_string(),
-            "DEPENDENCY_TYPE".to_string(),
+            "ASSET_ID".to_string(),
+            "ASSET_NAME".to_string(),
+            "OCCURRENCES".to_string(),
+            "HAS_DEPENDENCIES".to_string(),
         ]
     }
 
@@ -1565,10 +1563,11 @@ impl CsvRecordProducer for AssetDependenciesResponse {
             .iter()
             .map(|dep| {
                 vec![
-                    dep.id.clone(),
                     dep.path.clone(),
-                    dep.name.clone(),
-                    dep.dependency_type.clone(),
+                    dep.asset.id.clone(),
+                    dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path).to_string(), // Just the filename
+                    dep.occurrences.to_string(),
+                    dep.has_dependencies.to_string(),
                 ]
             })
             .collect()
@@ -1617,14 +1616,12 @@ impl OutputFormatter for AssetDependenciesResponse {
                 // Create a tree representation of the dependencies
                 let mut output = String::new();
                 
-                if let Some(parent) = &self.parent_asset {
-                    output.push_str(&format!("Asset: {} ({})\n", parent.name(), parent.path()));
-                } else {
-                    output.push_str("Asset Dependencies:\n");
-                }
+                output.push_str("Asset Dependencies:\n");
                 
                 for dep in &self.dependencies {
-                    output.push_str(&format!("├── {} ({}) [{}]\n", dep.name, dep.path, dep.dependency_type));
+                    let asset_name = dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path);
+                    output.push_str(&format!("├── {} ({} occurrences, has_dependencies: {})\n", 
+                        asset_name, dep.occurrences, dep.has_dependencies));
                 }
                 
                 Ok(output)

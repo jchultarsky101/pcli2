@@ -352,10 +352,13 @@ pub async fn execute_command(
                                         // If a path is specified, filter the hierarchy to show only that subtree
                                         let filtered_hierarchy = if let Some(path) = sub_matches.get_one::<String>(PARAMETER_PATH) {
                                             trace!("Filtering hierarchy by path: {}", path);
-                                            hierarchy.filter_by_path(path).unwrap_or_else(|| {
-                                                tracing::warn!("Folder path '{}' not found, showing full hierarchy", path);
-                                                hierarchy
-                                            })
+                                            match hierarchy.filter_by_path(path) {
+                                                Some(filtered_hierarchy) => filtered_hierarchy,
+                                                None => {
+                                                    eprintln!("Error: Folder path '{}' not found", path);
+                                                    return Err(CliError::FolderNotFound { identifier: path.to_string() });
+                                                }
+                                            }
                                         } else {
                                             hierarchy
                                         };

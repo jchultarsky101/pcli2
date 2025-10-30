@@ -2379,7 +2379,7 @@ pub async fn execute_command(
                                                 }
                                             }
                                             
-                                            // For recursive tree and CSV formats, we need special hierarchical formatting
+                                            // For recursive tree, CSV, and JSON formats, we need special hierarchical formatting
                                             if format == OutputFormat::Tree {
                                                 // Build and print hierarchical tree
                                                 let tree_output = build_hierarchical_dependency_tree(&path, &mut client, &tenant).await?;
@@ -2390,8 +2390,13 @@ pub async fn execute_command(
                                                 let csv_output = build_hierarchical_dependency_csv(&path, &mut client, &tenant).await?;
                                                 println!("{}", csv_output);
                                                 Ok(())
+                                            } else if format == OutputFormat::Json {
+                                                // Build and print hierarchical JSON with parent information
+                                                let json_output = build_hierarchical_dependency_json(&path, &mut client, &tenant).await?;
+                                                println!("{}", json_output);
+                                                Ok(())
                                             } else {
-                                                // For other formats (JSON), use the standard formatter
+                                                // For other formats, use the standard formatter
                                                 match dependencies_response.format(format) {
                                                     Ok(output) => {
                                                         println!("{}", output);
@@ -3199,6 +3204,112 @@ async fn build_hierarchical_dependency_csv(
     }
     
     Ok(csv_output)
+}
+
+/// Build a hierarchical JSON representation of recursive asset dependencies
+/// 
+/// This function creates a JSON format that includes parent-child relationship information
+/// to preserve the hierarchical structure when using recursive dependencies.
+/// 
+/// # Arguments
+/// * `root_asset_path` - The path of the root asset
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - The tenant ID
+/// 
+/// # Returns
+/// * `Ok(String)` - The hierarchical JSON representation
+/// * `Err(CliError)` - If there was an error during API calls
+async fn build_hierarchical_dependency_json(
+    root_asset_path: &str,
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+) -> Result<String, CliError> {
+    use std::collections::HashSet;
+    use serde::{Serialize};
+    
+    // Struct to hold dependency with parent information for JSON serialization
+    #[derive(Debug, Clone, Serialize)]
+    struct HierarchicalDependency {
+        path: String,
+        #[serde(rename = "parentPath")]
+        parent_path: String,
+        asset: pcli2::model::AssetResponse,
+        occurrences: u32,
+        #[serde(rename = "hasDependencies")]
+        has_dependencies: bool,
+    }
+    
+    let mut all_dependencies = Vec::new();
+    let mut processed_assets = HashSet::new();
+    let mut queued_assets = HashSet::new(); // Track assets that have been queued for processing
+    let mut to_process = vec![root_asset_path.to_string()]; // Assets to process for their dependencies
+    
+    // Mark the root asset as queued to prevent it from being requeued
+    queued_assets.insert(root_asset_path.to_string());
+    
+    // Process all dependencies recursively
+    while let Some(current_path) = to_process.pop() {
+        // Skip if already processed to avoid cycles
+        if processed_assets.contains(&current_path) {
+            continue;
+        }
+        
+        // Mark as processed
+        processed_assets.insert(current_path.clone());
+        
+        // Get dependencies of this asset
+        match client.get_asset_dependencies_by_path(tenant, &current_path).await {
+            Ok(deps_response) => {
+                for dep in deps_response.dependencies {
+                    // Determine the parent path for this dependency
+                    let parent_path = if current_path == root_asset_path {
+                        // If this is a direct dependency of the root, parent is the root
+                        root_asset_path.to_string()
+                    } else {
+                        // Otherwise parent is the current asset being processed
+                        current_path.clone()
+                    };
+                    
+                    // Create dependency record with parent information
+                    let dep_info = HierarchicalDependency {
+                        path: dep.asset.path.clone(),
+                        parent_path: parent_path,
+                        asset: dep.asset.clone(),
+                        occurrences: dep.occurrences,
+                        has_dependencies: dep.has_dependencies,
+                    };
+                    all_dependencies.push(dep_info.clone());
+                    
+                    // Add to processing queue if this dependency has its own dependencies and hasn't been queued yet
+                    if dep.has_dependencies && !queued_assets.contains(&dep.asset.path) {
+                        to_process.push(dep.asset.path.clone());
+                        queued_assets.insert(dep.asset.path.clone());
+                    }
+                }
+            }
+            Err(_) => {
+                // If we can't get dependencies for this asset, just continue
+                continue;
+            }
+        }
+    }
+    
+    // Build JSON output with hierarchical dependencies
+    #[derive(Serialize)]
+    struct HierarchicalDependenciesResponse {
+        dependencies: Vec<HierarchicalDependency>,
+    }
+    
+    let response = HierarchicalDependenciesResponse {
+        dependencies: all_dependencies,
+    };
+    
+    match serde_json::to_string_pretty(&response) {
+        Ok(json) => Ok(json),
+        Err(e) => Err(CliError::FormattingError(pcli2::format::FormattingError::FormatFailure {
+            cause: Box::new(e),
+        })),
+    }
 }
 
 /// Build a hierarchical tree representation of recursive asset dependencies

@@ -2379,14 +2379,19 @@ pub async fn execute_command(
                                                 }
                                             }
                                             
-                                            // For recursive tree format, we need special hierarchical formatting
+                                            // For recursive tree and CSV formats, we need special hierarchical formatting
                                             if format == OutputFormat::Tree {
                                                 // Build and print hierarchical tree
                                                 let tree_output = build_hierarchical_dependency_tree(&path, &mut client, &tenant).await?;
                                                 println!("{}", tree_output);
                                                 Ok(())
+                                            } else if format == OutputFormat::Csv {
+                                                // Build and print hierarchical CSV with parent information
+                                                let csv_output = build_hierarchical_dependency_csv(&path, &mut client, &tenant).await?;
+                                                println!("{}", csv_output);
+                                                Ok(())
                                             } else {
-                                                // For other formats (JSON, CSV), use the standard formatter
+                                                // For other formats (JSON), use the standard formatter
                                                 match dependencies_response.format(format) {
                                                     Ok(output) => {
                                                         println!("{}", output);
@@ -3089,6 +3094,111 @@ async fn get_asset_dependencies_recursive(
         },
         original_asset_path: asset_path.to_string(),
     })
+}
+
+/// Build a hierarchical CSV representation of recursive asset dependencies
+/// 
+/// This function creates a CSV format that includes parent-child relationship information
+/// to preserve the hierarchical structure when using recursive dependencies.
+/// 
+/// # Arguments
+/// * `root_asset_path` - The path of the root asset
+/// * `client` - Mutable reference to the Physna API client
+/// * `tenant` - The tenant ID
+/// 
+/// # Returns
+/// * `Ok(String)` - The hierarchical CSV representation
+/// * `Err(CliError)` - If there was an error during API calls
+async fn build_hierarchical_dependency_csv(
+    root_asset_path: &str,
+    client: &mut PhysnaApiClient,
+    tenant: &str,
+) -> Result<String, CliError> {
+    use std::collections::HashSet;
+    
+    // Struct to hold dependency with parent information
+    #[derive(Debug, Clone)]
+    struct HierarchicalDependency {
+        path: String,
+        parent_path: String,
+        asset_id: String,
+        asset_name: String,
+        occurrences: u32,
+        has_dependencies: bool,
+    }
+    
+    let mut all_dependencies = Vec::new();
+    let mut processed_assets = HashSet::new();
+    let mut queued_assets = HashSet::new(); // Track assets that have been queued for processing
+    let mut to_process = vec![root_asset_path.to_string()]; // Assets to process for their dependencies
+    
+    // Mark the root asset as queued to prevent it from being requeued
+    queued_assets.insert(root_asset_path.to_string());
+    
+    // Process all dependencies recursively
+    while let Some(current_path) = to_process.pop() {
+        // Skip if already processed to avoid cycles
+        if processed_assets.contains(&current_path) {
+            continue;
+        }
+        
+        // Mark as processed
+        processed_assets.insert(current_path.clone());
+        
+        // Get dependencies of this asset
+        match client.get_asset_dependencies_by_path(tenant, &current_path).await {
+            Ok(deps_response) => {
+                for dep in deps_response.dependencies {
+                    // Determine the parent path for this dependency
+                    let parent_path = if current_path == root_asset_path {
+                        // If this is a direct dependency of the root, parent is the root
+                        root_asset_path.to_string()
+                    } else {
+                        // Otherwise parent is the current asset being processed
+                        current_path.clone()
+                    };
+                    
+                    // Create dependency record with parent information
+                    let dep_info = HierarchicalDependency {
+                        path: dep.asset.path.clone(),
+                        parent_path: parent_path,
+                        asset_id: dep.asset.id.clone(),
+                        asset_name: dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path).to_string(),
+                        occurrences: dep.occurrences,
+                        has_dependencies: dep.has_dependencies,
+                    };
+                    all_dependencies.push(dep_info.clone());
+                    
+                    // Add to processing queue if this dependency has its own dependencies and hasn't been queued yet
+                    if dep.has_dependencies && !queued_assets.contains(&dep.asset.path) {
+                        to_process.push(dep.asset.path.clone());
+                        queued_assets.insert(dep.asset.path.clone());
+                    }
+                }
+            }
+            Err(_) => {
+                // If we can't get dependencies for this asset, just continue
+                continue;
+            }
+        }
+    }
+    
+    // Build CSV output
+    let mut csv_output = String::new();
+    csv_output.push_str("PATH,PARENT_PATH,ASSET_ID,ASSET_NAME,OCCURRENCES,HAS_DEPENDENCIES\n");
+    
+    for dep in all_dependencies {
+        csv_output.push_str(&format!("{},{},{},{},{},{}\n",
+            dep.path,
+            dep.parent_path,
+            dep.asset_id,
+            dep.asset_name,
+            dep.occurrences,
+            dep.has_dependencies
+        ));
+    }
+    
+    Ok(csv_output)
 }
 
 /// Build a hierarchical tree representation of recursive asset dependencies

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Asset dependencies command to retrieve component relationships and referenced assets for assemblies
+
 ## [0.1.7] - 2025-10-29
 
 ### Added

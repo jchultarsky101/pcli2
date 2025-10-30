@@ -1,4 +1,40 @@
-<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>PCLI2 Changelog</title><link>http://127.0.0.1:7979/pcli2/changelog</link><description>Changelog information for PCLI2</description><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><atom:link href="http://127.0.0.1:7979/pcli2/changelog.rss" rel="self"/><item><title>0.1.1 - 2025-10-13</title><link>http://127.0.0.1:7979/pcli2/changelog/v0.1.1</link><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><guid>http://127.0.0.1:7979/pcli2/changelog/v0.1.1</guid><content:encoded><![CDATA[<h3>Added</h3>
+<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>PCLI2 Changelog</title><link>http://127.0.0.1:7979/pcli2/changelog</link><description>Changelog information for PCLI2</description><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><atom:link href="http://127.0.0.1:7979/pcli2/changelog.rss" rel="self"/><item><title>v0.1.7</title><link>http://127.0.0.1:7979/pcli2/changelog/v0.1.7</link><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><guid>http://127.0.0.1:7979/pcli2/changelog/v0.1.7</guid><content:encoded><![CDATA[<h3>Added</h3>
+<ul>
+<li>Folder get command with UUID and path parameters support</li>
+<li>Debug tracing for folder path resolution to diagnose ETRACE folder issues</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Compilation errors in folder get command implementation</li>
+<li>Folder list issues related to ETRACE functionality</li>
+</ul>
+]]></content:encoded></item><item><title>v0.1.6</title><link>http://127.0.0.1:7979/pcli2/changelog/v0.1.6</link><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><guid>http://127.0.0.1:7979/pcli2/changelog/v0.1.6</guid><content:encoded><![CDATA[<h3>Changed</h3>
+<ul>
+<li>Updated CI workflow configurations</li>
+<li>Fixed JSON parsing errors in CI pipeline</li>
+<li>Updated cargo-dist runner list</li>
+<li>Updated Cargo.lock dependencies</li>
+</ul>
+]]></content:encoded></item><item><title>v0.1.3</title><link>http://127.0.0.1:7979/pcli2/changelog/v0.1.3</link><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><guid>http://127.0.0.1:7979/pcli2/changelog/v0.1.3</guid><content:encoded><![CDATA[<h3>Added</h3>
+<ul>
+<li>Asset metadata get command to CLI structure</li>
+<li>Workflow to automatically update 'latest' tag on release</li>
+<li>Comprehensive metadata documentation</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Improved banner gradient colors and spacing</li>
+<li>Added visible aliases for metadata commands</li>
+<li>Reordered asset subcommands alphabetically in CLI help output</li>
+</ul>
+]]></content:encoded></item><item><title>v0.1.2</title><link>http://127.0.0.1:7979/pcli2/changelog/v0.1.2</link><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><guid>http://127.0.0.1:7979/pcli2/changelog/v0.1.2</guid><content:encoded><![CDATA[<h3>Changed</h3>
+<ul>
+<li>Updated documentation structure for GitHub Actions deployment</li>
+<li>Fixed broken documentation links by ensuring proper mdBook file structure</li>
+<li>Improved README.md structure and user flow</li>
+<li>Updated oranda.json with Apache-2.0 license identifier</li>
+</ul>
+]]></content:encoded></item><item><title>0.1.1 - 2025-10-13</title><link>http://127.0.0.1:7979/pcli2/changelog/v0.1.1</link><category domain="https://github.com/jchultarsky101/pcli2">PCLI2 Changelog</category><guid>http://127.0.0.1:7979/pcli2/changelog/v0.1.1</guid><content:encoded><![CDATA[<h3>Added</h3>
 <ul>
 <li>Cross-platform directory structure support using standard platform directories</li>
 <li>Automatic directory creation for configuration, cache, and data files</li>

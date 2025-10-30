@@ -1545,6 +1545,9 @@ pub struct AssetDependenciesResponse {
     /// Pagination data for the response
     #[serde(rename = "pageData")]
     pub page_data: PageData,
+    /// The path of the original asset that was queried (for tree formatting)
+    #[serde(skip_serializing, skip_deserializing)]
+    pub original_asset_path: String,
 }
 
 impl CsvRecordProducer for AssetDependenciesResponse {
@@ -1613,15 +1616,18 @@ impl OutputFormatter for AssetDependenciesResponse {
                     .map_err(|e| FormattingError::FormatFailure { cause: Box::new(std::io::Error::other(e)) })
             }
             OutputFormat::Tree => {
-                // Create a tree representation of the dependencies
+                // Create a tree representation of the dependencies with original asset as root
                 let mut output = String::new();
                 
-                output.push_str("Asset Dependencies:\n");
+                // Extract the original asset name from the path (last part after the last slash)
+                let original_asset_name = self.original_asset_path.split('/').next_back().unwrap_or(&self.original_asset_path);
+                
+                output.push_str(&format!("{}\n", original_asset_name));
                 
                 for dep in &self.dependencies {
                     let asset_name = dep.asset.path.split('/').next_back().unwrap_or(&dep.asset.path);
-                    output.push_str(&format!("├── {} ({} occurrences, has_dependencies: {})\n", 
-                        asset_name, dep.occurrences, dep.has_dependencies));
+                    output.push_str(&format!("├── {} ({} occurrences)\n", 
+                        asset_name, dep.occurrences));
                 }
                 
                 Ok(output)

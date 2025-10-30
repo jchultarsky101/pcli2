@@ -2362,7 +2362,10 @@ pub async fn execute_command(
                             if let Some(path) = asset_path_param {
                                 trace!("Getting dependencies for asset by path: {}", path);
                                 match client.get_asset_dependencies_by_path(&tenant, path).await {
-                                    Ok(dependencies_response) => {
+                                    Ok(mut dependencies_response) => {
+                                        // Set the original asset path for tree formatting
+                                        dependencies_response.original_asset_path = path.to_string();
+                                        
                                         // Even if the API call succeeded, persist the potentially updated access token back to keyring
                                         if let Some(updated_token) = client.get_access_token() {
                                             if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {

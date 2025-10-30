@@ -2312,7 +2312,106 @@ pub async fn execute_command(
                         }
                     }
                 }
-                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                Some(("dependencies", sub_matches)) => {
+                    trace!("Executing asset dependencies command");
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    // Must provide either asset UUID or path
+                    if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token and get asset dependencies via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            
+                            // Resolve asset path to get dependencies
+                            if let Some(path) = asset_path_param {
+                                trace!("Getting dependencies for asset by path: {}", path);
+                                match client.get_asset_dependencies_by_path(&tenant, path).await {
+                                    Ok(dependencies_response) => {
+                                        // Even if the API call succeeded, persist the potentially updated access token back to keyring
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        
+                                        match dependencies_response.format(format) {
+                                            Ok(output) => {
+                                                println!("{}", output);
+                                                Ok(())
+                                            }
+                                            Err(e) => Err(CliError::FormattingError(e)),
+                                        }
+                                    }
+                                    Err(e) => {
+                                        // Even if the API call failed, persist the potentially updated access token back to keyring
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        
+                                        error!("Error getting asset dependencies for path '{}': {}", path, e);
+                                        eprintln!("Error getting asset dependencies for path '{}': {}", path, e);
+                                        Ok(())
+                                    }
+                                }
+                            } else if let Some(uuid) = asset_uuid_param {
+                                trace!("Getting dependencies for asset by UUID: {}", uuid);
+                                // For UUID-based lookup, we would need a different API endpoint
+                                // For now, we'll implement only path-based dependency lookup
+                                error!("UUID-based dependency lookup not yet implemented");
+                                eprintln!("Error: UUID-based dependency lookup not yet implemented. Please use --path instead.");
+                                Ok(())
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                error!("Either asset UUID or path must be provided");
+                                eprintln!("Error: Either asset UUID or path must be provided");
+                                Ok(())
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                }                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
             }

@@ -326,7 +326,7 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .help("Path to the file to upload")
                                 .value_parser(clap::value_parser!(PathBuf)),
                         )
-                        .arg(path_parameter.clone())
+                        .arg(path_parameter.clone().required(true))
                         .arg(format_parameter.clone().value_parser(["json", "csv"])),
                 )
                 .subcommand(

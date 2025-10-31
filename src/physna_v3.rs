@@ -1639,6 +1639,71 @@ impl PhysnaApiClient {
         
         Ok(response)
     }
+    
+    /// Download asset file from the Physna API
+    /// 
+    /// This method downloads the raw file content of the specified asset from the Physna API.
+    /// The file content is returned as a vector of bytes that can be saved to disk.
+    /// 
+    /// The API endpoint follows the pattern: GET /tenants/{tenantId}/assets/{assetId}/file
+    /// 
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_id` - The UUID of the asset to download
+    /// 
+    /// # Returns
+    /// * `Ok(Vec<u8>)` - Successfully downloaded file content as bytes
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn download_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<Vec<u8>, ApiError> {
+        debug!("Downloading asset file for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
+        
+        let url = format!("{}/tenants/{}/assets/{}/file", self.base_url, tenant_id, asset_id);
+        debug!("Download asset file request URL: {}", url);
+        
+        // Execute GET request for file content
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(&self.access_token.as_ref().ok_or_else(|| ApiError::AuthError("No access token available for download".to_string()))?)
+            .send()
+            .await
+            .map_err(|e| {
+                debug!("Failed to send download request: {}", e);
+                ApiError::from(e)
+            })?;
+        
+        // Check status code
+        if !response.status().is_success() {
+            debug!("Download request failed with status: {}", response.status());
+            // Create an appropriate error based on the response status
+            match response.status() {
+                reqwest::StatusCode::UNAUTHORIZED => {
+                    return Err(ApiError::AuthError("Unauthorized access - check your access token".to_string()));
+                }
+                reqwest::StatusCode::FORBIDDEN => {
+                    return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
+                }
+                reqwest::StatusCode::NOT_FOUND => {
+                    return Err(ApiError::AuthError("Asset not found".to_string()));
+                }
+                _ => {
+                    return Err(ApiError::HttpError(response.error_for_status().unwrap_err()));
+                }
+            }
+        }
+        
+        // Get the file content as bytes
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| {
+                debug!("Failed to read response bytes: {}", e);
+                ApiError::HttpError(e)
+            })?;
+        
+        debug!("Successfully downloaded {} bytes for asset_id: {}", bytes.len(), asset_id);
+        Ok(bytes.to_vec())
+    }
 }
 
 impl Default for PhysnaApiClient {

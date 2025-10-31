@@ -2535,6 +2535,170 @@ pub async fn execute_command(
                             Ok(())
                         }
                     }
+                }
+                Some(("download", sub_matches)) => {
+                    trace!("Executing asset download command");
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    let output_path_param = sub_matches.get_one::<std::path::PathBuf>("output");
+                    
+                    // Must provide either asset UUID or path
+                    if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    }
+                    
+                    // Try to get access token and download asset via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            
+                            // Resolve asset ID from either UUID parameter or path
+                            let asset_id = if let Some(uuid) = asset_uuid_param {
+                                uuid.clone()
+                            } else if let Some(path) = asset_path_param {
+                                // Resolve asset by path to get UUID
+                                trace!("Resolving asset by path: {}", path);
+                                debug!("About to call resolve_asset_path_to_uuid for path: {}", path);
+                                match pcli2::resolution_utils::resolve_asset_path_to_uuid(&mut client, &tenant, path).await {
+                                    Ok(uuid) => {
+                                        // Path resolution succeeded, but token might have been refreshed during the process
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        uuid
+                                    },
+                                    Err(e) => {
+                                        // Even if path resolution failed, persist the potentially updated access token back to keyring
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        
+                                        // Convert ApiError to CliError
+                                        let cli_error = CliError::ConfigurationError(
+                                            pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                cause: Box::new(e)
+                                            }
+                                        );
+                                        
+                                        eprintln!("Error resolving asset path '{}': {}", path, cli_error);
+                                        return Ok(());
+                                    }
+                                }
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                            };
+                            
+                            // Perform the asset download
+                            match client.download_asset(&tenant, &asset_id).await {
+                                Ok(asset_file_bytes) => {
+                                    // Determine output file path
+                                    let output_path = if let Some(output_path) = output_path_param {
+                                        output_path.clone()
+                                    } else {
+                                        // Try to get asset details to get the original filename
+                                        match client.get_asset(&tenant, &asset_id).await {
+                                            Ok(asset_response) => {
+                                                // Extract filename from asset path for default output
+                                                if let Some(last_slash) = asset_response.path.rfind('/') {
+                                                    std::path::PathBuf::from(&asset_response.path[last_slash + 1..])
+                                                } else {
+                                                    std::path::PathBuf::from(&asset_response.path)
+                                                }
+                                            }
+                                            Err(_) => {
+                                                // If we can't get asset details, use a generic name with UUID
+                                                std::path::PathBuf::from(format!("asset_{}.bin", asset_id))
+                                            }
+                                        }
+                                    };
+                                    
+                                    // Write the downloaded bytes to the output file
+                                    match std::fs::write(&output_path, asset_file_bytes) {
+                                        Ok(()) => {
+                                            println!("Asset downloaded successfully to: {}", output_path.display());
+                                            Ok(())
+                                        }
+                                        Err(e) => {
+                                            error!("Error writing downloaded asset to file: {}", e);
+                                            Err(CliError::ConfigurationError(
+                                                pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                    cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                }
+                                            ))
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // Even if the operation failed, persist the potentially updated access token back to keyring
+                                    if let Some(updated_token) = client.get_access_token() {
+                                        if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                            warn!("Failed to persist updated access token: {}", token_err);
+                                        }
+                                    }
+                                    
+                                    error!("Error downloading asset: {}", e);
+                                    match e {
+                                        pcli2::physna_v3::ApiError::RetryFailed(msg) => {
+                                            eprintln!("Error downloading asset: {}", msg);
+                                        }
+                                        pcli2::physna_v3::ApiError::HttpError(http_err) => {
+                                            if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                                eprintln!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
+                                            } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
+                                                eprintln!("Error: Unauthorized access. Please check your authentication credentials.");
+                                            } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+                                                eprintln!("Error: Access forbidden. You don't have permission to download this asset.");
+                                            } else {
+                                                eprintln!("Error downloading asset: HTTP error {}", http_err);
+                                            }
+                                        }
+                                        _ => {
+                                            eprintln!("Error downloading asset: {}", e);
+                                        }
+                                    }
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
                 }                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),

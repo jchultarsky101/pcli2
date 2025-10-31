@@ -212,4 +212,26 @@ pub fn asset_command() -> Command {
                         .required(true)
                 ),
         )
+        .subcommand(
+            Command::new("download")
+                .about("Download asset file")
+                .arg(tenant_parameter())
+                .arg(uuid_parameter())
+                .arg(path_parameter())
+                .arg(
+                    Arg::new("output")
+                        .short('o')
+                        .long("output")
+                        .num_args(1)
+                        .required(false)
+                        .help("Output file path (default: asset filename in current directory)")
+                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                )
+                .group(
+                    ArgGroup::new("asset_identifier")
+                        .args(["uuid", "path"])
+                        .multiple(false)
+                        .required(true)
+                ),
+        )
 }

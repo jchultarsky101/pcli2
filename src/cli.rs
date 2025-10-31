@@ -2859,8 +2859,7 @@ pub async fn execute_command(
                                                     }
                                                 }
                                             } else {
-                                                error!("Asset has no UUID: {}", asset.path());
-                                                eprintln!("Warning: Asset '{}' has no UUID and will be skipped", asset.path());
+                                                warn!("Asset '{}' has no UUID and will be skipped", asset.path());
                                             }
                                         }
                                         

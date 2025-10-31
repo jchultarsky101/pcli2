@@ -85,6 +85,7 @@ pub fn asset_command() -> Command {
                 .arg(path_parameter())
                 .arg(
                     Arg::new("threshold")
+                        .short('s')
                         .long("threshold")
                         .num_args(1)
                         .required(false)
@@ -102,17 +103,33 @@ pub fn asset_command() -> Command {
         )
         .subcommand(
             Command::new("geometric-match-folder")
-                .about("Find geometrically similar assets for all assets in a folder")
+                .about("Find geometrically similar assets for all assets in one or more folders")
                 .arg(tenant_parameter())
-                .arg(path_parameter().required(true))
+                .arg(
+                    Arg::new("path")
+                        .short('p')
+                        .long("path")
+                        .num_args(1..) // Accept one or more values
+                        .required(true)
+                        .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
+                        .action(clap::ArgAction::Append), // Allow multiple --path flags
+                )
                 .arg(
                     Arg::new("threshold")
+                        .short('s')
                         .long("threshold")
                         .num_args(1)
                         .required(false)
                         .default_value("80.0")
                         .help("Similarity threshold (0.00 to 100.00)")
                         .value_parser(clap::value_parser!(f64)),
+                )
+                .arg(
+                    Arg::new("exclusive")
+                        .long("exclusive")
+                        .action(ArgAction::SetTrue)
+                        .required(false)
+                        .help("Only show matches where both assets belong to the specified paths"),
                 )
                 .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(

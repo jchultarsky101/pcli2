@@ -158,6 +158,7 @@ pub fn metadata_command() -> Command {
                 )
                 .arg(
                     Arg::new("threshold")
+                        .short('s')
                         .long("threshold")
                         .num_args(1)
                         .required(false)

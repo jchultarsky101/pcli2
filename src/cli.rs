@@ -2753,6 +2753,12 @@ pub async fn execute_command(
                                         let assets = asset_list_response.get_all_assets();
                                         trace!("Found {} assets in folder: {}", assets.len(), folder_path);
                                         
+                                        // Debug print all assets
+                                        debug!("Assets in folder '{}':", folder_path);
+                                        for (i, asset) in assets.iter().enumerate() {
+                                            debug!("  {}: {} (UUID: {:?})", i+1, asset.path(), asset.uuid());
+                                        }
+                                        
                                         if assets.is_empty() {
                                             println!("No assets found in folder: {}", folder_path);
                                             continue;
@@ -2801,6 +2807,9 @@ pub async fn execute_command(
                                             .compression_method(zip::CompressionMethod::Deflated);
                                         
                                         // Download each asset in the folder and add to ZIP
+                                        let mut successful_downloads = 0;
+                                        let total_assets = assets.len();
+                                        
                                         for asset in assets {
                                             if let Some(asset_uuid) = asset.uuid() {
                                                 trace!("Downloading asset: {} (UUID: {})", asset.path(), asset_uuid);
@@ -2834,6 +2843,7 @@ pub async fn execute_command(
                                                             })?;
                                                         
                                                         trace!("Added asset to ZIP: {} ({} bytes)", asset_filename, asset_bytes.len());
+                                                        successful_downloads += 1;
                                                         
                                                         // Persist any potentially updated access token back to keyring
                                                         if let Some(updated_token) = client.get_access_token() {
@@ -2850,6 +2860,7 @@ pub async fn execute_command(
                                                 }
                                             } else {
                                                 error!("Asset has no UUID: {}", asset.path());
+                                                eprintln!("Warning: Asset '{}' has no UUID and will be skipped", asset.path());
                                             }
                                         }
                                         
@@ -2863,7 +2874,8 @@ pub async fn execute_command(
                                                 )
                                             })?;
                                         
-                                        println!("Folder '{}' downloaded successfully to: {}", folder_path, zip_path.display());
+                                        println!("Folder '{}' processed: {}/{} assets downloaded successfully to: {}", 
+                                            folder_path, successful_downloads, total_assets, zip_path.display());
                                     }
                                     Err(e) => {
                                         error!("Error getting assets for folder '{}': {}", folder_path, e);

@@ -234,4 +234,27 @@ pub fn asset_command() -> Command {
                         .required(true)
                 ),
         )
+        .subcommand(
+            Command::new("download-folder")
+                .about("Download all assets in a folder as a ZIP archive")
+                .arg(tenant_parameter())
+                .arg(
+                    Arg::new("path")
+                        .short('p')
+                        .long("path")
+                        .num_args(1..) // Accept one or more values
+                        .required(true)
+                        .help("Folder path(s) to download (can be provided multiple times or as comma-separated values)")
+                        .action(clap::ArgAction::Append), // Allow multiple --path flags
+                )
+                .arg(
+                    Arg::new("output")
+                        .short('o')
+                        .long("output")
+                        .num_args(1)
+                        .required(false)
+                        .help("Output directory path (default: current directory)")
+                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                )
+        )
 }

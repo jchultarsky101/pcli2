@@ -29,6 +29,8 @@ use pcli2::asset_cache::AssetCache;
 use pcli2::folder_hierarchy::FolderHierarchy;
 use pcli2::keyring::Keyring;
 use pcli2::physna_v3::PhysnaApiClient;
+use std::io::Write;
+use zip;
 
 
 use pcli2::format::{OutputFormat, OutputFormatter};
@@ -2689,6 +2691,180 @@ pub async fn execute_command(
                                     Ok(())
                                 }
                             }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                }
+                Some(("download-folder", sub_matches)) => {
+                    trace!("Executing asset download-folder command");
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    // Get the folder paths - can be multiple
+                    let folder_paths: Vec<String> = sub_matches.get_many::<String>("path")
+                        .ok_or(CliError::MissingRequiredArgument("folder path must be provided".to_string()))?
+                        .map(|s| s.to_string())
+                        .collect();
+                    trace!("Processing folders: {:?}", folder_paths);
+                    
+                    let output_dir_param = sub_matches.get_one::<std::path::PathBuf>("output");
+                    
+                    // Try to get access token and download folder assets via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            
+                            // Process each folder path
+                            for folder_path in folder_paths {
+                                trace!("Processing folder for download: {}", folder_path);
+                                
+                                // Get all assets in the specified folder
+                                match AssetCache::get_assets_for_folder(&mut client, &tenant, &folder_path, false).await {
+                                    Ok(asset_list_response) => {
+                                        let assets = asset_list_response.get_all_assets();
+                                        trace!("Found {} assets in folder: {}", assets.len(), folder_path);
+                                        
+                                        if assets.is_empty() {
+                                            println!("No assets found in folder: {}", folder_path);
+                                            continue;
+                                        }
+                                        
+                                        // Determine output directory
+                                        let output_dir = if let Some(output_dir) = output_dir_param {
+                                            output_dir.clone()
+                                        } else {
+                                            std::path::PathBuf::from(".")
+                                        };
+                                        
+                                        // Create the output directory if it doesn't exist
+                                        if !output_dir.exists() {
+                                            std::fs::create_dir_all(&output_dir).map_err(|e| {
+                                                CliError::ConfigurationError(
+                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                    }
+                                                )
+                                            })?;
+                                        }
+                                        
+                                        // Extract the folder name for the ZIP file name
+                                        let folder_name = folder_path
+                                            .split('/')
+                                            .last()
+                                            .unwrap_or(&folder_path)
+                                            .trim_start_matches('/')
+                                            .trim_end_matches('/');
+                                        let zip_filename = format!("{}.zip", folder_name);
+                                        let zip_path = output_dir.join(&zip_filename);
+                                        
+                                        // Create a ZIP file for this folder
+                                        let file = std::fs::File::create(&zip_path)
+                                            .map_err(|e| {
+                                                CliError::ConfigurationError(
+                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                    }
+                                                )
+                                            })?;
+                                        
+                                        let mut zip = zip::ZipWriter::new(file);
+                                        let options: zip::write::FileOptions<()> = zip::write::FileOptions::default()
+                                            .compression_method(zip::CompressionMethod::Deflated);
+                                        
+                                        // Download each asset in the folder and add to ZIP
+                                        for asset in assets {
+                                            if let Some(asset_uuid) = asset.uuid() {
+                                                trace!("Downloading asset: {} (UUID: {})", asset.path(), asset_uuid);
+                                                
+                                                match client.download_asset(&tenant, asset_uuid).await {
+                                                    Ok(asset_bytes) => {
+                                                        // Extract just the filename from the asset path
+                                                        let asset_filename = std::path::Path::new(&asset.path())
+                                                            .file_name()
+                                                            .unwrap_or_default()
+                                                            .to_string_lossy()
+                                                            .to_string();
+                                                        
+                                                        // Add the asset file to the ZIP archive
+                                                        zip.start_file(&asset_filename, options)
+                                                            .map_err(|e| {
+                                                                CliError::ConfigurationError(
+                                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                                    }
+                                                                )
+                                                            })?;
+                                                        
+                                                        zip.write_all(&asset_bytes)
+                                                            .map_err(|e| {
+                                                                CliError::ConfigurationError(
+                                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                                    }
+                                                                )
+                                                            })?;
+                                                        
+                                                        trace!("Added asset to ZIP: {} ({} bytes)", asset_filename, asset_bytes.len());
+                                                    }
+                                                    Err(e) => {
+                                                        error!("Error downloading asset '{}': {}", asset.path(), e);
+                                                        eprintln!("Error downloading asset '{}': {}", asset.path(), e);
+                                                    }
+                                                }
+                                            } else {
+                                                error!("Asset has no UUID: {}", asset.path());
+                                            }
+                                        }
+                                        
+                                        // Finish writing the ZIP file
+                                        zip.finish()
+                                            .map_err(|e| {
+                                                CliError::ConfigurationError(
+                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                    }
+                                                )
+                                            })?;
+                                        
+                                        println!("Folder '{}' downloaded successfully to: {}", folder_path, zip_path.display());
+                                    }
+                                    Err(e) => {
+                                        error!("Error getting assets for folder '{}': {}", folder_path, e);
+                                        eprintln!("Error getting assets for folder '{}': {}", folder_path, e);
+                                    }
+                                }
+                            }
+                            
+                            Ok(())
                         }
                         Ok(None) => {
                             error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));

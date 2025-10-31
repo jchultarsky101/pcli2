@@ -1048,6 +1048,18 @@ pub async fn execute_command(
                     let show_progress = sub_matches.get_flag("progress");
                     trace!("Progress bar enabled: {}", show_progress);
 
+                    // Get exclusive parameter
+                    let exclusive_param = sub_matches.get_one::<String>("exclusive");
+                    let exclusive_paths: Vec<String> = if let Some(exclusive_str) = exclusive_param {
+                        exclusive_str.split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    trace!("Exclusive paths: {:?}", exclusive_paths);
+
                     let format = extract_format_param_with_default(sub_matches, PARAMETER_FORMAT)?;
 
                     trace!("Retrieving access token for tenant: {}", tenant);
@@ -1095,11 +1107,27 @@ pub async fn execute_command(
                                         None
                                     };
 
+                                    // Filter assets to exclude those that match exclusive paths
+                                    let original_asset_count = assets.len();
+                                    let filtered_assets = if !exclusive_paths.is_empty() {
+                                        assets.into_iter().filter(|asset| {
+                                            let asset_path = asset.path();
+                                            // Check if the asset path matches any of the exclusive paths
+                                            !exclusive_paths.iter().any(|exclusive_path| {
+                                                asset_path.starts_with(exclusive_path)
+                                            })
+                                        }).collect::<Vec<_>>()
+                                    } else {
+                                        assets
+                                    };
+                                    let filtered_asset_count = filtered_assets.len();
+                                    trace!("Processing {} assets after filtering ({} excluded)", filtered_asset_count, original_asset_count - filtered_asset_count);
+
                                     // Create a stream of futures for processing assets concurrently
                                     let base_url = "https://app-api.physna.com/v3".to_string(); // Use default base URL
                                     let tenant_id = tenant.clone();
                                     
-                                    let results: Result<Vec<_>, _> = futures::stream::iter(assets)
+                                    let results: Result<Vec<_>, _> = futures::stream::iter(filtered_assets)
                                         .map(|asset| {
                                             let base_url = base_url.clone();
                                             let tenant_id = tenant_id.clone();

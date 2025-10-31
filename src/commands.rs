@@ -429,6 +429,14 @@ pub fn create_cli_commands() -> ArgMatches {
                                 .required(false)
                                 .help("Display progress bar during processing"),
                         )
+                        .arg(
+                            Arg::new("exclusive")
+                                .long("exclusive")
+                                .num_args(1)
+                                .required(false)
+                                .help("Comma-separated list of path prefixes to exclude from matching (e.g., '/Root/Exclude1,/Root/Exclude2')")
+                                .value_parser(clap::value_parser!(String)),
+                        )
                 )
                 .subcommand(
                     Command::new(COMMAND_GET)

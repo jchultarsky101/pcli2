@@ -1678,13 +1678,13 @@ impl PhysnaApiClient {
             // Create an appropriate error based on the response status
             match response.status() {
                 reqwest::StatusCode::UNAUTHORIZED => {
-                    return Err(ApiError::AuthError("Unauthorized access - check your access token".to_string()));
+                    return Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid".to_string()));
                 }
                 reqwest::StatusCode::FORBIDDEN => {
                     return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
                 }
                 reqwest::StatusCode::NOT_FOUND => {
-                    return Err(ApiError::AuthError("Asset not found".to_string()));
+                    return Err(ApiError::AuthError("Asset not found - the asset may have been deleted or the path is incorrect".to_string()));
                 }
                 _ => {
                     return Err(ApiError::HttpError(response.error_for_status().unwrap_err()));

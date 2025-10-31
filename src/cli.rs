@@ -2834,10 +2834,18 @@ pub async fn execute_command(
                                                             })?;
                                                         
                                                         trace!("Added asset to ZIP: {} ({} bytes)", asset_filename, asset_bytes.len());
+                                                        
+                                                        // Persist any potentially updated access token back to keyring
+                                                        if let Some(updated_token) = client.get_access_token() {
+                                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                                warn!("Failed to persist updated access token: {}", token_err);
+                                                            }
+                                                        }
                                                     }
                                                     Err(e) => {
                                                         error!("Error downloading asset '{}': {}", asset.path(), e);
-                                                        eprintln!("Error downloading asset '{}': {}", asset.path(), e);
+                                                        eprintln!("Warning: Failed to download asset '{}': {}", asset.path(), e);
+                                                        // Continue with other assets rather than failing completely
                                                     }
                                                 }
                                             } else {

@@ -581,6 +581,9 @@ pub struct FolderResponse {
 pub struct AssetResponse {
     /// The ID of the asset
     pub id: String,
+    /// The UUID of the asset (when available in API response)
+    #[serde(default)]
+    pub uuid: String,
     /// The ID of the tenant that owns the asset
     #[serde(rename = "tenantId")]
     pub tenant_id: String,
@@ -612,6 +615,20 @@ pub struct AssetResponse {
     /// The ID of the owner, if any
     #[serde(rename = "ownerId", skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
+}
+
+impl AssetResponse {
+    /// Get the UUID to use for API operations
+    /// 
+    /// This method returns the correct UUID to use for API operations, preferring
+    /// the `uuid` field when available (non-empty), falling back to the `id` field otherwise.
+    pub fn api_uuid(&self) -> &str {
+        if !self.uuid.is_empty() {
+            &self.uuid
+        } else {
+            &self.id
+        }
+    }
 }
 
 /// Represents a single asset response from the Physna V3 API
@@ -834,7 +851,7 @@ impl Asset {
         
         Asset::new(
             Some(asset_response.id.chars().take(8).fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))),
-            Some(asset_response.id.clone()),
+            Some(asset_response.api_uuid().to_string()),  // Use api_uuid() method to get correct UUID
             name,
             path,
             None, // file_size not in current API response

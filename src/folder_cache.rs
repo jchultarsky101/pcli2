@@ -10,6 +10,7 @@ use crate::physna_v3::PhysnaApiClient;
 use std::fs;
 use std::path::PathBuf;
 use serde_json;
+use uuid::Uuid;
 use std::io::Write;
 
 /// Manages caching of folder hierarchies for Physna tenants
@@ -36,8 +37,9 @@ impl FolderCache {
     /// 
     /// # Returns
     /// The full path to the tenant's cache file
-    pub fn get_cache_file_path(tenant_id: &str) -> PathBuf {
-        BaseCache::get_cache_file_path(&Self::get_cache_dir(), tenant_id, "json")
+    pub fn get_cache_file_path<S: AsRef<str>>(key: S) -> PathBuf {
+        let key: &str = key.as_ref();
+        BaseCache::get_cache_file_path(&Self::get_cache_dir(), key, "json")
     }
     
     /// Load cached folder hierarchy for a tenant
@@ -48,8 +50,8 @@ impl FolderCache {
     /// # Returns
     /// * `Some(FolderHierarchy)` - If a valid cache file exists for the tenant and hasn't expired
     /// * `None` - If no cache file exists, is expired, or if deserialization fails
-    pub fn load(tenant_id: &str) -> Option<FolderHierarchy> {
-        let cache_file = Self::get_cache_file_path(tenant_id);
+    pub fn load(tenant_uuid: &Uuid) -> Option<FolderHierarchy> {
+        let cache_file = Self::get_cache_file_path(tenant_uuid.to_string());
         tracing::debug!("Attempting to load folder hierarchy from cache file: {:?}", cache_file);
         
         if cache_file.exists() {
@@ -98,7 +100,7 @@ impl FolderCache {
     /// # Returns
     /// * `Ok(())` - If the folder hierarchy was successfully cached
     /// * `Err` - If there was an error during serialization or file operations
-    pub fn save(tenant_id: &str, hierarchy: &FolderHierarchy) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(tenant_uuid: &Uuid, hierarchy: &FolderHierarchy) -> Result<(), Box<dyn std::error::Error>> {
         let serialized = serde_json::to_vec(hierarchy)?;
         tracing::debug!("Serialized folder hierarchy to {} bytes", serialized.len());
         
@@ -106,7 +108,7 @@ impl FolderCache {
         let cache_dir = Self::get_cache_dir();
         fs::create_dir_all(&cache_dir)?;
         
-        let cache_file = Self::get_cache_file_path(tenant_id);
+        let cache_file = Self::get_cache_file_path(tenant_uuid.to_string());
         tracing::debug!("Writing cache file to: {:?}", cache_file);
         
         // Use buffered writer to ensure all data is written properly
@@ -134,18 +136,18 @@ impl FolderCache {
     /// * `Err` - If there was an error during cache operations or API calls
     pub async fn get_or_fetch(
         client: &mut PhysnaApiClient,
-        tenant_id: &str,
+        tenant_uuid: &Uuid,
     ) -> Result<FolderHierarchy, Box<dyn std::error::Error>> {
         // Try to load from cache first
-        if let Some(cached) = Self::load(tenant_id) {
+        if let Some(cached) = Self::load(tenant_uuid) {
             return Ok(cached);
         }
         
         // If not in cache, fetch from API
-        let hierarchy = FolderHierarchy::build_from_api(client, tenant_id).await?;
+        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid).await?;
         
         // Save to cache
-        if let Err(e) = Self::save(tenant_id, &hierarchy) {
+        if let Err(e) = Self::save(tenant_uuid, &hierarchy) {
             tracing::warn!("Failed to cache folder hierarchy: {}", e);
         }
         
@@ -166,12 +168,12 @@ impl FolderCache {
     /// * `Err` - If there was an error during the API call or cache operations
     pub async fn refresh(
         client: &mut PhysnaApiClient,
-        tenant_id: &str,
+        tenant_uuid: &Uuid,
     ) -> Result<FolderHierarchy, Box<dyn std::error::Error>> {
-        let hierarchy = FolderHierarchy::build_from_api(client, tenant_id).await?;
+        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid).await?;
         
         // Save to cache
-        if let Err(e) = Self::save(tenant_id, &hierarchy) {
+        if let Err(e) = Self::save(tenant_uuid, &hierarchy) {
             tracing::warn!("Failed to cache folder hierarchy: {}", e);
         }
         

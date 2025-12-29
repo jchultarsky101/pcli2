@@ -1,17 +1,17 @@
-use crate::format::{
-    CsvRecordProducer, FormattingError, OutputFormat, OutputFormatter,
+use crate::{
+    format::{Formattable, FormattingError, OutputFormat},
+    model::Tenant,
 };
-use csv::Writer;
-use dirs::{cache_dir, config_dir};
+use dirs::config_dir;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use serde_yaml;
 use std::{
     fs::{self, File},
-    io::{BufWriter, Write},
+    io::Write,
     path::PathBuf,
 };
-use tracing::{debug, trace};
+use tracing::debug;
+use uuid::Uuid;
 
 pub const DEFAULT_APPLICATION_ID: &str = "pcli2";
 pub const DEFAULT_CONFIGURATION_FILE_NAME: &str = "config.yml";
@@ -36,99 +36,22 @@ pub enum ConfigurationError {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Configuration {
     #[serde(skip_serializing_if = "Option::is_none")]
-    active_tenant_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    active_tenant_name: Option<String>,
-    cache_path: Option<PathBuf>,
+    active_tenant_uuid: Option<Uuid>,
 }
 
 impl Default for Configuration {
     fn default() -> Self {
-        // Use proper cache directory from dirs crate
-        let cache_directory = cache_dir();
-        let cache_path = match cache_directory {
-            Some(mut cache_dir) => {
-                // Use standard cache directory structure: pcli2/cache
-                cache_dir.push("pcli2");
-                cache_dir.push("cache");
-                Some(cache_dir.to_owned())
-            }
-            None => {
-                trace!("Cache directory is None!");
-                None
-            }
-        };
-
         Self {
-            active_tenant_id: None,
-            active_tenant_name: None,
-            cache_path,
-        }
-    }
-}
-
-impl CsvRecordProducer for Configuration {
-    fn csv_header() -> Vec<String> {
-        vec![
-            "ACTIVE_TENANT_ID".to_string(),
-            "ACTIVE_TENANT_NAME".to_string(),
-        ]
-    }
-
-    fn as_csv_records(&self) -> Vec<Vec<String>> {
-        let records: Vec<Vec<String>> = vec![
-            vec![
-                self.active_tenant_id.clone().unwrap_or_default(),
-                self.active_tenant_name.clone().unwrap_or_default(),
-            ]
-        ];
-
-        records
-    }
-}
-
-impl OutputFormatter for Configuration {
-    type Item = Configuration;
-
-    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
-        match format {
-            OutputFormat::Json => {
-                let json = serde_json::to_string_pretty(self);
-                match json {
-                    Ok(json) => Ok(json),
-                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-                }
-            }
-            OutputFormat::Csv => {
-                let buf = BufWriter::new(Vec::new());
-                let mut wtr = Writer::from_writer(buf);
-                wtr.write_record(Self::csv_header())
-                    .unwrap();
-                for record in self.as_csv_records() {
-                    wtr.write_record(&record).unwrap();
-                }
-                match wtr.flush() {
-                    Ok(_) => {
-                        let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
-                        let csv = String::from_utf8(bytes).unwrap();
-                        Ok(csv.clone())
-                    }
-                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-                }
-            }
-            OutputFormat::Tree => {
-                // For configuration, tree format is the same as JSON
-                let json = serde_json::to_string_pretty(self);
-                match json {
-                    Ok(json) => Ok(json),
-                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-                }
-            }
+            active_tenant_uuid: None,
         }
     }
 }
 
 impl Configuration {
+    pub fn active_tenant_uuid(&self) -> Option<&Uuid> {
+        self.active_tenant_uuid.as_ref()
+    }
+
     pub fn get_default_configuration_file_path() -> Result<PathBuf, ConfigurationError> {
         // Check for PCLI2_CONFIG_DIR environment variable first
         if let Ok(config_dir_str) = std::env::var("PCLI2_CONFIG_DIR") {
@@ -136,7 +59,7 @@ impl Configuration {
             config_path.push(DEFAULT_CONFIGURATION_FILE_NAME);
             return Ok(config_path);
         }
-        
+
         let configuration_directory = config_dir();
         match configuration_directory {
             Some(configuration_directory) => {
@@ -175,7 +98,7 @@ impl Configuration {
                 .into_string()
                 .unwrap()
         );
-        
+
         // Try to load existing configuration
         match Configuration::load_from_file(default_file_path.clone()) {
             Ok(config) => Ok(config),
@@ -185,15 +108,17 @@ impl Configuration {
                     ConfigurationError::FailedToLoadData { cause } => {
                         if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
                             if io_err.kind() == std::io::ErrorKind::NotFound {
-                                debug!("Configuration file not found, creating default configuration");
+                                debug!(
+                                    "Configuration file not found, creating default configuration"
+                                );
                                 let default_config = Configuration::default();
-                                
+
                                 // Try to save the default configuration
                                 match default_config.save(&default_file_path) {
                                     Ok(()) => {
                                         debug!("Default configuration created successfully");
                                         Ok(default_config)
-                                    },
+                                    }
                                     Err(save_error) => {
                                         // If we can't save, return the original error with more context
                                         Err(ConfigurationError::FailedToLoadData {
@@ -210,8 +135,8 @@ impl Configuration {
                         } else {
                             Err(e)
                         }
-                    },
-                    _ => Err(e)
+                    }
+                    _ => Err(e),
                 }
             }
         }
@@ -269,31 +194,26 @@ impl Configuration {
         self.save(&Self::get_default_configuration_file_path()?)
     }
 
-    pub fn get_cache_path(&self) -> Option<PathBuf> {
-        self.cache_path.to_owned()
+    // Context management methods
+    pub fn get_active_tenant_uuid(&self) -> Option<Uuid> {
+        self.active_tenant_uuid.clone()
     }
 
-    pub fn set_cache_path(&mut self, path: Option<PathBuf>) {
-        self.cache_path = path;
+    pub fn set_active_tenant(&mut self, tenant: &Tenant) {
+        self.active_tenant_uuid = Some(tenant.uuid);
     }
-    
-    // Context management methods
-    
-    pub fn get_active_tenant_id(&self) -> Option<String> {
-        self.active_tenant_id.clone()
-    }
-    
-    pub fn get_active_tenant_name(&self) -> Option<String> {
-        self.active_tenant_name.clone()
-    }
-    
-    pub fn set_active_tenant(&mut self, tenant_id: String, tenant_name: String) {
-        self.active_tenant_id = Some(tenant_id);
-        self.active_tenant_name = Some(tenant_name);
-    }
-    
+
     pub fn clear_active_tenant(&mut self) {
-        self.active_tenant_id = None;
-        self.active_tenant_name = None;
+        self.active_tenant_uuid = None;
+    }
+}
+
+impl Formattable for Configuration {
+    fn format(&self, f: &OutputFormat) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(_) => Ok(serde_json::to_string(self)?),
+            OutputFormat::Csv(_) => Ok(format!("{}", self.active_tenant_uuid.unwrap_or_default())),
+            OutputFormat::Tree(_) => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
+        }
     }
 }

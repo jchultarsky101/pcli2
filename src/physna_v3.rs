@@ -1,6 +1,8 @@
+use std::path::Path;
 use crate::auth::AuthClient;
 use crate::folder_hierarchy::FolderHierarchy;
-use crate::model::{CurrentUserResponse, FolderListResponse};
+use crate::keyring::{Keyring, KeyringError};
+use crate::model::{Asset, AssetList, AssetListResponse, CurrentUserResponse, FolderList, FolderListResponse, SingleAssetResponse, SingleFolderResponse};
 use reqwest;
 use serde_json;
 use serde_urlencoded;
@@ -8,6 +10,7 @@ use tracing::{debug, trace, error};
 use glob::glob;
 use futures::stream::{self, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
+use uuid::Uuid;
 
 /// Error emitted by the Physna V3 Api
 /// 
@@ -46,6 +49,26 @@ pub enum ApiError {
     /// Conflict error (e.g., asset already exists)
     #[error("Conflict: {0}")]
     ConflictError(String),
+
+    #[error("{0}")]
+    KeyringError(#[from] KeyringError),
+
+    #[error("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'")]
+    InvalidToken,
+
+    #[error("Login credentials not provided")]
+    MissingCredentials,
+
+    #[error("Path not found: {0}")]
+    PathNotFound(String),
+    
+    #[error("Invalid path for asset. Check asset name: {0}")]
+    InvalidAssetPath(String),
+}
+
+pub trait TryDefault: Sized {
+    type Error;
+    fn try_default() -> Result<Self, Self::Error>;
 }
 
 /// Physna V3 API client
@@ -88,6 +111,35 @@ pub struct PhysnaApiClient {
     
     /// HTTP client for making requests
     http_client: reqwest::Client,
+}
+
+
+impl TryDefault for PhysnaApiClient {
+    type Error = ApiError;
+    
+    fn try_default() -> Result<PhysnaApiClient, ApiError> {
+        let mut keyring = Keyring::default();
+        let token = keyring.get("default", "access-token".to_string())?;
+        match token {
+            Some(token) => {
+                let mut client = PhysnaApiClient::new().with_access_token(token);
+            
+                // Try to get client credentials for automatic token refresh
+                if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                    keyring.get("default", "client-id".to_string()),
+                    keyring.get("default", "client-secret".to_string())
+                ) {
+                    client = client.with_client_credentials(client_id, client_secret);
+                    Ok(client)
+                } else {
+                    Err(ApiError::MissingCredentials)
+                }
+            }
+            None => {
+                Err(ApiError::InvalidToken)
+            }
+        }
+    }
 }
 
 impl PhysnaApiClient {
@@ -265,14 +317,15 @@ impl PhysnaApiClient {
             // Check if the retry was successful
             if retry_response.status().is_success() {
                 // Try to get the raw response text for debugging deserialization issues
-                let response_text = retry_response.text().await?;
-                trace!("Raw response text for deserialization: {}", response_text);
+                let response = retry_response.text().await?;
+                trace!("Raw response for deserialization: {}", response);
+                trace!("Deserializing into: {}", std::any::type_name::<T>());
                 
                 // Try to parse and return the JSON response
-                match serde_json::from_str::<T>(&response_text) {
+                match serde_json::from_str::<T>(&response) {
                     Ok(result) => Ok(result),
                     Err(e) => {
-                        error!("Failed to deserialize response: {}. Raw response: {}", e, response_text);
+                        error!("Failed to deserialize response: {}. Raw response: {}", e, response);
                         Err(ApiError::JsonError(e))
                     }
                 }
@@ -289,14 +342,15 @@ impl PhysnaApiClient {
             }
         } else if response.status().is_success() {
             // Initial request was successful - try to get the raw response text for debugging
-            let response_text = response.text().await?;
-            trace!("Raw response text for deserialization: {}", response_text);
+            let response = response.text().await?;
+            trace!("Raw response for deserialization: {}", response);
+            trace!("Deserializing into: {}", std::any::type_name::<T>());
             
             // Try to parse and return the JSON response
-            match serde_json::from_str::<T>(&response_text) {
+            match serde_json::from_str::<T>(&response) {
                 Ok(result) => Ok(result),
                 Err(e) => {
-                    error!("Failed to deserialize response: {}. Raw response: {}", e, response_text);
+                    error!("Failed to deserialize response: {}. Raw response: {}", e, response);
                     Err(ApiError::JsonError(e))
                 }
             }
@@ -442,8 +496,8 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderListResponse)` - Successfully fetched list of folders with pagination metadata
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn list_folders(&mut self, tenant_id: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
-        let url = format!("{}/tenants/{}/folders", self.base_url, tenant_id);
+    pub async fn list_folders(&mut self, tenant_uuid: &Uuid, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders", self.base_url, tenant_uuid);
         
         // Handle defaults - always provide values to avoid API defaulting to 20
         let page_val = page.unwrap_or(1).to_string();
@@ -468,7 +522,7 @@ impl PhysnaApiClient {
     /// for efficient traversal of the folder hierarchy without fetching all folders.
     /// 
     /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
+    /// * `tenant_uuid` - The UUID of the tenant
     /// * `parent_folder_id` - The ID of the parent folder (None for root level)
     /// * `page` - Page number for pagination (optional)
     /// * `per_page` - Number of items per page for pagination (optional)
@@ -500,8 +554,8 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderListResponse)` - List of folders in the parent
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn list_folders_in_parent(&mut self, tenant_id: &str, parent_folder_id: Option<&str>, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
-        let url = format!("{}/tenants/{}/folders", self.base_url, tenant_id);
+    pub async fn list_folders_in_parent(&mut self, tenant_uuid: &Uuid, parent_folder_id: Option<&str>, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders", self.base_url, tenant_uuid);
         
         // Build query parameters for parent filtering, pagination
         let mut query_params = vec![("contentType", "folders")];
@@ -529,9 +583,14 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderResponse)` - Successfully fetched folder details
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn get_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<crate::model::SingleFolderResponse, ApiError> {
-        let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_id, folder_id);
-        self.get(&url).await
+    pub async fn get_folder(&mut self, tenant_uuid: &Uuid, folder_uuid: &Uuid) -> Result<crate::model::Folder, ApiError> {
+        let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_uuid, folder_uuid);
+
+        trace!("Getting folder details...");
+        let response: SingleFolderResponse = self.get(&url).await?;
+        let folder = response.into();
+        trace!("Found: {:?}", &folder);
+        Ok(folder)
     }
     
     /// Create a new folder within a tenant
@@ -547,8 +606,8 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderResponse)` - Successfully created folder details
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn create_folder(&mut self, tenant_id: &str, name: &str, parent_folder_id: Option<&str>) -> Result<crate::model::FolderResponse, ApiError> {
-        let url = format!("{}/tenants/{}/folders", self.base_url, tenant_id);
+    pub async fn create_folder(&mut self, tenant_uuid: &Uuid, name: &str, parent_folder_uuid: Option<Uuid>) -> Result<crate::model::SingleFolderResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders", self.base_url, tenant_uuid);
         
         // Build request body with folder name
         let mut body = serde_json::json!({
@@ -556,8 +615,8 @@ impl PhysnaApiClient {
         });
         
         // Add parent folder ID if provided to create a subfolder
-        if let Some(parent_id) = parent_folder_id {
-            body["parentFolderId"] = serde_json::Value::String(parent_id.to_string());
+        if let Some(parent_uuid) = parent_folder_uuid {
+            body["parentFolderId"] = serde_json::Value::String(parent_uuid.to_string());
         }
         
         // Execute POST request to create the folder
@@ -588,44 +647,15 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(())` - Successfully deleted folder
     /// * `Err(ApiError)` - HTTP error or other error
-    pub async fn delete_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<(), ApiError> {
-        let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_id, folder_id);
+    pub async fn delete_folder(&mut self, tenant_uuid: &Uuid, folder_uuid: &Uuid) -> Result<(), ApiError> {
+        let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_uuid, folder_uuid);
         self.delete(&url).await
     }
     
     // Asset operations
     
-    /// List all assets for a tenant with optional pagination and search
-    /// 
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant whose assets to list
-    /// * `folder_id` - Optional folder ID to filter assets within a specific folder
-    /// * `page` - Optional page number (1-based indexing)
-    /// * `per_page` - Optional number of items per page (default: 100)
-    /// 
-    /// # Returns
-    /// * `Ok(AssetListResponse)` - Successfully fetched list of assets with pagination metadata
-    /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn list_assets(&mut self, tenant_id: &str, folder_id: Option<String>, page: Option<u32>, per_page: Option<u32>) -> Result<crate::model::AssetListResponse, ApiError> {
-        let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
-        
-        // Build query parameters for pagination and filtering
-        let mut query_params = Vec::new();
-        if let Some(folder_id) = folder_id {
-            query_params.push(("folderId", folder_id));
-        }
-        
-        // Handle defaults - always provide values to avoid API defaulting to 20
-        query_params.push(("page", page.unwrap_or(1).to_string()));
-        query_params.push(("perPage", per_page.unwrap_or(200).to_string())); // Default to 200 instead of API's default of 20
-        
-        // Add query parameters to URL
-        let url = format!("{}?{}", url, serde_urlencoded::to_string(&query_params).unwrap());
-        
-        self.get(&url).await
-    }
-    
-    /// List assets in a specific folder by folder ID
+
+    /// List all assets in a specific folder by folder UUID
     /// 
     /// This method lists assets that are contained in a specific folder using the 
     /// /tenants/{tenantId}/folders/{folderId}/contents endpoint with contentType=assets.
@@ -633,23 +663,59 @@ impl PhysnaApiClient {
     /// list_assets method which fetches all assets in the tenant.
     /// 
     /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
-    /// * `folder_id` - The ID of the folder to list assets from
-    /// * `page` - Page number for pagination (optional)
-    /// * `per_page` - Number of items per page for pagination (optional)
+    /// * `tenant_uuid` - The ID of the tenant
+    /// * `folder_uuid` - The ID of the folder to list assets from. If None, it will list the root folder
     /// 
     /// # Returns
     /// * `Ok(AssetListResponse)` - List of assets in the folder
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn list_assets_in_folder(&mut self, tenant_id: &str, folder_id: &str, page: Option<u32>, per_page: Option<u32>) -> Result<crate::model::AssetListResponse, ApiError> {
-        let url = format!("{}/tenants/{}/folders/{}/contents", self.base_url, tenant_id, folder_id);
+    pub async fn list_assets_by_parent_folder_uuid(&mut self, tenant_uuid: &Uuid, parent_folder_uuid: Option<&Uuid>) -> Result<AssetList, ApiError> {
+        let mut page: usize = 1;
+        let per_page: usize = 200;
+        let mut assets: Vec<Asset> = Vec::new();
+
+        loop {
+            let response = self.list_assets_by_parent_folder_uuid_with_pagination(tenant_uuid, parent_folder_uuid, page, per_page).await?;
+            let partial_asset_list: Vec<Asset> = response.assets.iter().map(|a| a.into()).collect();
+            assets.extend(partial_asset_list);
+            
+            page = response.page_data.current_page;
+            if response.page_data.current_page >= response.page_data.last_page {
+                break;
+            }
+        }
+
+        Ok(assets.into())
+    }
+    
+    /// List a single page of assets in a specific folder by folder UUID
+    /// 
+    /// This method lists assets that are contained in a specific folder using the 
+    /// /tenants/{tenantId}/folders/{folderId}/contents endpoint with contentType=assets.
+    /// This is the efficient way to list assets in a specific folder, unlike the
+    /// list_assets method which fetches all assets in the tenant.
+    /// 
+    /// # Arguments
+    /// * `tenant_uuid` - The ID of the tenant
+    /// * `folder_uuid` - The ID of the folder to list assets from
+    /// * `page` - Page number for pagination
+    /// * `per_page` - Number of items per page for pagination
+    /// 
+    /// # Returns
+    /// * `Ok(AssetListResponse)` - List of assets in the folder
+    /// * `Err(ApiError)` - If there was an error during API calls
+    async fn list_assets_by_parent_folder_uuid_with_pagination(&mut self, tenant_uuid: &Uuid, folder_uuid: Option<&Uuid>, page: usize, per_page: usize) -> Result<AssetListResponse, ApiError> {
+        let url = match folder_uuid {
+            Some(folder_uuid) => format!("{}/tenants/{}/folders/{}/contents", self.base_url, tenant_uuid, folder_uuid),
+            None => format!("{}/tenants/{}/folders/root/contents", self.base_url, tenant_uuid),
+        }; 
         
         // Build query parameters
         let mut query_params = vec![("contentType", "assets")];
         
         // Handle defaults - always provide values to avoid API defaulting to 20
-        let page_str = page.unwrap_or(1).to_string();
-        let per_page_str = per_page.unwrap_or(200).to_string(); // Default to 200 instead of API's default of 20
+        let page_str = page.to_string();
+        let per_page_str = per_page.to_string(); // Default to 200 instead of API's default of 20
         
         query_params.push(("page", page_str.as_str()));
         query_params.push(("perPage", per_page_str.as_str()));
@@ -660,62 +726,6 @@ impl PhysnaApiClient {
         
         trace!("Constructed URL for asset listing: {}", url);
         self.get(&url).await
-    }
-    
-    /// List all assets in a specific folder using pagination
-    ///
-    /// This method lists all assets that have a specific parent folder by fetching
-    /// all pages of results using pagination. It handles large numbers of assets
-    /// in a folder by automatically fetching all pages.
-    ///
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
-    /// * `folder_id` - The ID of the parent folder
-    ///
-    /// # Returns
-    /// * `Ok(AssetListResponse)` - List of all assets in the folder
-    /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn list_all_assets_in_folder(&mut self, tenant_id: &str, folder_id: &str) -> Result<crate::model::AssetListResponse, ApiError> {
-        let mut all_assets = Vec::new();
-        let mut page = 1;
-        let per_page = 1000; // Fetch 1000 assets per page for better performance (API max is 1000)
-        
-        loop {
-            trace!("Fetching asset page {} for folder {} in tenant {} ({} assets so far)", page, folder_id, tenant_id, all_assets.len());
-            let response = self.list_assets_in_folder(tenant_id, folder_id, Some(page), Some(per_page)).await?;
-            
-            let assets_on_page = response.assets.len();
-            all_assets.extend(response.assets);
-            
-            trace!("Fetched {} assets on page {}, total so far: {}", assets_on_page, page, all_assets.len());
-            
-            // Check if we've reached the last page
-            // The API uses 1-based indexing for pages
-            if response.page_data.current_page >= response.page_data.last_page {
-                trace!("Reached last page of assets for folder {} in tenant {} after {} pages", folder_id, tenant_id, page);
-                break;
-            }
-            
-            page += 1;
-        }
-        
-        // Store the total count before moving all_assets
-        let total_count = all_assets.len();
-        
-        // Create a combined response with all assets
-        let final_response = crate::model::AssetListResponse {
-            assets: all_assets,
-            page_data: crate::model::PageData {
-                total: total_count,
-                per_page: total_count,
-                current_page: 1,
-                last_page: 1,
-                start_index: 1,
-                end_index: total_count,
-            },
-        };
-        
-        Ok(final_response)
     }
     
     /// Get the folder ID for a given path by traversing the folder structure efficiently
@@ -731,16 +741,17 @@ impl PhysnaApiClient {
     /// * `Ok(Some(String))` - The folder ID if found
     /// * `Ok(None)` - If the path doesn't exist
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_folder_id_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<Option<String>, ApiError> {
-        debug!("Resolving folder path: {} for tenant: {} using FolderHierarchy", folder_path, tenant_id);
+    pub async fn get_folder_uuid_by_path(&mut self, tenant_uuid: &Uuid, folder_path: &str) -> Result<Option<Uuid>, ApiError> {
+        debug!("Resolving folder path: {} for tenant: {} using FolderHierarchy", folder_path, tenant_uuid);
         
         // Use the proven FolderHierarchy implementation to resolve the path
-        match FolderHierarchy::build_from_api(self, tenant_id).await {
+        match FolderHierarchy::build_from_api(self, tenant_uuid).await {
             Ok(hierarchy) => {
+                
                 // Use the hierarchy to find the folder by path
                 if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
-                    debug!("Found folder at path '{}': {}", folder_path, folder_node.folder.id);
-                    Ok(Some(folder_node.folder.id.clone()))
+                    debug!("Found folder at path '{}': {}", folder_path, folder_node.folder.uuid);
+                    Ok(Some(folder_node.folder.uuid.clone()))
                 } else {
                     debug!("Folder not found at path: {}", folder_path);
                     Ok(None)
@@ -759,7 +770,7 @@ impl PhysnaApiClient {
     /// for efficient traversal of the folder hierarchy without fetching all folders.
     /// 
     /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
+    /// * `tenant_uuid` - The UUID of the tenant
     /// * `parent_folder_id` - The ID of the parent folder (None for root level)
     /// * `page` - Page number for pagination (optional)
     /// * `per_page` - Number of items per page for pagination (optional)
@@ -781,10 +792,10 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderListResponse)` - List of contents in the root folder
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_root_contents(&mut self, tenant_id: &str, _content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
+    pub async fn get_root_contents(&mut self, tenant_uuid: &Uuid, _content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
         // Use list_folders_in_parent with None parent to get root contents
         // The list_folders_in_parent function now handles default values
-        self.list_folders_in_parent(tenant_id, None, page, per_page).await
+        self.list_folders_in_parent(tenant_uuid, None, page, per_page).await
     }
     
     /// Get contents of a specific folder by ID, filtered by content type
@@ -801,9 +812,12 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderListResponse)` - List of contents in the folder
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_folder_contents(&mut self, tenant_id: &str, folder_id: &str, content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderListResponse, ApiError> {
-        let url = format!("{}/tenants/{}/folders/{}/contents", self.base_url, tenant_id, folder_id);
-        
+    pub async fn get_folder_contents(&mut self, tenant_uuid: &Uuid, folder_uuid: Option<&Uuid>, content_type: &str, page: Option<u32>, per_page: Option<u32>) -> Result<FolderList, ApiError> {
+        let url = match folder_uuid {
+            Some(folder_uuid) => format!("{}/tenants/{}/folders/{}/contents", self.base_url, tenant_uuid, folder_uuid),
+            None => format!("{}/tenants/{}/folders/root/contents", self.base_url, tenant_uuid),
+        };        
+
         // Build query parameters
         let mut query_params = vec![("contentType", content_type)];
         
@@ -819,83 +833,125 @@ impl PhysnaApiClient {
         let url = format!("{}?{}", url, query_string);
         
         trace!("Constructed URL for folder contents listing: {}", url);
-        self.get(&url).await
+        let response: FolderListResponse = self.get(&url).await?;
+
+        Ok(response.into())
+    }
+
+    /// This method is a wrapper around get_folder_uuid_by_path(...), but it will return None if the path is the root.
+    pub async fn resolve_folder_uuid_by_path(&mut self, tenant_uuid: &Uuid, folder_path: &str) -> Result<Option<Uuid>, ApiError> {
+        if folder_path.eq("/") {
+            Ok(None)
+        } else {
+            Ok(self.get_folder_uuid_by_path(tenant_uuid, folder_path).await?)
+        }
     }
     
-    /// List assets in a specific folder by path
+    /// List only the assets in a specific folder by path
     /// 
     /// This method efficiently lists assets in a specific folder by first
     /// resolving the folder path to a folder ID and then listing assets in that folder.
     /// 
     /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
-    /// * `folder_path` - The path of the folder to list assets from
+    /// * `tenant_uuid` - The UUID of the tenant
+    /// * `parent_folder_path` - The path of the folder to list assets from
     /// 
     /// # Returns
     /// * `Ok(AssetListResponse)` - List of assets in the folder
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn list_assets_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<crate::model::AssetListResponse, ApiError> {
-        debug!("Listing assets by path: {} for tenant: {}", folder_path, tenant_id);
+    pub async fn list_assets_by_parent_folder_path(&mut self, tenant_uuid: &Uuid, parent_folder_path: &str) -> Result<AssetList, ApiError> {
+        debug!("Listing assets in a folder by path: {} for tenant: {}", parent_folder_path, tenant_uuid);
         
-        let folder_id = match self.get_folder_id_by_path(tenant_id, folder_path).await {
-            Ok(Some(id)) => id,
-            Ok(None) | Err(_) => {
-                return Err(ApiError::ConflictError(format!("Folder path '{}' not found", folder_path)));
-            }
-        };
+        let parent_folder_uuid = self.resolve_folder_uuid_by_path(tenant_uuid, parent_folder_path).await?;
         
         // Now list all assets in this specific folder using the efficient API endpoint with pagination
-        self.list_all_assets_in_folder(tenant_id, &folder_id).await
+        let assets = self.list_assets_by_parent_folder_uuid(tenant_uuid, parent_folder_uuid.clone().as_ref()).await?;
+        Ok(assets.into())
     }
     
-    /// Get contents (both folders and assets) of a specific folder path
+    /// Get all contents (both folders and assets) of a specific folder path
     /// 
     /// This method efficiently gets both subfolders and assets within a specific folder
     /// by first resolving the path and then making separate API calls for each.
     /// 
     /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
+    /// * `tenant_uuid` - The UUID of the tenant
     /// * `folder_path` - The path of the folder to get contents from
     /// 
     /// # Returns
     /// * `Ok((Vec<FolderResponse>, Vec<AssetResponse>))` - Folders and assets in the folder
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_folder_contents_by_path(&mut self, tenant_id: &str, folder_path: &str) -> Result<(Vec<crate::model::FolderResponse>, Vec<crate::model::AssetResponse>), ApiError> {
-        debug!("Getting contents by path: {} for tenant: {}", folder_path, tenant_id);
+    pub async fn list_all_contents_by_parent_folder_path(&mut self, tenant_uuid: &Uuid, parent_folder_path: &str) -> Result<(FolderList, AssetList), ApiError> {
+        debug!("Listing all folder contents by path: {} for tenant: {}", parent_folder_path, tenant_uuid);
         
-        let folder_id = match self.get_folder_id_by_path(tenant_id, folder_path).await {
-            Ok(Some(id)) => id,
-            Ok(None) | Err(_) => {
-                return Err(ApiError::ConflictError(format!("Folder path '{}' not found", folder_path)));
-            }
-        };
-        
+        let parent_folder_uuid = self.resolve_folder_uuid_by_path(tenant_uuid, parent_folder_path).await?;
+
         // Get subfolders in the folder using the more efficient content API
-        let subfolders_response = self.get_folder_contents(tenant_id, &folder_id, "folders", Some(1), Some(1000)).await?;
-        let subfolders = subfolders_response.folders;
-        
+        let subfolders_response = self.get_folder_contents(tenant_uuid, parent_folder_uuid.clone().as_ref(), "folders", Some(1), Some(1000)).await?;
+        let subfolders = subfolders_response;
+
         // Get assets in the folder
-        let assets_response = self.list_assets(tenant_id, Some(folder_id), Some(1), Some(1000)).await?;
-        let assets = assets_response.assets;
-        
+        let assets_response = self.list_assets_by_parent_folder_uuid(tenant_uuid, parent_folder_uuid.clone().as_ref()).await?;
+        let assets = assets_response;
+
         Ok((subfolders, assets))
     }
-    
+
+    fn get_parent_folder_path(asset_path: &String) -> Result<String, ApiError> {
+        let path = Path::new(&asset_path);
+        let parent = path.parent()
+            .ok_or_else(|| ApiError::InvalidAssetPath(asset_path.to_owned()))?;
+
+        // Convert the parent path to string
+        let parent_str = parent.to_str()
+            .ok_or_else(|| ApiError::InvalidAssetPath(asset_path.to_owned()))?;
+
+        // Handle the case where the parent is root "/"
+        let normalized_parent = if parent_str.is_empty() {
+            "/".to_string()
+        } else if parent_str.starts_with('/') {
+            parent_str.to_string()
+        } else {
+            format!("/{}", parent_str)
+        };
+
+        Ok(normalized_parent)
+    }
+
+    fn asset_name_from_path(path: &String) -> Option<String> {
+    Path::new(&path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())
+    }    
+
     /// Get details for a specific asset by ID
     /// 
     /// # Arguments
-    /// * `tenant_id` - The ID of the tenant that owns the asset
-    /// * `asset_id` - The UUID of the asset to retrieve
+    /// * `tenant_uuid` - The UUID of the tenant that owns the asset
+    /// * `asset_uuid` - The UUID of the asset to retrieve
     /// 
     /// # Returns
     /// * `Ok(crate::model::AssetResponse)` - Successfully fetched asset details
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn get_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<crate::model::AssetResponse, ApiError> {
-        debug!("Getting asset details for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
-        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
-        let response: crate::model::SingleAssetResponse = self.get(&url).await?;
-        debug!("Successfully retrieved asset details for asset_id: {}", asset_id);
-        Ok(response.asset)
+    pub async fn get_asset_by_uuid(&mut self, tenant_uuid: &Uuid, asset_uuid: &Uuid) -> Result<Asset, ApiError> {
+        debug!("Getting asset details for tenant_uuid: {}, asset_uuid: {}", tenant_uuid, asset_uuid);
+        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_uuid, asset_uuid);
+        let response: SingleAssetResponse = self.get(&url).await?;
+        debug!("Successfully retrieved asset details for asset_id: {}", asset_uuid);
+        Ok(response.asset.into())
+    }
+
+    pub async fn get_asset_by_path(&mut self, tenant_uuid: &Uuid, asset_path: &String) -> Result<Asset, ApiError> {
+
+        let parent_folder_path = Self::get_parent_folder_path(asset_path)?;
+        let assets = self.list_assets_by_parent_folder_path(tenant_uuid, &parent_folder_path).await?;
+        match Self::asset_name_from_path(asset_path) {
+            Some(asset_name) => {
+                assets.find_by_name(&asset_name).cloned().ok_or(ApiError::PathNotFound(asset_path.to_owned()))
+            },
+            None => Err(ApiError::InvalidAssetPath(asset_path.to_owned())),
+        }
     }
     
     /// Delete an asset by ID
@@ -942,8 +998,8 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(crate::model::AssetResponse)` - Successfully updated asset with new metadata
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn update_asset_metadata(&mut self, tenant_id: &str, asset_id: &str, metadata: &std::collections::HashMap<String, serde_json::Value>) -> Result<(), ApiError> {
-        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
+    pub async fn update_asset_metadata(&mut self, tenant_uuid: &Uuid, asset_uuid: &Uuid, metadata: &std::collections::HashMap<String, serde_json::Value>) -> Result<(), ApiError> {
+        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_uuid, asset_uuid);
         
         let body = serde_json::json!({
             "metadata": metadata
@@ -1170,37 +1226,24 @@ impl PhysnaApiClient {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn create_asset(&mut self, tenant_id: &str, file_path: &str, folder_path: Option<&str>, folder_id: Option<&str>) -> Result<crate::model::AssetResponse, ApiError> {
-        let url = format!("{}/tenants/{}/assets", self.base_url, tenant_id);
+    pub async fn create_asset(&mut self, tenant_uuid: &Uuid, file_path: &Path, asset_path: &String, folder_uuid: &Uuid) -> Result<crate::model::Asset, ApiError> {
+
+        trace!("Creating new asset by uploading a file...");
+        
+        let url = format!("{}/tenants/{}/assets", self.base_url, tenant_uuid);
+
+        if !file_path.exists() || !file_path.is_file() {
+            return Err(ApiError::PathNotFound(file_path.to_string_lossy().into_owned()));
+        }
+        
+        let file_name = file_path.file_name().unwrap().to_string_lossy().into_owned(); // It is save to unwrap because we already confired the file exists
         
         // Read the file content
         let file_data = tokio::fs::read(file_path).await?;
+        trace!("Derived asset path: {}", &asset_path);
+            
         
-        // Extract filename from path
-        let file_name = std::path::Path::new(file_path)
-            .file_name()
-            .ok_or_else(|| ApiError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Invalid file path"
-            )))?
-            .to_str()
-            .ok_or_else(|| ApiError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Invalid file name"
-            )))?
-            .to_string();
-            
-        // Create the asset path for the multipart form (folder path + filename or just filename)
-        let asset_path = if let Some(folder_path) = folder_path {
-            if !folder_path.is_empty() {
-                format!("{}/{}", folder_path, file_name)
-            } else {
-                file_name.clone()
-            }
-        } else {
-            file_name.clone()
-        };
-            
+        
         // Create a file part from the file data
         let file_part = reqwest::multipart::Part::bytes(file_data)
             .file_name(file_name.clone());
@@ -1213,11 +1256,7 @@ impl PhysnaApiClient {
             .text("createMissingFolders", "");  // Empty createMissingFolders as in the working example
         
         // Add folder ID if provided
-        if let Some(folder_id) = folder_id {
-            debug!("Adding folderId parameter: {}", folder_id);
-            // For multipart forms, we need to add non-file parts as text
-            form = form.text("folderId", folder_id.to_string());
-        }
+        form = form.text("folderId", folder_uuid.to_string());
         
         debug!("Creating asset with path: {}", asset_path);
         
@@ -1245,17 +1284,6 @@ impl PhysnaApiClient {
             let file_part = reqwest::multipart::Part::bytes(file_data)
                 .file_name(file_name.clone());
             
-            // Create the asset path for the multipart form (folder path + filename or just filename)
-            let asset_path = if let Some(folder_path) = folder_path {
-                if !folder_path.is_empty() {
-                    format!("{}/{}", folder_path, file_name)
-                } else {
-                    file_name.clone()
-                }
-            } else {
-                file_name.clone()
-            };
-            
             // Build the multipart form with file part and required parameters
             let mut retry_form = reqwest::multipart::Form::new()
                 .part("file", file_part)
@@ -1264,10 +1292,7 @@ impl PhysnaApiClient {
                 .text("createMissingFolders", "");  // Empty createMissingFolders as in the working example
             
             // Add folder ID if provided
-            if let Some(folder_id) = folder_id {
-                debug!("Adding folderId parameter (retry): {}", folder_id);
-                retry_form = retry_form.text("folderId", folder_id.to_string());
-            }
+            retry_form = retry_form.text("folderId", folder_uuid.to_string());
             
             debug!("Retrying asset creation with path: {}", asset_path);
             
@@ -1289,11 +1314,11 @@ impl PhysnaApiClient {
                 
                 // Try to parse as SingleAssetResponse
                 match serde_json::from_str::<crate::model::SingleAssetResponse>(&text) {
-                    Ok(result) => Ok(result.asset),
+                    Ok(result) => Ok(Asset::from(&result.asset)),
                     Err(_) => {
                         // Try to parse as AssetResponse directly
                         match serde_json::from_str::<crate::model::AssetResponse>(&text) {
-                            Ok(asset) => Ok(asset),
+                            Ok(asset) => Ok(Asset::from(&asset)),
                             Err(e) => {
                                 error!("Failed to parse retry response as either SingleAssetResponse or AssetResponse: {}", e);
                                 Err(ApiError::JsonError(e))
@@ -1330,11 +1355,11 @@ impl PhysnaApiClient {
             
             // Try to parse as SingleAssetResponse
             match serde_json::from_str::<crate::model::SingleAssetResponse>(&text) {
-                Ok(result) => Ok(result.asset),
+                Ok(result) => Ok(Asset::from(&result.asset)),
                 Err(_) => {
                     // Try to parse as AssetResponse directly
                     match serde_json::from_str::<crate::model::AssetResponse>(&text) {
-                        Ok(asset) => Ok(asset),
+                        Ok(asset) => Ok(Asset::from(&asset)),
                         Err(e) => {
                             error!("Failed to parse response as either SingleAssetResponse or AssetResponse: {}", e);
                             Err(ApiError::JsonError(e))
@@ -1395,9 +1420,9 @@ impl PhysnaApiClient {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn geometric_search(&mut self, tenant_id: &str, asset_id: &str, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {
-        debug!("Starting geometric search for tenant_id: {}, asset_id: {}, threshold: {}", tenant_id, asset_id, threshold);
-        let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_id, asset_id);
+    pub async fn geometric_search(&mut self, tenant_uuid: &Uuid, asset_uuid: &Uuid, threshold: f64) -> Result<crate::model::GeometricSearchResponse, ApiError> {
+        debug!("Starting geometric search for tenant_uuid: {}, asset_uuid: {}, threshold: {}", tenant_uuid, asset_uuid, threshold);
+        let url = format!("{}/tenants/{}/assets/{}/geometric-search", self.base_url, tenant_uuid, asset_uuid);
         
         // Initialize with page 1 and reasonable page size
         let mut all_matches = Vec::new();
@@ -1462,7 +1487,7 @@ impl PhysnaApiClient {
             filter_data: None,
         };
         
-        debug!("Geometric search completed for asset_id: {} with {} total matches", asset_id, final_response.matches.len());
+        debug!("Geometric search completed for asset_id: {} with {} total matches", asset_uuid, final_response.matches.len());
         Ok(final_response)
     }
     
@@ -1484,14 +1509,14 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - HTTP error, IO error, or other error
     pub async fn create_assets_batch(
         &mut self, 
-        tenant_id: &str, 
+        tenant_uuid: &Uuid, 
         glob_pattern: &str, 
         folder_path: Option<&str>,
-        folder_id: Option<&str>,
+        folder_uuid: Option<&Uuid>,
         concurrent: usize,
         show_progress: bool
-    ) -> Result<Vec<crate::model::AssetResponse>, ApiError> {
-        debug!("Creating batch assets in tenant: {}, folder_path: {:?}, folder_id: {:?}", tenant_id, folder_path, folder_id);
+    ) -> Result<Vec<crate::model::Asset>, ApiError> {
+        debug!("Creating batch assets in tenant: {}, folder_path: {:?}, folder_id: {:?}", &tenant_uuid, folder_path, folder_uuid);
         
         // Expand the glob pattern to get matching files
         let paths: Vec<_> = glob(glob_pattern)?
@@ -1516,26 +1541,33 @@ impl PhysnaApiClient {
         let base_url = self.base_url.clone();
         let access_token = self.access_token.clone();
         let client_credentials = self.client_credentials.clone();
-        let tenant_id = tenant_id.to_string();
         let folder_path = folder_path.map(|s| s.to_string());
-        let folder_id = folder_id.map(|s| s.to_string());
         
-        debug!("Folder path for batch upload: {:?}, folder ID: {:?}", folder_path, folder_id);
+        debug!("Folder path for batch upload: {:?}, folder ID: {:?}", folder_path, folder_uuid);
         
         let results: Result<Vec<_>, _> = stream::iter(paths)
+            .filter(|path_buf| {
+                futures::future::ready(path_buf.exists() && path_buf.is_file())
+            })
             .map(|path_buf| {
                 let base_url = base_url.clone();
                 let access_token = access_token.clone();
                 let client_credentials = client_credentials.clone();
-                let tenant_id = tenant_id.clone();
                 let folder_path = folder_path.clone();
-                let folder_id = folder_id.clone();
+                let folder_uuid = folder_uuid.clone();
                 let progress_bar = progress_bar.clone();
                 
                 async move {
                     let path_str = path_buf.to_string_lossy().to_string();
-                    debug!("Uploading file: {}, with folder_path: {:?}, folder_id: {:?}", path_str, folder_path, folder_id);
-                    
+                    let file_name = path_buf.file_name();
+
+                    let file_name = match file_name {
+                        Some(file_name) => file_name,
+                        None => return Err(ApiError::PathNotFound(path_buf.to_string_lossy().into())),
+                    };
+
+                
+                
                     // Create a new client for each request to avoid borrowing issues
                     let mut client = PhysnaApiClient::new().with_base_url(base_url);
                     if let Some(token) = access_token {
@@ -1544,23 +1576,25 @@ impl PhysnaApiClient {
                     if let Some((client_id, client_secret)) = client_credentials {
                         client = client.with_client_credentials(client_id, client_secret);
                     }
-                    
+                
                     // Upload the file
-                    let result = client.create_asset(&tenant_id, &path_str, folder_path.as_deref(), folder_id.as_deref()).await;
-                    
+                    let asset_path = format!("{}/{}", folder_path.unwrap(), file_name.to_string_lossy());
+                    debug!("Uploading file: {}, as asset_path: {}, folder_uuid: {:?}", path_str, asset_path, folder_uuid);
+                    let result = client.create_asset(&tenant_uuid, &path_buf, &asset_path, folder_uuid.unwrap()).await;
+                
                     // Update progress bar if present
                     if let Some(pb) = &progress_bar {
                         pb.inc(1);
                         match &result {
                             Ok(asset) => {
-                                pb.set_message(format!("Uploaded: {}", asset.path));
+                                pb.set_message(format!("Uploaded: {}", asset.path()));
                             }
                             Err(_) => {
                                 pb.set_message(format!("Failed: {}", path_buf.file_name().unwrap_or_default().to_string_lossy()));
                             }
                         }
                     }
-                    
+                
                     result
                 }
             })

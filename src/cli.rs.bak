@@ -1,0 +1,1699 @@
+
+                Some((COMMAND_METADATA, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_METADATA);
+                    trace!("Routing to asset metadata list...");
+
+                    print_asset_metadata(sub_matches).await?;
+                    Ok(())
+
+                    /*
+                                    
+                                    // Resolve asset ID from either UUID parameter or path
+                                    let asset_id = if let Some(id) = asset_uuid_param {
+                                        id.clone()
+                                    } else if let Some(path) = asset_path_param {
+                                        // Look up asset by path to get UUID
+                                        debug!("Looking up asset by path: {}", path);
+                                        // Get asset cache or fetch assets from API
+                                        match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                            Ok(asset_list_response) => {
+                                                // Convert to AssetList to use find_by_path
+                                                let asset_list = asset_list_response.to_asset_list();
+                                                // Find the asset by path
+                                                if let Some(asset) = asset_list.find_by_path(path) {
+                                                    if let Some(uuid) = asset.uuid() {
+                                                        trace!("Found asset with UUID: {}", uuid);
+                                                        uuid.clone()
+                                                    } else {
+                                                        eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                        return Ok(());
+                                                    }
+                                                } else {
+                                                    eprintln!("Asset not found by path '{}'", path);
+                                                    return Ok(());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error getting asset cache: {}", e);
+                                                eprintln!("Error getting asset cache: {}", e);
+                                                return Ok(());
+                                            }
+                                        }
+                                    } else {
+                                        // This shouldn't happen due to our earlier check, but just in case
+                                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                                    };
+                                    
+                                    // Get list of existing metadata fields to check if new ones need to be created
+                                    match pcli2::metadata_cache::MetadataCache::get_or_fetch(&mut client, &tenant, refresh_requested).await {
+                                        Ok(metadata_fields_response) => {
+                                            // Extract existing field names
+                                            let existing_field_names: std::collections::HashSet<String> = 
+                                                metadata_fields_response.metadata_fields
+                                                    .iter()
+                                                    .map(|field| field.name.clone())
+                                                    .collect();
+                                            
+                                            // Check for new metadata fields that need to be created
+                                            for (field_name, _value) in &metadata {
+                                                if !existing_field_names.contains(field_name) {
+                                                    trace!("Creating new metadata field: {}", field_name);
+                                                    // Use the provided type or default to "text"
+                                                    let field_type_opt = sub_matches.get_one::<String>("type");
+                                                    let field_type_str = field_type_opt.map(|s| s.as_str()).unwrap_or("text");
+                                                    match client.create_metadata_field(&tenant, field_name, Some(field_type_str)).await {
+                                                        Ok(_) => {
+                                                            debug!("Successfully created metadata field: {} with type {}", field_name, field_type_str);
+                                                            // Invalidate the cache since we've added a new field
+                                                            match pcli2::metadata_cache::MetadataCache::load() {
+                                                                Ok(cache) => {
+                                                                    let mut mutable_cache = cache;
+                                                                    mutable_cache.invalidate_tenant(&tenant);
+                                                                    if let Err(e) = mutable_cache.save() {
+                                                                        debug!("Failed to save invalidated metadata cache: {}", e);
+                                                                    }
+                                                                }
+                                                                Err(e) => {
+                                                                    debug!("Failed to load metadata cache for invalidation: {}", e);
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error creating metadata field '{}': {}", field_name, e);
+                                                            eprintln!("Error creating metadata field '{}': {}", field_name, e);
+                                                            return Ok(());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Now update the asset metadata with the new or existing fields
+                                            match client.update_asset_metadata(&tenant, &asset_id, &metadata).await {
+                                                Ok(()) => {
+                                                    // On successful metadata update, return no output as requested
+                                                    Ok(())
+                                                }
+                                                Err(e) => {
+                                                    error!("Error updating asset metadata: {}", e);
+                                                    eprintln!("Error updating asset metadata: {}", e);
+                                                    Ok(())
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error fetching metadata fields list: {}", e);
+                                            eprintln!("Error fetching metadata fields list: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                                    Ok(())
+                                }
+                            }
+                        }
+                        // Handle asset metadata delete
+                        Some((COMMAND_DELETE, sub_matches)) => {
+                            trace!("Executing asset metadata delete command");
+                            // Get tenant from explicit parameter or fall back to active tenant from configuration
+                            let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                                Some(tenant_id) => tenant_id.clone(),
+                                None => {
+                                    // Try to get active tenant from configuration
+                                    if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                        active_tenant_id
+                                    } else {
+                                        return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                                    }
+                                }
+                            };
+                            
+                            let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                            let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                            
+                            // Get metadata names from command line (can be multiple occurrences or comma-separated)
+                            let metadata_name_strings: Vec<String> = sub_matches.get_many::<String>("name")
+                                .ok_or(CliError::MissingRequiredArgument("name".to_string()))?
+                                .flat_map(|name_str| name_str.split(',').map(|s| s.trim().to_string()))
+                                .collect();
+                            let metadata_names: Vec<&str> = metadata_name_strings.iter().map(|s| s.as_str()).collect();
+                            
+                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                            let _format = OutputFormat::from_str(&format_str).unwrap();
+                            
+                            // Try to get access token and delete asset metadata via Physna V3 API
+                            let mut keyring = Keyring::default();
+                            match keyring.get("default", "access-token".to_string()) {
+                                Ok(Some(token)) => {
+                                    let mut client = PhysnaApiClient::new().with_access_token(token);
+                                    
+                                    // Try to get client credentials for automatic token refresh
+                                    if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                        keyring.get("default", "client-id".to_string()),
+                                        keyring.get("default", "client-secret".to_string())
+                                    ) {
+                                        client = client.with_client_credentials(client_id, client_secret);
+                                    }
+                                    
+                                    // Resolve asset ID from either UUID parameter or path
+                                    let asset_id = if let Some(id) = asset_uuid_param {
+                                        id.clone()
+                                    } else if let Some(path) = asset_path_param {
+                                        // Look up asset by path to get UUID
+                                        debug!("Looking up asset by path: {}", path);
+                                        // Get asset cache or fetch assets from API
+                                        match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                            Ok(asset_list_response) => {
+                                                // Convert to AssetList to use find_by_path
+                                                let asset_list = asset_list_response.to_asset_list();
+                                                // Find the asset by path
+                                                if let Some(asset) = asset_list.find_by_path(path) {
+                                                    if let Some(uuid) = asset.uuid() {
+                                                        trace!("Found asset with UUID: {}", uuid);
+                                                        uuid.clone()
+                                                    } else {
+                                                        eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                        return Ok(());
+                                                    }
+                                                } else {
+                                                    eprintln!("Asset not found by path '{}'", path);
+                                                    return Ok(());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error getting asset cache: {}", e);
+                                                eprintln!("Error getting asset cache: {}", e);
+                                                return Ok(());
+                                            }
+                                        }
+                                    } else {
+                                        // This shouldn't happen due to our earlier check, but just in case
+                                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                                    };
+                                    
+                                    match client.delete_asset_metadata(&tenant, &asset_id, metadata_names).await {
+                                        Ok(()) => {
+                                            // On successful metadata deletion, return no output
+                                            Ok(())
+                                        }
+                                        Err(e) => {
+                                            error!("Error deleting asset metadata: {}", e);
+                                            eprintln!("Error deleting asset metadata: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                                    Ok(())
+                                }
+                            }
+                        }
+                        // Handle asset metadata get
+                        Some(("get", sub_matches)) => {
+                            trace!("Executing asset metadata get command");
+                            // Get tenant from explicit parameter or fall back to active tenant from configuration
+                            let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                                Some(tenant_id) => tenant_id.clone(),
+                                None => {
+                                    // Try to get active tenant from configuration
+                                    if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                        active_tenant_id
+                                    } else {
+                                        return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                                    }
+                                }
+                            };
+                            
+                            let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                            let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                            
+                            // Must provide either asset UUID or path
+                            if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                                return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                            }
+                            
+                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                            let format = OutputFormat::from_str(&format_str).unwrap();
+                            
+                            // Try to get access token and get asset metadata via Physna V3 API
+                            let mut keyring = Keyring::default();
+                            match keyring.get("default", "access-token".to_string()) {
+                                Ok(Some(token)) => {
+                                    let mut client = PhysnaApiClient::new().with_access_token(token);
+                                    
+                                    // Try to get client credentials for automatic token refresh
+                                    if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                        keyring.get("default", "client-id".to_string()),
+                                        keyring.get("default", "client-secret".to_string())
+                                    ) {
+                                        client = client.with_client_credentials(client_id, client_secret);
+                                    }
+                                    
+                                    // Resolve asset ID from either UUID parameter or path
+                                    let asset_id = if let Some(id) = asset_uuid_param {
+                                        id.clone()
+                                    } else if let Some(path) = asset_path_param {
+                                        // Look up asset by path to get UUID
+                                        debug!("Looking up asset by path: {}", path);
+                                        // Get asset cache or fetch assets from API
+                                        match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                            Ok(asset_list_response) => {
+                                                // Convert to AssetList to use find_by_path
+                                                let asset_list = asset_list_response.to_asset_list();
+                                                // Find the asset by path
+                                                if let Some(asset) = asset_list.find_by_path(path) {
+                                                    if let Some(uuid) = asset.uuid() {
+                                                        trace!("Found asset with UUID: {}", uuid);
+                                                        uuid.clone()
+                                                    } else {
+                                                        eprintln!("Asset found by path '{}' but has no UUID", path);
+                                                        return Ok(());
+                                                    }
+                                                } else {
+                                                    eprintln!("Asset not found by path '{}'", path);
+                                                    return Ok(());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error getting asset cache: {}", e);
+                                                eprintln!("Error getting asset cache: {}", e);
+                                                return Ok(());
+                                            }
+                                        }
+                                    } else {
+                                        // This shouldn't happen due to our earlier check, but just in case
+                                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                                    };
+                                    
+                                    // Get the asset details which includes metadata
+                                    match client.get_asset(&tenant, &asset_id).await {
+                                        Ok(asset_response) => {
+                                            // Extract metadata from the asset response
+                                            let metadata = &asset_response.metadata;
+                                            
+                                            match format {
+                                                OutputFormat::Json => {
+                                                    // Output metadata as JSON
+                                                    match serde_json::to_string_pretty(metadata) {
+                                                        Ok(json_output) => {
+                                                            println!("{}", json_output);
+                                                            Ok(())
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error serializing metadata to JSON: {}", e);
+                                                            eprintln!("Error serializing metadata to JSON: {}", e);
+                                                            Ok(())
+                                                        }
+                                                    }
+                                                }
+                                                OutputFormat::Csv => {
+                                                    // Output metadata in CSV format that matches create-batch input
+                                                    let asset_path_for_csv = if let Some(path) = asset_path_param {
+                                                        path.to_string()
+                                                    } else {
+                                                        // Get the path from the asset response
+                                                        asset_response.path.clone()
+                                                    };
+                                                    
+                                                    // Output CSV header
+                                                    println!("ASSET_PATH,NAME,VALUE");
+                                                    
+                                                    // Output each metadata field as a row
+                                                    for (name, value) in metadata {
+                                                        // Convert JSON value to string representation for CSV
+                                                        let value_str = match value {
+                                                            serde_json::Value::String(s) => s.clone(),
+                                                            _ => value.to_string(),
+                                                        };
+                                                        
+                                                        // Escape quotes in the value for CSV
+                                                        let escaped_value = value_str.replace("\"", "\"\"");
+                                                        println!("{},\"{}\",\"{}\"", asset_path_for_csv, name, escaped_value);
+                                                    }
+                                                    Ok(())
+                                                }
+                                                OutputFormat::Tree => {
+                                                    // For tree format, we'll output a simple representation
+                                                    println!("Asset: {}", asset_id);
+                                                    let asset_path_for_display = if let Some(path) = asset_path_param {
+                                                        path.to_string()
+                                                    } else {
+                                                        asset_response.path.clone()
+                                                    };
+                                                    println!("Path: {}", asset_path_for_display);
+                                                    println!("Metadata:");
+                                                    for (name, value) in metadata {
+                                                        println!("  {}: {}", name, value);
+                                                    }
+                                                    Ok(())
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error fetching asset metadata: {}", e);
+                                            eprintln!("Error fetching asset metadata: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                                    Ok(())
+                                }
+                            }
+                        }
+                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                            sub_matches,
+                        ))),
+                    }
+                    */
+                }
+                Some((COMMAND_GET, sub_matches)) => {
+
+                    /*
+                    trace!("Executing asset get command");
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_uuid) => Uuid::from(tenant_uuid.clone()),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_uuid) = configuration.get_active_tenant_uuid() {
+                                active_tenant_uuid
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    // Must provide either asset UUID or path
+                    if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let _format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token and get asset via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = get_tenant(&mut client, tenant_identifier, &configuration).await?;
+                            
+                            // Resolve asset ID from either UUID parameter or path
+                            let asset_id = if let Some(uuid) = asset_uuid_param {
+                                uuid.clone()
+                            } else if let Some(path) = asset_path_param {
+                                // To resolve asset by path, we need to:
+                                // 1. Get all assets for the tenant
+                                // 2. Find the asset with matching path
+                                // Look up asset by path to get UUID (efficiently)
+                                trace!("Resolving asset by path: {}", path);
+                                debug!("About to call resolve_asset_path_to_uuid for path: {}", path);
+                                match pcli2::resolution_utils::resolve_asset_path_to_uuid(&mut client, &tenant, path).await {
+                                    Ok(uuid) => {
+                                        // Path resolution succeeded, but token might have been refreshed during the process
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        uuid
+                                    },
+                                    Err(e) => {
+                                        // Even if path resolution failed, persist the potentially updated access token back to keyring
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        
+                                        // Convert ApiError to CliError
+                                        let cli_error = CliError::ConfigurationError(
+                                            pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                cause: Box::new(e)
+                                            }
+                                        );
+                                        
+                                        eprintln!("Error resolving asset path '{}': {}", path, cli_error);
+                                        return Ok(());
+                                    }
+                                }
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                            };
+                            
+                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                            let _format = OutputFormat::from_str(&format_str).unwrap();
+                            
+                            match client.get_asset(&tenant, &asset_id).await {
+                                Ok(asset_response) => {
+                                    // Convert AssetResponse to Asset
+                                    let asset = pcli2::model::Asset::from_asset_response(asset_response, asset_id.clone());
+                                    
+                                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                                    let _format = OutputFormat::from_str(&format_str).unwrap();
+                                    // Persist the potentially updated access token back to keyring
+                                    if let Some(updated_token) = client.get_access_token() {
+                                        if let Err(e) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                            warn!("Failed to persist updated access token: {}", e);
+                                        }
+                                    }
+                                    
+                                    match asset.format(_format) {
+                                        Ok(output) => {
+                                            println!("{}", output);
+                                            Ok(())
+                                        }
+                                        Err(e) => Err(CliError::FormattingError(e)),
+                                    }
+                                }
+                                Err(e) => {
+                                    // Even if the operation failed, persist the potentially updated access token back to keyring
+                                    if let Some(updated_token) = client.get_access_token() {
+                                        if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                            warn!("Failed to persist updated access token: {}", token_err);
+                                        }
+                                    }
+                                    
+                                    error!("Error fetching asset: {}", e);
+                                    match e {
+                                        pcli2::physna_v3::ApiError::RetryFailed(msg) => {
+                                            eprintln!("Error fetching asset: {}", msg);
+                                        }
+                                        pcli2::physna_v3::ApiError::HttpError(http_err) => {
+                                            if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                                eprintln!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
+                                            } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
+                                                eprintln!("Error: Unauthorized access. Please check your authentication credentials.");
+                                            } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+                                                eprintln!("Error: Access forbidden. You don't have permission to access this asset.");
+                                            } else {
+                                                eprintln!("Error fetching asset: HTTP error {}", http_err);
+                                            }
+                                        }
+                                        _ => {
+                                            eprintln!("Error fetching asset: {}", e);
+                                        }
+                                    }
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                    */
+
+                    todo!("Fix the code");
+                }
+                Some((COMMAND_DELETE, sub_matches)) => {
+
+                    /*
+                    trace!("Executing asset delete command");
+                    
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    // Must provide either asset UUID or path
+                    if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    }
+                    
+                    // Try to get access token and delete asset via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Get tenant ID with resolution
+                            let tenant = get_tenant_id(&mut client, sub_matches, &configuration).await?;
+                            
+                            // Resolve asset ID from either UUID parameter or path
+                            let asset_id = if let Some(uuid) = asset_uuid_param {
+                                uuid.clone()
+                            } else if let Some(path) = asset_path_param {
+                                // To resolve asset by path, we need to:
+                                // 1. Get all assets for the tenant
+                                // 2. Find the asset with matching path
+                                trace!("Resolving asset by path: {}", path);
+                                match AssetCache::get_or_fetch(&mut client, &tenant).await {
+                                    Ok(asset_list_response) => {
+                                        // Find asset with matching path
+                                        if let Some(asset_response) = asset_list_response.assets.iter().find(|asset| asset.path == *path) {
+                                            asset_response.id.clone()
+                                        } else {
+                                            return Err(CliError::MissingRequiredArgument(format!("Asset with path '{}' not found", path)));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error fetching assets for path resolution: {}", e);
+                                        return Err(CliError::MissingRequiredArgument("Failed to fetch assets for path resolution".to_string()));
+                                    }
+                                }
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                            };
+                            
+                            match client.delete_asset(&tenant, &asset_id).await {
+                                Ok(()) => {
+                                    // Invalidate cache for this tenant since we've modified asset state
+                                    match AssetCache::load() {
+                                        Ok(cache) => {
+                                            cache.invalidate_tenant(&tenant);
+                                            if let Err(e) = cache.save() {
+                                                debug!("Failed to save invalidated cache: {}", e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            debug!("Failed to load cache for invalidation: {}", e);
+                                        }
+                                    }
+                                    
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error!("Error deleting asset: {}", e);
+                                    eprintln!("Error deleting asset: {}", e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                    */
+
+                    todo!("Fix the code");
+                }
+                Some(("dependencies", sub_matches)) => {
+
+                    /*
+                    trace!("Executing asset dependencies command");
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    
+                    // Must provide either asset UUID or path
+                    if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    }
+                    
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
+                    let format = OutputFormat::from_str(&format_str).unwrap();
+                    
+                    // Try to get access token and get asset dependencies via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            
+                            // Resolve asset path to get dependencies
+                            if let Some(path) = asset_path_param {
+                                trace!("Getting dependencies for asset by path: {}", path);
+                                
+                                // Check if recursive flag is set
+                                let recursive = sub_matches.get_flag(PARAMETER_RECURSIVE);
+                                
+                                if recursive {
+                                    // Handle recursive dependencies
+                                    match get_asset_dependencies_recursive(&mut client, &tenant, path).await {
+                                        Ok(mut dependencies_response) => {
+                                            // Set the original asset path for tree formatting
+                                            dependencies_response.original_asset_path = path.to_string();
+                                            
+                                            // Even if the API call succeeded, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            // For recursive tree, CSV, and JSON formats, we need special hierarchical formatting
+                                            if format == OutputFormat::Tree {
+                                                // Build and print hierarchical tree
+                                                let tree_output = build_hierarchical_dependency_tree(&path, &mut client, &tenant).await?;
+                                                println!("{}", tree_output);
+                                                Ok(())
+                                            } else if format == OutputFormat::Csv {
+                                                // Build and print hierarchical CSV with parent information
+                                                let csv_output = build_hierarchical_dependency_csv(&path, &mut client, &tenant).await?;
+                                                println!("{}", csv_output);
+                                                Ok(())
+                                            } else if format == OutputFormat::Json {
+                                                // Build and print hierarchical JSON with parent information
+                                                let json_output = build_hierarchical_dependency_json(&path, &mut client, &tenant).await?;
+                                                println!("{}", json_output);
+                                                Ok(())
+                                            } else {
+                                                // For other formats, use the standard formatter
+                                                match dependencies_response.format(format) {
+                                                    Ok(output) => {
+                                                        println!("{}", output);
+                                                        Ok(())
+                                                    }
+                                                    Err(e) => Err(CliError::FormattingError(e)),
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            // Even if the recursive call failed, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            error!("Error getting recursive asset dependencies for path '{}': {}", path, e);
+                                            eprintln!("Error getting recursive asset dependencies for path '{}': {}", path, e);
+                                            Ok(())
+                                        }
+                                    }
+                                } else {
+                                    // Handle non-recursive dependencies (original behavior)
+                                    match client.get_asset_dependencies_by_path(&tenant, path).await {
+                                        Ok(mut dependencies_response) => {
+                                            // Set the original asset path for tree formatting
+                                            dependencies_response.original_asset_path = path.to_string();
+                                            
+                                            // Even if the API call succeeded, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            match dependencies_response.format(format) {
+                                                Ok(output) => {
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            // Even if the API call failed, persist the potentially updated access token back to keyring
+                                            if let Some(updated_token) = client.get_access_token() {
+                                                if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                    warn!("Failed to persist updated access token: {}", token_err);
+                                                }
+                                            }
+                                            
+                                            error!("Error getting asset dependencies for path '{}': {}", path, e);
+                                            eprintln!("Error getting asset dependencies for path '{}': {}", path, e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                            } else if let Some(uuid) = asset_uuid_param {
+                                trace!("Getting dependencies for asset by UUID: {}", uuid);
+                                // For UUID-based lookup, we would need a different API endpoint
+                                // For now, we'll implement only path-based dependency lookup
+                                error!("UUID-based dependency lookup not yet implemented");
+                                eprintln!("Error: UUID-based dependency lookup not yet implemented. Please use --path instead.");
+                                Ok(())
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                error!("Either asset UUID or path must be provided");
+                                eprintln!("Error: Either asset UUID or path must be provided");
+                                Ok(())
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                    */
+
+                    todo!("Fix the code");
+                }
+                Some(("download", sub_matches)) => {
+
+                    /*
+                    trace!("Executing asset download command");
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+                    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+                    let output_path_param = sub_matches.get_one::<std::path::PathBuf>("output");
+                    
+                    // Must provide either asset UUID or path
+                    if asset_uuid_param.is_none() && asset_path_param.is_none() {
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    }
+                    
+                    // Try to get access token and download asset via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            
+                            // Resolve asset ID from either UUID parameter or path
+                            let asset_id = if let Some(uuid) = asset_uuid_param {
+                                uuid.clone()
+                            } else if let Some(path) = asset_path_param {
+                                // Resolve asset by path to get UUID
+                                trace!("Resolving asset by path: {}", path);
+                                debug!("About to call resolve_asset_path_to_uuid for path: {}", path);
+                                match pcli2::resolution_utils::resolve_asset_path_to_uuid(&mut client, &tenant, path).await {
+                                    Ok(uuid) => {
+                                        // Path resolution succeeded, but token might have been refreshed during the process
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        uuid
+                                    },
+                                    Err(e) => {
+                                        // Even if path resolution failed, persist the potentially updated access token back to keyring
+                                        if let Some(updated_token) = client.get_access_token() {
+                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                warn!("Failed to persist updated access token: {}", token_err);
+                                            }
+                                        }
+                                        
+                                        // Convert ApiError to CliError
+                                        let cli_error = CliError::ConfigurationError(
+                                            pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                cause: Box::new(e)
+                                            }
+                                        );
+                                        
+                                        eprintln!("Error resolving asset path '{}': {}", path, cli_error);
+                                        return Ok(());
+                                    }
+                                }
+                            } else {
+                                // This shouldn't happen due to our earlier check, but just in case
+                                return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                            };
+                            
+                            // Perform the asset download
+                            match client.download_asset(&tenant, &asset_id).await {
+                                Ok(asset_file_bytes) => {
+                                    // Determine output file path
+                                    let output_path = if let Some(output_path) = output_path_param {
+                                        output_path.clone()
+                                    } else {
+                                        // Try to get asset details to get the original filename
+                                        match client.get_asset(&tenant, &asset_id).await {
+                                            Ok(asset_response) => {
+                                                // Extract filename from asset path for default output
+                                                if let Some(last_slash) = asset_response.path.rfind('/') {
+                                                    std::path::PathBuf::from(&asset_response.path[last_slash + 1..])
+                                                } else {
+                                                    std::path::PathBuf::from(&asset_response.path)
+                                                }
+                                            }
+                                            Err(_) => {
+                                                // If we can't get asset details, use a generic name with UUID
+                                                std::path::PathBuf::from(format!("asset_{}.bin", asset_id))
+                                            }
+                                        }
+                                    };
+                                    
+                                    // Write the downloaded bytes to the output file
+                                    match std::fs::write(&output_path, asset_file_bytes) {
+                                        Ok(()) => {
+                                            println!("Asset downloaded successfully to: {}", output_path.display());
+                                            Ok(())
+                                        }
+                                        Err(e) => {
+                                            error!("Error writing downloaded asset to file: {}", e);
+                                            Err(CliError::ConfigurationError(
+                                                pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                    cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                }
+                                            ))
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // Even if the operation failed, persist the potentially updated access token back to keyring
+                                    if let Some(updated_token) = client.get_access_token() {
+                                        if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                            warn!("Failed to persist updated access token: {}", token_err);
+                                        }
+                                    }
+                                    
+                                    error!("Error downloading asset: {}", e);
+                                    match e {
+                                        pcli2::physna_v3::ApiError::RetryFailed(msg) => {
+                                            eprintln!("Error downloading asset: {}", msg);
+                                        }
+                                        pcli2::physna_v3::ApiError::HttpError(http_err) => {
+                                            if http_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                                eprintln!("Error: The asset with ID '{}' cannot be found in tenant '{}'", asset_id, tenant);
+                                            } else if http_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) {
+                                                eprintln!("Error: Unauthorized access. Please check your authentication credentials.");
+                                            } else if http_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+                                                eprintln!("Error: Access forbidden. You don't have permission to download this asset.");
+                                            } else {
+                                                eprintln!("Error downloading asset: HTTP error {}", http_err);
+                                            }
+                                        }
+                                        _ => {
+                                            eprintln!("Error downloading asset: {}", e);
+                                        }
+                                    }
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                    */
+
+                    todo!("Fix the code");
+                }
+                Some(("download-folder", sub_matches)) => {
+
+                    /*
+                    trace!("Executing asset download-folder command");
+                    // Get tenant identifier from explicit parameter or fall back to active tenant from configuration
+                    let tenant_identifier = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    
+                    // Get the folder paths - can be multiple
+                    let folder_paths: Vec<String> = sub_matches.get_many::<String>("path")
+                        .ok_or(CliError::MissingRequiredArgument("folder path must be provided".to_string()))?
+                        .map(|s| s.to_string())
+                        .collect();
+                    trace!("Processing folders: {:?}", folder_paths);
+                    
+                    let output_dir_param = sub_matches.get_one::<std::path::PathBuf>("output");
+                    
+                    // Try to get access token and download folder assets via Physna V3 API
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Resolve tenant identifier to tenant ID
+                            let tenant = resolve_tenant_identifier_to_id(&mut client, tenant_identifier).await?;
+                            
+                            // Process each folder path
+                            for folder_path in folder_paths {
+                                trace!("Processing folder for download: {}", folder_path);
+                                
+                                // Get all assets in the specified folder
+                                match AssetCache::get_assets_for_folder(&mut client, &tenant, &folder_path, false).await {
+                                    Ok(asset_list_response) => {
+                                        let assets = asset_list_response.get_all_assets();
+                                        trace!("Found {} assets in folder: {}", assets.len(), folder_path);
+                                        
+                                        // Debug print all assets
+                                        debug!("Assets in folder '{}':", folder_path);
+                                        for (i, asset) in assets.iter().enumerate() {
+                                            debug!("  {}: {} (UUID: {:?})", i+1, asset.path(), asset.uuid());
+                                        }
+                                        
+                                        if assets.is_empty() {
+                                            println!("No assets found in folder: {}", folder_path);
+                                            continue;
+                                        }
+                                        
+                                        // Determine output directory
+                                        let output_dir = if let Some(output_dir) = output_dir_param {
+                                            output_dir.clone()
+                                        } else {
+                                            std::path::PathBuf::from(".")
+                                        };
+                                        
+                                        // Create the output directory if it doesn't exist
+                                        if !output_dir.exists() {
+                                            std::fs::create_dir_all(&output_dir).map_err(|e| {
+                                                CliError::ConfigurationError(
+                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                    }
+                                                )
+                                            })?;
+                                        }
+                                        
+                                        // Extract the folder name for the ZIP file name
+                                        let folder_name = folder_path
+                                            .split('/')
+                                            .last()
+                                            .unwrap_or(&folder_path)
+                                            .trim_start_matches('/')
+                                            .trim_end_matches('/');
+                                        let zip_filename = format!("{}.zip", folder_name);
+                                        let zip_path = output_dir.join(&zip_filename);
+                                        
+                                        // Create a ZIP file for this folder
+                                        let file = std::fs::File::create(&zip_path)
+                                            .map_err(|e| {
+                                                CliError::ConfigurationError(
+                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                    }
+                                                )
+                                            })?;
+                                        
+                                        let mut zip = zip::ZipWriter::new(file);
+                                        let options: zip::write::FileOptions<()> = zip::write::FileOptions::default()
+                                            .compression_method(zip::CompressionMethod::Deflated);
+                                        
+                                        // Download each asset in the folder and add to ZIP
+                                        let mut successful_downloads = 0;
+                                        let total_assets = assets.len();
+                                        
+                                        for asset in assets {
+                                            if let Some(asset_uuid) = asset.uuid() {
+                                                trace!("Downloading asset: {} (UUID: {})", asset.path(), asset_uuid);
+                                                
+                                                match client.download_asset(&tenant, asset_uuid).await {
+                                                    Ok(asset_bytes) => {
+                                                        // Extract just the filename from the asset path
+                                                        let asset_filename = std::path::Path::new(&asset.path())
+                                                            .file_name()
+                                                            .unwrap_or_default()
+                                                            .to_string_lossy()
+                                                            .to_string();
+                                                        
+                                                        // Add the asset file to the ZIP archive
+                                                        zip.start_file(&asset_filename, options)
+                                                            .map_err(|e| {
+                                                                CliError::ConfigurationError(
+                                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                                    }
+                                                                )
+                                                            })?;
+                                                        
+                                                        zip.write_all(&asset_bytes)
+                                                            .map_err(|e| {
+                                                                CliError::ConfigurationError(
+                                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                                    }
+                                                                )
+                                                            })?;
+                                                        
+                                                        trace!("Added asset to ZIP: {} ({} bytes)", asset_filename, asset_bytes.len());
+                                                        successful_downloads += 1;
+                                                        
+                                                        // Persist any potentially updated access token back to keyring
+                                                        if let Some(updated_token) = client.get_access_token() {
+                                                            if let Err(token_err) = keyring.put("default", "access-token".to_string(), updated_token) {
+                                                                warn!("Failed to persist updated access token: {}", token_err);
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        error!("Error downloading asset '{}': {}", asset.path(), e);
+                                                        eprintln!("Warning: Failed to download asset '{}': {}", asset.path(), e);
+                                                        // Continue with other assets rather than failing completely
+                                                    }
+                                                }
+                                            } else {
+                                                warn!("Asset '{}' has no UUID and will be skipped", asset.path());
+                                            }
+                                        }
+                                        
+                                        // Finish writing the ZIP file
+                                        zip.finish()
+                                            .map_err(|e| {
+                                                CliError::ConfigurationError(
+                                                    pcli2::configuration::ConfigurationError::FailedToLoadData {
+                                                        cause: Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                                                    }
+                                                )
+                                            })?;
+                                        
+                                        println!("Folder '{}' processed: {}/{} assets downloaded successfully to: {}", 
+                                            folder_path, successful_downloads, total_assets, zip_path.display());
+                                    }
+                                    Err(e) => {
+                                        error!("Error getting assets for folder '{}': {}", folder_path, e);
+                                        eprintln!("Error getting assets for folder '{}': {}", folder_path, e);
+                                    }
+                                }
+                            }
+                            
+                            Ok(())
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                    */
+
+                    todo!("Fix the code");
+                }
+                Some((COMMAND_MATCH, _sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MATCH);
+
+                    todo!("Implement: command match");
+
+                    /*
+                    trace!("Executing asset match command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_name) => tenant_name.to_owned(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_uuid) = configuration.get_active_tenant_uuid() {
+                                active_tenant_uuid
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+                    let tenant_uuid = Uuid::from(tenant_uuid);
+                    
+                    // Get the reference asset identifier (either UUID or path)
+                    let asset_uuid: Option<&Uuid> = sub_matches.get_one::<Uuid>(PARAMETER_UUID);
+                    let asset_path: Option<&String> = sub_matches.get_one::<String>(PARAMETER_PATH);
+
+                    let api = PhysnaApiClient::try_default()?;
+                    let asset: Asset = if asset_uuid.is_some() {
+                        let uuid = asset_uuid.unwrap();
+                        api.get_asset_by_uuid(Uuid::from_string(tenant), &uuid).await?
+                    } else if asset_path.is_some() {
+                        let path = asset_path.unwrap();
+                        
+                        debug!("Looking up asset by path: {}", path);
+                        api.get_asset_by_path(path)?;
+                        asset.uuid()
+                        
+
+                    } else {
+                        // we should not see this error. It is intercepted by the clap crate before it reaches here
+                        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+                    };
+                    
+                    // Get threshold parameter with proper error handling
+                    let threshold_param = sub_matches.get_one::<f64>("threshold")
+                        .unwrap_or(&80.0);
+                    let threshold = *threshold_param;
+                    
+                    // Validate threshold is between 0 and 100
+                    if !(0.0..=100.0).contains(&threshold) {
+                        eprintln!("Threshold must be between 0.00 and 100.00");
+                        return Ok(());
+                    }
+
+                    let format = extract_format_param_with_default(sub_matches)?;
+
+                    trace!("Performing geometric search for asset {} with threshold {}", asset_uuid, threshold);
+                    
+                    // Try to get access token and perform geometric search
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            let mut client = PhysnaApiClient::new().with_access_token(token);
+                            
+                            // Try to get client credentials for automatic token refresh
+                            if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                client = client.with_client_credentials(client_id, client_secret);
+                            }
+                            
+                            // Try the geometric search with retry logic for 409 errors
+                            let mut retry_count = 0;
+                            let max_retries = 3;
+                            let search_result = loop {
+                                match client.geometric_search(&tenant, &asset_uuid, threshold).await {
+                                    Ok(result) => break Ok(result),
+                                    Err(e) => {
+                                        // Check if it's a 409 Conflict error and we should retry
+                                        if let ApiError::HttpError(http_err) = &e {
+                                            if http_err.status() == Some(reqwest::StatusCode::CONFLICT) && retry_count < max_retries {
+                                                retry_count += 1;
+                                                trace!("Received 409 Conflict for asset {}, retry {} after 500ms delay", asset_id, retry_count);
+                                                sleep(Duration::from_millis(500)).await;
+                                                continue;
+                                            }
+                                        }
+                                        // For all other errors or if we've exhausted retries, break with the error
+                                        break Err(e);
+                                    }
+                                }
+                            };
+                            
+                            match search_result {
+                                Ok(search_result) => {
+                                    trace!("Geometric search completed, processing {} matches", search_result.matches.len());
+                                    // Get the reference asset details
+                                    match client.get_asset(&tenant, &asset_id).await {
+                                        Ok(reference_asset) => {
+                                            trace!("Retrieved reference asset details");
+                                            // Convert GeometricSearchResponse to FolderGeometricMatchResponse format
+                                            let mut matches = Vec::new();
+                                            
+                                            // Extract the reference asset name from the path (last part after the last slash)
+                                            let reference_asset_name = reference_asset.path.split('/').next_back().unwrap_or(&reference_asset.path).to_string();
+                                            trace!("Reference asset name: {}", reference_asset_name);
+                                            
+                                            // Convert each geometric match to a folder match format
+                                            for (index, geometric_match) in search_result.matches.iter().enumerate() {
+                                                trace!("Processing match {} of {}: {} -> {}", index + 1, search_result.matches.len(), asset_id, geometric_match.asset.uuid);
+                                                // Skip self-matches
+                                                if geometric_match.asset.uuid.to_string() != asset_id {
+                                                    let candidate_asset_name = geometric_match.asset.path.split('/').next_back().unwrap_or(&geometric_match.asset.path).to_string();
+                                                    trace!("Adding match: {} -> {} ({}%)", reference_asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                    // Generate comparison URL for single asset match
+                                                    let comparison_url = format!("https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                                                        tenant,
+                                                        asset_id,
+                                                        geometric_match.asset.uuid,
+                                                        tenant,
+                                                        tenant,
+                                                        geometric_match.match_percentage
+                                                    );
+                                                    
+                                                    let folder_match = FolderGeometricMatch {
+                                                        reference_asset_name: reference_asset_name.clone(),
+                                                        candidate_asset_name,
+                                                        match_percentage: geometric_match.match_percentage,
+                                                        reference_asset_path: reference_asset.path.clone(),
+                                                        candidate_asset_path: geometric_match.asset.path.clone(),
+                                                        reference_asset_uuid: asset_uuid.clone(),
+                                                        candidate_asset_uuid: geometric_match.asset.uuid.clone(),
+                                                        comparison_url,
+                                                    };
+                                                    matches.push(folder_match);
+                                                } else {
+                                                    trace!("Skipping self-match for asset {}", asset_id);
+                                                }
+                                            }
+                                            
+                                            trace!("Formatting {} matches for output", matches.len());
+                                            // Create the response object (now a simple vector)
+                                            let folder_match_response: FolderGeometricMatchResponse = matches;
+                                            
+                                            // Format and output the results
+                                            match folder_match_response.format(format) {
+                                                Ok(output) => {
+                                                    trace!("Output formatted successfully");
+                                                    println!("{}", output);
+                                                    Ok(())
+                                                }
+                                                Err(e) => Err(CliError::FormattingError(e)),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Error getting reference asset details: {}", e);
+                                            Ok(())
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error performing geometric search for asset {} after {} retries: {}", asset_id, retry_count, e);
+                                    Ok(())
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                    */
+                }
+                Some((COMMAND_MATCH_FOLDER, _sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MATCH_FOLDER);
+
+                    todo!("Implement: command match-folder");
+
+                    /*
+                    trace!("Executing asset geometric-match-folder command");
+                    // Get tenant from explicit parameter or fall back to active tenant from configuration
+                    let tenant = match sub_matches.get_one::<String>(PARAMETER_TENANT) {
+                        Some(tenant_id) => tenant_id.clone(),
+                        None => {
+                            // Try to get active tenant from configuration
+                            if let Some(active_tenant_id) = configuration.get_active_tenant_id() {
+                                active_tenant_id
+                            } else {
+                                return Err(CliError::MissingRequiredArgument(PARAMETER_TENANT.to_string()));
+                            }
+                        }
+                    };
+
+                    // Get the source folder paths - can be multiple
+                    let folder_paths: Vec<String> = sub_matches.get_many::<String>("path")
+                        .ok_or(CliError::MissingRequiredArgument("folder path must be provided".to_string()))?
+                        .map(|s| s.to_string())
+                        .collect();
+                    trace!("Processing folders: {:?}", folder_paths);
+
+                    // Get threshold parameter with proper error handling
+                    let threshold_param = sub_matches.get_one::<f64>("threshold")
+                        .unwrap_or(&80.0);
+                    let threshold = *threshold_param;
+
+                    // Validate threshold is between 0 and 100
+                    if !(0.0..=100.0).contains(&threshold) {
+                        eprintln!("Threshold must be between 0.00 and 100.00");
+                        return Ok(());
+                    }
+
+                    // Get exclusive flag
+                    let exclusive = sub_matches.get_flag("exclusive");
+                    trace!("Exclusive flag: {}", exclusive);
+
+                    // Get concurrency parameter
+                    let concurrent_param = sub_matches.get_one::<usize>("concurrent")
+                        .unwrap_or(&5);
+                    let concurrent = *concurrent_param;
+                    trace!("Using concurrency level: {}", concurrent);
+
+                    // Get progress parameter
+                    let show_progress = sub_matches.get_flag("progress");
+                    trace!("Progress bar enabled: {}", show_progress);
+
+                    let format = extract_format_param_with_default(sub_matches)?;
+
+                    trace!("Retrieving access token for tenant: {}", tenant);
+                    // Try to get access token and perform folder-based geometric search
+                    let mut keyring = Keyring::default();
+                    match keyring.get("default", "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            // Get client credentials for creating multiple clients
+                            let client_credentials = if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
+                                keyring.get("default", "client-id".to_string()),
+                                keyring.get("default", "client-secret".to_string())
+                            ) {
+                                Some((client_id, client_secret))
+                            } else {
+                                None
+                            };
+
+                            let mut client = PhysnaApiClient::new().with_access_token(token.clone());
+                            if let Some((client_id, client_secret)) = &client_credentials {
+                                client = client.with_client_credentials(client_id.clone(), client_secret.clone());
+                            }
+
+                            // Create a combined progress bar for all assets across all folders
+                            let mut total_assets = 0;
+                            let mut folder_assets = Vec::new();
+                            for folder_path in &folder_paths {
+                                trace!("Fetching asset count for folder: {}", folder_path);
+                                
+                                // Get all assets in the specified folder to calculate total count
+                                match AssetCache::get_assets_for_folder(&mut client, &tenant, folder_path, false).await {
+                                    Ok(asset_list) => {
+                                        let count = asset_list.len();
+                                        total_assets += count;
+                                        folder_assets.push((folder_path.clone(), count));
+                                        trace!("Found {} assets in folder: {}", count, folder_path);
+                                    }
+                                    Err(e) => {
+                                        error!("Error getting asset count for folder '{}': {}", folder_path, e);
+                                        eprintln!("Error getting asset count for folder '{}': {}", folder_path, e);
+                                        continue; // Continue with other folders
+                                    }
+                                }
+                            }
+
+                            // Create progress bar if requested
+                            let progress_bar = if show_progress && total_assets > 0 {
+                                let pb = indicatif::ProgressBar::new(total_assets as u64);
+                                pb.set_style(
+                                    indicatif::ProgressStyle::default_bar()
+                                        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                                        .unwrap()
+                                        .progress_chars("#>-")
+                                );
+                                Some(pb)
+                            } else {
+                                None
+                            };
+
+                            // Process each folder path and collect all results
+                            let mut all_folder_matches = Vec::new();
+                            for folder_path in &folder_paths {
+                                trace!("Fetching assets for folder: {}", folder_path);
+                                
+                                // Get all assets in the specified folder
+                                match AssetCache::get_assets_for_folder(&mut client, &tenant, folder_path, false).await {
+                                    Ok(asset_list) => {
+                                        trace!("Found {} assets in folder: {}", asset_list.len(), folder_path);
+                                        
+                                        // Get all assets from the AssetList
+                                        let assets = asset_list.get_all_assets();
+                                        trace!("Processing {} assets from folder: {}", assets.len(), folder_path);
+
+                                        // Create a stream of futures for processing assets concurrently
+                                        let base_url = "https://app-api.physna.com/v3".to_string(); // Use default base URL
+                                        let tenant_id = tenant.clone();
+                                        
+                                        let results: Result<Vec<_>, _> = futures::stream::iter(assets)
+                                            .map(|asset| {
+                                                let base_url = base_url.clone();
+                                                let tenant_id = tenant_id.clone();
+                                                let token = token.clone();
+                                                let client_credentials = client_credentials.clone();
+                                                let progress_bar = progress_bar.clone(); // Clone the shared progress bar
+                                                let asset_name = asset.name().to_string();
+                                                let asset_uuid = asset.uuid().cloned();
+                                                let asset_path = asset.path().to_string();
+
+                                                async move {
+                                                    trace!("Processing asset: {} ({})", asset_name, asset_uuid.as_deref().unwrap_or("unknown"));
+                                                    
+                                                    if let Some(asset_uuid) = asset_uuid {
+                                                        // Create a new client for each request to avoid borrowing issues
+                                                        let mut client = PhysnaApiClient::new().with_base_url(base_url).with_access_token(token.clone());
+                                                        if let Some((client_id, client_secret)) = client_credentials.clone() {
+                                                            client = client.with_client_credentials(client_id, client_secret);
+                                                        }
+
+                                                        trace!("Performing geometric search for asset: {} ({})", asset_name, asset_uuid);
+                                                        // Try the geometric search with retry logic for 409 errors
+                                                        let mut retry_count = 0;
+                                                        let max_retries = 3;
+                                                        let search_result = loop {
+                                                            match client.geometric_search(&tenant_id, &asset_uuid, threshold).await {
+                                                                Ok(result) => break Ok(result),
+                                                                Err(e) => {
+                                                                    // Check if it's a 409 Conflict error and we should retry
+                                                                    if let ApiError::HttpError(http_err) = &e {
+                                                                        if http_err.status() == Some(reqwest::StatusCode::CONFLICT) && retry_count < max_retries {
+                                                                            retry_count += 1;
+                                                                            trace!("Received 409 Conflict for asset {}, retry {} after 500ms delay", asset_uuid, retry_count);
+                                                                            sleep(Duration::from_millis(500)).await;
+                                                                            continue;
+                                                                        }
+                                                                    }
+                                                                    // For all other errors or if we've exhausted retries, break with the error
+                                                                    break Err(e);
+                                                                }
+                                                            }
+                                                        };
+                                                        
+                                                        match search_result {
+                                                            Ok(search_result) => {
+                                                                trace!("Geometric search completed for {}, found {} matches", asset_uuid, search_result.matches.len());
+                                                                
+                                                                // Process matches, skipping self-matches
+                                                                let mut asset_matches = Vec::new();
+                                                                for geometric_match in search_result.matches {
+                                                                    // Skip self-matches by comparing UUIDs
+                                                                    if geometric_match.asset.id != asset_uuid {
+                                                                        let candidate_asset_name = geometric_match.asset.path.split('/').next_back().unwrap_or(&geometric_match.asset.path).to_string();
+                                                                        trace!("Adding match: {} -> {} ({}%)", asset_name, candidate_asset_name, geometric_match.match_percentage);
+                                                                        // Generate comparison URL
+                                                                        let comparison_url = format!("https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                                                                            tenant_id,
+                                                                            asset_uuid,
+                                                                            geometric_match.asset.id,
+                                                                            tenant_id,
+                                                                            tenant_id,
+                                                                            geometric_match.match_percentage
+                                                                        );
+                                                                        
+                                                                        let folder_match = FolderGeometricMatch {
+                                                                            reference_asset_name: asset_name.clone(),
+                                                                            candidate_asset_name,
+                                                                            match_percentage: geometric_match.match_percentage,
+                                                                            reference_asset_path: asset_path.clone(),
+                                                                            candidate_asset_path: geometric_match.asset.path.clone(),
+                                                                            reference_asset_uuid: asset_uuid.clone(),
+                                                                            candidate_asset_uuid: geometric_match.asset.id.clone(),
+                                                                            comparison_url,
+                                                                        };
+                                                                        asset_matches.push(folder_match);
+                                                                    } else {
+                                                                        trace!("Skipping self-match for asset {}", asset_uuid);
+                                                                    }
+                                                                }
+                                                                
+                                                                // Update progress bar if present
+                                                                if let Some(pb) = &progress_bar {
+                                                                    pb.inc(1);
+                                                                    pb.set_message(format!("Processed: {} from {}", asset_name, folder_path));
+                                                                }
+                                                                
+                                                                Ok(asset_matches)
+                                                            }
+                                                            Err(e) => {
+                                                                error!("Error performing geometric search for asset {} after {} retries: {}", asset_uuid, retry_count, e);
+                                                                
+                                                                // Update progress bar if present
+                                                                if let Some(pb) = &progress_bar {
+                                                                    pb.inc(1);
+                                                                    pb.set_message(format!("Failed: {} from {}", asset_name, folder_path));
+                                                                }
+                                                                
+                                                                Err(e)
+                                                            }
+                                                        }
+                                                    } else {
+                                                        // Update progress bar if present
+                                                        if let Some(pb) = &progress_bar {
+                                                            pb.inc(1);
+                                                            pb.set_message(format!("Skipped: {} (no UUID)", asset_name));
+                                                        }
+                                                        
+                                                        Err(ApiError::AuthError("Asset has no UUID".to_string()))
+                                                    }
+                                                }
+                                            })
+                                            .buffer_unordered(concurrent)
+                                            .collect::<Vec<_>>()
+                                            .await
+                                            .into_iter()
+                                            .collect();
+
+                                        match results {
+                                            Ok(asset_match_results) => {
+                                                // Flatten matches from this folder into the overall list
+                                                let folder_matches: Vec<FolderGeometricMatch> = asset_match_results.into_iter().flatten().collect();
+                                                let matches_count = folder_matches.len(); // Get count before moving
+                                                all_folder_matches.extend(folder_matches);
+                                                trace!("Processed folder {}, found {} matches", folder_path, matches_count);
+                                            }
+                                            Err(e) => {
+                                                error!("Error processing folder {}: {}", folder_path, e);
+                                                continue; // Continue with other folders
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error getting assets for folder '{}': {}", folder_path, e);
+                                        eprintln!("Error getting assets for folder '{}': {}", folder_path, e);
+                                        continue; // Continue with other folders
+                                    }
+                                }
+                            }
+
+                            // Finish progress bar if present
+                            if let Some(pb) = &progress_bar {
+                                pb.finish_with_message("Batch processing complete");
+                            }
+
+                            trace!("Total matches from all folders before deduplication: {}", all_folder_matches.len());
+
+                            // Apply exclusive filtering if requested
+                            let filtered_matches = if exclusive {
+                                // Filter to only include matches where both assets are from the specified paths
+                                trace!("Applying exclusive filtering with paths: {:?}", folder_paths);
+                                all_folder_matches.into_iter().filter(|match_result| {
+                                    let ref_path = &match_result.reference_asset_path;
+                                    let candidate_path = &match_result.candidate_asset_path;
+                                    
+                                    // Check if both the reference asset path and candidate asset path are in the user-specified paths
+                                    let ref_in_paths = folder_paths.iter().any(|p| ref_path.starts_with(&format!("{}/", p)) || ref_path == p);
+                                    let candidate_in_paths = folder_paths.iter().any(|p| candidate_path.starts_with(&format!("{}/", p)) || candidate_path == p);
+                                    
+                                    ref_in_paths && candidate_in_paths
+                                }).collect()
+                            } else {
+                                all_folder_matches
+                            };
+
+                            trace!("Matches after exclusive filtering: {}", filtered_matches.len());
+
+                            // Deduplicate results - Filter out duplicate pairs (A->B and B->A are the same match)
+                            // Since geometric matching is symmetric, we don't need to show both directions
+                            let mut unique_matches = Vec::new();
+                            let mut seen_pairs = std::collections::HashSet::new();
+
+                            for match_result in filtered_matches {
+                                // Create a canonical pair identifier by sorting the UUIDs to ensure
+                                // that (UUID_A -> UUID_B) and (UUID_B -> UUID_A) are treated as the same relationship
+                                let mut uuid_pair = vec![match_result.reference_asset_uuid.clone(), match_result.candidate_asset_uuid.clone()];
+                                uuid_pair.sort();
+                                let canonical_pair_key = format!("{}-{}", uuid_pair[0], uuid_pair[1]);
+
+                                if !seen_pairs.contains(&canonical_pair_key) {
+                                    seen_pairs.insert(canonical_pair_key);
+                                    unique_matches.push(match_result);
+                                }
+                            }
+
+                            // Sort the unique matches by match percentage (descending), then by reference asset path (ascending)
+                            unique_matches.sort_by(|a, b| {
+                                // First compare by match percentage (descending)
+                                b.match_percentage
+                                    .partial_cmp(&a.match_percentage)
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                                    .then_with(|| {
+                                        // Then by reference asset path (ascending)
+                                        a.reference_asset_path.cmp(&b.reference_asset_path)
+                                    })
+                            });
+
+                            // Create the response object (now a simple vector)
+                            let folder_match_response: FolderGeometricMatchResponse = unique_matches;
+
+                            trace!("Formatting results for output");
+                            // Format and output the results
+                            match folder_match_response.format(format) {
+                                Ok(output) => {
+                                    trace!("Output formatted successfully");
+                                    println!("{}", output);
+                                    Ok(())
+                                }
+                                Err(e) => Err(CliError::FormattingError(e)),
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'".to_string()));
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
+                        }
+                    }
+                    */

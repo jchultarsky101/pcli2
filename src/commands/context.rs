@@ -3,8 +3,8 @@
 //! This module defines CLI commands related to context management.
 
 use crate::commands::params::{
-    format_parameter, id_parameter, name_parameter, 
-    COMMAND_CLEAR, COMMAND_CONTEXT, COMMAND_GET, COMMAND_SET
+    tenant_id_parameter, tenant_name_parameter, COMMAND_CLEAR, COMMAND_CONTEXT, COMMAND_GET,
+    COMMAND_SET, COMMAND_TENANT,
 };
 use clap::Command;
 
@@ -14,25 +14,21 @@ pub fn context_command() -> Command {
         .about("Context management")
         .subcommand_required(true)
         .subcommand(
-            Command::new(COMMAND_SET)
-                .about("Set context")
-                .subcommand(
-                    Command::new("tenant")
-                        .about("Set active tenant")
-                        .arg(name_parameter().required(false))
-                        .arg(id_parameter()),
-                ),
+            Command::new(COMMAND_SET).about("Set context").subcommand(
+                Command::new(COMMAND_TENANT)
+                    .about("Set or select an active tenant")
+                    .arg(tenant_name_parameter().required(false))
+                    .arg(tenant_id_parameter()),
+            ),
         )
         .subcommand(
             Command::new(COMMAND_GET)
                 .about("Get current context")
-                .arg(format_parameter()),
+                .subcommand(Command::new(COMMAND_TENANT).about("Print the active tenant")),
         )
         .subcommand(
             Command::new(COMMAND_CLEAR)
                 .about("Clear context")
-                .subcommand(
-                    Command::new("tenant").about("Clear active tenant"),
-                ),
+                .subcommand(Command::new(COMMAND_TENANT).about("Clear the active tenant")),
         )
 }

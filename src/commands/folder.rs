@@ -3,12 +3,12 @@
 //! This module defines CLI commands related to folder management.
 
 use crate::commands::params::{
-    format_parameter, name_parameter, parent_folder_id_parameter, 
-    path_parameter, refresh_parameter, recursive_parameter, tenant_parameter,
-    uuid_parameter, 
-    COMMAND_CREATE, COMMAND_DELETE, COMMAND_GET, COMMAND_LIST, COMMAND_FOLDER
+    folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
+    format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
+    name_parameter, tenant_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET,
+    COMMAND_LIST,
 };
-use clap::{Command, ArgGroup};
+use clap::Command;
 
 /// Create the folder command with all its subcommands.
 pub fn folder_command() -> Command {
@@ -20,45 +20,46 @@ pub fn folder_command() -> Command {
                 .about("Create a new folder")
                 .arg(tenant_parameter())
                 .arg(name_parameter())
-                .arg(parent_folder_id_parameter())
-                .arg(path_parameter())
+                .arg(format_with_metadata_parameter())
+                .arg(format_with_headers_parameter())
+                .arg(format_pretty_parameter())
                 .arg(format_parameter())
-                .group(
-                    ArgGroup::new("parent")
-                        .args(["parent-folder-id", "path"])
-                        .multiple(false)
-                ),
+                .arg(folder_path_parameter())
+                .arg(folder_uuid_parameter())
+                .group(folder_identifier_group()),
         )
         .subcommand(
             Command::new(COMMAND_GET)
                 .about("Get folder details")
                 .arg(tenant_parameter())
-                .arg(uuid_parameter())
-                .arg(path_parameter())
-                .arg(format_parameter())
-                .group(
-                    ArgGroup::new("folder_identifier")
-                        .args(["uuid", "path"])
-                        .multiple(false)
-                        .required(true)
-                ),
+                .arg(folder_uuid_parameter())
+                .arg(folder_path_parameter())
+                .group(folder_identifier_group())
+                .arg(format_with_metadata_parameter())
+                .arg(format_with_headers_parameter())
+                .arg(format_pretty_parameter())
+                .arg(format_parameter()),
         )
         .subcommand(
             Command::new(COMMAND_LIST)
                 .about("List all folders")
                 .visible_alias("ls")
                 .arg(tenant_parameter())
+                .arg(format_with_metadata_parameter())
+                .arg(format_with_headers_parameter())
+                .arg(format_pretty_parameter())
                 .arg(format_parameter())
-                .arg(path_parameter())
-                .arg(refresh_parameter())
-                .arg(recursive_parameter()),
+                .arg(folder_uuid_parameter())
+                .arg(folder_path_parameter())
+                .group(folder_identifier_group()),
         )
         .subcommand(
             Command::new(COMMAND_DELETE)
                 .about("Delete a folder")
                 .visible_alias("rm")
                 .arg(tenant_parameter())
-                .arg(uuid_parameter())
-                .arg(path_parameter()),
+                .arg(folder_uuid_parameter())
+                .arg(folder_path_parameter())
+                .group(folder_identifier_group()),
         )
 }

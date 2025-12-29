@@ -13,7 +13,8 @@
 //! - auth.rs: Authentication handling
 //! - configuration.rs: Configuration management
 
-use configuration::{Configuration, ConfigurationError};
+use configuration::ConfigurationError;
+use pcli2::error::CliError;
 use pcli2::{
     configuration,
     error_utils,
@@ -25,7 +26,7 @@ use tracing_subscriber::EnvFilter;
 
 mod banner;
 mod cli;
-use cli::{execute_command, CliError};
+use cli::execute_command;
 mod exit_codes;
 use exit_codes::PcliExitCode;
 
@@ -83,28 +84,8 @@ async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    // Clean expired cache files in the background (don't wait for it)
-    // This helps prevent the cache from growing indefinitely
-    let _cache_cleanup = tokio::spawn(async {
-        if let Err(e) = pcli2::folder_cache::FolderCache::clean_expired() {
-            tracing::warn!("Failed to clean expired folder cache: {}", e);
-        }
-    });
-
-    // Get the configuration
-    let configuration = match Configuration::load_or_create_default() {
-        Ok(config) => config,
-        Err(e) => {
-            error_utils::report_error(&e);
-            process::exit(PcliExitCode::ConfigError.code());
-        }
-    };
-
-    // Create an API client (placeholder for now)
-    let api = (); // We're using Physna V3 API directly in CLI commands
-
     // Parse and execute the CLI command
-    match execute_command(configuration, api).await {
+    match execute_command().await {
         Ok(()) => {
             // Success - exit with code 0
             process::exit(0);

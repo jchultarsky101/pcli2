@@ -3,8 +3,7 @@
 //! This module defines CLI commands related to tenant management.
 
 use crate::commands::params::{
-    format_parameter, id_parameter, 
-    COMMAND_GET, COMMAND_LIST, COMMAND_TENANT
+    format_parameter, tenant_id_parameter, COMMAND_GET, COMMAND_LIST, COMMAND_TENANT,
 };
 use clap::Command;
 
@@ -16,7 +15,7 @@ pub fn tenant_command() -> Command {
         .subcommand(
             Command::new(COMMAND_GET)
                 .about("Get tenant details")
-                .arg(id_parameter())
+                .arg(tenant_id_parameter())
                 .arg(format_parameter()),
         )
         .subcommand(

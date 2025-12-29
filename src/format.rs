@@ -4,7 +4,6 @@
 //! including JSON, CSV, and tree representations.
 
 use csv::Writer;
-use serde::{Deserialize, Serialize};
 use serde_json;
 use std::io::BufWriter;
 use std::str::FromStr;
@@ -18,8 +17,8 @@ pub const TREE: &str = "tree";
 #[derive(Debug, thiserror::Error)]
 pub enum FormattingError {
     /// Error when an unsupported output format is requested
-    #[error("invalid output format {format:?}")]
-    UnsupportedOutputFormat { format: String },
+    #[error("invalid output format {0}")]
+    UnsupportedOutputFormat(String),
     /// General error when formatting fails
     #[error("failed to format output due to: {cause:?}")]
     FormatFailure { cause: Box<dyn std::error::Error> },
@@ -32,25 +31,65 @@ pub enum FormattingError {
     /// Error specific to CSV writer operations
     #[error("CSV writer error: {0}")]
     CsvWriterError(String),
+
+    #[error("JSON serialization error: {0}")]
+    JsonSerializationError(#[from] serde_json::Error),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct OutputFormatOptions {
+    pub with_metadata: bool,
+    pub with_headers: bool,
+    pub pretty: bool,
+}
+
+impl Default for OutputFormatOptions {
+    fn default() -> Self {
+        OutputFormatOptions {
+            with_metadata: false,
+            with_headers: false,
+            pretty: false,
+        }
+    }
 }
 
 /// Enum representing the supported output formats
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, EnumIter)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, PartialOrd, EnumIter)]
 pub enum OutputFormat {
     /// CSV (Comma-Separated Values) format
-    Csv,
+    Csv(OutputFormatOptions),
     /// JSON (JavaScript Object Notation) format
-    #[default]
-    Json,
+    Json(OutputFormatOptions),
     /// Tree format for hierarchical data representation
-    Tree,
+    Tree(OutputFormatOptions),
 }
 
 impl OutputFormat {
     /// Returns a vector of all supported format names as strings
     pub fn names() -> Vec<&'static str> {
-        vec!["json", "csv", "tree"]
+        vec![JSON, CSV, TREE]
+    }
+
+    pub fn from_string_with_options(
+        format_str: &str,
+        options: OutputFormatOptions,
+    ) -> Result<OutputFormat, FormattingError> {
+        let normalized_format = format_str.to_lowercase();
+        let normalized_format = normalized_format.as_str();
+        match normalized_format {
+            JSON => Ok(OutputFormat::Json(options)),
+            CSV => Ok(OutputFormat::Csv(options)),
+            TREE => Ok(OutputFormat::Tree(options)),
+            _ => Err(FormattingError::UnsupportedOutputFormat(
+                normalized_format.to_string(),
+            )),
+        }
+    }
+}
+
+impl Default for OutputFormat {
+    fn default() -> Self {
+        OutputFormat::Json(OutputFormatOptions::default())
     }
 }
 
@@ -58,9 +97,9 @@ impl std::fmt::Display for OutputFormat {
     /// Formats the OutputFormat enum as a string for display purposes
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            OutputFormat::Csv => write!(f, "csv"),
-            OutputFormat::Json => write!(f, "json"),
-            OutputFormat::Tree => write!(f, "tree"),
+            OutputFormat::Csv(_) => write!(f, "csv"),
+            OutputFormat::Json(_) => write!(f, "json"),
+            OutputFormat::Tree(_) => write!(f, "tree"),
         }
     }
 }
@@ -70,16 +109,7 @@ impl FromStr for OutputFormat {
 
     /// Parses a string into an OutputFormat enum variant
     fn from_str(format_str: &str) -> Result<OutputFormat, FormattingError> {
-        let normalized_format = format_str.to_lowercase();
-        let normalized_format = normalized_format.as_str();
-        match normalized_format {
-            JSON => Ok(OutputFormat::Json),
-            CSV => Ok(OutputFormat::Csv),
-            TREE => Ok(OutputFormat::Tree),
-            _ => Err(FormattingError::UnsupportedOutputFormat {
-                format: normalized_format.to_string(),
-            }),
-        }
+        Self::from_string_with_options(format_str, OutputFormatOptions::default())
     }
 }
 
@@ -87,7 +117,7 @@ impl FromStr for OutputFormat {
 pub trait OutputFormatter {
     /// The type of item being formatted
     type Item;
-    
+
     /// Format the data according to the specified output format
     fn format(&self, format: OutputFormat) -> Result<String, FormattingError>;
 }
@@ -141,17 +171,6 @@ pub trait CsvRecordProducer {
     }
 }
 
-/// Trait for producing JSON output from serializable data
-pub trait JsonProducer {
-    /// Produces pretty-printed JSON output from serializable data
-    fn to_json(&self) -> Result<String, FormattingError>
-    where
-        Self: Serialize,
-    {
-        let json = serde_json::to_string_pretty(&self);
-        match json {
-            Ok(json) => Ok(json),
-            Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
-        }
-    }
+pub trait Formattable {
+    fn format(&self, f: &OutputFormat) -> Result<String, FormattingError>;
 }

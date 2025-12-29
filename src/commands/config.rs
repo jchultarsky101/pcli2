@@ -3,8 +3,8 @@
 //! This module defines CLI commands related to configuration management.
 
 use crate::commands::params::{
-    format_parameter, input_file_parameter, output_file_parameter,
-    COMMAND_CONFIG, COMMAND_EXPORT, COMMAND_GET, COMMAND_IMPORT, COMMAND_LIST
+    file_parameter, format_parameter, output_file_parameter, COMMAND_CONFIG, COMMAND_EXPORT,
+    COMMAND_GET, COMMAND_IMPORT, COMMAND_LIST,
 };
 use clap::Command;
 
@@ -33,6 +33,6 @@ pub fn config_command() -> Command {
         .subcommand(
             Command::new(COMMAND_IMPORT)
                 .about("Import configuration from file")
-                .arg(input_file_parameter()),
+                .arg(file_parameter()),
         )
 }

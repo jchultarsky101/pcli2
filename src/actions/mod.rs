@@ -29,4 +29,7 @@ pub enum CliActionError {
 
     #[error("ERROR: Unsupported output format: {0}")]
     UnsupportedOutputFormat(String),
+
+    #[error("{0}")]
+    FormattingError(#[from] crate::format::FormattingError),
 }

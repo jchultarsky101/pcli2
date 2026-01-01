@@ -34,6 +34,9 @@ pub enum FormattingError {
 
     #[error("JSON serialization error: {0}")]
     JsonSerializationError(#[from] serde_json::Error),
+
+    #[error("CSV writer into inner error: {0}")]
+    CsvIntoInnerError(#[from] csv::IntoInnerError<csv::Writer<Vec<u8>>>),
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]

@@ -24,7 +24,12 @@ pub fn context_command() -> Command {
         .subcommand(
             Command::new(COMMAND_GET)
                 .about("Get current context")
-                .subcommand(Command::new(COMMAND_TENANT).about("Print the active tenant")),
+                .subcommand_required(false) // Allow no subcommand for context get
+                .subcommand(Command::new(COMMAND_TENANT).about("Print the active tenant"))
+                .arg(crate::commands::params::format_with_headers_parameter())
+                .arg(crate::commands::params::format_with_metadata_parameter())
+                .arg(crate::commands::params::format_pretty_parameter())
+                .arg(crate::commands::params::format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
         )
         .subcommand(
             Command::new(COMMAND_CLEAR)

@@ -20,6 +20,7 @@ use pcli2::{
             clear_active_tenant,
             list_all_tenants,
             print_active_tenant_name,
+            print_current_context,
             set_active_tenant
         }
     },
@@ -268,7 +269,7 @@ pub async fn execute_command() -> Result<(), CliError> {
             match sub_matches.subcommand() {
                 Some((COMMAND_SET, sub_matches)) => {
                     trace!("Command: context set");
-                    
+
                     match sub_matches.subcommand() {
                         Some((COMMAND_TENANT, sub_matches)) => {
                             trace!("Command: context set tenant");
@@ -289,6 +290,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                         Some((COMMAND_TENANT, _)) => {
                             trace!("Command: context get tenant");
                             print_active_tenant_name().await?;
+                            Ok(())
+                        }
+                        None => {
+                            // Handle context get without subcommand
+                            trace!("Command: context get (no subcommand)");
+                            print_current_context(sub_matches).await?;
                             Ok(())
                         }
                         _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

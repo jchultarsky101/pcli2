@@ -507,6 +507,8 @@ pub struct Tenant {
     #[serde(rename = "id")]
     pub uuid: Uuid,
     pub name: String,
+    #[serde(rename = "description")]
+    pub description: String,
 }
 
 impl TryFrom<&TenantSetting> for Tenant {
@@ -516,6 +518,7 @@ impl TryFrom<&TenantSetting> for Tenant {
         Ok(Tenant {
             uuid: tenant_setting.tenant_uuid.to_owned(),
             name: tenant_setting.tenant_short_name.to_owned(),
+            description: tenant_setting.tenant_display_name.to_owned(),
         })
     }
 }
@@ -535,18 +538,18 @@ impl crate::format::Formattable for Tenant {
                 }
             }
             crate::format::OutputFormat::Csv(_) => {
-                // For CSV format, output header with both tenant name and UUID columns
+                // For CSV format, output header with tenant name, UUID, and description columns
                 let mut wtr = csv::Writer::from_writer(vec![]);
-                wtr.serialize(("TENANT_NAME", "TENANT_UUID"))?;
+                wtr.serialize(("TENANT_NAME", "TENANT_UUID", "TENANT_DESCRIPTION"))?;
 
-                wtr.serialize((&self.name, &self.uuid.to_string()))?;
+                wtr.serialize((&self.name, &self.uuid.to_string(), &self.description))?;
 
                 let data = wtr.into_inner()?;
                 String::from_utf8(data).map_err(crate::format::FormattingError::Utf8Error)
             }
             crate::format::OutputFormat::Tree(_) => {
-                // For tree format, just return the same as default text format
-                Ok(format!("{} ({})", self.name, self.uuid))
+                // For tree format, include name, UUID, and description
+                Ok(format!("{} ({}) - {}", self.name, self.uuid, self.description))
             }
         }
     }
@@ -658,6 +661,7 @@ impl From<Vec<TenantSetting>> for TenantList {
             .map(|ts| Tenant {
                 uuid: ts.tenant_uuid,
                 name: ts.tenant_short_name,
+                description: ts.tenant_display_name,
             })
             .collect();
         TenantList::new(tenants)
@@ -667,14 +671,14 @@ impl From<Vec<TenantSetting>> for TenantList {
 impl CsvRecordProducer for TenantList {
     /// Get the CSV header row for TenantList records
     fn csv_header() -> Vec<String> {
-        vec!["TENANT_NAME".to_string(), "TENANT_UUID".to_string()]
+        vec!["TENANT_NAME".to_string(), "TENANT_UUID".to_string(), "TENANT_DESCRIPTION".to_string()]
     }
 
     /// Convert the TenantList to CSV records
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         self.tenants
             .iter()
-            .map(|tenant| vec![tenant.name.clone(), tenant.uuid.to_string()])
+            .map(|tenant| vec![tenant.name.clone(), tenant.uuid.to_string(), tenant.description.clone()])
             .collect()
     }
 }
@@ -730,10 +734,10 @@ impl OutputFormatter for TenantList {
                 String::from_utf8(data).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_) => {
-                // For tree format, just return the same as default text format
+                // For tree format, include name, UUID, and description
                 let mut output = String::new();
                 for tenant in &self.tenants {
-                    output.push_str(&format!("{} ({})\n", tenant.name, tenant.uuid));
+                    output.push_str(&format!("{} ({}) - {}\n", tenant.name, tenant.uuid, tenant.description));
                 }
                 Ok(output)
             }

@@ -520,6 +520,38 @@ impl TryFrom<&TenantSetting> for Tenant {
     }
 }
 
+impl crate::format::Formattable for Tenant {
+    fn format(&self, f: &crate::format::OutputFormat) -> Result<String, crate::format::FormattingError> {
+        match f {
+            crate::format::OutputFormat::Json(options) => {
+                let json = if options.pretty {
+                    serde_json::to_string_pretty(self)
+                } else {
+                    serde_json::to_string(self)
+                };
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(crate::format::FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            crate::format::OutputFormat::Csv(_) => {
+                // For CSV format, output header with both tenant name and UUID columns
+                let mut wtr = csv::Writer::from_writer(vec![]);
+                wtr.serialize(("TENANT_NAME", "TENANT_UUID"))?;
+
+                wtr.serialize((&self.name, &self.uuid.to_string()))?;
+
+                let data = wtr.into_inner()?;
+                String::from_utf8(data).map_err(crate::format::FormattingError::Utf8Error)
+            }
+            crate::format::OutputFormat::Tree(_) => {
+                // For tree format, just return the same as default text format
+                Ok(format!("{} ({})", self.name, self.uuid))
+            }
+        }
+    }
+}
+
 /// A collection of Tenant instances
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TenantList {

@@ -32,4 +32,10 @@ pub enum CliActionError {
 
     #[error("{0}")]
     FormattingError(#[from] crate::format::FormattingError),
+
+    #[error("Missing required argument: {0}")]
+    MissingRequiredArgument(String),
+
+    #[error("Tenant not found: {identifier}")]
+    TenantNotFound { identifier: String },
 }

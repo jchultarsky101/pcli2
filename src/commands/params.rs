@@ -6,6 +6,7 @@
 use crate::format::OutputFormat;
 use clap::{Arg, ArgAction, ArgGroup};
 use std::path::PathBuf;
+use uuid::Uuid;
 
 // CRUD operations
 pub const COMMAND_CREATE: &str = "create";
@@ -61,6 +62,7 @@ pub const PARAMETER_NAME: &str = "name";
 pub const PARAMETER_TENANT_NAME: &str = PARAMETER_NAME;
 pub const PARAMETER_TENANT_ID: &str = "id";
 pub const PARAMETER_TENANT: &str = "tenant";
+pub const PARAMETER_TENANT_UUID: &str = "tenant-uuid";
 pub const PARAMETER_FOLDER_UUID: &str = "folder-uuid";
 pub const PARAMETER_FOLDER_PATH: &str = "folder-path";
 pub const PARAMETER_PATH: &str = "path";
@@ -170,6 +172,7 @@ pub fn uuid_parameter() -> Arg {
         .short('u')
         .long(PARAMETER_UUID)
         .required(false) // this parameter should be used in a group with the patheee
+        .value_parser(clap::value_parser!(Uuid))
         .help("Resource UUID")
 }
 
@@ -179,6 +182,7 @@ pub fn folder_uuid_parameter() -> Arg {
         .long(PARAMETER_FOLDER_UUID)
         .num_args(1)
         .required(true)
+        .value_parser(clap::value_parser!(Uuid))
         .help("Resource's parent folder UUID")
 }
 
@@ -216,13 +220,13 @@ pub fn name_parameter() -> Arg {
         .help("Resource name")
 }
 
-/// Create the name parameter.
+/// Create the tenant name parameter.
 pub fn tenant_name_parameter() -> Arg {
     Arg::new(PARAMETER_TENANT_NAME)
         .long(PARAMETER_TENANT_NAME)
         .num_args(1)
         .required(false)
-        .help("Tenant long name")
+        .help("Tenant short name (as shown in tenant list)")
 }
 
 /// Create the name parameter.
@@ -231,7 +235,17 @@ pub fn tenant_id_parameter() -> Arg {
         .long(PARAMETER_TENANT_ID)
         .num_args(1)
         .required(false)
-        .help("Tenant short name")
+        .help("Tenant UUID")
+}
+
+/// Create the tenant UUID parameter.
+pub fn tenant_uuid_parameter() -> Arg {
+    Arg::new(PARAMETER_TENANT_UUID)
+        .long(PARAMETER_TENANT_UUID)
+        .num_args(1)
+        .required(false)
+        .value_parser(clap::value_parser!(uuid::Uuid))
+        .help("Tenant UUID")
 }
 
 /// Create the tenant parameter.
@@ -248,6 +262,14 @@ pub fn tenant_parameter() -> Arg {
 pub fn folder_identifier_group() -> ArgGroup {
     ArgGroup::new("folder-identifier")
         .args([PARAMETER_FOLDER_UUID, PARAMETER_FOLDER_PATH])
+        .multiple(false)
+        .required(true)
+}
+
+/// Create tenant identifier group: it must be either --tenant-uuid or --tenant-name
+pub fn tenant_identifier_group() -> ArgGroup {
+    ArgGroup::new("tenant-identifier")
+        .args([PARAMETER_TENANT_UUID, PARAMETER_TENANT_NAME])  // Using PARAMETER_TENANT_UUID for UUID and PARAMETER_TENANT_NAME for name
         .multiple(false)
         .required(true)
 }

@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, list_assets, print_asset
+            create_asset, create_asset_batch, delete_asset, list_assets, print_asset, download_asset
         },
         folders::{
             create_folder,
@@ -18,6 +18,7 @@ use pcli2::{
         },
         tenants::{
             clear_active_tenant,
+            get_tenant_details,
             list_all_tenants,
             print_active_tenant_name,
             print_current_context,
@@ -27,7 +28,7 @@ use pcli2::{
     commands::{
         create_cli_commands,
         params::{
-            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, COMMAND_TENANT, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_OUTPUT
+            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, COMMAND_TENANT, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_OUTPUT
         }
     },
     format::Formattable};
@@ -77,6 +78,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                     list_all_tenants(sub_matches).await?;
                     Ok(())
                 }
+                Some((COMMAND_GET, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_GET);
+
+                    get_tenant_details(sub_matches).await?;
+                    Ok(())
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
@@ -106,7 +113,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                     Ok(())
                 }
                 Some((COMMAND_DELETE, sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_CREATE);
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_DELETE);
 
                     delete_folder(sub_matches).await?;
                     Ok(())
@@ -146,6 +153,20 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Routing to asset batch create...");
 
                     create_asset_batch(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_DOWNLOAD, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_DOWNLOAD);
+                    trace!("Routing to asset download...");
+
+                    download_asset(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_DELETE, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_DELETE);
+                    trace!("Routing to asset delete...");
+
+                    delete_asset(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

@@ -212,6 +212,64 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
     Ok(())
 }
 
+pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
+    let tenant_uuid_param = sub_matches.get_one::<uuid::Uuid>(crate::commands::params::PARAMETER_TENANT_UUID);
+    let tenant_name_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_TENANT_NAME);
+
+    let mut api = PhysnaApiClient::try_default()?;
+
+    // Get all tenants to search through
+    let all_tenants = api.list_tenants().await?;
+
+    // Find the specific tenant based on either UUID or name
+    let tenant_setting = if let Some(uuid) = tenant_uuid_param {
+        all_tenants.iter().find(|t| &t.tenant_uuid == uuid)
+    } else if let Some(name) = tenant_name_param {
+        all_tenants.iter().find(|t| &t.tenant_short_name == name)
+    } else {
+        return Err(CliActionError::MissingRequiredArgument("Either tenant UUID (--id) or tenant name (--tenant-name) must be provided".to_string()));
+    };
+
+    match tenant_setting {
+        Some(tenant_setting) => {
+            // Convert to Tenant for formatting
+            let tenant: Tenant = tenant_setting.try_into()?;
+
+            // Get format parameters directly from sub_matches
+            let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+                .cloned()
+                .unwrap_or_else(|| "json".to_string());
+
+            let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+            let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+            // Note: We don't use metadata for tenants, so we set it to false
+
+            // Create format options
+            let format_options = crate::format::OutputFormatOptions {
+                with_metadata: false,  // No metadata for tenants
+                with_headers,
+                pretty,
+            };
+
+            let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+                .map_err(|e| CliActionError::FormattingError(e))?;
+
+            println!("{}", tenant.format(&format)?);
+        },
+        None => {
+            if let Some(uuid) = tenant_uuid_param {
+                return Err(CliActionError::TenantNotFound { identifier: uuid.to_string() });
+            } else if let Some(name) = tenant_name_param {
+                return Err(CliActionError::TenantNotFound { identifier: name.clone() });
+            }
+            // This shouldn't happen due to the argument group validation, but just in case
+            return Err(CliActionError::MissingRequiredArgument("Either tenant UUID (--id) or tenant name (--tenant-name) must be provided".to_string()));
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn clear_active_tenant() -> Result<(), CliActionError> {
 
     let mut configuration = Configuration::load_default()?;

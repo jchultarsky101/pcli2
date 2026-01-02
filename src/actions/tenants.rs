@@ -242,9 +242,8 @@ pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActio
 
             let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
             let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-            // Note: We don't use metadata for tenants, so we set it to false
 
-            // Create format options
+            // Create format options (no metadata for tenants)
             let format_options = crate::format::OutputFormatOptions {
                 with_metadata: false,  // No metadata for tenants
                 with_headers,

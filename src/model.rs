@@ -537,10 +537,12 @@ impl crate::format::Formattable for Tenant {
                     Err(e) => Err(crate::format::FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
             }
-            crate::format::OutputFormat::Csv(_) => {
-                // For CSV format, output header with tenant name, UUID, and description columns
+            crate::format::OutputFormat::Csv(options) => {
+                // For CSV format, output header with tenant name, UUID, and description columns only if with_headers is true
                 let mut wtr = csv::Writer::from_writer(vec![]);
-                wtr.serialize(("TENANT_NAME", "TENANT_UUID", "TENANT_DESCRIPTION"))?;
+                if options.with_headers {
+                    wtr.serialize(("TENANT_NAME", "TENANT_UUID", "TENANT_DESCRIPTION"))?;
+                }
 
                 wtr.serialize((&self.name, &self.uuid.to_string(), &self.description))?;
 

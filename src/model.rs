@@ -520,6 +520,195 @@ impl TryFrom<&TenantSetting> for Tenant {
     }
 }
 
+/// A collection of Tenant instances
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TenantList {
+    /// Vector of Tenant instances
+    tenants: Vec<Tenant>,
+}
+
+impl TenantList {
+    /// Create a new empty TenantList
+    pub fn empty() -> TenantList {
+        TenantList {
+            tenants: Vec::new(),
+        }
+    }
+
+    pub fn new(tenants: Vec<Tenant>) -> Self {
+        TenantList {
+            tenants: tenants.clone(),
+        }
+    }
+
+    /// Check if the TenantList is empty
+    pub fn is_empty(&self) -> bool {
+        self.tenants.is_empty()
+    }
+
+    /// Get the number of tenants in the TenantList
+    pub fn len(&self) -> usize {
+        self.tenants.len()
+    }
+
+    /// Find a tenant in the TenantList by name
+    ///
+    /// # Arguments
+    /// * `name` - The name of the tenant to find
+    ///
+    /// # Returns
+    /// * `Some(&Tenant)` - If a tenant with the specified name exists
+    /// * `None` - If no tenant with the specified name exists
+    pub fn find_by_name(&self, name: &String) -> Option<&Tenant> {
+        self.tenants.iter().find(|t| t.name.eq(name))
+    }
+
+    pub fn add(&mut self, tenant: Tenant) {
+        self.tenants.push(tenant)
+    }
+
+    pub fn tenants(&self) -> Vec<Tenant> {
+        self.tenants.clone()
+    }
+}
+
+impl Default for TenantList {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl FromIterator<Tenant> for TenantList {
+    /// Create a TenantList from an iterator of Tenant instances
+    fn from_iter<I: IntoIterator<Item = Tenant>>(iter: I) -> TenantList {
+        let mut tenants = TenantList::empty();
+        for tenant in iter {
+            tenants.add(tenant);
+        }
+        tenants
+    }
+}
+
+impl<'a> IntoIterator for &'a TenantList {
+    type Item = &'a Tenant;
+    type IntoIter = std::slice::Iter<'a, Tenant>;
+
+    /// Convert the TenantList to an iterator
+    fn into_iter(self) -> std::slice::Iter<'a, Tenant> {
+        self.tenants.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut TenantList {
+    type Item = &'a mut Tenant;
+    type IntoIter = std::slice::IterMut<'a, Tenant>;
+
+    /// Convert the TenantList to a mutable iterator
+    fn into_iter(self) -> std::slice::IterMut<'a, Tenant> {
+        self.tenants.iter_mut()
+    }
+}
+
+impl IntoIterator for TenantList {
+    type Item = Tenant;
+    type IntoIter = std::vec::IntoIter<Tenant>;
+
+    /// Convert the TenantList to an owned iterator
+    fn into_iter(self) -> std::vec::IntoIter<Tenant> {
+        self.tenants.into_iter()
+    }
+}
+
+impl From<Vec<TenantSetting>> for TenantList {
+    fn from(settings: Vec<TenantSetting>) -> Self {
+        let tenants = settings
+            .into_iter()
+            .map(|ts| Tenant {
+                uuid: ts.tenant_uuid,
+                name: ts.tenant_short_name,
+            })
+            .collect();
+        TenantList::new(tenants)
+    }
+}
+
+impl CsvRecordProducer for TenantList {
+    /// Get the CSV header row for TenantList records
+    fn csv_header() -> Vec<String> {
+        vec!["TENANT_NAME".to_string(), "TENANT_UUID".to_string()]
+    }
+
+    /// Convert the TenantList to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.tenants
+            .iter()
+            .map(|tenant| vec![tenant.name.clone(), tenant.uuid.to_string()])
+            .collect()
+    }
+}
+
+impl OutputFormatter for TenantList {
+    type Item = TenantList;
+
+    /// Format the TenantList according to the specified output format
+    ///
+    /// # Arguments
+    /// * `format` - The output format to use (JSON, CSV, or Tree)
+    ///
+    /// # Returns
+    /// * `Ok(String)` - The formatted output
+    /// * `Err(FormattingError)` - If formatting fails
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json(options) => {
+                // convert to a simple vector for output, sorted by name
+                let mut tenants: Vec<Tenant> = self.tenants.iter().cloned().collect();
+                tenants.sort_by_key(|a| a.name.clone());
+                let json = if options.pretty {
+                    serde_json::to_string_pretty(&tenants)
+                } else {
+                    serde_json::to_string(&tenants)
+                };
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv(options) => {
+                let mut wtr = Writer::from_writer(vec![]);
+                if options.with_headers {
+                    wtr.write_record(Self::csv_header())?;
+                }
+
+                // Sort records by tenant name
+                let mut records = self.as_csv_records();
+                records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+
+                for record in records {
+                    wtr.write_record(&record).map_err(|e| {
+                        FormattingError::CsvWriterError(format!(
+                            "Failed to write CSV record: {}",
+                            e
+                        ))
+                    })?;
+                }
+                let data = wtr.into_inner().map_err(|e| {
+                    FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e))
+                })?;
+                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+            }
+            OutputFormat::Tree(_) => {
+                // For tree format, just return the same as default text format
+                let mut output = String::new();
+                for tenant in &self.tenants {
+                    output.push_str(&format!("{} ({})\n", tenant.name, tenant.uuid));
+                }
+                Ok(output)
+            }
+        }
+    }
+}
+
 /// Represents a tenant setting for a user
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TenantSetting {

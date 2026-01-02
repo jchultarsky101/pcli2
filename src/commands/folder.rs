@@ -20,10 +20,6 @@ pub fn folder_command() -> Command {
                 .about("Create a new folder")
                 .arg(tenant_parameter())
                 .arg(name_parameter())
-                .arg(format_with_metadata_parameter())
-                .arg(format_with_headers_parameter())
-                .arg(format_pretty_parameter())
-                .arg(format_parameter())
                 .arg(folder_path_parameter())
                 .arg(folder_uuid_parameter())
                 .group(folder_identifier_group()),
@@ -60,6 +56,13 @@ pub fn folder_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
+                .arg(
+                    clap::Arg::new("force")
+                        .long("force")
+                        .short('f')
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Force deletion of non-empty folder by deleting all contents first"),
+                )
                 .group(folder_identifier_group()),
         )
 }

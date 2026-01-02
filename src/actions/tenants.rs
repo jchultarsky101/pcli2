@@ -1,11 +1,10 @@
 use clap::ArgMatches;
-use std::str::FromStr;
 use tracing::trace;
 use crate::{
-    commands::params::{PARAMETER_FORMAT, PARAMETER_NAME},
+    commands::params::{PARAMETER_NAME},
     configuration::Configuration,
     error_utils,
-    format::{OutputFormat, Formattable, FormattingError},
+    format::{OutputFormat, Formattable, FormattingError, OutputFormatter},
     model::Tenant,
     physna_v3::{PhysnaApiClient, TryDefault},
     actions::CliActionError
@@ -97,36 +96,33 @@ impl Formattable for ContextInfo {
 
 
 pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
-    
-    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-    let format = OutputFormat::from_str(&format_str).unwrap();
+
+    // Get format parameters directly from sub_matches
+    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .cloned()
+        .unwrap_or_else(|| "json".to_string());
+
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+
+    // Create format options with metadata set to false since tenants don't have metadata
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata: false,
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(|e| CliActionError::FormattingError(e))?;
+
     let mut api = PhysnaApiClient::try_default()?;
 
     match api.list_tenants().await {
-        Ok(tenants) => {
-            match format {
-                OutputFormat::Json(_) => {
-                    // For JSON format, output a single array containing all tenants
-                    let json = serde_json::to_string_pretty(&tenants)?;
-                    println!("{}", json);
-                }
-                OutputFormat::Csv(_) => {
-                    // For CSV format, output header with both tenant name and UUID columns
-                    let mut wtr = csv::Writer::from_writer(vec![]);
-                    wtr.write_record(&["TENANT_NAME", "TENANT_UUID"])?;
+        Ok(tenant_settings) => {
+            // Convert to a format that can be handled by the Formattable trait
+            let tenant_list = crate::model::TenantList::from(tenant_settings);
 
-                    for tenant in tenants {
-                        let tenant = Tenant::try_from(&tenant)?;
-                        wtr.serialize(tenant)?;
-                    }
-
-                    let csv_string = String::from_utf8(wtr.into_inner()?)?;
-                    println!("{}", csv_string);
-                }
-                OutputFormat::Tree(_) => {
-                    return Err(CliActionError::UnsupportedOutputFormat(format_str))
-                }
-            }
+            println!("{}", tenant_list.format(format)?);
             Ok(())
         }
         Err(e) => {

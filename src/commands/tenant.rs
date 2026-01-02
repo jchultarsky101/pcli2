@@ -3,7 +3,8 @@
 //! This module defines CLI commands related to tenant management.
 
 use crate::commands::params::{
-    format_parameter, tenant_id_parameter, COMMAND_GET, COMMAND_LIST, COMMAND_TENANT,
+    format_parameter, format_pretty_parameter, format_with_headers_parameter,
+    tenant_id_parameter, COMMAND_GET, COMMAND_LIST, COMMAND_TENANT,
 };
 use clap::Command;
 
@@ -22,6 +23,8 @@ pub fn tenant_command() -> Command {
             Command::new(COMMAND_LIST)
                 .about("List all tenants")
                 .visible_alias("ls")
-                .arg(format_parameter().value_parser(["json", "csv"])),
+                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_pretty_parameter())
+                .arg(format_with_headers_parameter()),
         )
 }

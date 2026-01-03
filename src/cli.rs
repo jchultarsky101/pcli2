@@ -28,16 +28,15 @@ use pcli2::{
     commands::{
         create_cli_commands,
         params::{
-            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, COMMAND_TENANT, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_OUTPUT
+            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, COMMAND_TENANT, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY
         }
     },
-    format::Formattable};
+    format::{Formattable, OutputFormat, OutputFormatOptions}};
 use pcli2::error_utils;
 use pcli2::auth::AuthClient;
 use pcli2::configuration::Configuration;
 use pcli2::keyring::Keyring;
 use pcli2::error::CliError;
-use pcli2::format::OutputFormat;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tracing::{debug, trace};
@@ -359,8 +358,20 @@ pub async fn execute_command() -> Result<(), CliError> {
                             Ok(())
                         }
                         _ => {
-                            let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-                            let format = OutputFormat::from_str(format).unwrap();
+                            // Get format parameters directly from sub_matches since config commands don't have all format flags
+                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+
+                            let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
+                            let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
+                            // Note: config commands don't have metadata flag
+
+                            let format_options = OutputFormatOptions {
+                                with_metadata: false,  // No metadata for config
+                                with_headers,
+                                pretty,
+                            };
+
+                            let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
 
                             let configuration = Configuration::load_or_create_default()?;
                             match configuration.format(&format) {
@@ -375,8 +386,20 @@ pub async fn execute_command() -> Result<(), CliError> {
                 }
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Executing config list command");
-                    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-                    let format = OutputFormat::from_str(format).unwrap();
+                    // Get format parameters directly from sub_matches since config commands don't have all format flags
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+
+                    let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
+                    let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
+                    // Note: config commands don't have metadata flag
+
+                    let format_options = OutputFormatOptions {
+                        with_metadata: false,  // No metadata for config
+                        with_headers,
+                        pretty,
+                    };
+
+                    let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
 
                     let configuration = Configuration::load_or_create_default()?;
                     match configuration.format(&format) {

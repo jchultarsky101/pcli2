@@ -211,8 +211,21 @@ impl Configuration {
 impl Formattable for Configuration {
     fn format(&self, f: &OutputFormat) -> Result<String, FormattingError> {
         match f {
-            OutputFormat::Json(_) => Ok(serde_json::to_string(self)?),
-            OutputFormat::Csv(_) => Ok(format!("{}", self.active_tenant_uuid.unwrap_or_default())),
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    Ok(serde_json::to_string_pretty(self)?)
+                } else {
+                    Ok(serde_json::to_string(self)?)
+                }
+            },
+            OutputFormat::Csv(options) => {
+                let uuid_str = self.active_tenant_uuid.unwrap_or_default().to_string();
+                if options.with_headers {
+                    Ok(format!("ACTIVE_TENANT_UUID\n{}", uuid_str))
+                } else {
+                    Ok(uuid_str)
+                }
+            },
             OutputFormat::Tree(_) => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }
     }

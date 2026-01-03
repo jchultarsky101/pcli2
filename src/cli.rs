@@ -31,14 +31,13 @@ use pcli2::{
             COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_SET, COMMAND_TENANT, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY
         }
     },
-    format::{Formattable, OutputFormat, OutputFormatOptions}};
+    format::{Formattable, OutputFormat, OutputFormatOptions, FormattingError}};
 use pcli2::error_utils;
 use pcli2::auth::AuthClient;
 use pcli2::configuration::Configuration;
 use pcli2::keyring::Keyring;
 use pcli2::error::CliError;
 use std::path::PathBuf;
-use std::str::FromStr;
 use tracing::{debug, trace};
 
 fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
@@ -251,18 +250,75 @@ pub async fn execute_command() -> Result<(), CliError> {
                 }
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Executing auth token get command");
-                    
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).cloned().unwrap_or_else(|| "json".to_string());
-                    let format = OutputFormat::from_str(&format_str).unwrap();
-                    
+
+                    // Get format parameters directly from sub_matches since auth commands don't have metadata flag
+                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+
+                    let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
+                    let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
+                    // Note: auth commands don't have metadata flag
+
+                    let format_options = OutputFormatOptions {
+                        with_metadata: false,  // No metadata for auth
+                        with_headers,
+                        pretty,
+                    };
+
+                    let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
+
                     // Try to get access token from keyring
                     let mut keyring = Keyring::default();
                     match keyring.get("default", "access-token".to_string()) {
                         Ok(Some(token)) => {
-                            // Output the token based on the requested format
+                            // Create a simple struct to hold the token for formatting
+                            #[derive(serde::Serialize)]
+                            struct TokenResponse {
+                                access_token: String,
+                            }
+
+                            let token_response = TokenResponse {
+                                access_token: token,
+                            };
+
+                            // Format the response based on the requested format
                             match format {
-                                _ => {
-                                    println!("{{\"access_token\": \"{}\"}}", token);
+                                OutputFormat::Json(options) => {
+                                    let json_output = if options.pretty {
+                                        serde_json::to_string_pretty(&token_response)
+                                    } else {
+                                        serde_json::to_string(&token_response)
+                                    };
+                                    match json_output {
+                                        Ok(json) => println!("{}", json),
+                                        Err(e) => return Err(CliError::FormattingError(FormattingError::JsonSerializationError(e))),
+                                    }
+                                },
+                                OutputFormat::Csv(options) => {
+                                    let mut wtr = csv::Writer::from_writer(vec![]);
+
+                                    if options.with_headers {
+                                        if let Err(e) = wtr.serialize(("ACCESS_TOKEN",)) {
+                                            return Err(CliError::FormattingError(FormattingError::CsvError(e)));
+                                        }
+                                    }
+
+                                    if let Err(e) = wtr.serialize((&token_response.access_token,)) {
+                                        return Err(CliError::FormattingError(FormattingError::CsvError(e)));
+                                    }
+
+                                    let data = match wtr.into_inner() {
+                                        Ok(data) => data,
+                                        Err(e) => return Err(CliError::FormattingError(FormattingError::CsvIntoInnerError(e))),
+                                    };
+                                    let csv_output = match String::from_utf8(data) {
+                                        Ok(csv_str) => csv_str,
+                                        Err(e) => return Err(CliError::FormattingError(FormattingError::Utf8Error(e))),
+                                    };
+                                    print!("{}", csv_output);
+                                },
+                                OutputFormat::Tree(_) => {
+                                    // For tree format, just print the token
+                                    println!("{}", token_response.access_token);
                                 }
                             }
                             Ok(())

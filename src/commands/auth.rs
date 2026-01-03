@@ -3,7 +3,8 @@
 //! This module defines CLI commands related to authentication and session management.
 
 use crate::commands::params::{
-    client_id_parameter, client_secret_parameter, format_parameter, 
+    client_id_parameter, client_secret_parameter, format_parameter,
+    format_pretty_parameter, format_with_headers_parameter,
     COMMAND_AUTH, COMMAND_GET, COMMAND_LOGIN, COMMAND_LOGOUT
 };
 use clap::Command;
@@ -26,6 +27,8 @@ pub fn auth_command() -> Command {
         .subcommand(
             Command::new(COMMAND_GET)
                 .about("Get current access token")
-                .arg(format_parameter().value_parser(["json", "csv"])),
+                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_pretty_parameter())
+                .arg(format_with_headers_parameter()),
         )
 }

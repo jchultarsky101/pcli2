@@ -384,32 +384,6 @@ pub async fn execute_command() -> Result<(), CliError> {
                         }
                     }
                 }
-                Some((COMMAND_LIST, sub_matches)) => {
-                    trace!("Executing config list command");
-                    // Get format parameters directly from sub_matches since config commands don't have all format flags
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
-
-                    let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
-                    let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
-                    // Note: config commands don't have metadata flag
-
-                    let format_options = OutputFormatOptions {
-                        with_metadata: false,  // No metadata for config
-                        with_headers,
-                        pretty,
-                    };
-
-                    let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
-
-                    let configuration = Configuration::load_or_create_default()?;
-                    match configuration.format(&format) {
-                        Ok(output) => {
-                            println!("{}", output);
-                            Ok(())
-                        }
-                        Err(e) => Err(CliError::FormattingError(e)),
-                    }
-                }
                 Some((COMMAND_EXPORT, sub_matches)) => {
                     trace!("Executing config export command");
                     let path = sub_matches.get_one::<PathBuf>(PARAMETER_OUTPUT)

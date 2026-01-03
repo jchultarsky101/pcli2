@@ -5,7 +5,8 @@
 use crate::commands::params::{
     folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    name_parameter, tenant_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET,
+    name_parameter, parent_folder_identifier_group, parent_folder_path_parameter, parent_folder_uuid_parameter, tenant_parameter,
+    COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET,
     COMMAND_LIST,
 };
 use clap::Command;
@@ -20,9 +21,9 @@ pub fn folder_command() -> Command {
                 .about("Create a new folder")
                 .arg(tenant_parameter())
                 .arg(name_parameter())
-                .arg(folder_path_parameter())
-                .arg(folder_uuid_parameter())
-                .group(folder_identifier_group()),
+                .arg(parent_folder_path_parameter())
+                .arg(parent_folder_uuid_parameter())
+                .group(parent_folder_identifier_group()),
         )
         .subcommand(
             Command::new(COMMAND_GET)

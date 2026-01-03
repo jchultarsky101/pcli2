@@ -1,7 +1,7 @@
 use clap::ArgMatches;
 use tracing::trace;
 use uuid::Uuid;
-use crate::{commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_NAME, PARAMETER_PATH, PARAMETER_UUID}, configuration::Configuration, error::CliError, folder_hierarchy::FolderHierarchy, format::{OutputFormat, OutputFormatter}, model::{Folder, Tenant, normalize_path}, param_utils::{get_format_parameter_value, get_tenant}, physna_v3::{PhysnaApiClient, TryDefault}};
+use crate::{commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_NAME, PARAMETER_PARENT_FOLDER_PATH, PARAMETER_PARENT_FOLDER_UUID}, configuration::Configuration, error::CliError, folder_hierarchy::FolderHierarchy, format::{OutputFormat, OutputFormatter}, model::{Folder, Tenant, normalize_path}, param_utils::{get_format_parameter_value, get_tenant}, physna_v3::{PhysnaApiClient, TryDefault}};
 
 
 pub async fn resolve_folder_uuid_by_path(api: &mut PhysnaApiClient, tenant: &Tenant, path: &str) -> Result<Uuid, CliError> {
@@ -95,12 +95,12 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let name = sub_matches.get_one::<String>(PARAMETER_NAME)
         .ok_or(CliError::MissingRequiredArgument(PARAMETER_NAME.to_string()))?
         .clone();
-    let parent_folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
-    let parent_folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
+    let parent_folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_PARENT_FOLDER_UUID);
+    let parent_folder_path_param = sub_matches.get_one::<String>(PARAMETER_PARENT_FOLDER_PATH);
 
     // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
     if parent_folder_uuid_param.is_some() && parent_folder_path_param.is_some() {
-        return Err(CliError::MissingRequiredArgument("Only one of --parent-folder-id or --path can be specified, not both".to_string()));
+        return Err(CliError::MissingRequiredArgument("Only one of --parent-folder-uuid or --parent-folder-path can be specified, not both".to_string()));
     }
 
     let configuration = Configuration::load_or_create_default()?;
@@ -122,13 +122,14 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 }
 
 pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
-    
-    let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_UUID);
-    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+
+    let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
+    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
+    let force_flag = sub_matches.get_flag("force");
 
     // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
     if folder_uuid_param.is_some() && folder_path_param.is_some() {
-        return Err(CliError::MissingRequiredArgument("Only one of --uuid or --path can be specified, not both".to_string()));
+        return Err(CliError::MissingRequiredArgument("Only one of --folder-uuid or --folder-path can be specified, not both".to_string()));
     }
 
     let configuration = Configuration::load_or_create_default()?;
@@ -141,10 +142,60 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     } else if let Some(path) = folder_path_param {
         resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
     } else {
-        return Err(CliError::MissingRequiredArgument(format!("Missing folder path")));        
+        return Err(CliError::MissingRequiredArgument(format!("Missing folder path")));
     };
 
+    if force_flag {
+        // Recursively delete all contents before deleting the folder
+        delete_folder_contents(&mut api, &tenant, &folder_uuid).await?;
+    }
+
     api.delete_folder(&tenant.uuid, &folder_uuid).await?;
-    
+
+    if force_flag {
+        println!("Folder and all its contents deleted successfully: {}", folder_uuid);
+    } else {
+        println!("Folder deleted successfully: {}", folder_uuid);
+    }
+
+    Ok(())
+}
+
+use std::collections::VecDeque;
+
+/// Delete all assets and subfolders in a folder using iterative approach to avoid recursion
+async fn delete_folder_contents(api: &mut PhysnaApiClient, tenant: &crate::model::Tenant, folder_uuid: &Uuid) -> Result<(), CliError> {
+    // Use BFS to collect all folders in the hierarchy
+    let mut all_folders = Vec::new();
+    let mut queue = VecDeque::new();
+    queue.push_back(*folder_uuid);
+
+    while let Some(current_folder_uuid) = queue.pop_front() {
+        all_folders.push(current_folder_uuid);
+
+        // Get subfolders of current folder
+        let folders_response = api.list_folders_in_parent(&tenant.uuid, Some(&current_folder_uuid.to_string()), None, None).await?;
+        for folder in folders_response.folders {
+            queue.push_back(folder.uuid);
+        }
+    }
+
+    // Process folders in reverse order (deepest first, then parent)
+    for folder_uuid in all_folders.iter().rev() {
+        // List and delete all assets in this folder
+        let assets = api.list_assets_by_parent_folder_uuid(&tenant.uuid, Some(folder_uuid)).await?;
+        for asset in assets.get_all_assets() {
+            api.delete_asset(&tenant.uuid.to_string(), &asset.uuid().to_string()).await?;
+            println!("Deleted asset: {} ({})", asset.name(), asset.uuid());
+        }
+    }
+
+    // Now delete the folders in reverse order (children first, then parents)
+    // Skip the original folder since that will be deleted by the caller
+    for folder_uuid in all_folders.iter().skip(1).rev() {
+        api.delete_folder(&tenant.uuid, folder_uuid).await?;
+        println!("Deleted folder: {}", folder_uuid);
+    }
+
     Ok(())
 }

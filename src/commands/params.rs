@@ -65,6 +65,8 @@ pub const PARAMETER_TENANT: &str = "tenant";
 pub const PARAMETER_TENANT_UUID: &str = "tenant-uuid";
 pub const PARAMETER_FOLDER_UUID: &str = "folder-uuid";
 pub const PARAMETER_FOLDER_PATH: &str = "folder-path";
+pub const PARAMETER_PARENT_FOLDER_UUID: &str = "parent-folder-uuid";
+pub const PARAMETER_PARENT_FOLDER_PATH: &str = "parent-folder-path";
 pub const PARAMETER_PATH: &str = "path";
 pub const PARAMETER_REFRESH: &str = "refresh";
 pub const PARAMETER_RECURSIVE: &str = "recursive";
@@ -183,7 +185,7 @@ pub fn folder_uuid_parameter() -> Arg {
         .num_args(1)
         .required(true)
         .value_parser(clap::value_parser!(Uuid))
-        .help("Resource's parent folder UUID")
+        .help("Resource's folder UUID")
 }
 
 /// Create the path parameter.
@@ -193,6 +195,25 @@ pub fn folder_path_parameter() -> Arg {
         .num_args(1)
         .required(true)
         .help("Folder path (e.g., /Root/Child/Grandchild)")
+}
+
+/// Create the parent folder UUID parameter.
+pub fn parent_folder_uuid_parameter() -> Arg {
+    Arg::new(PARAMETER_PARENT_FOLDER_UUID)
+        .long(PARAMETER_PARENT_FOLDER_UUID)
+        .num_args(1)
+        .required(true)
+        .value_parser(clap::value_parser!(Uuid))
+        .help("Parent folder UUID where the new folder will be created")
+}
+
+/// Create the parent folder path parameter.
+pub fn parent_folder_path_parameter() -> Arg {
+    Arg::new(PARAMETER_PARENT_FOLDER_PATH)
+        .long(PARAMETER_PARENT_FOLDER_PATH)
+        .num_args(1)
+        .required(true)
+        .help("Parent folder path where the new folder will be created (e.g., /Root/Child/Grandchild)")
 }
 
 /// Create asset idenitfier group: it must be either --uuid or --path
@@ -258,10 +279,18 @@ pub fn tenant_parameter() -> Arg {
         .help("Tenant ID or alias")
 }
 
-/// Create folder identifier group: if must be either --folder-uuid or --folder-path
+/// Create folder identifier group: it must be either --folder-uuid or --folder-path
 pub fn folder_identifier_group() -> ArgGroup {
     ArgGroup::new("folder-identifier")
         .args([PARAMETER_FOLDER_UUID, PARAMETER_FOLDER_PATH])
+        .multiple(false)
+        .required(true)
+}
+
+/// Create parent folder identifier group: it must be either --parent-folder-uuid or --parent-folder-path
+pub fn parent_folder_identifier_group() -> ArgGroup {
+    ArgGroup::new("parent-folder-identifier")
+        .args([PARAMETER_PARENT_FOLDER_UUID, PARAMETER_PARENT_FOLDER_PATH])
         .multiple(false)
         .required(true)
 }

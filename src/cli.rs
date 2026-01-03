@@ -20,7 +20,7 @@ use pcli2::{
             clear_active_tenant,
             get_tenant_details,
             list_all_tenants,
-            print_active_tenant_name,
+            print_active_tenant_name_with_format,
             print_current_context,
             set_active_tenant
         }
@@ -307,9 +307,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Command: context get");
 
                     match sub_matches.subcommand() {
-                        Some((COMMAND_TENANT, _)) => {
+                        Some((COMMAND_TENANT, sub_matches)) => {
                             trace!("Command: context get tenant");
-                            print_active_tenant_name().await?;
+                            print_active_tenant_name_with_format(sub_matches).await?;
                             Ok(())
                         }
                         None => {

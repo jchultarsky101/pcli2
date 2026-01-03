@@ -269,6 +269,64 @@ pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActio
     Ok(())
 }
 
+pub async fn print_active_tenant_name_with_format(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
+    trace!("Executing 'context get tenant' with format options");
+
+    // Get format parameters directly from sub_matches since context commands don't have all format flags
+    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap();
+
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    // Note: context commands don't have metadata flag for tenant
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata: false,  // No metadata for context tenant
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(format_str, format_options)
+        .map_err(|e| CliActionError::FormattingError(e))?;
+
+    let configuration = Configuration::load_default()?;
+
+    if let Some(active_tenant_uuid) = configuration.get_active_tenant_uuid() {
+        let mut api = PhysnaApiClient::try_default()?;
+        let tenants = api.list_tenants().await?;
+        let active_tenant = tenants.into_iter().find(|t| t.tenant_uuid.eq(&active_tenant_uuid));
+
+        match active_tenant {
+            Some(tenant_setting) => {
+                // Convert to Tenant for formatting
+                let tenant = Tenant {
+                    uuid: tenant_setting.tenant_uuid,
+                    name: tenant_setting.tenant_short_name.clone(),
+                    description: tenant_setting.tenant_display_name.clone(),
+                };
+                println!("{}", tenant.format(&format)?);
+            },
+            None => {
+                // Create a minimal tenant for formatting when UUID exists but tenant not found
+                let tenant = Tenant {
+                    uuid: active_tenant_uuid,
+                    name: "Unknown Tenant".to_string(),
+                    description: "Tenant not found in current user's tenants".to_string(),
+                };
+                println!("{}", tenant.format(&format)?);
+            }
+        }
+    } else {
+        // Create a minimal tenant for formatting when no active tenant is set
+        let tenant = Tenant {
+            uuid: uuid::Uuid::nil(), // Use nil UUID for no tenant
+            name: "No active tenant".to_string(),
+            description: "No tenant selected".to_string(),
+        };
+        println!("{}", tenant.format(&format)?);
+    }
+
+    Ok(())
+}
+
 pub async fn clear_active_tenant() -> Result<(), CliActionError> {
 
     let mut configuration = Configuration::load_default()?;

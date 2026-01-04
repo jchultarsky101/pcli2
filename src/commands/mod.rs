@@ -4,7 +4,7 @@
 //! It provides a structured way to define the command-line interface for the Physna CLI.
 //! The implementation has been modularized into separate files for better maintainability.
 
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 
 // Import all submodules
 pub mod assets;
@@ -33,14 +33,6 @@ pub fn create_cli_commands() -> ArgMatches {
         .propagate_version(true)
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .arg(
-            Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .action(ArgAction::SetTrue)
-                .global(true)
-                .help("Enable verbose output for debugging"),
-        )
         // Add all the modularized command groups
         .subcommand(tenant::tenant_command())
         .subcommand(folder::folder_command())

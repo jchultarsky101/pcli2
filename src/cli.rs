@@ -51,17 +51,7 @@ fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
 
 pub async fn execute_command() -> Result<(), CliError> {
     let commands = create_cli_commands();
-    
-    // Check for verbose flag and set up tracing level accordingly
-    if commands.get_flag("verbose") {
-        // Set tracing level to debug if verbose flag is present
-        std::env::set_var("RUST_LOG", "debug");
-        tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .try_init()
-            .ok(); // Silently handle if tracing is already initialized
-    }
-    
+
     trace!("Executing CLI command");
 
     match commands.subcommand() {

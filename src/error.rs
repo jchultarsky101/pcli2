@@ -44,6 +44,7 @@ pub enum CliError {
 
     #[error("{0}")]
     FolderListError(#[from] FolderHierarchyError),
+
 }
 
 impl CliError {

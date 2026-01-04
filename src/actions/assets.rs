@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 use clap::ArgMatches;
 use uuid::Uuid;
+use crate::actions::CliActionError;
 use crate::{actions::folders::resolve_folder_uuid_by_path, commands::params::{PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID}, configuration::Configuration, error::CliError, format::OutputFormatter, metadata::convert_single_metadata_to_json_value, model::{AssetList, Folder, normalize_path}, param_utils::{get_format_parameter_value, get_tenant}, physna_v3::{PhysnaApiClient, TryDefault}};
 use tracing::{debug, trace};
 
@@ -244,5 +245,106 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
     };
             
     Ok(())
-    
+
+}
+
+/// Delete an asset by UUID or path.
+///
+/// This function handles the "asset delete" command, removing a specific asset
+/// identified by either its UUID or path from the Physna API.
+///
+/// # Arguments
+///
+/// * `sub_matches` - The command-line argument matches containing the command parameters
+///
+/// # Returns
+///
+/// * `Ok(())` - If the asset was deleted successfully
+/// * `Err(CliError)` - If an error occurred during deletion
+pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing \"asset delete\" command...");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
+    let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
+
+    // Resolve asset ID from either UUID parameter or path
+    let asset = if let Some(uuid) = asset_uuid_param {
+        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
+    } else if let Some(asset_path) = asset_path_param {
+        // Get asset by path
+        api.get_asset_by_path(&tenant.uuid, asset_path).await?
+    } else {
+        // This shouldn't happen due to our earlier check, but just in case
+        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+    };
+
+    // Delete the asset
+    api.delete_asset(&tenant.uuid.to_string(), &asset.uuid().to_string()).await?;
+
+    println!("Asset deleted successfully: {} ({})", asset.name(), asset.uuid());
+
+    Ok(())
+}
+
+/// Download an asset by UUID or path to a local file.
+///
+/// This function handles the "asset download" command, retrieving a specific asset
+/// identified by either its UUID or path from the Physna API and saving it to a local file.
+///
+/// # Arguments
+///
+/// * `sub_matches` - The command-line argument matches containing the command parameters
+///
+/// # Returns
+///
+/// * `Ok(())` - If the asset was downloaded successfully
+/// * `Err(CliError)` - If an error occurred during download
+pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing \"asset download\" command...");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
+    let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
+
+    // Resolve asset ID from either UUID parameter or path
+    let asset = if let Some(uuid) = asset_uuid_param {
+        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
+    } else if let Some(asset_path) = asset_path_param {
+        // Get asset by path
+        api.get_asset_by_path(&tenant.uuid, asset_path).await?
+    } else {
+        // This shouldn't happen due to our earlier check, but just in case
+        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+    };
+
+    // Get the output file path
+    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE) {
+        output_path.clone()
+    } else {
+        // Use the asset name as the default output file name
+        let asset_name = asset.name();
+        let mut path = std::path::PathBuf::new();
+        path.push(asset_name);
+        path
+    };
+
+    // Download the asset file
+    let file_content = api.download_asset(
+        &tenant.uuid.to_string(),
+        &asset.uuid().to_string()
+    ).await?;
+
+    // Write the file content to the output file
+    std::fs::write(&output_file_path, file_content).map_err(|e| CliActionError::IoError(e))?;
+
+    println!("Asset downloaded successfully to: {}", output_file_path.display());
+
+    Ok(())
 }

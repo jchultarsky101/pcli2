@@ -38,4 +38,7 @@ pub enum CliActionError {
 
     #[error("Tenant not found: {identifier}")]
     TenantNotFound { identifier: String },
+
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 }

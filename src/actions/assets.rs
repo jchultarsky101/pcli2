@@ -163,18 +163,17 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
 }
 
 
-pub async fn print_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError> {
+pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
-    trace!("Execute \"asset batch\" command...");
-    
+    trace!("Execute \"asset metadata create\" command...");
+
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-    let format = get_format_parameter_value(sub_matches).await;
-    
-    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
-    
+
     // Get metadata parameters from command line
     let metadata_name = sub_matches.get_one::<String>("name")
         .ok_or(CliError::MissingRequiredArgument("name".to_string()))?;
@@ -183,37 +182,39 @@ pub async fn print_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError>
     let metadata_type = sub_matches.get_one::<String>("type")
         .map(|s| s.as_str())
         .unwrap_or("text");
-    
+
     // Convert the single metadata entry to JSON value using shared function
     let json_value = convert_single_metadata_to_json_value(
-        metadata_name, 
-        metadata_value, 
+        metadata_name,
+        metadata_value,
         metadata_type
     );
-    
+
     // Create a HashMap with the single metadata entry
-    // This hashmap represents the desired metadata fields
-    let mut metadata: std::collections::HashMap<String, serde_json::Value> = 
+    // This hashmap represents the desired metadata fields to update
+    let mut metadata: std::collections::HashMap<String, serde_json::Value> =
         std::collections::HashMap::new();
     metadata.insert(metadata_name.clone(), json_value);
-    
+
     // Resolve asset ID from either UUID parameter or path
     let asset = if let Some(uuid) = asset_uuid_param {
-        let uuid = Uuid::from_str(uuid).unwrap(); 
-        api.get_asset_by_uuid(&tenant.uuid, &uuid).await?
+        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
     } else if let Some(asset_path) = asset_path_param {
-        // Get asset cache or fetch assets from API
+        // Get asset by path
         api.get_asset_by_path(&tenant.uuid, asset_path).await?
     } else {
         // This shouldn't happen due to our earlier check, but just in case
         return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
     };
-    
-    match asset.metadata() {
-        Some(metadata) => println!("{}", metadata.format(format)?),
-        None => ()
-    };
-            
+
+    // Update the asset's metadata
+    api.update_asset_metadata(&tenant.uuid, &asset.uuid(), &metadata).await?;
+
+    // Get and display the updated asset details
+    let updated_asset = api.get_asset_by_uuid(&tenant.uuid, &asset.uuid()).await?;
+    let format = get_format_parameter_value(sub_matches).await;
+    println!("{}", updated_asset.format(format)?);
+
     Ok(())
 }
 
@@ -343,4 +344,72 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     std::fs::write(&output_file_path, file_content).map_err(|e| CliActionError::IoError(e))?;
 
     Ok(())
+}
+
+pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing geometric match command...");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let format = get_format_parameter_value(sub_matches).await;
+
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
+    let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
+
+    // Get threshold parameter
+    let threshold = sub_matches.get_one::<f64>("threshold")
+        .copied()
+        .unwrap_or(80.0);
+
+    // Resolve asset ID from either UUID parameter or path
+    let asset = if let Some(uuid) = asset_uuid_param {
+        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
+    } else if let Some(asset_path) = asset_path_param {
+        // Get asset by path
+        api.get_asset_by_path(&tenant.uuid, asset_path).await?
+    } else {
+        // This shouldn't happen due to our earlier check, but just in case
+        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+    };
+
+    // Perform geometric search
+    let matches = api.geometric_search(&tenant.uuid, &asset.uuid(), threshold).await?;
+
+    println!("{}", matches.format(format)?);
+
+    Ok(())
+}
+
+pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing geometric match folder command...");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let _tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let _format = get_format_parameter_value(sub_matches).await;
+
+    // Get folder paths
+    let _folder_paths: Vec<String> = sub_matches
+        .get_many::<String>(crate::commands::params::PARAMETER_PATH)
+        .ok_or(CliError::MissingRequiredArgument("path".to_string()))?
+        .map(|s| s.to_string())
+        .collect();
+
+    // Get threshold parameter
+    let _threshold = sub_matches.get_one::<f64>("threshold")
+        .copied()
+        .unwrap_or(80.0);
+
+    // Get exclusive flag
+    let _exclusive = sub_matches.get_flag("exclusive");
+
+    // Get concurrent and progress parameters
+    let _concurrent = sub_matches.get_one::<usize>("concurrent").copied().unwrap_or(5);
+    let _show_progress = sub_matches.get_flag("progress");
+
+    // For now, this is a placeholder implementation since the API doesn't have a direct method for folder-based geometric search
+    // In a real implementation, this would iterate through all assets in the specified folders and perform geometric searches
+    eprintln!("Geometric match folder functionality not yet fully implemented");
+    Err(CliError::MissingRequiredArgument("Geometric match folder functionality not yet implemented".to_string()))
 }

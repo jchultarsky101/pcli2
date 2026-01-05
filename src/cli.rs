@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata
+            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata
         },
         folders::{
             create_folder,
@@ -187,6 +187,20 @@ pub async fn execute_command() -> Result<(), CliError> {
                             sub_matches,
                         )))
                     }
+                }
+                Some((COMMAND_MATCH, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MATCH);
+                    trace!("Routing to asset geometric match...");
+
+                    geometric_match_asset(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_MATCH_FOLDER, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MATCH_FOLDER);
+                    trace!("Routing to asset geometric match folder...");
+
+                    geometric_match_folder(sub_matches).await?;
+                    Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,

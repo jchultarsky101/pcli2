@@ -11,10 +11,10 @@ use crate::commands::params::{
     multiple_files_parameter, path_parameter, recursive_parameter,
     tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH,
     COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_DOWNLOAD_FOLDER, COMMAND_GET,
-    COMMAND_LIST, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
-    PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_PROGRESS,
+    COMMAND_LIST, COMMAND_MATCH, COMMAND_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
+    PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_PATH, PARAMETER_PROGRESS,
 };
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, ArgGroup, Command};
 
 /// Create the asset command with all its subcommands.
 pub fn asset_command() -> Command {
@@ -142,9 +142,8 @@ pub fn asset_command() -> Command {
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
         )
-    /*
     .subcommand(
-        Command::new("geometric-match")
+        Command::new(COMMAND_MATCH)
             .about("Find geometrically similar assets")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
@@ -161,7 +160,7 @@ pub fn asset_command() -> Command {
             )
             .arg(format_with_headers_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser(["json", "csv"]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
             .group(
                 ArgGroup::new("reference_asset")
                     .args(["uuid", "path"])
@@ -170,13 +169,13 @@ pub fn asset_command() -> Command {
             ),
     )
     .subcommand(
-        Command::new("geometric-match-folder")
+        Command::new(COMMAND_MATCH_FOLDER)
             .about("Find geometrically similar assets for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(
-                Arg::new("path")
+                Arg::new(PARAMETER_PATH)
                     .short('p')
-                    .long("path")
+                    .long(PARAMETER_PATH)
                     .num_args(1..) // Accept one or more values
                     .required(true)
                     .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
@@ -201,7 +200,7 @@ pub fn asset_command() -> Command {
             )
             .arg(format_with_headers_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser(["json", "csv"]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
             .arg(
                 Arg::new("concurrent")
                     .long("concurrent")
@@ -219,5 +218,4 @@ pub fn asset_command() -> Command {
                     .help("Display progress bar during processing"),
             )
     )
-    */
 }

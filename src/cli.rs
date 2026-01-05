@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, list_assets, print_asset, download_asset
+            create_asset, create_asset_batch, delete_asset, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata
         },
         folders::{
             create_folder,
@@ -156,6 +156,37 @@ pub async fn execute_command() -> Result<(), CliError> {
 
                     delete_asset(sub_matches).await?;
                     Ok(())
+                }
+                Some((COMMAND_METADATA, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_METADATA);
+
+                    match sub_matches.subcommand() {
+                        Some((COMMAND_CREATE, sub_matches)) => {
+                            trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_CREATE);
+                            trace!("Routing to asset metadata create...");
+
+                            update_asset_metadata(sub_matches).await?;
+                            Ok(())
+                        }
+                        Some((COMMAND_GET, sub_matches)) => {
+                            trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_GET);
+                            trace!("Routing to asset metadata get...");
+
+                            print_asset_metadata(sub_matches).await?;
+                            Ok(())
+                        }
+                        Some((COMMAND_DELETE, sub_matches)) => {
+                            trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_DELETE);
+                            trace!("Routing to asset metadata delete...");
+
+                            // This would call a function to delete metadata
+                            // For now, return an error indicating this functionality is not yet implemented
+                            return Err(CliError::MissingRequiredArgument("Asset metadata delete functionality not yet implemented".to_string()));
+                        }
+                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                            sub_matches,
+                        )))
+                    }
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,

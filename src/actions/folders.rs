@@ -152,12 +152,6 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     api.delete_folder(&tenant.uuid, &folder_uuid).await?;
 
-    if force_flag {
-        println!("Folder and all its contents deleted successfully: {}", folder_uuid);
-    } else {
-        println!("Folder deleted successfully: {}", folder_uuid);
-    }
-
     Ok(())
 }
 
@@ -186,7 +180,6 @@ async fn delete_folder_contents(api: &mut PhysnaApiClient, tenant: &crate::model
         let assets = api.list_assets_by_parent_folder_uuid(&tenant.uuid, Some(folder_uuid)).await?;
         for asset in assets.get_all_assets() {
             api.delete_asset(&tenant.uuid.to_string(), &asset.uuid().to_string()).await?;
-            println!("Deleted asset: {} ({})", asset.name(), asset.uuid());
         }
     }
 
@@ -194,7 +187,6 @@ async fn delete_folder_contents(api: &mut PhysnaApiClient, tenant: &crate::model
     // Skip the original folder since that will be deleted by the caller
     for folder_uuid in all_folders.iter().skip(1).rev() {
         api.delete_folder(&tenant.uuid, folder_uuid).await?;
-        println!("Deleted folder: {}", folder_uuid);
     }
 
     Ok(())

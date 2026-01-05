@@ -285,8 +285,6 @@ pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Delete the asset
     api.delete_asset(&tenant.uuid.to_string(), &asset.uuid().to_string()).await?;
 
-    println!("Asset deleted successfully: {} ({})", asset.name(), asset.uuid());
-
     Ok(())
 }
 
@@ -343,8 +341,6 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Write the file content to the output file
     std::fs::write(&output_file_path, file_content).map_err(|e| CliActionError::IoError(e))?;
-
-    println!("Asset downloaded successfully to: {}", output_file_path.display());
 
     Ok(())
 }

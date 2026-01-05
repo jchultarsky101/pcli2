@@ -171,6 +171,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                     geometric_match_folder(sub_matches).await?;
                     Ok(())
                 }
+                #[allow(non_snake_case)]
                 Some((COMMAND_METADATA, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_METADATA);
 

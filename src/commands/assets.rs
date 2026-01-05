@@ -159,6 +159,7 @@ pub fn asset_command() -> Command {
                     .value_parser(clap::value_parser!(f64)),
             )
             .arg(format_with_headers_parameter())
+            .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
             .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
             .group(
@@ -199,6 +200,7 @@ pub fn asset_command() -> Command {
                     .help("Only show matches where both assets belong to the specified paths"),
             )
             .arg(format_with_headers_parameter())
+            .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
             .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
             .arg(

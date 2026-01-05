@@ -93,15 +93,13 @@ Manage your PCLI2 configuration:
 
 ```bash
 # View current configuration
-pcli2 config show
-
-# Set default tenant (using either tenant name or ID)
-pcli2 config set tenant.default "Demo Environment 1"
-# Or using tenant ID:
-# pcli2 config set tenant.default 123e4567-e89b-12d3-a456-426614174000
+pcli2 config get
 
 # Export configuration for backup
 pcli2 config export --output my-config.yaml
+
+# Import configuration from a file
+pcli2 config import --file my-config.yaml
 ```
 
 ## Context Management

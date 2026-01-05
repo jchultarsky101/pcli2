@@ -23,16 +23,6 @@ Geometric matching helps you:
 - Reduce storage costs by identifying redundant assets
 - Improve design workflows by finding existing similar parts
 
-## Overview
-
-Geometric matching helps you:
-
-- Find duplicate or near-duplicate assets
-- Identify variations of the same part
-- Locate similar components across different projects
-- Reduce storage costs by identifying redundant assets
-- Improve design workflows by finding existing similar parts
-
 ## Related Features
 
 Geometric matching serves as the foundation for other powerful capabilities:

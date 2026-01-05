@@ -17,14 +17,6 @@ Before installing PCLI2, ensure you have the following:
 - **Cargo package manager** (usually installed with Rust)
 - **Git** (for cloning the repository)
 
-## Prerequisites
-
-Before installing PCLI2, ensure you have the following:
-
-- **Rust toolchain** (latest stable version)
-- **Cargo package manager** (usually installed with Rust)
-- **Git** (for cloning the repository)
-
 ### Installing Rust
 
 If you don't have Rust installed, you can install it using rustup:

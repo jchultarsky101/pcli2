@@ -162,10 +162,10 @@ pcli2 asset metadata inference --path /Root/LargeAssembly/Reference.stl --name "
 
 ### Monitoring Progress
 
-Use the `--verbose` flag to monitor progress during long-running operations:
+Monitor progress during long-running operations using the available flags:
 
 ```bash
-pcli2 --verbose asset metadata inference --path /Root/Parts/Reference.stl --name "Material" --threshold 85.0 --recursive
+pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Material" --threshold 85.0 --recursive
 ```
 
 ## Integration with Other Commands

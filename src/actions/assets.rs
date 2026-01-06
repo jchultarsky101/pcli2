@@ -365,7 +365,6 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-    let format = get_format_parameter_value(sub_matches).await;
 
     let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
@@ -374,6 +373,22 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     let threshold = sub_matches.get_one::<f64>("threshold")
         .copied()
         .unwrap_or(80.0);
+
+    // Get format parameters directly from sub_matches since geometric match commands have all format flags
+    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap();
+
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
+
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata,
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(format_str, format_options)
+        .map_err(|e| CliActionError::FormattingError(e))?;
 
     // Resolve asset ID from either UUID parameter or path
     let asset = if let Some(uuid) = asset_uuid_param {

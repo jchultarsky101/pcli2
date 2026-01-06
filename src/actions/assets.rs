@@ -163,6 +163,19 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
 }
 
 
+/// Update an asset's metadata with the specified key-value pair.
+///
+/// This function handles the "asset metadata create" command, which adds or updates
+/// metadata for a specific asset identified by either its UUID or path.
+///
+/// # Arguments
+///
+/// * `sub_matches` - The command-line argument matches containing the command parameters
+///
+/// # Returns
+///
+/// * `Ok(())` - If the metadata was updated successfully
+/// * `Err(CliError)` - If an error occurred during the update
 pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     trace!("Execute \"asset metadata create\" command...");
@@ -374,9 +387,31 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     };
 
     // Perform geometric search
-    let matches = api.geometric_search(&tenant.uuid, &asset.uuid(), threshold).await?;
+    let search_results = api.geometric_search(&tenant.uuid, &asset.uuid(), threshold).await?;
 
-    println!("{}", matches.format(format)?);
+    // Create a basic AssetResponse from the asset for the reference
+    let reference_asset_response = crate::model::AssetResponse {
+        uuid: asset.uuid(),
+        tenant_id: tenant.uuid, // Use the tenant UUID
+        path: asset.path(),
+        folder_id: None, // We don't have folder ID in the Asset struct
+        asset_type: "asset".to_string(), // Default asset type
+        created_at: "".to_string(), // Placeholder for creation time
+        updated_at: "".to_string(), // Placeholder for update time
+        state: "active".to_string(), // Default state
+        is_assembly: false, // Default is not assembly
+        metadata: std::collections::HashMap::new(), // Empty metadata
+        parent_folder_id: None, // No parent folder ID
+        owner_id: None, // No owner ID
+    };
+
+    // Create enhanced response that includes the reference asset information
+    let enhanced_response = crate::model::EnhancedGeometricSearchResponse {
+        reference_asset: reference_asset_response,
+        matches: search_results.matches,
+    };
+
+    println!("{}", enhanced_response.format(format)?);
 
     Ok(())
 }
@@ -412,4 +447,70 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // In a real implementation, this would iterate through all assets in the specified folders and perform geometric searches
     eprintln!("Geometric match folder functionality not yet fully implemented");
     Err(CliError::MissingRequiredArgument("Geometric match folder functionality not yet implemented".to_string()))
+}
+/// Delete specific metadata fields from an asset.
+///
+/// This function handles the "asset metadata delete" command, which removes
+/// specified metadata fields from a specific asset identified by either its UUID or path.
+///
+/// # Arguments
+///
+/// * `sub_matches` - The command-line argument matches containing the command parameters
+///
+/// # Returns
+///
+/// * `Ok(())` - If the metadata was deleted successfully
+/// * `Err(CliError)` - If an error occurred during the deletion
+pub async fn delete_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliError> {
+
+    trace!("Execute \"asset metadata delete\" command...");
+    
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
+    let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
+
+    // Get metadata name parameter from command line
+    let metadata_names = sub_matches.get_many::<String>("name")
+        .ok_or(CliError::MissingRequiredArgument("name".to_string()))?
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>();
+
+    // Resolve asset ID from either UUID parameter or path
+    let asset = if let Some(uuid) = asset_uuid_param {
+        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
+    } else if let Some(asset_path) = asset_path_param {
+        // Get asset by path
+        api.get_asset_by_path(&tenant.uuid, asset_path).await?
+    } else {
+        // This shouldn't happen due to our earlier check, but just in case
+        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+    };
+
+    // Delete the specified metadata fields
+    // Note: The API doesn't have a direct method to delete specific metadata, so we'll need to
+    // update the asset with metadata excluding the specified keys
+    let existing_asset = api.get_asset_by_uuid(&tenant.uuid, &asset.uuid()).await?;
+    let existing_metadata = existing_asset.metadata();
+
+    // Create a new metadata map without the specified keys
+    let mut new_metadata_map = std::collections::HashMap::new();
+    if let Some(asset_metadata) = existing_metadata {
+        for key in asset_metadata.keys() {
+            if !metadata_names.contains(&key.as_str()) {
+                if let Some(value) = asset_metadata.get(key) {
+                    // Convert AssetMetadata's String values back to serde_json::Value
+                    // We need to recreate the metadata map with JSON values for the API call
+                    new_metadata_map.insert(key.clone(), serde_json::Value::String(value.clone()));
+                }
+            }
+        }
+    }
+
+    // Update the asset with the modified metadata
+    api.update_asset_metadata(&tenant.uuid, &asset.uuid(), &new_metadata_map).await?;
+
+    Ok(())
 }

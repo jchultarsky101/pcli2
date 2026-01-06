@@ -1835,17 +1835,74 @@ impl CsvRecordProducer for GeometricSearchResponse {
                 vec![
                     m.asset_uuid().to_string(),
                     m.path().to_string(),
-                    format!("{:.2}", m.score()),
+                    format!("{}", m.score()), // Full precision
                 ]
             })
             .collect()
     }
 }
 
-impl OutputFormatter for GeometricSearchResponse {
-    type Item = GeometricSearchResponse;
+/// Structure to represent a geometric match with both reference and candidate assets.
+///
+/// This structure holds information about a single geometric match, including both the
+/// reference asset (the one being searched) and the candidate asset (the matching one),
+/// along with the similarity percentage and transformation matrix.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeometricMatchPair {
+    /// The reference asset that was searched against
+    #[serde(rename = "referenceAsset")]
+    pub reference_asset: AssetResponse,
+    /// The matching candidate asset
+    #[serde(rename = "candidateAsset")]
+    pub candidate_asset: AssetResponse,
+    /// The similarity percentage
+    #[serde(rename = "matchPercentage")]
+    pub match_percentage: f64,
+    /// The transformation matrix for the match
+    #[serde(rename = "transformation")]
+    pub transformation: Option<TransformationMatrix>,
+}
 
-    /// Format the GeometricSearchResponse according to the specified output format
+impl GeometricMatchPair {
+    /// Create a new GeometricMatchPair from a reference asset and a geometric match
+    pub fn from_reference_and_match(reference_asset: AssetResponse, match_result: GeometricMatch) -> Self {
+        GeometricMatchPair {
+            reference_asset,
+            candidate_asset: match_result.asset,
+            match_percentage: match_result.match_percentage,
+            transformation: match_result.transformation,
+        }
+    }
+}
+
+impl CsvRecordProducer for GeometricMatchPair {
+    /// Get the CSV header row for GeometricMatchPair records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "MATCH_PERCENTAGE".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+        ]
+    }
+
+    /// Convert the GeometricMatchPair to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.reference_asset.path.clone(),
+            self.candidate_asset.path.clone(),
+            format!("{}", self.match_percentage), // Full precision
+            self.reference_asset.uuid.to_string(),
+            self.candidate_asset.uuid.to_string(),
+        ]]
+    }
+}
+
+impl OutputFormatter for GeometricMatchPair {
+    type Item = GeometricMatchPair;
+
+    /// Format the GeometricMatchPair according to the specified output format
     ///
     /// # Arguments
     /// * `format` - The output format to use (JSON, CSV)
@@ -1862,11 +1919,310 @@ impl OutputFormatter for GeometricSearchResponse {
                     Ok(serde_json::to_string(self)?)
                 }
             }
-            OutputFormat::Csv(options) => Ok(self.to_csv(options.with_headers)?),
+            OutputFormat::Csv(options) => {
+                let mut wtr = csv::Writer::from_writer(vec![]);
+
+                if options.with_headers {
+                    wtr.serialize(GeometricMatchPair::csv_header())?;
+                }
+
+                wtr.serialize((
+                    &self.reference_asset.path,
+                    &self.candidate_asset.path,
+                    &self.match_percentage,
+                    &self.reference_asset.uuid.to_string(),
+                    &self.candidate_asset.uuid.to_string(),
+                ))?;
+
+                let data = wtr.into_inner()?;
+                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+            }
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }
     }
 }
+
+/// Enhanced response structure for geometric match that includes reference asset information.
+///
+/// This structure extends the basic geometric search response to include information about
+/// the reference asset that was searched against, providing complete context for the matches.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancedGeometricSearchResponse {
+    /// The reference asset that was searched against
+    pub reference_asset: AssetResponse,
+    /// The list of matching assets
+    pub matches: Vec<GeometricMatch>,
+}
+
+impl CsvRecordProducer for EnhancedGeometricSearchResponse {
+    /// Get the CSV header row for EnhancedGeometricSearchResponse records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "MATCH_PERCENTAGE".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+        ]
+    }
+
+    /// Convert the EnhancedGeometricSearchResponse to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.matches
+            .iter()
+            .map(|m| {
+                vec![
+                    self.reference_asset.path.clone(),  // Reference asset path
+                    m.path().to_string(),               // Candidate asset path
+                    format!("{}", m.score()),           // Full precision match percentage
+                    self.reference_asset.uuid.to_string(), // Reference asset UUID
+                    m.asset_uuid().to_string(),         // Candidate asset UUID
+                ]
+            })
+            .collect()
+    }
+}
+
+impl OutputFormatter for EnhancedGeometricSearchResponse {
+    type Item = EnhancedGeometricSearchResponse;
+
+    /// Format the EnhancedGeometricSearchResponse according to the specified output format
+    ///
+    /// # Arguments
+    /// * `format` - The output format to use (JSON, CSV)
+    ///
+    /// # Returns
+    /// * `Ok(String)` - The formatted output
+    /// * `Err(FormattingError)` - If formatting fails
+    fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    Ok(serde_json::to_string_pretty(self)?)
+                } else {
+                    Ok(serde_json::to_string(self)?)
+                }
+            }
+            OutputFormat::Csv(options) => {
+                let mut wtr = csv::Writer::from_writer(vec![]);
+
+                if options.with_headers {
+                    if options.with_metadata {
+                        // Include metadata columns in the header
+                        let mut base_headers = Self::csv_header();
+                        // Add metadata columns - we need to get unique metadata keys from both reference and candidate assets
+                        let mut all_metadata_keys = std::collections::HashSet::new();
+
+                        // Collect metadata keys from reference asset
+                        for key in self.reference_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Collect metadata keys from all matching assets
+                        for match_result in &self.matches {
+                            for key in match_result.asset.metadata.keys() {
+                                all_metadata_keys.insert(key.clone());
+                            }
+                        }
+
+                        // Sort metadata keys for consistent column ordering
+                        let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                        sorted_keys.sort();
+
+                        // Extend headers with metadata columns
+                        for key in &sorted_keys {
+                            base_headers.push(format!("REF_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        }
+
+                        wtr.serialize(base_headers.as_slice())?;
+                    } else {
+                        wtr.serialize(EnhancedGeometricSearchResponse::csv_header())?;
+                    }
+                }
+
+                for match_result in &self.matches {
+                    if options.with_metadata {
+                        // Include metadata values in the output
+                        let mut base_values = vec![
+                            self.reference_asset.path.clone(),
+                            match_result.path().to_string(),
+                            format!("{}", match_result.score()),
+                            self.reference_asset.uuid.to_string(),
+                            match_result.asset_uuid().to_string(),
+                        ];
+
+                        // Get unique metadata keys to ensure consistent column ordering
+                        let mut all_metadata_keys = std::collections::HashSet::new();
+
+                        // Collect metadata keys from reference asset
+                        for key in self.reference_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Collect metadata keys from candidate asset
+                        for key in match_result.asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Sort metadata keys for consistent column ordering
+                        let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                        sorted_keys.sort();
+
+                        // Add metadata values for each key
+                        for key in &sorted_keys {
+                            // Add reference asset metadata value
+                            let ref_value = self.reference_asset.metadata.get(key)
+                                .map(|v| v.to_string())  // Convert JSON value to string
+                                .unwrap_or_default();
+                            base_values.push(ref_value);
+
+                            // Add candidate asset metadata value
+                            let cand_value = match_result.asset.metadata.get(key)
+                                .map(|v| v.to_string())  // Convert JSON value to string
+                                .unwrap_or_default();
+                            base_values.push(cand_value);
+                        }
+
+                        wtr.serialize(base_values.as_slice())?;
+                    } else {
+                        wtr.serialize((
+                            &self.reference_asset.path,
+                            &match_result.path(),
+                            &match_result.score(),
+                            &self.reference_asset.uuid.to_string(),
+                            &match_result.asset_uuid().to_string(),
+                        ))?;
+                    }
+                }
+
+                let data = wtr.into_inner()?;
+                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+            }
+            _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
+        }
+    }
+}
+
+impl EnhancedGeometricSearchResponse {
+    /// Format the EnhancedGeometricSearchResponse with consideration for metadata flag
+    ///
+    /// # Arguments
+    /// * `format` - The output format to use (JSON, CSV)
+    ///
+    /// # Returns
+    /// * `Ok(String)` - The formatted output
+    /// * `Err(FormattingError)` - If formatting fails
+    pub fn format_with_metadata_option(&self, f: OutputFormat) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    Ok(serde_json::to_string_pretty(self)?)
+                } else {
+                    Ok(serde_json::to_string(self)?)
+                }
+            }
+            OutputFormat::Csv(options) => {
+                let mut wtr = csv::Writer::from_writer(vec![]);
+
+                if options.with_headers {
+                    if options.with_metadata {
+                        // Include metadata columns in the header
+                        let mut base_headers = Self::csv_header();
+                        // Add metadata columns - we need to get unique metadata keys from both reference and candidate assets
+                        let mut all_metadata_keys = std::collections::HashSet::new();
+
+                        // Collect metadata keys from reference asset
+                        for key in self.reference_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Collect metadata keys from all matching assets
+                        for match_result in &self.matches {
+                            for key in match_result.asset.metadata.keys() {
+                                all_metadata_keys.insert(key.clone());
+                            }
+                        }
+
+                        // Sort metadata keys for consistent column ordering
+                        let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                        sorted_keys.sort();
+
+                        // Extend headers with metadata columns
+                        for key in &sorted_keys {
+                            base_headers.push(format!("REF_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        }
+
+                        wtr.serialize(base_headers.as_slice())?;
+                    } else {
+                        wtr.serialize(EnhancedGeometricSearchResponse::csv_header())?;
+                    }
+                }
+
+                for match_result in &self.matches {
+                    if options.with_metadata {
+                        // Include metadata values in the output
+                        let mut base_values = vec![
+                            self.reference_asset.path.clone(),
+                            match_result.path().to_string(),
+                            format!("{}", match_result.score()),
+                            self.reference_asset.uuid.to_string(),
+                            match_result.asset_uuid().to_string(),
+                        ];
+
+                        // Get unique metadata keys to ensure consistent column ordering
+                        let mut all_metadata_keys = std::collections::HashSet::new();
+
+                        // Collect metadata keys from reference asset
+                        for key in self.reference_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Collect metadata keys from candidate asset
+                        for key in match_result.asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Sort metadata keys for consistent column ordering
+                        let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                        sorted_keys.sort();
+
+                        // Add metadata values for each key
+                        for key in &sorted_keys {
+                            // Add reference asset metadata value
+                            let ref_value = self.reference_asset.metadata.get(key)
+                                .map(|v| v.to_string())  // Convert JSON value to string
+                                .unwrap_or_default();
+                            base_values.push(ref_value);
+
+                            // Add candidate asset metadata value
+                            let cand_value = match_result.asset.metadata.get(key)
+                                .map(|v| v.to_string())  // Convert JSON value to string
+                                .unwrap_or_default();
+                            base_values.push(cand_value);
+                        }
+
+                        wtr.serialize(base_values.as_slice())?;
+                    } else {
+                        wtr.serialize((
+                            &self.reference_asset.path,
+                            &match_result.path(),
+                            &match_result.score(),
+                            &self.reference_asset.uuid.to_string(),
+                            &match_result.asset_uuid().to_string(),
+                        ))?;
+                    }
+                }
+
+                let data = wtr.into_inner()?;
+                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+            }
+            _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
+        }
+    }
+}
+
 
 // Metadata field models for Physna V3 API
 

@@ -84,6 +84,14 @@
         <ul>
           
             <li class="">
+              <a href="v0.1.9/">v0.1.9</a>
+            </li>
+          
+            <li class="">
+              <a href="v0.1.8/">v0.1.8</a>
+            </li>
+          
+            <li class="">
               <a href="v0.1.7/">v0.1.7</a>
             </li>
           
@@ -111,6 +119,86 @@
       </nav>
 
       <div class="releases-list">
+        
+          
+          <section class="release ">
+  <h2 id="tag-v0.1.9">
+    <a href="v0.1.9/">
+      
+        v0.1.9
+      
+    </a>
+  </h2>
+  <div class="release-info">
+    <span class="flex items-center gap-2">
+      <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' class='w-6 h-6'>
+    <path stroke-linecap='round' stroke-linejoin='round' d='M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z' />
+    <path stroke-linecap='round' stroke-linejoin='round' d='M6 6h.008v.008H6V6z' /></svg>
+      v0.1.9
+    </span>
+    <span class="flex items-center gap-2">
+      
+        <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' class='w-6 h-6'><path stroke-linecap='round' stroke-linejoin='round' d='M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5' /></svg>
+        Oct 31 2025 at 19:22 UTC
+      
+    </span>
+  </div>
+  <div class="release-body">
+    
+  </div>
+</section>
+        
+          
+          <section class="release ">
+  <h2 id="tag-v0.1.8">
+    <a href="v0.1.8/">
+      
+        0.1.8 - 2025-10-31
+      
+    </a>
+  </h2>
+  <div class="release-info">
+    <span class="flex items-center gap-2">
+      <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' class='w-6 h-6'>
+    <path stroke-linecap='round' stroke-linejoin='round' d='M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z' />
+    <path stroke-linecap='round' stroke-linejoin='round' d='M6 6h.008v.008H6V6z' /></svg>
+      v0.1.8
+    </span>
+    <span class="flex items-center gap-2">
+      
+        <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' class='w-6 h-6'><path stroke-linecap='round' stroke-linejoin='round' d='M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5' /></svg>
+        Oct 30 2025 at 23:09 UTC
+      
+    </span>
+  </div>
+  <div class="release-body">
+    <h3>Added</h3>
+<ul>
+<li>Asset dependencies command to retrieve component relationships and referenced assets for assemblies</li>
+<li>Recursive dependency traversal with <code>--recursive</code> flag to show full assembly hierarchies</li>
+<li>Enhanced JSON output with <code>parentPath</code> field to preserve parent-child relationships in recursive mode</li>
+<li>Enhanced CSV output with <code>PARENT_PATH</code> column to preserve parent-child relationships in recursive mode</li>
+<li>Hierarchical tree visualization for recursive dependencies showing proper indentation structure</li>
+<li>Cycle detection and deduplication to prevent infinite loops during recursive traversal</li>
+<li>Consistent parameter handling with <code>PARAMETER_RECURSIVE</code> constant for reuse across commands</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Improved tree format for asset dependencies to show original asset as root instead of generic "Asset Dependencies"</li>
+<li>Updated API client to use asset path instead of asset ID in dependencies endpoint URL as per API specification</li>
+<li>Enhanced error handling for invalid folder paths in folder list command to return appropriate error messages</li>
+<li>Standardized command structure with consistent parameter naming and help text</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Asset dependencies endpoint URL construction to use asset path instead of asset ID as required by API</li>
+<li>Folder list command to return error for invalid paths instead of showing all root folders</li>
+<li>Banner display consistency to show for both <code>help</code> subcommand and <code>--help</code> flag</li>
+<li>Compilation warnings and improved code safety throughout the codebase</li>
+</ul>
+
+  </div>
+</section>
         
           
           <section class="release ">

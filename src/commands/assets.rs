@@ -12,7 +12,7 @@ use crate::commands::params::{
     tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH,
     COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_DOWNLOAD_FOLDER, COMMAND_GET,
     COMMAND_LIST, COMMAND_MATCH, COMMAND_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
-    PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_PATH, PARAMETER_PROGRESS,
+    PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, ArgGroup, Command};
 
@@ -161,7 +161,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
             .group(
                 ArgGroup::new("reference_asset")
                     .args(["uuid", "path"])
@@ -174,9 +174,9 @@ pub fn asset_command() -> Command {
             .about("Find geometrically similar assets for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(
-                Arg::new(PARAMETER_PATH)
+                Arg::new(PARAMETER_FOLDER_PATH)
                     .short('p')
-                    .long(PARAMETER_PATH)
+                    .long(PARAMETER_FOLDER_PATH)
                     .num_args(1..) // Accept one or more values
                     .required(true)
                     .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
@@ -208,8 +208,8 @@ pub fn asset_command() -> Command {
                     .long("concurrent")
                     .num_args(1)
                     .required(false)
-                    .default_value("5")
-                    .help("Maximum number of concurrent operations")
+                    .default_value("1")
+                    .help("Maximum number of concurrent operations (range: 1-10)")
                     .value_parser(clap::value_parser!(usize)),
             )
             .arg(

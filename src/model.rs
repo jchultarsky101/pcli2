@@ -1046,7 +1046,14 @@ impl From<HashMap<String, serde_json::Value>> for AssetMetadata {
     fn from(ht: HashMap<String, serde_json::Value>) -> Self {
         let meta: HashMap<String, String> = ht
             .iter()
-            .map(|(k, v)| (k.to_owned(), v.to_string()))
+            .map(|(k, v)| {
+                let value_string = if let Some(str_val) = v.as_str() {
+                    str_val.to_string()
+                } else {
+                    v.to_string()  // fallback to generic string representation for non-string values
+                };
+                (k.to_owned(), value_string)
+            })
             .collect();
 
         Self::from(meta)
@@ -1470,7 +1477,8 @@ impl AssetList {
             // Add metadata values for each key
             if let Some(metadata) = asset.metadata() {
                 for key in metadata_keys {
-                    record.push(metadata.get(key).cloned().unwrap_or_default());
+                    let value = metadata.get(key).cloned().unwrap_or_default();
+                    record.push(value);
                 }
             } else {
                 // No metadata, add empty strings for all metadata columns
@@ -1665,6 +1673,9 @@ pub struct GeometricMatch {
     /// The transformation matrix for the match
     #[serde(rename = "transformation")]
     pub transformation: Option<TransformationMatrix>,
+    /// The comparison URL for viewing the match in the UI
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: Option<String>,
 }
 
 impl GeometricMatch {
@@ -1861,6 +1872,9 @@ pub struct GeometricMatchPair {
     /// The transformation matrix for the match
     #[serde(rename = "transformation")]
     pub transformation: Option<TransformationMatrix>,
+    /// The comparison URL for viewing the match in the UI
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: Option<String>,
 }
 
 impl GeometricMatchPair {
@@ -1871,6 +1885,7 @@ impl GeometricMatchPair {
             candidate_asset: match_result.asset,
             match_percentage: match_result.match_percentage,
             transformation: match_result.transformation,
+            comparison_url: match_result.comparison_url,
         }
     }
 }
@@ -1884,6 +1899,7 @@ impl CsvRecordProducer for GeometricMatchPair {
             "MATCH_PERCENTAGE".to_string(),
             "REFERENCE_ASSET_UUID".to_string(),
             "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
         ]
     }
 
@@ -1895,6 +1911,7 @@ impl CsvRecordProducer for GeometricMatchPair {
             format!("{}", self.match_percentage), // Full precision
             self.reference_asset.uuid.to_string(),
             self.candidate_asset.uuid.to_string(),
+            self.comparison_url.clone().unwrap_or_default(),
         ]]
     }
 }
@@ -1963,6 +1980,7 @@ impl CsvRecordProducer for EnhancedGeometricSearchResponse {
             "MATCH_PERCENTAGE".to_string(),
             "REFERENCE_ASSET_UUID".to_string(),
             "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
         ]
     }
 
@@ -1977,6 +1995,7 @@ impl CsvRecordProducer for EnhancedGeometricSearchResponse {
                     format!("{}", m.score()),           // Full precision match percentage
                     self.reference_asset.uuid.to_string(), // Reference asset UUID
                     m.asset_uuid().to_string(),         // Candidate asset UUID
+                    m.comparison_url.clone().unwrap_or_default(), // Comparison URL
                 ]
             })
             .collect()
@@ -2050,9 +2069,11 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                             format!("{}", match_result.score()),
                             self.reference_asset.uuid.to_string(),
                             match_result.asset_uuid().to_string(),
+                            match_result.comparison_url.clone().unwrap_or_default(),
                         ];
 
-                        // Get unique metadata keys to ensure consistent column ordering
+                        // Get ALL unique metadata keys that were used in the header
+                        // (collected from reference asset and ALL match assets)
                         let mut all_metadata_keys = std::collections::HashSet::new();
 
                         // Collect metadata keys from reference asset
@@ -2060,26 +2081,30 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                             all_metadata_keys.insert(key.clone());
                         }
 
-                        // Collect metadata keys from candidate asset
-                        for key in match_result.asset.metadata.keys() {
-                            all_metadata_keys.insert(key.clone());
+                        // Collect metadata keys from all matching assets (same as header generation)
+                        for match_result_iter in &self.matches {
+                            for key in match_result_iter.asset.metadata.keys() {
+                                all_metadata_keys.insert(key.clone());
+                            }
                         }
 
                         // Sort metadata keys for consistent column ordering
                         let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
                         sorted_keys.sort();
 
-                        // Add metadata values for each key
+                        // Add metadata values for each key that was included in the header
                         for key in &sorted_keys {
-                            // Add reference asset metadata value
+                            // Add reference asset metadata value (same for all records)
                             let ref_value = self.reference_asset.metadata.get(key)
-                                .map(|v| v.to_string())  // Convert JSON value to string
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
                                 .unwrap_or_default();
                             base_values.push(ref_value);
 
-                            // Add candidate asset metadata value
+                            // Add candidate asset metadata value (specific to this match)
                             let cand_value = match_result.asset.metadata.get(key)
-                                .map(|v| v.to_string())  // Convert JSON value to string
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
                                 .unwrap_or_default();
                             base_values.push(cand_value);
                         }
@@ -2092,6 +2117,7 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                             &match_result.score(),
                             &self.reference_asset.uuid.to_string(),
                             &match_result.asset_uuid().to_string(),
+                            &match_result.comparison_url.clone().unwrap_or_default(),
                         ))?;
                     }
                 }
@@ -2169,9 +2195,11 @@ impl EnhancedGeometricSearchResponse {
                             format!("{}", match_result.score()),
                             self.reference_asset.uuid.to_string(),
                             match_result.asset_uuid().to_string(),
+                            match_result.comparison_url.clone().unwrap_or_default(),
                         ];
 
-                        // Get unique metadata keys to ensure consistent column ordering
+                        // Get ALL unique metadata keys that were used in the header
+                        // (collected from reference asset and ALL match assets)
                         let mut all_metadata_keys = std::collections::HashSet::new();
 
                         // Collect metadata keys from reference asset
@@ -2179,26 +2207,30 @@ impl EnhancedGeometricSearchResponse {
                             all_metadata_keys.insert(key.clone());
                         }
 
-                        // Collect metadata keys from candidate asset
-                        for key in match_result.asset.metadata.keys() {
-                            all_metadata_keys.insert(key.clone());
+                        // Collect metadata keys from all matching assets (same as header generation)
+                        for match_result_iter in &self.matches {
+                            for key in match_result_iter.asset.metadata.keys() {
+                                all_metadata_keys.insert(key.clone());
+                            }
                         }
 
                         // Sort metadata keys for consistent column ordering
                         let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
                         sorted_keys.sort();
 
-                        // Add metadata values for each key
+                        // Add metadata values for each key that was included in the header
                         for key in &sorted_keys {
-                            // Add reference asset metadata value
+                            // Add reference asset metadata value (same for all records)
                             let ref_value = self.reference_asset.metadata.get(key)
-                                .map(|v| v.to_string())  // Convert JSON value to string
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
                                 .unwrap_or_default();
                             base_values.push(ref_value);
 
-                            // Add candidate asset metadata value
+                            // Add candidate asset metadata value (specific to this match)
                             let cand_value = match_result.asset.metadata.get(key)
-                                .map(|v| v.to_string())  // Convert JSON value to string
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
                                 .unwrap_or_default();
                             base_values.push(cand_value);
                         }
@@ -2211,6 +2243,7 @@ impl EnhancedGeometricSearchResponse {
                             &match_result.score(),
                             &self.reference_asset.uuid.to_string(),
                             &match_result.asset_uuid().to_string(),
+                            &match_result.comparison_url.clone().unwrap_or_default(),
                         ))?;
                     }
                 }

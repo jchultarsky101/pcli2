@@ -2,7 +2,8 @@ use std::{path::PathBuf, str::FromStr};
 use clap::ArgMatches;
 use uuid::Uuid;
 use crate::actions::CliActionError;
-use crate::{actions::folders::resolve_folder_uuid_by_path, commands::params::{PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID}, configuration::Configuration, error::CliError, format::OutputFormatter, metadata::convert_single_metadata_to_json_value, model::{AssetList, Folder, normalize_path}, param_utils::{get_format_parameter_value, get_tenant}, physna_v3::{PhysnaApiClient, TryDefault}};
+use crate::{actions::folders::resolve_folder_uuid_by_path, commands::params::{PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID}, configuration::Configuration, error::CliError, format::{OutputFormatter, CsvRecordProducer}, metadata::convert_single_metadata_to_json_value, model::{AssetList, Folder, normalize_path}, param_utils::{get_format_parameter_value, get_tenant}, physna_v3::{PhysnaApiClient, TryDefault}};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::{debug, trace};
 
 pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
@@ -387,7 +388,7 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
         pretty,
     };
 
-    let format = crate::format::OutputFormat::from_string_with_options(format_str, format_options)
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(|e| CliActionError::FormattingError(e))?;
 
     // Resolve asset ID from either UUID parameter or path
@@ -402,7 +403,21 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     };
 
     // Perform geometric search
-    let search_results = api.geometric_search(&tenant.uuid, &asset.uuid(), threshold).await?;
+    let mut search_results = api.geometric_search(&tenant.uuid, &asset.uuid(), threshold).await?;
+
+    // Populate comparison URLs for each match
+    for match_result in &mut search_results.matches {
+        let comparison_url = format!(
+            "https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+            tenant.name, // Use tenant short name in path
+            asset.uuid(),
+            match_result.asset.uuid,
+            tenant.uuid, // Use tenant UUID in query params
+            tenant.uuid, // Use tenant UUID in query params
+            match_result.match_percentage
+        );
+        match_result.comparison_url = Some(comparison_url);
+    }
 
     // Create a basic AssetResponse from the asset for the reference
     let reference_asset_response = crate::model::AssetResponse {
@@ -436,32 +451,406 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
-    let _tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-    let _format = get_format_parameter_value(sub_matches).await;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder paths
-    let _folder_paths: Vec<String> = sub_matches
-        .get_many::<String>(crate::commands::params::PARAMETER_PATH)
-        .ok_or(CliError::MissingRequiredArgument("path".to_string()))?
+    let folder_paths: Vec<String> = sub_matches
+        .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
+        .ok_or(CliError::MissingRequiredArgument("folder-path".to_string()))?
         .map(|s| s.to_string())
         .collect();
 
     // Get threshold parameter
-    let _threshold = sub_matches.get_one::<f64>("threshold")
+    let threshold = sub_matches.get_one::<f64>("threshold")
         .copied()
         .unwrap_or(80.0);
 
+    // Get format parameters
+    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap_or(&"json".to_string()).clone();
+
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
+
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata,
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(|e| CliActionError::FormattingError(e))?;
+
     // Get exclusive flag
-    let _exclusive = sub_matches.get_flag("exclusive");
+    let exclusive = sub_matches.get_flag("exclusive");
 
     // Get concurrent and progress parameters
-    let _concurrent = sub_matches.get_one::<usize>("concurrent").copied().unwrap_or(5);
-    let _show_progress = sub_matches.get_flag("progress");
+    let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
+    let concurrent = match concurrent_param {
+        Some(val) => {
+            if val < 1 || val > 10 {
+                return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", val)));
+            }
+            val
+        },
+        None => 1, // Default value
+    };
 
-    // For now, this is a placeholder implementation since the API doesn't have a direct method for folder-based geometric search
-    // In a real implementation, this would iterate through all assets in the specified folders and perform geometric searches
-    eprintln!("Geometric match folder functionality not yet fully implemented");
-    Err(CliError::MissingRequiredArgument("Geometric match folder functionality not yet implemented".to_string()))
+    let show_progress = sub_matches.get_flag("progress");
+
+    // Collect all assets from the specified folders
+    let mut all_assets = std::collections::HashMap::new();
+
+    for folder_path in &folder_paths {
+        trace!("Listing assets for folder path: {}", folder_path);
+        let assets_response = api.list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str()).await?;
+
+        for asset in assets_response.get_all_assets() {
+            all_assets.insert(asset.uuid(), asset.clone());
+        }
+    }
+
+    trace!("Found {} assets across all folders", all_assets.len());
+
+    if all_assets.is_empty() {
+        eprintln!("No assets found in the specified folder(s)");
+        return Ok(());
+    }
+
+    // Create multi-progress bar if show_progress is true
+    let multi_progress = if show_progress {
+        let mp = MultiProgress::new();
+
+        // Add an overall progress bar
+        let overall_pb = mp.add(ProgressBar::new(all_assets.len() as u64));
+        overall_pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall Progress")
+                .unwrap()
+                .progress_chars("#>-")
+        );
+        Some((mp, overall_pb))
+    } else {
+        None
+    };
+
+    // Use a semaphore to limit concurrent operations
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent));
+
+    // Prepare for concurrent processing
+    let mut all_matches = Vec::new();
+
+    // Use a set to track unique pairs to avoid duplicates (reference UUID, candidate UUID)
+    let mut seen_pairs = std::collections::HashSet::new();
+
+    // Create tasks for concurrent processing
+    type TaskResult = Result<Vec<crate::model::EnhancedGeometricSearchResponse>, Box<dyn std::error::Error + Send + Sync>>;
+    let mut tasks: Vec<tokio::task::JoinHandle<TaskResult>> = Vec::new();
+    for (asset_uuid, asset) in &all_assets {
+        let semaphore = semaphore.clone();
+        let mut api_clone = api.clone(); // Clone the API client
+        let tenant_uuid = tenant.uuid;
+        let asset_uuid = *asset_uuid;
+        let asset_clone = asset.clone();
+        let folder_paths_clone = folder_paths.clone();
+        let tenant_clone = tenant.clone();
+        let multi_progress_clone = multi_progress.clone();
+
+        let task = tokio::spawn(async move {
+            let _permit = semaphore.acquire().await.unwrap();
+
+            // Create individual progress bar for this task if multi-progress is enabled
+            let individual_pb = if let Some((ref mp, _)) = multi_progress_clone {
+                let pb = mp.add(ProgressBar::new_spinner());
+                pb.set_style(
+                    ProgressStyle::default_spinner()
+                        .template(&format!("{{spinner:.green}} Processing: {} {{msg}}", asset_clone.name()))
+                        .unwrap()
+                );
+                Some(pb)
+            } else {
+                None
+            };
+
+            // Update the progress bar to show that we're starting the search
+            if let Some(ref pb) = individual_pb {
+                pb.set_message("Starting geometric search...");
+            }
+
+            let result = match api_clone.geometric_search(&tenant_uuid, &asset_uuid, threshold).await {
+                Ok(search_results) => {
+                    // Update progress bar to show processing matches
+                    if let Some(ref pb) = individual_pb {
+                        pb.set_message(format!("Processing {} matches...", search_results.matches.len()));
+                    }
+
+                    let mut asset_matches = Vec::new();
+
+                    for mut match_result in search_results.matches {
+                        // Skip if the match is with the same asset (self-match)
+                        if match_result.asset.uuid == asset_uuid {
+                            continue;
+                        }
+
+                        // Populate comparison URL for this match
+                        let comparison_url = format!(
+                            "https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                            tenant_clone.name, // Use tenant short name in path
+                            asset_uuid,
+                            match_result.asset.uuid,
+                            tenant_uuid, // Use tenant UUID in query params
+                            tenant_uuid, // Use tenant UUID in query params
+                            match_result.match_percentage
+                        );
+                        match_result.comparison_url = Some(comparison_url);
+
+                        // Check if we want to include matches based on exclusive flag
+                        let candidate_in_specified_folders = folder_paths_clone.iter().any(|folder_path| {
+                            match_result.asset.path.starts_with(folder_path)
+                        });
+
+                        if exclusive && !candidate_in_specified_folders {
+                            continue;
+                        }
+
+                        // Create the enhanced response structure for this match
+                        let metadata_map = if let Some(asset_metadata) = asset_clone.metadata() {
+                            // Convert AssetMetadata to HashMap<String, serde_json::Value>
+                            let mut map = std::collections::HashMap::new();
+                            for key in asset_metadata.keys() {
+                                if let Some(value) = asset_metadata.get(key) {
+                                    map.insert(key.clone(), serde_json::Value::String(value.clone()));
+                                }
+                            }
+                            map
+                        } else {
+                            std::collections::HashMap::new()
+                        };
+
+                        let reference_asset_response = crate::model::AssetResponse {
+                            uuid: asset_uuid,
+                            tenant_id: tenant_uuid,
+                            path: asset_clone.path(),
+                            folder_id: None,
+                            asset_type: "asset".to_string(), // Default asset type
+                            created_at: "".to_string(), // Placeholder for creation time
+                            updated_at: "".to_string(), // Placeholder for update time
+                            state: "active".to_string(), // Default state
+                            is_assembly: false, // Default is not assembly
+                            metadata: metadata_map,
+                            parent_folder_id: None, // No parent folder ID
+                            owner_id: None, // No owner ID
+                        };
+
+                        let enhanced_match = crate::model::EnhancedGeometricSearchResponse {
+                            reference_asset: reference_asset_response,
+                            matches: vec![match_result.clone()],
+                        };
+
+                        asset_matches.push(enhanced_match);
+                    }
+
+                    // Update progress bar to show completion
+                    if let Some(ref pb) = individual_pb {
+                        pb.set_message(format!("Found {} matches", asset_matches.len()));
+                    }
+
+                    Ok(asset_matches)
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to perform geometric search for asset {}: {}", asset_clone.name(), e);
+                    if let Some(ref pb) = individual_pb {
+                        pb.set_message("Failed");
+                    }
+                    Ok(Vec::new()) // Return empty vector on error
+                }
+            };
+
+            // Remove the individual progress bar when done
+            if let Some(pb) = individual_pb {
+                pb.finish_and_clear();
+            }
+
+            result
+        });
+
+        tasks.push(task);
+    }
+
+    // Process tasks and collect results
+    for task in tasks {
+        match task.await {
+            Ok(Ok(asset_matches)) => {
+                for enhanced_match in asset_matches {
+                    // Apply duplicate filtering to each match
+                    for match_result in &enhanced_match.matches {
+                        // Create a unique pair identifier to avoid duplicates
+                        // We want to avoid having both (A,B) and (B,A) in results
+                        let (ref_uuid, cand_uuid) = if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
+                            (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
+                        } else {
+                            (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
+                        };
+
+                        let pair_key = (ref_uuid, cand_uuid);
+
+                        if !seen_pairs.contains(&pair_key) {
+                            seen_pairs.insert(pair_key);
+                            all_matches.push(enhanced_match.clone());
+                        }
+                    }
+                }
+            }
+            Ok(Err(e)) => {
+                eprintln!("Error processing asset: {:?}", e);
+            }
+            Err(e) => {
+                eprintln!("Task failed: {:?}", e);
+            }
+        }
+
+        if let Some((_, ref overall_pb)) = multi_progress {
+            overall_pb.inc(1);
+        }
+    }
+
+    if let Some((_, ref overall_pb)) = multi_progress {
+        overall_pb.finish_with_message(format!("Processed {} assets. Found {} unique matches.", all_assets.len(), all_matches.len()));
+    }
+
+    // Output the results based on format
+    match format {
+        crate::format::OutputFormat::Json(_) => {
+            // For JSON, we need to flatten all matches into a single array
+            let mut flattened_matches = Vec::new();
+            for enhanced_response in all_matches {
+                for match_result in enhanced_response.matches {
+                    flattened_matches.push(crate::model::GeometricMatchPair::from_reference_and_match(
+                        enhanced_response.reference_asset.clone(),
+                        match_result
+                    ));
+                }
+            }
+            println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
+        }
+        crate::format::OutputFormat::Csv(_) => {
+            // For CSV, we can output all matches together
+            let mut flattened_matches = Vec::new();
+            for enhanced_response in all_matches {
+                for match_result in enhanced_response.matches {
+                    flattened_matches.push(crate::model::GeometricMatchPair::from_reference_and_match(
+                        enhanced_response.reference_asset.clone(),
+                        match_result
+                    ));
+                }
+            }
+
+            // For CSV with metadata, we need to create a custom implementation
+            let mut wtr = csv::Writer::from_writer(vec![]);
+            let output;
+
+            // Pre-calculate the metadata keys that will be used for headers and all records
+            let mut header_metadata_keys = Vec::new();
+            if with_metadata {
+                // Collect all unique metadata keys from ALL match pairs for consistent headers
+                let mut all_metadata_keys = std::collections::HashSet::new();
+                for match_pair in &flattened_matches {
+                    for key in match_pair.reference_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+                    for key in match_pair.candidate_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+                }
+
+                // Sort metadata keys for consistent column ordering
+                let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                sorted_keys.sort();
+                header_metadata_keys = sorted_keys;
+            }
+
+            if with_headers {
+                // Build header with metadata columns
+                let mut base_headers = crate::model::GeometricMatchPair::csv_header();
+
+                if with_metadata {
+                    // Add metadata columns with prefixes
+                    for key in &header_metadata_keys {
+                        base_headers.push(format!("REF_{}", key.to_uppercase()));
+                        base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                    }
+                }
+
+                if let Err(e) = wtr.serialize(base_headers.as_slice()) {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                }
+            }
+
+            for match_pair in flattened_matches {
+                let mut base_values = vec![
+                    match_pair.reference_asset.path.clone(),
+                    match_pair.candidate_asset.path.clone(),
+                    format!("{}", match_pair.match_percentage),
+                    match_pair.reference_asset.uuid.to_string(),
+                    match_pair.candidate_asset.uuid.to_string(),
+                    match_pair.comparison_url.clone().unwrap_or_default(),
+                ];
+
+                if with_metadata {
+                    // Add metadata values for each key that was included in the header
+                    for key in &header_metadata_keys {
+                        // Add reference asset metadata value
+                        let ref_value = match_pair.reference_asset.metadata.get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(ref_value);
+
+                        // Add candidate asset metadata value
+                        let cand_value = match_pair.candidate_asset.metadata.get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(cand_value);
+                    }
+                }
+
+                if let Err(e) = wtr.serialize(base_values.as_slice()) {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                }
+            }
+
+            let data = match wtr.into_inner() {
+                Ok(data) => data,
+                Err(e) => {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                }
+            };
+            output = match String::from_utf8(data) {
+                Ok(s) => s,
+                Err(e) => {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                }
+            };
+
+            print!("{}", output);
+        }
+        _ => {
+            // Default to JSON
+            let mut flattened_matches = Vec::new();
+            for enhanced_response in all_matches {
+                for match_result in enhanced_response.matches {
+                    flattened_matches.push(crate::model::GeometricMatchPair::from_reference_and_match(
+                        enhanced_response.reference_asset.clone(),
+                        match_result
+                    ));
+                }
+            }
+            println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
+        }
+    }
+
+    Ok(())
 }
 /// Delete specific metadata fields from an asset.
 ///
@@ -526,6 +915,207 @@ pub async fn delete_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
 
     // Update the asset with the modified metadata
     api.update_asset_metadata(&tenant.uuid, &asset.uuid(), &new_metadata_map).await?;
+
+    Ok(())
+}
+
+/// Apply metadata inference from a reference asset to geometrically similar assets
+///
+/// This function finds geometrically similar assets to a reference asset and copies specified metadata fields
+/// from the reference to the similar assets.
+///
+/// # Arguments
+/// * `sub_matches` - The command line arguments
+///
+/// # Returns
+/// * `Ok(())` - If the operation completed successfully
+/// * `Err(CliError)` - If an error occurred during the operation
+pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing metadata inference command...");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    // Get the reference asset path
+    let asset_path = sub_matches.get_one::<String>("path")
+        .ok_or_else(|| CliError::MissingRequiredArgument("path".to_string()))?;
+
+    // Get the metadata field names to copy
+    let metadata_names: Vec<String> = sub_matches
+        .get_many::<String>("inference_name")
+        .ok_or_else(|| CliError::MissingRequiredArgument("name".to_string()))?
+        .map(|s| s.to_string())
+        .collect();
+
+    // Get threshold parameter
+    let threshold = sub_matches.get_one::<f64>("threshold")
+        .copied()
+        .unwrap_or(80.0);
+
+    // Get exclusive flag
+    let exclusive = sub_matches.get_flag("exclusive");
+
+    // Get format parameters
+    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .map(|s| s.as_str())
+        .unwrap_or("json");
+
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata: false,
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(format_str, format_options.clone())
+        .map_err(|e| CliActionError::FormattingError(crate::format::FormattingError::FormatFailure { cause: Box::new(e) }))?;
+
+    // Get the reference asset
+    let reference_asset = api.get_asset_by_path(&tenant.uuid, asset_path).await?;
+
+    // Check if the reference asset has any of the requested metadata fields BEFORE performing expensive geometric search
+    let reference_metadata = reference_asset.metadata();
+    let mut available_fields = Vec::new();
+    if let Some(asset_metadata) = reference_metadata {
+        for field_name in &metadata_names {
+            if asset_metadata.get(field_name).is_some() {
+                available_fields.push(field_name.clone());
+            }
+        }
+    }
+
+    // Fail fast if no requested fields exist in the reference asset
+    if available_fields.is_empty() {
+        return Err(CliError::from(CliActionError::MissingRequiredArgument(format!(
+            "Reference asset '{}' has no metadata fields matching: {:?}", asset_path, metadata_names
+        ))));
+    }
+
+    // Only perform expensive geometric search if we know we have fields to copy
+    let search_results = api.geometric_search(&tenant.uuid, &reference_asset.uuid(), threshold).await?;
+
+    let mut assets_updated = Vec::new();
+
+    // Extract the parent folder path from the reference asset
+    let reference_parent_folder_path = {
+        let path_str = reference_asset.path().to_string();
+        let path_parts: Vec<&str> = path_str.split('/').collect();
+        if path_parts.len() > 1 {
+            // Join all parts except the last one (filename) to get the parent folder path
+            path_parts[..path_parts.len()-1].join("/")
+        } else {
+            // If there's only one part, the parent is root
+            "".to_string()
+        }
+    };
+
+    for match_result in search_results.matches {
+        // If exclusive flag is set, only process assets in the same parent folder
+        if exclusive {
+            let candidate_parent_folder_path = {
+                let path_str = match_result.asset.path.clone();
+                let path_parts: Vec<&str> = path_str.split('/').collect();
+                if path_parts.len() > 1 {
+                    path_parts[..path_parts.len()-1].join("/")
+                } else {
+                    "".to_string()
+                }
+            };
+
+            // Skip if the candidate asset is not in the same parent folder as the reference
+            if candidate_parent_folder_path != reference_parent_folder_path {
+                continue;
+            }
+        }
+
+        // Create a new metadata map with only the specified fields from the reference asset
+        let mut new_metadata_map = std::collections::HashMap::new();
+
+        if let Some(asset_metadata) = reference_metadata {
+            for field_name in &available_fields {
+                if let Some(value) = asset_metadata.get(field_name) {
+                    new_metadata_map.insert(field_name.clone(), serde_json::Value::String(value.clone()));
+                }
+            }
+        }
+
+        // Update the similar asset with the copied metadata
+        if !new_metadata_map.is_empty() {
+            api.update_asset_metadata(&tenant.uuid, &match_result.asset.uuid, &new_metadata_map).await?;
+
+            // Track which assets were updated
+            assets_updated.push((match_result.asset.path.clone(), new_metadata_map.clone()));
+        }
+    }
+
+    // Create a response structure to output the results
+    let response = serde_json::json!({
+        "reference_asset_path": asset_path,
+        "reference_asset_uuid": reference_asset.uuid(),
+        "threshold": threshold,
+        "fields_copied": metadata_names,
+        "assets_updated": assets_updated.len(),
+        "updated_assets": assets_updated
+    });
+
+    match format {
+        crate::format::OutputFormat::Json(options) => {
+            if options.pretty {
+                println!("{}", serde_json::to_string_pretty(&response)?);
+            } else {
+                println!("{}", serde_json::to_string(&response)?);
+            }
+        }
+        crate::format::OutputFormat::Csv(options) => {
+            // For CSV output, create a simple table
+            let mut wtr = csv::Writer::from_writer(vec![]);
+
+            if options.with_headers {
+                if let Err(e) = wtr.serialize(&["REFERENCE_ASSET_PATH", "CANDIDATE_ASSET_PATH", "FIELD_NAME", "FIELD_VALUE", "THRESHOLD"]) {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                }
+            }
+
+            for (candidate_asset_path, metadata_map) in &assets_updated {
+                for (field_name, field_value) in metadata_map {
+                    if let Err(e) = wtr.serialize(&[
+                        asset_path,  // REFERENCE_ASSET_PATH - the reference asset path
+                        candidate_asset_path,  // CANDIDATE_ASSET_PATH - the asset that received the metadata
+                        field_name,  // FIELD_NAME
+                        field_value.as_str().unwrap_or(""), // FIELD_VALUE
+                        &threshold.to_string() // THRESHOLD
+                    ]) {
+                        return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    }
+                }
+            }
+
+            let data = match wtr.into_inner() {
+                Ok(data) => data,
+                Err(e) => {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                }
+            };
+            let csv_string = match String::from_utf8(data) {
+                Ok(s) => s,
+                Err(e) => {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                }
+            };
+            print!("{}", csv_string);
+        }
+        _ => {
+            // Default to JSON
+            if format_options.pretty {
+                println!("{}", serde_json::to_string_pretty(&response)?);
+            } else {
+                println!("{}", serde_json::to_string(&response)?);
+            }
+        }
+    }
 
     Ok(())
 }

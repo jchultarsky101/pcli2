@@ -3,7 +3,7 @@
 //! This module defines CLI commands related to asset metadata management.
 
 use crate::commands::params::{
-    format_parameter, path_parameter, tenant_parameter, uuid_parameter, COMMAND_CREATE,
+    format_parameter, format_pretty_parameter, format_with_headers_parameter, path_parameter, tenant_parameter, uuid_parameter, COMMAND_CREATE,
     COMMAND_DELETE, COMMAND_GET, COMMAND_METADATA, PARAMETER_REFRESH,
 };
 use clap::{Arg, ArgAction, ArgGroup, Command};
@@ -172,7 +172,16 @@ pub fn metadata_command() -> Command {
                         .required(false)
                         .help("Apply inference recursively to all found similar assets"),
                 )
-                .arg(tenant_parameter())
+                .arg(
+                    Arg::new("exclusive")
+                        .long("exclusive")
+                        .action(ArgAction::SetTrue)
+                        .required(false)
+                        .help("Only apply inference to assets in the same parent folder as the reference asset"),
+                )
                 .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_with_headers_parameter())
+                .arg(format_pretty_parameter())
+                .arg(tenant_parameter())
         )
 }

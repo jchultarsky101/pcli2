@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata
+            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference
         },
         folders::{
             create_folder,
@@ -194,9 +194,15 @@ pub async fn execute_command() -> Result<(), CliError> {
                             trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_DELETE);
                             trace!("Routing to asset metadata delete...");
 
-                            // This would call a function to delete metadata
-                            // For now, return an error indicating this functionality is not yet implemented
-                            return Err(CliError::MissingRequiredArgument("Asset metadata delete functionality not yet implemented".to_string()));
+                            delete_asset_metadata(sub_matches).await?;
+                            Ok(())
+                        }
+                        Some(("inference", sub_matches)) => {
+                            trace!("Command: {} {} inference", COMMAND_ASSET, COMMAND_METADATA);
+                            trace!("Routing to asset metadata inference...");
+
+                            metadata_inference(sub_matches).await?;
+                            Ok(())
                         }
                         _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                             sub_matches,

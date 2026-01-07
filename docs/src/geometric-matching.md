@@ -23,16 +23,6 @@ Geometric matching helps you:
 - Reduce storage costs by identifying redundant assets
 - Improve design workflows by finding existing similar parts
 
-## Overview
-
-Geometric matching helps you:
-
-- Find duplicate or near-duplicate assets
-- Identify variations of the same part
-- Locate similar components across different projects
-- Reduce storage costs by identifying redundant assets
-- Improve design workflows by finding existing similar parts
-
 ## Related Features
 
 Geometric matching serves as the foundation for other powerful capabilities:
@@ -54,6 +44,12 @@ pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 8
 
 # Using asset UUID instead of path
 pcli2 asset geometric-match --uuid 123e4567-e89b-12d3-a456-426614174000 --threshold 85.0
+
+# Find matches with CSV output and headers
+pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 80.0 --format csv --headers
+
+# Find matches with CSV output, headers, and metadata
+pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 80.0 --format csv --headers --metadata
 ```
 
 ### Output Formats
@@ -77,8 +73,45 @@ pcli2 asset geometric-match --uuid 123e4567-e89b-12d3-a456-426614174000 --thresh
 #### CSV Format
 
 ```csv
-REFERENCE_ASSET_NAME,CANDIDATE_ASSET_NAME,MATCH_PERCENTAGE,REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID
-ReferenceModel.stl,SimilarModel.stl,95.75,/Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9
+REFERENCE_ASSET_NAME,CANDIDATE_ASSET_NAME,MATCH_PERCENTAGE,REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL
+ReferenceModel.stl,SimilarModel.stl,95.75,/Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=68555ebf-f09c-4861-96b1-692d2ec10de7&tenant2Id=68555ebf-f09c-4861-96b1-692d2ec10de7&searchType=geometric&matchPercentage=95.75
+```
+
+#### CSV Format with Metadata
+
+When using the `--metadata` flag, the output includes metadata fields from both the reference and candidate assets. This produces CSV output with additional metadata columns prefixed with `REF_` for reference asset metadata and `CAND_` for candidate asset metadata. The output also includes a `COMPARISON_URL` column that provides a link to view the comparison in the Physna UI:
+
+```csv
+REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL,REF_MATERIAL,CAND_MATERIAL,REF_COLOR,CAND_COLOR
+/Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,95.75,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=68555ebf-f09c-4861-96b1-692d2ec10de7&tenant2Id=68555ebf-f09c-4861-96b1-692d2ec10de7&searchType=geometric&matchPercentage=95.75,Steel,Aluminum,Red,Blue
+```
+
+All metadata fields from all matched assets are included as columns, with empty values for assets that don't have a particular metadata field.
+
+#### Complete Examples
+
+Here are complete examples showing the command with and without the `--metadata` flag:
+
+**Without metadata:**
+```bash
+pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 80.0 --format csv --headers
+```
+
+Output:
+```csv
+REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL
+/Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,95.75,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=68555ebf-f09c-4861-96b1-692d2ec10de7&tenant2Id=68555ebf-f09c-4861-96b1-692d2ec10de7&searchType=geometric&matchPercentage=95.75
+```
+
+**With metadata:**
+```bash
+pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 80.0 --format csv --headers --metadata
+```
+
+Output:
+```csv
+REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL,REF_MATERIAL,CAND_MATERIAL,REF_COLOR,CAND_COLOR
+/Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,95.75,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=68555ebf-f09c-4861-96b1-692d2ec10de7&tenant2Id=68555ebf-f09c-4861-96b1-692d2ec10de7&searchType=geometric&matchPercentage=95.75,Steel,Aluminum,Red,Blue
 ```
 
 ### Threshold Settings
@@ -99,30 +132,68 @@ Find geometrically similar assets for all assets in a specified folder. This com
 
 ```bash
 # Find matches for all assets in a folder
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 85.0
+pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/ --threshold 85.0
+```
+
+### Comparison Viewer URL
+
+Both `geometric-match` and `geometric-match-folder` commands include a comparison URL in their output that allows you to view the geometric match in the Physna UI. The URL is available in both JSON and CSV formats:
+
+- **JSON**: The field is named `comparisonUrl`
+- **CSV**: The column is named `COMPARISON_URL`
+
+The URL follows this format:
+```
+https://app.physna.com/tenants/{tenant_short_name}/compare?asset1Id={reference_asset_uuid}&asset2Id={candidate_asset_uuid}&tenant1Id={tenant_uuid}&tenant2Id={tenant_uuid}&searchType=geometric&matchPercentage={match_percentage}
 ```
 
 ### Performance Options
 
 #### Concurrency Control
 
-Control how many simultaneous operations are performed:
+Control how many simultaneous operations are performed (range: 1-10, default: 1):
 
 ```bash
-# Use 10 concurrent operations (default is 5)
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 10
+# Use 8 concurrent operations (default is 1, maximum is 10)
+pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/ --concurrent 8
+
+# Use the default (1 concurrent operation)
+pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/
+
+# Invalid values will cause the command to fail
+pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/ --concurrent 15
+# This will show an error: "Invalid value for '--concurrent': must be between 1 and 10, got 15"
 ```
 
 #### Progress Tracking
 
-Display a progress bar during long-running operations:
+Display progress information during long-running operations:
 
 ```bash
-# Show progress bar
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --progress
+# Show progress information
+pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/ --progress
 
-# Combine with concurrency
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 8 --progress
+# Combine with concurrency to show multiple progress bars (one per concurrent operation)
+pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/ --concurrent 8 --progress
+```
+
+When using both `--concurrent` and `--progress` flags together, the command will display:
+- An overall progress bar showing the total completion percentage
+- Individual progress bars for each concurrent operation showing which assets are being processed
+- Status messages indicating the current stage of each operation (starting search, processing matches, completion)
+
+#### Performance Options
+
+##### Concurrency and Progress Combined
+
+For optimal performance monitoring, combine both options:
+
+```bash
+# Use 10 concurrent operations with detailed progress tracking
+pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/ --concurrent 10 --progress
+
+# Combine with other options
+pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/ --threshold 85.0 --concurrent 8 --progress
 ```
 
 ### Handling Large Folders
@@ -200,13 +271,15 @@ Verify the asset path or UUID is correct.
 
 FOLDERS=("/Root/ProjectA/" "/Root/ProjectB/" "/Root/Archive/")
 THRESHOLD=95.0
+CONCURRENT=8  # Number of concurrent operations
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 for folder in "${FOLDERS[@]}"; do
     echo "Processing folder: $folder"
     pcli2 asset geometric-match-folder \
-        --path "$folder" \
+        --folder-path "$folder" \
         --threshold $THRESHOLD \
+        --concurrent $CONCURRENT \
         --format csv \
         --progress \
         > "duplicates_${folder//\//_}_$TIMESTAMP.csv"
@@ -222,13 +295,15 @@ echo "Deduplication complete. Results saved to CSV files."
 
 $Folders = @("/Root/ProjectA/", "/Root/ProjectB/", "/Root/Archive/")
 $Threshold = 95.0
+$Concurrent = 8  # Number of concurrent operations
 $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
 foreach ($folder in $Folders) {
     Write-Host "Processing folder: $folder"
     pcli2 asset geometric-match-folder `
-        --path $folder `
+        --folder-path $folder `
         --threshold $Threshold `
+        --concurrent $Concurrent `
         --format csv `
         --progress `
         > "duplicates_$($folder.Replace('/', '_'))_$Timestamp.csv"

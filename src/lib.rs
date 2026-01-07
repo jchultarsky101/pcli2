@@ -17,24 +17,20 @@
 //! - `model`: Data models for Physna entities (folders, assets, tenants, etc.)
 //! - `physna_v3`: Physna V3 API client implementation
 
-pub mod api;
-pub mod asset_cache;
+pub mod actions;
 pub mod auth;
 pub mod cache;
 pub mod commands;
 pub mod configuration;
 pub mod dev_keyring;
+pub mod error;
 pub mod error_utils;
 pub mod exit_codes;
-pub mod folder_cache;
 pub mod folder_hierarchy;
-pub mod folder_path_cache;
 pub mod format;
 pub mod http_utils;
 pub mod keyring;
 pub mod metadata;
-pub mod metadata_cache;
 pub mod model;
 pub mod param_utils;
 pub mod physna_v3;
-pub mod resolution_utils;

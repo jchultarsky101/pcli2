@@ -4,98 +4,79 @@
 //! It provides a centralized place to define parameter names and common argument configurations.
 
 use crate::format::OutputFormat;
-use clap::{Arg, ArgAction};
+use clap::{Arg, ArgAction, ArgGroup};
 use std::path::PathBuf;
-
-// Command names
-/// Command name for tenant operations
-pub const COMMAND_TENANT: &str = "tenant";
-/// Command name for folder operations
-pub const COMMAND_FOLDER: &str = "folder";
-/// Command name for asset operations
-pub const COMMAND_ASSET: &str = "asset";
-/// Command name for file operations (not yet implemented)
-pub const COMMAND_FILE: &str = "file";
+use uuid::Uuid;
 
 // CRUD operations
-/// Command name for creating resources
 pub const COMMAND_CREATE: &str = "create";
-/// Command name for creating multiple resources
 pub const COMMAND_CREATE_BATCH: &str = "create-batch";
-/// Command name for retrieving resources
 pub const COMMAND_GET: &str = "get";
-/// Command name for listing resources
 pub const COMMAND_LIST: &str = "list";
-/// Command name for updating resources
 pub const COMMAND_UPDATE: &str = "update";
-/// Command name for deleting resources
 pub const COMMAND_DELETE: &str = "delete";
-/// Command name for matching assets geometrically
+
+// Asset commands
+pub const COMMAND_ASSET: &str = "asset";
 pub const COMMAND_MATCH: &str = "geometric-match";
-/// Command name for metadata operations
+pub const COMMAND_MATCH_FOLDER: &str = "geometric-match-folder";
 pub const COMMAND_METADATA: &str = "metadata";
+pub const COMMAND_DEPENDENCIES: &str = "dependencies";
+pub const COMMAND_DOWNLOAD: &str = "download";
+pub const COMMAND_DOWNLOAD_FOLDER: &str = "download-folder";
 
 // Auth commands
-/// Command name for authentication operations
 pub const COMMAND_AUTH: &str = "auth";
-/// Command name for login operations
 pub const COMMAND_LOGIN: &str = "login";
-/// Command name for logout operations
 pub const COMMAND_LOGOUT: &str = "logout";
+//
+// Tenant commands
+pub const COMMAND_TENANT: &str = "tenant";
 
-// Cache commands
-/// Command name for cache operations
-pub const COMMAND_CACHE: &str = "cache";
-/// Command name for purging cache
-pub const COMMAND_PURGE: &str = "purge";
+// Folder commands
+pub const COMMAND_FOLDER: &str = "folder";
+pub const COMMAND_FILE: &str = "file";
 
 // Context commands
-/// Command name for context operations
 pub const COMMAND_CONTEXT: &str = "context";
-/// Command name for setting context
 pub const COMMAND_SET: &str = "set";
-/// Command name for clearing context
 pub const COMMAND_CLEAR: &str = "clear";
 
 // Config commands
-/// Command name for configuration operations
 pub const COMMAND_CONFIG: &str = "config";
-/// Command name for exporting configuration
 pub const COMMAND_EXPORT: &str = "export";
-/// Command name for importing configuration
 pub const COMMAND_IMPORT: &str = "import";
 
 // Parameter names
-/// Parameter name for output format
 pub const PARAMETER_FORMAT: &str = "format";
-/// Parameter name for output file path
+pub const PARAMETER_METADATA: &str = "metadata";
+pub const PARAMETER_PRETTY: &str = "pretty";
+pub const PARAMETER_HEADERS: &str = "headers";
 pub const PARAMETER_OUTPUT: &str = "output";
-/// Parameter name for input file path
-pub const PARAMETER_INPUT: &str = "input";
-/// Parameter name for OAuth2 client ID
-pub const PARAMETER_CLIENT_ID: &str = "client-id";
-/// Parameter name for OAuth2 client secret
-pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
-/// Parameter name for resource ID
-pub const PARAMETER_ID: &str = "id";
-/// Parameter name for resource UUID
-pub const PARAMETER_UUID: &str = "uuid";
-/// Parameter name for asset UUID
-pub const PARAMETER_ASSET_UUID: &str = "asset-uuid";
-/// Parameter name for resource name
-pub const PARAMETER_NAME: &str = "name";
-/// Parameter name for tenant ID or alias
-pub const PARAMETER_TENANT: &str = "tenant";
-/// Parameter name for parent folder ID
-pub const PARAMETER_PARENT_FOLDER_ID: &str = "parent-folder-id";
-/// Parameter name for folder path
-pub const PARAMETER_PATH: &str = "path";
-/// Parameter name for refresh flag
-pub const PARAMETER_REFRESH: &str = "refresh";
-/// Parameter name for file to upload
 pub const PARAMETER_FILE: &str = "file";
-/// Parameter name for recursive operations
+pub const PARAMETER_FILES: &str = "files";
+pub const PARAMETER_CLIENT_ID: &str = "client-id";
+pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
+pub const PARAMETER_UUID: &str = "uuid";
+pub const PARAMETER_NAME: &str = "name";
+pub const PARAMETER_TENANT_NAME: &str = PARAMETER_NAME;
+pub const PARAMETER_TENANT_ID: &str = "id";
+pub const PARAMETER_TENANT: &str = "tenant";
+pub const PARAMETER_TENANT_UUID: &str = "tenant-uuid";
+pub const PARAMETER_FOLDER_UUID: &str = "folder-uuid";
+pub const PARAMETER_FOLDER_PATH: &str = "folder-path";
+pub const PARAMETER_PARENT_FOLDER_UUID: &str = "parent-folder-uuid";
+pub const PARAMETER_PARENT_FOLDER_PATH: &str = "parent-folder-path";
+pub const PARAMETER_PATH: &str = "path";
+pub const PARAMETER_REFRESH: &str = "refresh";
 pub const PARAMETER_RECURSIVE: &str = "recursive";
+pub const PARAMETER_CONCURRENT: &str = "concurrent";
+pub const PARAMETER_PROGRESS: &str = "progress";
+
+// Format options
+pub const FORMAT_CSV: &str = "csv";
+pub const FORMAT_JSON: &str = "json";
+pub const FORMAT_TREE: &str = "tree";
 
 /// Create the global format parameter.
 ///
@@ -112,6 +93,33 @@ pub fn format_parameter() -> Arg {
         .value_parser(OutputFormat::names())
 }
 
+/// This parameter iflag is used across multiple commands for output formatting.
+pub fn format_pretty_parameter() -> Arg {
+    Arg::new(PARAMETER_PRETTY)
+        .long(PARAMETER_PRETTY)
+        .action(ArgAction::SetTrue)
+        .required(false)
+        .help("Format the output pretty")
+}
+
+/// This parameter iflag is used across multiple commands for output formatting.
+pub fn format_with_headers_parameter() -> Arg {
+    Arg::new(PARAMETER_HEADERS)
+        .long(PARAMETER_HEADERS)
+        .action(ArgAction::SetTrue)
+        .required(false)
+        .help("Format the output with headers")
+}
+
+/// This parameter iflag is used across multiple commands for output formatting.
+pub fn format_with_metadata_parameter() -> Arg {
+    Arg::new(PARAMETER_METADATA)
+        .long(PARAMETER_METADATA)
+        .action(ArgAction::SetTrue)
+        .required(false)
+        .help("Format the output to include metadata")
+}
+
 /// Create the global output file parameter.
 pub fn output_file_parameter() -> Arg {
     Arg::new(PARAMETER_OUTPUT)
@@ -124,14 +132,22 @@ pub fn output_file_parameter() -> Arg {
 }
 
 /// Create the global input file parameter.
-pub fn input_file_parameter() -> Arg {
-    Arg::new(PARAMETER_INPUT)
-        .short('i')
-        .long(PARAMETER_INPUT)
+pub fn file_parameter() -> Arg {
+    Arg::new(PARAMETER_FILE)
+        .long(PARAMETER_FILE)
         .num_args(1)
         .required(false)
         .help("Input file path")
         .value_parser(clap::value_parser!(PathBuf))
+}
+
+pub fn multiple_files_parameter() -> Arg {
+    Arg::new(PARAMETER_FILES)
+        .long(PARAMETER_FILES)
+        .num_args(1)
+        .required(true)
+        .help("Glob pattern to match files to upload (e.g., \"data/puzzle/*.STL\")")
+        .value_parser(clap::value_parser!(String))
 }
 
 /// Create the client ID parameter.
@@ -152,33 +168,67 @@ pub fn client_secret_parameter() -> Arg {
         .help("Client secret for OAuth2 authentication")
 }
 
-/// Create the ID parameter.
-pub fn id_parameter() -> Arg {
-    Arg::new(PARAMETER_ID)
-        .short('i')
-        .long(PARAMETER_ID)
-        .num_args(1)
-        .required(false)
-        .help("Resource ID")
-}
-
 /// Create the UUID parameter.
 pub fn uuid_parameter() -> Arg {
     Arg::new(PARAMETER_UUID)
         .short('u')
         .long(PARAMETER_UUID)
-        .num_args(1)
-        .required(false)
+        .required(false) // this parameter should be used in a group with the patheee
+        .value_parser(clap::value_parser!(Uuid))
         .help("Resource UUID")
 }
 
-/// Create the asset UUID parameter.
-pub fn asset_uuid_parameter() -> Arg {
-    Arg::new(PARAMETER_ASSET_UUID)
-        .long(PARAMETER_ASSET_UUID)
+/// Create the Folder UUID parameter.
+pub fn folder_uuid_parameter() -> Arg {
+    Arg::new(PARAMETER_FOLDER_UUID)
+        .long(PARAMETER_FOLDER_UUID)
         .num_args(1)
-        .required(false)
-        .help("Asset UUID")
+        .required(true)
+        .value_parser(clap::value_parser!(Uuid))
+        .help("Resource's folder UUID")
+}
+
+/// Create the path parameter.
+pub fn folder_path_parameter() -> Arg {
+    Arg::new(PARAMETER_FOLDER_PATH)
+        .long(PARAMETER_FOLDER_PATH)
+        .num_args(1)
+        .required(true)
+        .help("Folder path (e.g., /Root/Child/Grandchild)")
+}
+
+/// Create the parent folder UUID parameter.
+pub fn parent_folder_uuid_parameter() -> Arg {
+    Arg::new(PARAMETER_PARENT_FOLDER_UUID)
+        .long(PARAMETER_PARENT_FOLDER_UUID)
+        .num_args(1)
+        .required(true)
+        .value_parser(clap::value_parser!(Uuid))
+        .help("Parent folder UUID where the new folder will be created")
+}
+
+/// Create the parent folder path parameter.
+pub fn parent_folder_path_parameter() -> Arg {
+    Arg::new(PARAMETER_PARENT_FOLDER_PATH)
+        .long(PARAMETER_PARENT_FOLDER_PATH)
+        .num_args(1)
+        .required(true)
+        .help("Parent folder path where the new folder will be created (e.g., /Root/Child/Grandchild)")
+}
+
+/// Create asset idenitfier group: it must be either --uuid or --path
+pub fn asset_identifier_group() -> ArgGroup {
+    ArgGroup::new("asset-identifier")
+        .args([PARAMETER_UUID, PARAMETER_PATH])
+        .multiple(false)
+        .required(true)
+}
+
+pub fn asset_identifier_multiple_group() -> ArgGroup {
+    ArgGroup::new("asset-identifier")
+        .args([PARAMETER_UUID, PARAMETER_PATH])
+        .multiple(true)
+        .required(true)
 }
 
 /// Create the name parameter.
@@ -191,6 +241,34 @@ pub fn name_parameter() -> Arg {
         .help("Resource name")
 }
 
+/// Create the tenant name parameter.
+pub fn tenant_name_parameter() -> Arg {
+    Arg::new(PARAMETER_TENANT_NAME)
+        .long(PARAMETER_TENANT_NAME)
+        .num_args(1)
+        .required(false)
+        .help("Tenant short name (as shown in tenant list)")
+}
+
+/// Create the name parameter.
+pub fn tenant_id_parameter() -> Arg {
+    Arg::new(PARAMETER_TENANT_ID)
+        .long(PARAMETER_TENANT_ID)
+        .num_args(1)
+        .required(false)
+        .help("Tenant UUID")
+}
+
+/// Create the tenant UUID parameter.
+pub fn tenant_uuid_parameter() -> Arg {
+    Arg::new(PARAMETER_TENANT_UUID)
+        .long(PARAMETER_TENANT_UUID)
+        .num_args(1)
+        .required(false)
+        .value_parser(clap::value_parser!(uuid::Uuid))
+        .help("Tenant UUID")
+}
+
 /// Create the tenant parameter.
 pub fn tenant_parameter() -> Arg {
     Arg::new(PARAMETER_TENANT)
@@ -201,13 +279,28 @@ pub fn tenant_parameter() -> Arg {
         .help("Tenant ID or alias")
 }
 
-/// Create the parent folder ID parameter.
-pub fn parent_folder_id_parameter() -> Arg {
-    Arg::new(PARAMETER_PARENT_FOLDER_ID)
-        .long(PARAMETER_PARENT_FOLDER_ID)
-        .num_args(1)
-        .required(false)
-        .help("Parent folder ID for creating subfolders")
+/// Create folder identifier group: it must be either --folder-uuid or --folder-path
+pub fn folder_identifier_group() -> ArgGroup {
+    ArgGroup::new("folder-identifier")
+        .args([PARAMETER_FOLDER_UUID, PARAMETER_FOLDER_PATH])
+        .multiple(false)
+        .required(true)
+}
+
+/// Create parent folder identifier group: it must be either --parent-folder-uuid or --parent-folder-path
+pub fn parent_folder_identifier_group() -> ArgGroup {
+    ArgGroup::new("parent-folder-identifier")
+        .args([PARAMETER_PARENT_FOLDER_UUID, PARAMETER_PARENT_FOLDER_PATH])
+        .multiple(false)
+        .required(true)
+}
+
+/// Create tenant identifier group: it must be either --tenant-uuid or --tenant-name
+pub fn tenant_identifier_group() -> ArgGroup {
+    ArgGroup::new("tenant-identifier")
+        .args([PARAMETER_TENANT_UUID, PARAMETER_TENANT_NAME])  // Using PARAMETER_TENANT_UUID for UUID and PARAMETER_TENANT_NAME for name
+        .multiple(false)
+        .required(true)
 }
 
 /// Create the path parameter.

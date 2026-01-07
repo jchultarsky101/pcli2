@@ -430,6 +430,8 @@ Only the folder list command supports the tree format. It is used to show the hi
 pcli2 folder list --format tree
 ```
 
+The tenant commands do not support tree format as it doesn't make sense for tenant data.
+
 ### Geometric Matching
 
 PCLI2 provides powerful geometric matching capabilities to find similar assets in your Physna tenant. This feature leverages advanced algorithms to identify assets with similar geometries, regardless of their orientation, scale, or position.
@@ -631,17 +633,6 @@ The following are just recommendations. You can use any threshold value you woul
 
 Some commands have shorter aliases. For example `list` has an alias of `ls`. Similarly, some command arguments have short names too. For example `--path` can be provided as `-p`. See the help for details.
 
-### Working with Verbose Output
-
-For debugging purposes, you can enable verbose output:
-
-```bash
-# Enable verbose output for debugging
-pcli2 --verbose asset list
-
-# Or using the short form
-pcli2 -v asset list
-```
 
 ### Cleaning Up
 
@@ -705,17 +696,14 @@ pcli2
 │   ├── get              Get folder details
 │   └── delete           Delete a folder
 ├── tenant
-│   ├── create           Create a new tenant (not supported via API)
 │   ├── list             List all available tenants
-│   ├── get              Get specific tenant details
-│   └── delete           Delete a tenant (not supported via API)
+│   └── get              Get specific tenant details
 ├── auth
 │   ├── login            Authenticate with client credentials
 │   ├── logout           Clear authentication tokens
 │   └── get              Get current authentication status
 ├── config
 │   ├── get              Get configuration details
-│   ├── list             List configuration
 │   ├── export           Export configuration to a file
 │   └── import           Import configuration from a file
 ├── context
@@ -770,22 +758,17 @@ You can also use the `-h` or `--help` flag with any command to get detailed usag
 
 If you encounter unexpected behavior:
 
-1. **Enable verbose output**: Add the `--verbose` or `-v` flag to your commands to see detailed logs:
-   ```bash
-   pcli2 --verbose asset list
-   ```
-
-2. **Check your authentication status**:
+1. **Check your authentication status**:
    ```bash
    pcli2 auth get
    ```
 
-3. **Verify your current context**:
+2. **Verify your current context**:
    ```bash
    pcli2 context get
    ```
 
-4. **Review the configuration**:
+3. **Review the configuration**:
    ```bash
    pcli2 config get
    ```

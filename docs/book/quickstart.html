@@ -216,15 +216,13 @@ pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Ma
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>Manage your PCLI2 configuration:</p>
 <pre><code class="language-bash"># View current configuration
-pcli2 config show
-
-# Set default tenant (using either tenant name or ID)
-pcli2 config set tenant.default "Demo Environment 1"
-# Or using tenant ID:
-# pcli2 config set tenant.default 123e4567-e89b-12d3-a456-426614174000
+pcli2 config get
 
 # Export configuration for backup
 pcli2 config export --output my-config.yaml
+
+# Import configuration from a file
+pcli2 config import --file my-config.yaml
 </code></pre>
 <h2 id="context-management"><a class="header" href="#context-management">Context Management</a></h2>
 <p>Work with multiple tenants efficiently:</p>

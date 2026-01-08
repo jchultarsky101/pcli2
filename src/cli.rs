@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference
+            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch
         },
         folders::{
             create_folder,
@@ -190,7 +190,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                             print_asset_metadata(sub_matches).await?;
                             Ok(())
                         }
-                        Some((COMMAND_DELETE, _sub_matches)) => {
+                        Some((COMMAND_DELETE, sub_matches)) => {
                             trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_DELETE);
                             trace!("Routing to asset metadata delete...");
 
@@ -202,6 +202,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                             trace!("Routing to asset metadata inference...");
 
                             metadata_inference(sub_matches).await?;
+                            Ok(())
+                        }
+                        Some(("create-batch", sub_matches)) => {
+                            trace!("Command: {} {} create-batch", COMMAND_ASSET, COMMAND_METADATA);
+                            trace!("Routing to asset metadata create-batch...");
+
+                            create_asset_metadata_batch(sub_matches).await?;
                             Ok(())
                         }
                         _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

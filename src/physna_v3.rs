@@ -1033,7 +1033,49 @@ impl PhysnaApiClient {
         
         self.patch_no_response(&url, &body).await
     }
-    
+
+    /// Update an asset's metadata fields, automatically registering new metadata keys if needed
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The ID of the tenant that owns the asset
+    /// * `asset_uuid` - The UUID of the asset to update
+    /// * `metadata` - A map of metadata key-value pairs to update
+    ///
+    /// # Returns
+    /// * `Ok(())` - Successfully updated asset metadata
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn update_asset_metadata_with_registration(&mut self, tenant_uuid: &Uuid, asset_uuid: &Uuid, metadata: &std::collections::HashMap<String, serde_json::Value>) -> Result<(), ApiError> {
+        // Get existing metadata fields for the tenant
+        let existing_fields_response = self.get_metadata_fields(&tenant_uuid.to_string()).await;
+
+        let mut existing_field_names = std::collections::HashSet::new();
+        if let Ok(fields_response) = existing_fields_response {
+            for field in fields_response.metadata_fields {
+                existing_field_names.insert(field.name);
+            }
+        }
+
+        // Check each metadata key and register if it doesn't exist
+        for (key, _value) in metadata.iter() {
+            if !existing_field_names.contains(key) {
+                // Register the new metadata field (default to text type)
+                let field_result = self.create_metadata_field(&tenant_uuid.to_string(), key, Some("text")).await;
+
+                // Log the result of field creation
+                match field_result {
+                    Ok(_) => debug!("Successfully registered new metadata field: {}", key),
+                    Err(e) => {
+                        debug!("Failed to register metadata field '{}': {}", key, e);
+                        // Continue anyway, as the API might allow setting values for unregistered keys
+                    }
+                }
+            }
+        }
+
+        // Now update the asset metadata
+        self.update_asset_metadata(tenant_uuid, asset_uuid, metadata).await
+    }
+
     /// Delete specific metadata fields from an asset
     /// 
     /// This method deletes specific metadata fields from the specified asset.

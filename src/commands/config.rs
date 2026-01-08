@@ -4,8 +4,11 @@
 
 use crate::commands::params::{
     file_parameter, format_parameter, format_pretty_parameter, format_with_headers_parameter,
-    output_file_parameter, COMMAND_CONFIG, COMMAND_EXPORT, COMMAND_GET, COMMAND_IMPORT,
+    output_file_parameter, api_url_parameter, ui_url_parameter, auth_url_parameter,
+    COMMAND_CONFIG, COMMAND_EXPORT, COMMAND_GET, COMMAND_IMPORT, COMMAND_ENVIRONMENT,
+    COMMAND_ADD, COMMAND_USE, COMMAND_REMOVE, COMMAND_ENVIRONMENT_LIST, COMMAND_ENVIRONMENT_GET, COMMAND_RESET, PARAMETER_NAME,
 };
+use clap::Arg;
 use clap::Command;
 
 /// Create the config command with all its subcommands.
@@ -30,5 +33,63 @@ pub fn config_command() -> Command {
             Command::new(COMMAND_IMPORT)
                 .about("Import configuration from file")
                 .arg(file_parameter()),
+        )
+        .subcommand(
+            Command::new(COMMAND_ENVIRONMENT)
+                .about("Manage environment configurations")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_ADD)
+                        .about("Add a new environment configuration")
+                        .arg(Arg::new(PARAMETER_NAME)
+                            .long(PARAMETER_NAME)
+                            .num_args(1)
+                            .required(true)
+                            .help("Name of the environment"))
+                        .arg(api_url_parameter())
+                        .arg(ui_url_parameter())
+                        .arg(auth_url_parameter()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_USE)
+                        .about("Switch to an environment")
+                        .arg(Arg::new(PARAMETER_NAME)
+                            .long(PARAMETER_NAME)
+                            .num_args(1)
+                            .required(false)
+                            .help("Name of the environment to switch to")),
+                )
+                .subcommand(
+                    Command::new(COMMAND_REMOVE)
+                        .about("Remove an environment")
+                        .arg(Arg::new(PARAMETER_NAME)
+                            .long(PARAMETER_NAME)
+                            .num_args(1)
+                            .required(true)
+                            .help("Name of the environment to remove")),
+                )
+                .subcommand(
+                    Command::new(COMMAND_ENVIRONMENT_LIST)
+                        .about("List all environments")
+                        .arg(crate::commands::params::format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
+                        .arg(crate::commands::params::format_pretty_parameter())
+                        .arg(crate::commands::params::format_with_headers_parameter()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_RESET)
+                        .about("Reset all environment configurations to blank state"),
+                )
+                .subcommand(
+                    Command::new(COMMAND_ENVIRONMENT_GET)
+                        .about("Get environment details")
+                        .arg(Arg::new(PARAMETER_NAME)
+                            .long(PARAMETER_NAME)
+                            .num_args(1)
+                            .required(false)
+                            .help("Name of the environment to get details for (defaults to active environment)"))
+                        .arg(crate::commands::params::format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
+                        .arg(crate::commands::params::format_pretty_parameter())
+                        .arg(crate::commands::params::format_with_headers_parameter()),
+                ),
         )
 }

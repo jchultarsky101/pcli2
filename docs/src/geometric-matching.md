@@ -28,6 +28,7 @@ Geometric matching helps you:
 Geometric matching serves as the foundation for other powerful capabilities:
 
 - **Metadata Inference**: Automatically propagate metadata from reference assets to geometrically similar assets using `pcli2 asset metadata inference`
+- **Metadata Management**: Create, update, retrieve, and delete metadata for assets using commands like `pcli2 asset metadata create`, `pcli2 asset metadata get`, and `pcli2 asset metadata delete`
 - **Part Family Management**: Organize and categorize groups of similar components
 - **Design Optimization**: Identify opportunities for part consolidation and standardization
 

@@ -28,8 +28,12 @@ jobs:
 
       - name: Create new latest tag
         run: |
-          git tag -f latest ${{ github.sha }}
-          git push -f origin latest
+          # Delete the existing latest tag if it exists
+          git tag -d latest || true
+          # Create the new tag
+          git tag latest ${{ github.sha }}
+          # Push the new tag
+          git push origin latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -70,9 +70,40 @@ pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 8
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
 ```
 
-## Metadata Inference
+## Metadata Operations
 
-Automatically apply metadata from a reference asset to geometrically similar assets using PCLI2's metadata inference capability:
+Manage asset metadata with PCLI2's comprehensive metadata operations:
+
+### Creating and Updating Metadata
+
+```bash
+# Add or update a single metadata field on an asset
+pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
+
+# Add or update multiple metadata fields on an asset
+pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Weight" --value "15.5" --type "number"
+```
+
+### Retrieving Metadata
+
+```bash
+# Get all metadata for an asset
+pcli2 asset metadata get --path "/Root/Folder/Model.stl"
+```
+
+### Deleting Metadata
+
+```bash
+# Delete specific metadata fields from an asset
+pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
+
+# Delete metadata fields using comma-separated list
+pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material,Weight,Description"
+```
+
+### Metadata Inference
+
+Automatically apply metadata from a reference asset to geometrically similar assets:
 
 ```bash
 # Apply specific metadata fields from a reference asset to similar assets
@@ -85,7 +116,7 @@ pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Ca
 pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
 ```
 
-The metadata inference command helps you efficiently propagate metadata across geometrically similar assets, reducing manual work and ensuring consistency in your asset database.
+The metadata operations help you efficiently manage your asset metadata, whether you need to add, update, retrieve, or delete specific metadata fields, or propagate metadata across geometrically similar assets.
 
 ## Configuration
 
@@ -101,6 +132,47 @@ pcli2 config export --output my-config.yaml
 # Import configuration from a file
 pcli2 config import --file my-config.yaml
 ```
+
+## Multi-Environment Configuration
+
+PCLI2 supports multiple environment configurations, allowing you to easily switch between different Physna instances (e.g., development, staging, production):
+
+```bash
+# Add a new environment configuration
+pcli2 config environment add --name "development" \
+  --api-url "https://dev-api.physna.com/v3" \
+  --ui-url "https://dev.physna.com" \
+  --auth-url "https://dev-auth.physna.com/oauth2/token"
+
+# Add a production environment
+pcli2 config environment add --name "production" \
+  --api-url "https://app-api.physna.com/v3" \
+  --ui-url "https://app.physna.com" \
+  --auth-url "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
+
+# List all environments
+pcli2 config environment list
+
+# Switch to an environment (with interactive selection)
+pcli2 config environment use
+
+# Or switch to an environment by name
+pcli2 config environment use --name development
+
+# Get details of the active environment
+pcli2 config environment get
+
+# Get details of a specific environment
+pcli2 config environment get --name production
+
+# Reset all environment configurations
+pcli2 config environment reset
+```
+
+Each environment can have its own:
+- API base URL (for API calls)
+- UI base URL (for comparison viewer links)
+- Authentication URL (for OAuth2 token requests)
 
 ## Context Management
 

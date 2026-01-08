@@ -6,6 +6,7 @@ use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 use std::{
+    collections::HashMap,
     fs::{self, File},
     io::Write,
     path::PathBuf,
@@ -16,14 +17,36 @@ use uuid::Uuid;
 pub const DEFAULT_APPLICATION_ID: &str = "pcli2";
 pub const DEFAULT_CONFIGURATION_FILE_NAME: &str = "config.yml";
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnvironmentConfig {
+    #[serde(default = "default_api_base_url")]
+    pub api_base_url: String,
+    #[serde(default = "default_ui_base_url")]
+    pub ui_base_url: String,
+    #[serde(default = "default_auth_base_url")]
+    pub auth_base_url: String,
+}
+
+pub fn default_api_base_url() -> String {
+    "https://app-api.physna.com/v3".to_string()
+}
+
+pub fn default_ui_base_url() -> String {
+    "https://app.physna.com".to_string()
+}
+
+pub fn default_auth_base_url() -> String {
+    "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token".to_string()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationError {
     #[error("failed to resolve the configuration directory")]
     FailedToFindConfigurationDirectory,
     #[error("failed to load configuration data, because of: {cause:?}")]
-    FailedToLoadData { cause: Box<dyn std::error::Error> },
+    FailedToLoadData { cause: Box<dyn std::error::Error + Send + Sync> },
     #[error("failed to write configuration data to file, because of: {cause:?}")]
-    FailedToWriteData { cause: Box<dyn std::error::Error> },
+    FailedToWriteData { cause: Box<dyn std::error::Error + Send + Sync> },
     #[error("missing value for property {name:?}")]
     MissingRequiredPropertyValue { name: String },
     #[error("{cause:?}")]
@@ -37,12 +60,33 @@ pub enum ConfigurationError {
 pub struct Configuration {
     #[serde(skip_serializing_if = "Option::is_none")]
     active_tenant_uuid: Option<Uuid>,
+
+    // Environment-specific URLs (for backward compatibility)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    api_base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ui_base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth_base_url: Option<String>,
+
+    // Active environment name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_environment: Option<String>,
+
+    // Named environments
+    #[serde(default)]
+    environments: HashMap<String, EnvironmentConfig>,
 }
 
 impl Default for Configuration {
     fn default() -> Self {
         Self {
             active_tenant_uuid: None,
+            api_base_url: None,
+            ui_base_url: None,
+            auth_base_url: None,
+            active_environment: None,
+            environments: HashMap::new(),
         }
     }
 }
@@ -206,6 +250,103 @@ impl Configuration {
     pub fn clear_active_tenant(&mut self) {
         self.active_tenant_uuid = None;
     }
+
+    // Methods to get URLs with fallback hierarchy
+    pub fn get_api_base_url(&self) -> String {
+        // Priority: environment-specific -> config-specific -> default
+        if let Some(ref env_name) = self.active_environment {
+            if let Some(env_config) = self.environments.get(env_name) {
+                return env_config.api_base_url.clone();
+            }
+        }
+
+        if let Some(ref url) = self.api_base_url {
+            url.clone()
+        } else {
+            default_api_base_url()
+        }
+    }
+
+    pub fn get_ui_base_url(&self) -> String {
+        // Priority: environment-specific -> config-specific -> default
+        if let Some(ref env_name) = self.active_environment {
+            if let Some(env_config) = self.environments.get(env_name) {
+                return env_config.ui_base_url.clone();
+            }
+        }
+
+        if let Some(ref url) = self.ui_base_url {
+            url.clone()
+        } else {
+            default_ui_base_url()
+        }
+    }
+
+    pub fn get_auth_base_url(&self) -> String {
+        // Priority: environment-specific -> config-specific -> default
+        if let Some(ref env_name) = self.active_environment {
+            if let Some(env_config) = self.environments.get(env_name) {
+                return env_config.auth_base_url.clone();
+            }
+        }
+
+        if let Some(ref url) = self.auth_base_url {
+            url.clone()
+        } else {
+            default_auth_base_url()
+        }
+    }
+
+    // Methods to manage environments
+    pub fn set_active_environment(&mut self, env_name: &str) -> Result<(), ConfigurationError> {
+        if self.environments.contains_key(env_name) {
+            self.active_environment = Some(env_name.to_string());
+            Ok(())
+        } else {
+            Err(ConfigurationError::MissingRequiredPropertyValue {
+                name: format!("Environment '{}' does not exist", env_name),
+            })
+        }
+    }
+
+    pub fn add_environment(&mut self, name: String, config: EnvironmentConfig) {
+        self.environments.insert(name, config);
+    }
+
+    pub fn remove_environment(&mut self, name: &str) -> Result<(), ConfigurationError> {
+        if self.environments.remove(name).is_some() {
+            // If we're removing the active environment, clear it
+            if let Some(ref active_env) = self.active_environment {
+                if active_env == name {
+                    self.active_environment = None;
+                }
+            }
+            Ok(())
+        } else {
+            Err(ConfigurationError::MissingRequiredPropertyValue {
+                name: format!("Environment '{}' does not exist", name),
+            })
+        }
+    }
+
+    pub fn list_environments(&self) -> Vec<String> {
+        self.environments.keys().cloned().collect()
+    }
+
+    pub fn get_active_environment(&self) -> Option<String> {
+        self.active_environment.clone()
+    }
+
+    /// Reset all environment configurations to a blank state
+    pub fn reset_environments(&mut self) {
+        self.environments.clear();
+        self.active_environment = None;
+    }
+
+    /// Get an environment configuration by name
+    pub fn get_environment_config(&self, name: &str) -> Option<&EnvironmentConfig> {
+        self.environments.get(name)
+    }
 }
 
 impl Formattable for Configuration {
@@ -220,13 +361,40 @@ impl Formattable for Configuration {
             },
             OutputFormat::Csv(options) => {
                 let uuid_str = self.active_tenant_uuid.unwrap_or_default().to_string();
+                let api_url = self.api_base_url.clone().unwrap_or_else(|| "default".to_string());
+                let ui_url = self.ui_base_url.clone().unwrap_or_else(|| "default".to_string());
+                let auth_url = self.auth_base_url.clone().unwrap_or_else(|| "default".to_string());
+                let active_env = self.active_environment.clone().unwrap_or_else(|| "none".to_string());
+
                 if options.with_headers {
-                    Ok(format!("ACTIVE_TENANT_UUID\n{}", uuid_str))
+                    Ok(format!("ACTIVE_TENANT_UUID,API_BASE_URL,UI_BASE_URL,AUTH_BASE_URL,ACTIVE_ENVIRONMENT\n{},{},{},{},{}",
+                              uuid_str, api_url, ui_url, auth_url, active_env))
                 } else {
-                    Ok(uuid_str)
+                    Ok(format!("{},{},{},{},{}", uuid_str, api_url, ui_url, auth_url, active_env))
                 }
             },
-            OutputFormat::Tree(_) => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
+            OutputFormat::Tree(_) => {
+                let mut result = String::new();
+                result.push_str("Configuration:\n");
+                result.push_str(&format!("  Active Tenant UUID: {}\n",
+                    self.active_tenant_uuid.map_or("None".to_string(), |uuid| uuid.to_string())));
+                result.push_str(&format!("  API Base URL: {}\n",
+                    self.api_base_url.clone().unwrap_or_else(|| "default".to_string())));
+                result.push_str(&format!("  UI Base URL: {}\n",
+                    self.ui_base_url.clone().unwrap_or_else(|| "default".to_string())));
+                result.push_str(&format!("  Auth Base URL: {}\n",
+                    self.auth_base_url.clone().unwrap_or_else(|| "default".to_string())));
+                result.push_str(&format!("  Active Environment: {}\n",
+                    self.active_environment.clone().unwrap_or_else(|| "None".to_string())));
+                result.push_str("  Environments:\n");
+
+                for (name, env_config) in &self.environments {
+                    result.push_str(&format!("    {}: {{api: {}, ui: {}, auth: {}}}\n",
+                        name, env_config.api_base_url, env_config.ui_base_url, env_config.auth_base_url));
+                }
+
+                Ok(result)
+            },
         }
     }
 }

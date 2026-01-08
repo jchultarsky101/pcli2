@@ -164,6 +164,98 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
 }
 
 
+use std::collections::HashMap;
+
+/// Create metadata for multiple assets from a CSV file.
+///
+/// This function handles the "asset metadata create-batch" command, which creates or updates
+/// metadata for multiple assets from a CSV file.
+pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing \"create asset metadata batch\" command...");
+
+    let csv_file_path = sub_matches.get_one::<std::path::PathBuf>("csv-file")
+        .ok_or(CliError::MissingRequiredArgument("csv-file".to_string()))?;
+
+    let show_progress = sub_matches.get_flag("progress");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    // Read the CSV file
+    let file = std::fs::File::open(csv_file_path)
+        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
+    let mut reader = csv::Reader::from_reader(file);
+
+    // Parse the CSV records
+    let mut asset_metadata_map: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
+
+    for result in reader.records() {
+        let record: csv::StringRecord = result.map_err(|e| CliError::FormattingError(crate::format::FormattingError::CsvError(e)))?;
+
+        if record.len() >= 3 {
+            let asset_path: &str = record[0].trim();
+            let metadata_name: &str = record[1].trim();
+            let metadata_value: &str = record[2].trim();
+
+            // Use the same conversion logic as individual metadata command (default to text type)
+            let json_value = crate::metadata::convert_single_metadata_to_json_value(
+                metadata_name,  // name parameter (not used in function)
+                metadata_value,
+                "text"  // default to text type since CSV doesn't specify type
+            );
+
+            // Group metadata by asset path (strip leading slash if present for consistency with asset paths in system)
+            let clean_asset_path = asset_path.strip_prefix('/').unwrap_or(asset_path);
+            asset_metadata_map.entry(clean_asset_path.to_string())
+                .or_insert_with(HashMap::new)
+                .insert(metadata_name.to_string(), json_value);
+        }
+    }
+
+    // Process each asset with its metadata
+    let total_assets = asset_metadata_map.len();
+    let mut current_asset = 0;
+
+    for (asset_path, metadata) in &asset_metadata_map {
+        if show_progress {
+            current_asset += 1;
+            eprint!("\rProcessing asset {}/{}: {}", current_asset, total_assets, asset_path);
+        }
+
+        // Get the asset by the normalized path
+        match api.get_asset_by_path(&tenant.uuid, asset_path).await {
+            Ok(asset) => {
+                // Update the asset's metadata with automatic registration of new keys
+                if let Err(e) = api.update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), metadata).await {
+                    eprintln!("❌ Failed to update metadata for asset '{}': {}", asset_path, e);
+                    eprintln!("💡 Possible causes:");
+                    eprintln!("   - Invalid metadata field names or values");
+                    eprintln!("   - Insufficient permissions to modify this asset");
+                    eprintln!("   - Network connectivity issues");
+                    eprintln!("   - Asset may have been deleted or modified recently");
+                }
+            }
+            Err(_e) => {
+                eprintln!("❌ Asset not found: '{}'", asset_path);
+                eprintln!("💡 Possible causes:");
+                eprintln!("   - Asset path in CSV file doesn't match actual asset path");
+                eprintln!("   - Asset may have been deleted from the system");
+                eprintln!("   - Wrong tenant selected for this asset");
+                eprintln!("   - Path format mismatch (e.g., leading slash differences)");
+                eprintln!("💡 Suggestion: Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command");
+            }
+        }
+    }
+
+    if show_progress {
+        eprintln!(); // New line after progress indicator
+    }
+
+    // No output on success (per UNIX best practices)
+    Ok(())
+}
+
 /// Update an asset's metadata with the specified key-value pair.
 ///
 /// This function handles the "asset metadata create" command, which adds or updates
@@ -221,13 +313,10 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
         return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
     };
 
-    // Update the asset's metadata
-    api.update_asset_metadata(&tenant.uuid, &asset.uuid(), &metadata).await?;
+    // Update the asset's metadata with automatic registration of new keys
+    api.update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), &metadata).await?;
 
-    // Get and display the updated asset details
-    let updated_asset = api.get_asset_by_uuid(&tenant.uuid, &asset.uuid()).await?;
-    let format = get_format_parameter_value(sub_matches).await;
-    println!("{}", updated_asset.format(format)?);
+    // No output on success (per requirements)
 
     Ok(())
 }
@@ -405,10 +494,20 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     // Perform geometric search
     let mut search_results = api.geometric_search(&tenant.uuid, &asset.uuid(), threshold).await?;
 
+    // Load configuration to get the UI base URL
+    let configuration = crate::configuration::Configuration::load_or_create_default()
+        .map_err(|e| CliError::ConfigurationError(
+            crate::configuration::ConfigurationError::FailedToLoadData {
+                cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+            }
+        ))?;
+    let ui_base_url = configuration.get_ui_base_url();
+
     // Populate comparison URLs for each match
     for match_result in &mut search_results.matches {
         let comparison_url = format!(
-            "https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+            ui_base_url, // Use configurable UI base URL
             tenant.name, // Use tenant short name in path
             asset.uuid(),
             match_result.asset.uuid,
@@ -592,9 +691,19 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                             continue;
                         }
 
+                        // Load configuration to get the UI base URL
+                        let configuration = crate::configuration::Configuration::load_or_create_default()
+                            .map_err(|e| CliError::ConfigurationError(
+                                crate::configuration::ConfigurationError::FailedToLoadData {
+                                    cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+                                }
+                            ))?;
+                        let ui_base_url = configuration.get_ui_base_url();
+
                         // Populate comparison URL for this match
                         let comparison_url = format!(
-                            "https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                            ui_base_url, // Use configurable UI base URL
                             tenant_clone.name, // Use tenant short name in path
                             asset_uuid,
                             match_result.asset.uuid,
@@ -877,8 +986,8 @@ pub async fn delete_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
 
     // Get metadata name parameter from command line
-    let metadata_names = sub_matches.get_many::<String>("name")
-        .ok_or(CliError::MissingRequiredArgument("name".to_string()))?
+    let metadata_names = sub_matches.get_many::<String>("field_name")
+        .ok_or(CliError::MissingRequiredArgument("field_name".to_string()))?
         .map(|s| s.as_str())
         .collect::<Vec<_>>();
 
@@ -893,28 +1002,9 @@ pub async fn delete_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
         return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
     };
 
-    // Delete the specified metadata fields
-    // Note: The API doesn't have a direct method to delete specific metadata, so we'll need to
-    // update the asset with metadata excluding the specified keys
-    let existing_asset = api.get_asset_by_uuid(&tenant.uuid, &asset.uuid()).await?;
-    let existing_metadata = existing_asset.metadata();
-
-    // Create a new metadata map without the specified keys
-    let mut new_metadata_map = std::collections::HashMap::new();
-    if let Some(asset_metadata) = existing_metadata {
-        for key in asset_metadata.keys() {
-            if !metadata_names.contains(&key.as_str()) {
-                if let Some(value) = asset_metadata.get(key) {
-                    // Convert AssetMetadata's String values back to serde_json::Value
-                    // We need to recreate the metadata map with JSON values for the API call
-                    new_metadata_map.insert(key.clone(), serde_json::Value::String(value.clone()));
-                }
-            }
-        }
-    }
-
-    // Update the asset with the modified metadata
-    api.update_asset_metadata(&tenant.uuid, &asset.uuid(), &new_metadata_map).await?;
+    // Delete the specified metadata fields using the dedicated API endpoint
+    let metadata_keys: Vec<&str> = metadata_names.iter().map(|s| s.as_ref()).collect();
+    api.delete_asset_metadata(&tenant.uuid.to_string(), &asset.uuid().to_string(), metadata_keys).await?;
 
     Ok(())
 }
@@ -1042,9 +1132,9 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
             }
         }
 
-        // Update the similar asset with the copied metadata
+        // Update the similar asset with the copied metadata with automatic registration of new keys
         if !new_metadata_map.is_empty() {
-            api.update_asset_metadata(&tenant.uuid, &match_result.asset.uuid, &new_metadata_map).await?;
+            api.update_asset_metadata_with_registration(&tenant.uuid, &match_result.asset.uuid, &new_metadata_map).await?;
 
             // Track which assets were updated
             assets_updated.push((match_result.asset.path.clone(), new_metadata_map.clone()));

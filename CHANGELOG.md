@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-08
+
+### Added
+- Multi-environment configuration support with named environments
+- `config environment add` command to add new environment configurations with custom URLs
+- `config environment use` command with interactive selection to switch between environments
+- `config environment list` command with detailed output and format options (json/csv)
+- `config environment get` command to retrieve specific environment details with format options
+- `config environment remove` command to delete environment configurations
+- `config environment reset` command to reset all environment configurations to blank state
+- Environment-specific URL configuration (API, UI, Auth) for different Physna instances
+- Support for development, staging, and production environment configurations
+- Active tenant clearing when switching environments to prevent cross-environment confusion
+- Format options (json/csv) with headers and pretty printing for environment commands
+- Comprehensive documentation for multi-environment configuration management
+
+### Changed
+- Authentication now uses environment-specific URLs instead of hardcoded production URLs
+- OAuth2 client credentials flow now includes proper Content-Type header
+- Enhanced error handling and tracing for authentication flows
+- Updated README.md with comprehensive multi-environment configuration documentation
+- Improved cross-platform configuration with environment variable support for custom URLs
+- Restructured environment command hierarchy for better usability
+- Limited environment command format options to json/csv (removed tree format where inappropriate)
+
+### Fixed
+- Hardcoded production URLs replaced with configurable environment-specific URLs
+- Authentication flow now properly uses configuration-based URLs
+- Cross-environment tenant conflicts resolved by clearing active tenant on environment switch
+- OAuth2 client credentials flow compliance with proper header requirements
+
+## [0.2.1] - 2026-01-08
+
+### Fixed
+- Fixed tenant parameter issue in `asset metadata delete` command that was causing "Mismatch between definition and access of tenant" error
+- Fixed metadata delete command to use the proper API endpoint for deleting specific metadata fields from assets instead of fetching all metadata and re-updating the asset
+- Improved error handling and documentation for metadata operations
+
 ## [0.1.8] - 2025-10-31
 
 ### Added
@@ -131,7 +169,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/physna/pcli2/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/physna/pcli2/compare/v0.1.8...v0.2.0
+[0.1.8]: https://github.com/physna/pcli2/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/physna/pcli2/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/physna/pcli2/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/physna/pcli2/compare/v0.1.4...v0.1.5

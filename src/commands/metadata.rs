@@ -4,7 +4,7 @@
 
 use crate::commands::params::{
     format_parameter, format_pretty_parameter, format_with_headers_parameter, path_parameter, tenant_parameter, uuid_parameter, COMMAND_CREATE,
-    COMMAND_DELETE, COMMAND_GET, COMMAND_METADATA, PARAMETER_REFRESH,
+    COMMAND_DELETE, COMMAND_GET, COMMAND_METADATA,
 };
 use clap::{Arg, ArgAction, ArgGroup, Command};
 
@@ -35,7 +35,7 @@ pub fn metadata_command() -> Command {
                 .arg(uuid_parameter())
                 .arg(path_parameter())
                 .arg(
-                    Arg::new("metadata_name")
+                    Arg::new("name")
                         .long("name")
                         .num_args(1)
                         .required(true)
@@ -43,7 +43,7 @@ pub fn metadata_command() -> Command {
                         .help("Metadata property name")
                 )
                 .arg(
-                    Arg::new("metadata_value")
+                    Arg::new("value")
                         .long("value")
                         .num_args(1)
                         .required(true)
@@ -51,7 +51,7 @@ pub fn metadata_command() -> Command {
                         .help("Metadata property value")
                 )
                 .arg(
-                    Arg::new("metadata_type")
+                    Arg::new("type")
                         .long("type")
                         .num_args(1)
                         .required(false)
@@ -59,14 +59,6 @@ pub fn metadata_command() -> Command {
                         .default_value("text")
                         .help("Metadata field type (text, number, boolean) - default: text")
                 )
-                .arg(
-                    Arg::new(PARAMETER_REFRESH)
-                        .long(PARAMETER_REFRESH)
-                        .required(false)
-                        .action(ArgAction::SetTrue)
-                        .help("Force refresh metadata field cache from API")
-                )
-                .arg(format_parameter().value_parser(["json", "csv"]))
                 .group(
                     ArgGroup::new("asset_identifier")
                         .args(["uuid", "path"])
@@ -82,7 +74,7 @@ pub fn metadata_command() -> Command {
                 .arg(uuid_parameter())
                 .arg(path_parameter())
                 .arg(
-                    Arg::new("metadata_name")
+                    Arg::new("field_name")
                         .short('n')
                         .long("name")
                         .num_args(1)
@@ -134,7 +126,6 @@ pub fn metadata_command() -> Command {
                         .help("Path to the CSV file containing metadata entries")
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
-                .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(
                     Arg::new("progress")
                         .long("progress")

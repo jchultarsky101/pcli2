@@ -46,6 +46,18 @@ pub const COMMAND_CLEAR: &str = "clear";
 pub const COMMAND_CONFIG: &str = "config";
 pub const COMMAND_EXPORT: &str = "export";
 pub const COMMAND_IMPORT: &str = "import";
+pub const COMMAND_ENVIRONMENT: &str = "environment";
+pub const COMMAND_ADD: &str = "add";
+pub const COMMAND_USE: &str = "use";
+pub const COMMAND_REMOVE: &str = "remove";
+pub const COMMAND_ENVIRONMENT_LIST: &str = "list";
+pub const COMMAND_ENVIRONMENT_GET: &str = "get";
+pub const COMMAND_RESET: &str = "reset";
+
+// Environment parameter names
+pub const PARAMETER_API_URL: &str = "api-url";
+pub const PARAMETER_UI_URL: &str = "ui-url";
+pub const PARAMETER_AUTH_URL: &str = "auth-url";
 
 // Parameter names
 pub const PARAMETER_FORMAT: &str = "format";
@@ -331,4 +343,31 @@ pub fn recursive_parameter() -> Arg {
         .action(ArgAction::SetTrue)
         .required(false)
         .help("Recursively apply operation (default: false for CSV/JSON, true for tree)")
+}
+
+/// Create the API URL parameter.
+pub fn api_url_parameter() -> Arg {
+    Arg::new(PARAMETER_API_URL)
+        .long(PARAMETER_API_URL)
+        .num_args(1)
+        .required(false)
+        .help("API base URL (e.g., https://app-api.physna.com/v3)")
+}
+
+/// Create the UI URL parameter.
+pub fn ui_url_parameter() -> Arg {
+    Arg::new(PARAMETER_UI_URL)
+        .long(PARAMETER_UI_URL)
+        .num_args(1)
+        .required(false)
+        .help("UI base URL (e.g., https://app.physna.com)")
+}
+
+/// Create the Auth URL parameter.
+pub fn auth_url_parameter() -> Arg {
+    Arg::new(PARAMETER_AUTH_URL)
+        .long(PARAMETER_AUTH_URL)
+        .num_args(1)
+        .required(false)
+        .help("Authentication URL (e.g., https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token)")
 }

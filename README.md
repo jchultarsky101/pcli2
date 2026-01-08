@@ -263,7 +263,7 @@ pcli2 asset create-metadata-batch --csv-file "metadata.csv"
 pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/ --metadata "metadata.json"
 
 # Create metadata for multiple assets from a CSV file
-pcli2 asset create-metadata-batch --csv-file "metadata.csv"
+pcli2 asset metadata create-batch --csv-file "metadata.csv"
 ```
 
 ### Working with Asset Dependencies
@@ -322,7 +322,7 @@ Metadata is essential for organizing and searching your assets effectively. PCLI
 
 3. **Update/create existing asset metadata**:
    ```bash
-   pcli2 asset create-metadata-batch --csv-file "updated_metadata.csv"
+   pcli2 asset metadata create-batch --csv-file "updated_metadata.csv"
    ```
 
 ### Geometric Matching
@@ -349,6 +349,106 @@ pcli2 config get
 
 # View configuration file path
 pcli2 config get path
+```
+
+#### Multi-Environment Configuration
+
+PCLI2 supports multiple environment configurations, allowing you to easily switch between different Physna instances (e.g., development, staging, production):
+
+```bash
+# Add a new environment configuration
+pcli2 config environment add --name "development" \
+  --api-url "https://dev-api.physna.com/v3" \
+  --ui-url "https://dev.physna.com" \
+  --auth-url "https://dev-auth.physna.com/oauth2/token"
+
+# Add a production environment
+pcli2 config environment add --name "production" \
+  --api-url "https://app-api.physna.com/v3" \
+  --ui-url "https://app.physna.com" \
+  --auth-url "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
+
+# List all environments
+pcli2 config environment list
+
+# Switch to an environment
+pcli2 config environment use development
+
+# Remove an environment
+pcli2 config environment remove test-environment
+```
+
+Each environment can have its own:
+- API base URL (for API calls)
+- UI base URL (for comparison viewer links)
+- Authentication URL (for OAuth2 token requests)
+
+When no environment is active, PCLI2 uses the default URLs. You can also override environment settings with environment variables:
+
+```bash
+# Override URLs with environment variables (highest priority)
+export PCLI2_API_BASE_URL="https://custom-api.example.com/v3"
+export PCLI2_UI_BASE_URL="https://custom-ui.example.com"
+export PCLI2_AUTH_BASE_URL="https://custom-auth.example.com/oauth2/token"
+```
+
+The priority order for URL configuration is:
+1. Environment variables (highest priority)
+2. Active environment configuration
+3. Global configuration settings
+4. Default hardcoded URLs (lowest priority)
+
+#### Linux Environment Variable Setup
+
+On Linux systems, you can set environment variables in your shell profile to configure PCLI2:
+
+**For Bash** (`~/.bashrc` or `~/.bash_profile`):
+```bash
+# PCLI2 Environment Configuration
+export PCLI2_API_BASE_URL="https://my-custom-api.example.com/v3"
+export PCLI2_UI_BASE_URL="https://my-custom-ui.example.com"
+export PCLI2_AUTH_BASE_URL="https://my-custom-auth.example.com/oauth2/token"
+
+# Optional: Custom configuration and cache directories
+export PCLI2_CONFIG_DIR="/home/$USER/.config/pcli2"
+export PCLI2_CACHE_DIR="/home/$USER/.cache/pcli2"
+```
+
+**For Zsh** (`~/.zshrc`):
+```bash
+# PCLI2 Environment Configuration
+export PCLI2_API_BASE_URL="https://my-custom-api.example.com/v3"
+export PCLI2_UI_BASE_URL="https://my-custom-ui.example.com"
+export PCLI2_AUTH_BASE_URL="https://my-custom-auth.example.com/oauth2/token"
+
+# Optional: Custom configuration and cache directories
+export PCLI2_CONFIG_DIR="/home/$USER/.config/pcli2"
+export PCLI2_CACHE_DIR="/home/$USER/.cache/pcli2"
+```
+
+After adding to your profile, reload the shell:
+```bash
+# For Bash
+source ~/.bashrc
+
+# For Zsh
+source ~/.zshrc
+```
+
+**Example for Different Environments:**
+
+Development Environment:
+```bash
+export PCLI2_API_BASE_URL="https://dev-api.physna.com/v3"
+export PCLI2_UI_BASE_URL="https://dev.physna.com"
+export PCLI2_AUTH_BASE_URL="https://dev-auth.physna.com/oauth2/token"
+```
+
+Staging Environment:
+```bash
+export PCLI2_API_BASE_URL="https://staging-api.physna.com/v3"
+export PCLI2_UI_BASE_URL="https://staging.physna.com"
+export PCLI2_AUTH_BASE_URL="https://staging-auth.physna.com/oauth2/token"
 ```
 
 #### Data Storage Locations
@@ -542,10 +642,12 @@ PCLI2 provides several commands for working with asset metadata:
    ```bash
    # Delete specific metadata fields from an asset
    pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
-   
+
    # Delete metadata fields using comma-separated list
    pcli2 asset metadata delete --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Material,Weight,Description"
    ```
+
+   The delete command now uses the dedicated API endpoint to properly remove metadata fields from assets, rather than fetching all metadata and re-updating the asset without the specified fields.
 
 4. **Create/Update Metadata for Multiple Assets**:
    ```bash
@@ -555,7 +657,7 @@ PCLI2 provides several commands for working with asset metadata:
 
 #### CSV Format for Batch Metadata Operations
 
-The CSV format used by `asset metadata get --format csv` and `asset metadata create-batch` is designed for seamless round-trip operations:
+The CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --csv-file` is designed for seamless round-trip operations:
 
 ```csv
 ASSET_PATH,NAME,VALUE
@@ -566,12 +668,23 @@ ASSET_PATH,NAME,VALUE
 ```
 
 The CSV format specifications:
-- **Header Row**: Must contain `ASSET_PATH,NAME,VALUE`
+- **Header Row**: Must contain exactly `ASSET_PATH,NAME,VALUE` in that order
 - **ASSET_PATH**: Full path to the asset in Physna (e.g., `/Root/Folder/Model.stl`)
 - **NAME**: Name of the metadata field to set
 - **VALUE**: Value to assign to the metadata field
+- **File Encoding**: Must be UTF-8 encoded
 - **Quoting**: Values containing commas, quotes, or newlines must be enclosed in double quotes
 - **Escaping**: Double quotes within values must be escaped by doubling them (e.g., `"15.5"" diameter"`)
+- **Empty Rows**: Will be ignored during processing
+- **Multiple Fields**: If an asset has multiple metadata fields to update, include multiple rows with the same ASSET_PATH but different NAME and VALUE combinations
+
+**Example Command:**
+```bash
+# Create/update metadata for multiple assets from a CSV file
+pcli2 asset metadata create-batch --csv-file "metadata.csv"
+```
+
+**Note:** The `create-batch` command processes each row as a single metadata field assignment for an asset. Multiple rows with the same ASSET_PATH will update multiple metadata fields for that asset in a single API call.
 
 #### Advanced Metadata Workflow: Export, Modify, Reimport
 
@@ -677,7 +790,6 @@ pcli2
 ├── asset
 │   ├── create              Create a new asset by uploading a file
 │   ├── create-batch        Create multiple assets by uploading files matching a glob pattern
-│   ├── create-metadata-batch  Create metadata for multiple assets from a CSV file
 │   ├── dependencies        Get dependencies for an asset (components in assemblies, referenced assets) with --recursive flag for full hierarchy (alias: dep)
 │   ├── list                List all assets in a folder
 │   ├── get                 Get asset details

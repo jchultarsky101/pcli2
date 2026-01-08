@@ -116,14 +116,18 @@ pub struct PhysnaApiClient {
 
 impl TryDefault for PhysnaApiClient {
     type Error = ApiError;
-    
+
     fn try_default() -> Result<PhysnaApiClient, ApiError> {
+        // Load configuration to get the base URL
+        let configuration = crate::configuration::Configuration::load_or_create_default()
+            .map_err(|e| ApiError::AuthError(format!("Failed to load configuration: {}", e)))?;
+
         let mut keyring = Keyring::default();
         let token = keyring.get("default", "access-token".to_string())?;
         match token {
             Some(token) => {
-                let mut client = PhysnaApiClient::new().with_access_token(token);
-            
+                let mut client = PhysnaApiClient::new_with_configuration(&configuration).with_access_token(token);
+
                 // Try to get client credentials for automatic token refresh
                 if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
                     keyring.get("default", "client-id".to_string()),
@@ -144,20 +148,20 @@ impl TryDefault for PhysnaApiClient {
 
 impl PhysnaApiClient {
     /// Create a new Physna API client with default configuration
-    /// 
+    ///
     /// The client is initialized with:
     /// - Default base URL: "https://app-api.physna.com/v3"
     /// - No access token (must be set with `with_access_token`)
     /// - No client credentials (must be set with `with_client_credentials`)
     /// - Default HTTP client with appropriate timeouts and headers
-    /// 
+    ///
     /// # Returns
     /// A new `PhysnaApiClient` instance ready for configuration
-    /// 
+    ///
     /// # Example
     /// ```
     /// use pcli2::physna_v3::PhysnaApiClient;
-    /// 
+    ///
     /// let client = PhysnaApiClient::new();
     /// // Configure with your credentials
     /// let configured_client = client
@@ -167,6 +171,25 @@ impl PhysnaApiClient {
     pub fn new() -> Self {
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
+            access_token: None,
+            client_credentials: None,
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60)) // 60-second timeout for all requests
+                .build()
+                .expect("Failed to build HTTP client with timeout"),
+        }
+    }
+
+    /// Create a new Physna API client with configuration-based URLs
+    ///
+    /// # Arguments
+    /// * `configuration` - The configuration containing the base URL
+    ///
+    /// # Returns
+    /// A new `PhysnaApiClient` instance with the configured base URL
+    pub fn new_with_configuration(configuration: &crate::configuration::Configuration) -> Self {
+        Self {
+            base_url: configuration.get_api_base_url(),
             access_token: None,
             client_credentials: None,
             http_client: reqwest::Client::builder()
@@ -1010,7 +1033,49 @@ impl PhysnaApiClient {
         
         self.patch_no_response(&url, &body).await
     }
-    
+
+    /// Update an asset's metadata fields, automatically registering new metadata keys if needed
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The ID of the tenant that owns the asset
+    /// * `asset_uuid` - The UUID of the asset to update
+    /// * `metadata` - A map of metadata key-value pairs to update
+    ///
+    /// # Returns
+    /// * `Ok(())` - Successfully updated asset metadata
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn update_asset_metadata_with_registration(&mut self, tenant_uuid: &Uuid, asset_uuid: &Uuid, metadata: &std::collections::HashMap<String, serde_json::Value>) -> Result<(), ApiError> {
+        // Get existing metadata fields for the tenant
+        let existing_fields_response = self.get_metadata_fields(&tenant_uuid.to_string()).await;
+
+        let mut existing_field_names = std::collections::HashSet::new();
+        if let Ok(fields_response) = existing_fields_response {
+            for field in fields_response.metadata_fields {
+                existing_field_names.insert(field.name);
+            }
+        }
+
+        // Check each metadata key and register if it doesn't exist
+        for (key, _value) in metadata.iter() {
+            if !existing_field_names.contains(key) {
+                // Register the new metadata field (default to text type)
+                let field_result = self.create_metadata_field(&tenant_uuid.to_string(), key, Some("text")).await;
+
+                // Log the result of field creation
+                match field_result {
+                    Ok(_) => debug!("Successfully registered new metadata field: {}", key),
+                    Err(e) => {
+                        debug!("Failed to register metadata field '{}': {}", key, e);
+                        // Continue anyway, as the API might allow setting values for unregistered keys
+                    }
+                }
+            }
+        }
+
+        // Now update the asset metadata
+        self.update_asset_metadata(tenant_uuid, asset_uuid, metadata).await
+    }
+
     /// Delete specific metadata fields from an asset
     /// 
     /// This method deletes specific metadata fields from the specified asset.

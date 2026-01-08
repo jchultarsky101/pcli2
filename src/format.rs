@@ -21,7 +21,7 @@ pub enum FormattingError {
     UnsupportedOutputFormat(String),
     /// General error when formatting fails
     #[error("failed to format output due to: {cause:?}")]
-    FormatFailure { cause: Box<dyn std::error::Error> },
+    FormatFailure { cause: Box<dyn std::error::Error + Send + Sync> },
     /// Error specific to CSV operations
     #[error("CSV error: {0}")]
     CsvError(#[from] csv::Error),

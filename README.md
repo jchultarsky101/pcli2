@@ -351,6 +351,106 @@ pcli2 config get
 pcli2 config get path
 ```
 
+#### Multi-Environment Configuration
+
+PCLI2 supports multiple environment configurations, allowing you to easily switch between different Physna instances (e.g., development, staging, production):
+
+```bash
+# Add a new environment configuration
+pcli2 config environment add --name "development" \
+  --api-url "https://dev-api.physna.com/v3" \
+  --ui-url "https://dev.physna.com" \
+  --auth-url "https://dev-auth.physna.com/oauth2/token"
+
+# Add a production environment
+pcli2 config environment add --name "production" \
+  --api-url "https://app-api.physna.com/v3" \
+  --ui-url "https://app.physna.com" \
+  --auth-url "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
+
+# List all environments
+pcli2 config environment list
+
+# Switch to an environment
+pcli2 config environment use development
+
+# Remove an environment
+pcli2 config environment remove test-environment
+```
+
+Each environment can have its own:
+- API base URL (for API calls)
+- UI base URL (for comparison viewer links)
+- Authentication URL (for OAuth2 token requests)
+
+When no environment is active, PCLI2 uses the default URLs. You can also override environment settings with environment variables:
+
+```bash
+# Override URLs with environment variables (highest priority)
+export PCLI2_API_BASE_URL="https://custom-api.example.com/v3"
+export PCLI2_UI_BASE_URL="https://custom-ui.example.com"
+export PCLI2_AUTH_BASE_URL="https://custom-auth.example.com/oauth2/token"
+```
+
+The priority order for URL configuration is:
+1. Environment variables (highest priority)
+2. Active environment configuration
+3. Global configuration settings
+4. Default hardcoded URLs (lowest priority)
+
+#### Linux Environment Variable Setup
+
+On Linux systems, you can set environment variables in your shell profile to configure PCLI2:
+
+**For Bash** (`~/.bashrc` or `~/.bash_profile`):
+```bash
+# PCLI2 Environment Configuration
+export PCLI2_API_BASE_URL="https://my-custom-api.example.com/v3"
+export PCLI2_UI_BASE_URL="https://my-custom-ui.example.com"
+export PCLI2_AUTH_BASE_URL="https://my-custom-auth.example.com/oauth2/token"
+
+# Optional: Custom configuration and cache directories
+export PCLI2_CONFIG_DIR="/home/$USER/.config/pcli2"
+export PCLI2_CACHE_DIR="/home/$USER/.cache/pcli2"
+```
+
+**For Zsh** (`~/.zshrc`):
+```bash
+# PCLI2 Environment Configuration
+export PCLI2_API_BASE_URL="https://my-custom-api.example.com/v3"
+export PCLI2_UI_BASE_URL="https://my-custom-ui.example.com"
+export PCLI2_AUTH_BASE_URL="https://my-custom-auth.example.com/oauth2/token"
+
+# Optional: Custom configuration and cache directories
+export PCLI2_CONFIG_DIR="/home/$USER/.config/pcli2"
+export PCLI2_CACHE_DIR="/home/$USER/.cache/pcli2"
+```
+
+After adding to your profile, reload the shell:
+```bash
+# For Bash
+source ~/.bashrc
+
+# For Zsh
+source ~/.zshrc
+```
+
+**Example for Different Environments:**
+
+Development Environment:
+```bash
+export PCLI2_API_BASE_URL="https://dev-api.physna.com/v3"
+export PCLI2_UI_BASE_URL="https://dev.physna.com"
+export PCLI2_AUTH_BASE_URL="https://dev-auth.physna.com/oauth2/token"
+```
+
+Staging Environment:
+```bash
+export PCLI2_API_BASE_URL="https://staging-api.physna.com/v3"
+export PCLI2_UI_BASE_URL="https://staging.physna.com"
+export PCLI2_AUTH_BASE_URL="https://staging-auth.physna.com/oauth2/token"
+```
+
 #### Data Storage Locations
 
 PCLI2 stores data in platform-specific standard directories to ensure proper cross-platform compatibility:

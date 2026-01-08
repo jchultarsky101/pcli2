@@ -32,6 +32,17 @@ impl Default for HttpRequestConfig {
     }
 }
 
+impl HttpRequestConfig {
+    pub fn from_configuration(configuration: &crate::configuration::Configuration) -> Self {
+        Self {
+            base_url: configuration.get_api_base_url(),
+            default_headers: HashMap::new(),
+            timeout: 60, // 60 seconds
+            retry_on_auth_error: true,
+        }
+    }
+}
+
 /// HTTP client wrapper with common request handling logic
 pub struct HttpClient {
     /// The reqwest client instance

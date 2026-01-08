@@ -405,10 +405,20 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     // Perform geometric search
     let mut search_results = api.geometric_search(&tenant.uuid, &asset.uuid(), threshold).await?;
 
+    // Load configuration to get the UI base URL
+    let configuration = crate::configuration::Configuration::load_or_create_default()
+        .map_err(|e| CliError::ConfigurationError(
+            crate::configuration::ConfigurationError::FailedToLoadData {
+                cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+            }
+        ))?;
+    let ui_base_url = configuration.get_ui_base_url();
+
     // Populate comparison URLs for each match
     for match_result in &mut search_results.matches {
         let comparison_url = format!(
-            "https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+            ui_base_url, // Use configurable UI base URL
             tenant.name, // Use tenant short name in path
             asset.uuid(),
             match_result.asset.uuid,
@@ -592,9 +602,19 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                             continue;
                         }
 
+                        // Load configuration to get the UI base URL
+                        let configuration = crate::configuration::Configuration::load_or_create_default()
+                            .map_err(|e| CliError::ConfigurationError(
+                                crate::configuration::ConfigurationError::FailedToLoadData {
+                                    cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+                                }
+                            ))?;
+                        let ui_base_url = configuration.get_ui_base_url();
+
                         // Populate comparison URL for this match
                         let comparison_url = format!(
-                            "https://app.physna.com/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                            ui_base_url, // Use configurable UI base URL
                             tenant_clone.name, // Use tenant short name in path
                             asset_uuid,
                             match_result.asset.uuid,

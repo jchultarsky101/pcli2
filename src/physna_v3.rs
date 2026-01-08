@@ -116,14 +116,18 @@ pub struct PhysnaApiClient {
 
 impl TryDefault for PhysnaApiClient {
     type Error = ApiError;
-    
+
     fn try_default() -> Result<PhysnaApiClient, ApiError> {
+        // Load configuration to get the base URL
+        let configuration = crate::configuration::Configuration::load_or_create_default()
+            .map_err(|e| ApiError::AuthError(format!("Failed to load configuration: {}", e)))?;
+
         let mut keyring = Keyring::default();
         let token = keyring.get("default", "access-token".to_string())?;
         match token {
             Some(token) => {
-                let mut client = PhysnaApiClient::new().with_access_token(token);
-            
+                let mut client = PhysnaApiClient::new_with_configuration(&configuration).with_access_token(token);
+
                 // Try to get client credentials for automatic token refresh
                 if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
                     keyring.get("default", "client-id".to_string()),
@@ -144,20 +148,20 @@ impl TryDefault for PhysnaApiClient {
 
 impl PhysnaApiClient {
     /// Create a new Physna API client with default configuration
-    /// 
+    ///
     /// The client is initialized with:
     /// - Default base URL: "https://app-api.physna.com/v3"
     /// - No access token (must be set with `with_access_token`)
     /// - No client credentials (must be set with `with_client_credentials`)
     /// - Default HTTP client with appropriate timeouts and headers
-    /// 
+    ///
     /// # Returns
     /// A new `PhysnaApiClient` instance ready for configuration
-    /// 
+    ///
     /// # Example
     /// ```
     /// use pcli2::physna_v3::PhysnaApiClient;
-    /// 
+    ///
     /// let client = PhysnaApiClient::new();
     /// // Configure with your credentials
     /// let configured_client = client
@@ -167,6 +171,25 @@ impl PhysnaApiClient {
     pub fn new() -> Self {
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
+            access_token: None,
+            client_credentials: None,
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60)) // 60-second timeout for all requests
+                .build()
+                .expect("Failed to build HTTP client with timeout"),
+        }
+    }
+
+    /// Create a new Physna API client with configuration-based URLs
+    ///
+    /// # Arguments
+    /// * `configuration` - The configuration containing the base URL
+    ///
+    /// # Returns
+    /// A new `PhysnaApiClient` instance with the configured base URL
+    pub fn new_with_configuration(configuration: &crate::configuration::Configuration) -> Self {
+        Self {
+            base_url: configuration.get_api_base_url(),
             access_token: None,
             client_credentials: None,
             http_client: reqwest::Client::builder()

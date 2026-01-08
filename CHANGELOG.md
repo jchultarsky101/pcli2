@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Fixed tenant parameter issue in `asset metadata delete` command that was causing "Mismatch between definition and access of tenant" error
-- Fixed metadata delete command to use the proper API endpoint for deleting specific metadata fields from assets instead of fetching all metadata and re-updating the asset
-- Improved error handling and documentation for metadata operations
-
 ## [0.2.0] - 2026-01-08
 
 ### Added
@@ -42,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Authentication flow now properly uses configuration-based URLs
 - Cross-environment tenant conflicts resolved by clearing active tenant on environment switch
 - OAuth2 client credentials flow compliance with proper header requirements
+
+## [0.2.1] - 2026-01-08
+
+### Fixed
+- Fixed tenant parameter issue in `asset metadata delete` command that was causing "Mismatch between definition and access of tenant" error
+- Fixed metadata delete command to use the proper API endpoint for deleting specific metadata fields from assets instead of fetching all metadata and re-updating the asset
+- Improved error handling and documentation for metadata operations
 
 ## [0.1.8] - 2025-10-31
 
@@ -167,7 +169,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/physna/pcli2/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/physna/pcli2/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/physna/pcli2/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/physna/pcli2/compare/v0.1.6...v0.1.7

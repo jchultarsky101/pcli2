@@ -12,7 +12,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Get latest release tag
         id: latest_tag
@@ -28,14 +28,17 @@ jobs:
 
       - name: Create new latest tag
         run: |
-          # Delete the existing latest tag if it exists
-          git tag -d latest || true
-          # Create the new tag
+          # Configure git identity
+          git config user.name github-actions[bot]
+          git config user.email github-actions[bot]@users.noreply.github.com
+
+          # Create the new latest tag
           git tag latest ${{ github.sha }}
+
           # Push the new tag
           git push origin latest
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Log completion
         run: |

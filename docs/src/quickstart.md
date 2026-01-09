@@ -15,7 +15,35 @@ This guide will help you get started with PCLI2 quickly by walking through commo
 
 ## Authentication
 
-Before using most PCLI2 commands, you need to authenticate with your Physna tenant:
+Before using most PCLI2 commands, you need to authenticate with your Physna tenant. First, you'll need to obtain your API credentials.
+
+### Getting API Credentials
+
+There are two methods to obtain your API credentials:
+
+#### Method 1: Using the Physna Web Interface (Recommended)
+
+This is the newer, more user-friendly approach available to administrators:
+
+1. Log in to your Physna instance
+2. (Optional) Select a tenant from the tenant selector
+3. Click on **Settings** (the gear icon in the top-right corner)
+4. Navigate to the **Users** tab
+5. Create a new service account
+6. Record the **Client ID** and **Client Secret** for use with PCLI2
+
+#### Method 2: Using the API Documentation Page (Legacy)
+
+This is the original approach using the API documentation interface:
+
+1. Navigate to the [Physna OpenAPI Documentation page](https://app-api.physna.com/v3/docs/)
+2. Log in with your Physna credentials
+3. Locate and execute the `POST /users/me/service-accounts` endpoint
+4. Record the **Client ID** and **Client Secret** from the response
+
+### Logging In
+
+Once you have your credentials, you can authenticate with PCLI2:
 
 ```bash
 # Login with client credentials
@@ -42,25 +70,39 @@ pcli2 asset list --path /Root/MyFolder/
 
 ## Working with Assets
 
-Common asset operations you'll perform regularly:
+Asset management is a core function of PCLI2. These commands allow you to upload, retrieve, organize, and maintain your 3D models and other assets in Physna.
+
+### Uploading Assets
+
+The `asset create` command uploads individual files to your Physna tenant, placing them in the specified folder path. This is useful for adding single assets to your collection:
 
 ```bash
 # Upload a single asset
 pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/
+```
 
+For bulk operations, `asset create-batch` allows you to upload multiple files at once using glob patterns:
+
+```bash
+# Upload multiple assets
+pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
+```
+
+### Viewing and Managing Assets
+
+Use these commands to inspect and manage your assets:
+
+```bash
 # View asset details
 pcli2 asset get --path /Root/MyFolder/model.stl
 
 # Delete an asset
 pcli2 asset delete --path /Root/MyFolder/model.stl
-
-# Upload multiple assets
-pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
 ```
 
 ## Geometric Matching
 
-Find similar assets using PCLI2's powerful geometric matching:
+Geometric matching is a powerful feature that allows you to find assets with similar 3D geometry in your Physna tenant. This is particularly useful for identifying duplicate parts, finding design variations, or discovering similar components across different projects.
 
 ```bash
 # Find matches for a single asset
@@ -70,11 +112,15 @@ pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 8
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
 ```
 
+The threshold parameter controls the similarity requirement, where higher values (closer to 100) require closer matches. The progress flag provides visual feedback during long-running operations.
+
 ## Metadata Operations
 
-Manage asset metadata with PCLI2's comprehensive metadata operations:
+Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata. Metadata helps you categorize, filter, and find assets based on custom properties like material, supplier, weight, or any other characteristic relevant to your workflow.
 
 ### Creating and Updating Metadata
+
+The `metadata create` command adds or updates a single metadata field on an asset. This is useful for setting specific properties on individual assets:
 
 ```bash
 # Add or update a single metadata field on an asset
@@ -86,12 +132,16 @@ pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Weight" --va
 
 ### Retrieving Metadata
 
+Use the `metadata get` command to view all metadata associated with an asset:
+
 ```bash
 # Get all metadata for an asset
 pcli2 asset metadata get --path "/Root/Folder/Model.stl"
 ```
 
 ### Deleting Metadata
+
+The `metadata delete` command removes specific metadata fields from an asset without affecting other metadata on the same asset:
 
 ```bash
 # Delete specific metadata fields from an asset
@@ -103,7 +153,7 @@ pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material,Wei
 
 ### Metadata Inference
 
-Automatically apply metadata from a reference asset to geometrically similar assets:
+Metadata inference automatically applies metadata from a reference asset to geometrically similar assets. This feature helps you efficiently propagate metadata across similar assets, reducing manual work and ensuring consistency in your asset database:
 
 ```bash
 # Apply specific metadata fields from a reference asset to similar assets

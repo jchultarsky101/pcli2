@@ -47,7 +47,7 @@ Based on lessons learned from the previous version, we have developed a new and 
 
 Getting started with PCLI2 is straightforward. Follow these steps:
 
-1. **Get your API credentials** by logging into the [Physna OpenAPI Documentation page](https://app-api.physna.com/v3/docs/) and creating a service account
+1. **Get your API credentials** by logging into your Physna tenant and creating a service account
 2. **Install PCLI2** using one of the methods described in [Installation](#installation)
 3. **Authenticate** with your Physna tenant:
    ```bash

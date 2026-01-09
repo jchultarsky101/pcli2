@@ -277,14 +277,14 @@ Get detailed information about specific folders or remove them when no longer ne
 # Get folder details
 pcli2 folder get --uuid FOLDER_UUID --format json
 
-# Delete a folder (only removes the folder, not its contents)
+# Delete a folder (only works if the folder is empty)
 pcli2 folder delete --path "/Root/FolderToDelete"
 
-# Delete a folder and all its contents (assets and subfolders)
+# Delete a folder and all its contents (assets and subfolders) recursively
 pcli2 folder delete --path "/Root/FolderToDelete" --force
 ```
 
-**Note**: By default, deleting a folder only removes the folder itself. To also delete all assets and subfolders within it, use the `--force` flag. This action cannot be undone.
+**Note**: By default, the folder delete command will only work if the folder is empty. If the folder contains any subfolders or assets, the command will throw an error. To delete a folder that is not empty, you need to specify the `--force` option, which will make PCLI2 recursively delete all assets and subfolders before deleting the base folder. This action cannot be undone.
 
 ### Working with Assets
 

@@ -12,7 +12,16 @@ Based on lessons learned from the previous version, we have developed a new and 
 - [Installation](#installation)
 - [Authentication](#authentication)
 - [Basic Usage](#basic-usage)
+  - [Tenants](#tenants)
+  - [Working with Folders](#working-with-folders)
+  - [Working with Assets](#working-with-assets)
+  - [Working with Asset Dependencies](#working-with-asset-dependencies)
+  - [Geometric Matching](#geometric-matching)
+  - [Working with Metadata](#working-with-metadata)
+    - [Metadata Inference](#metadata-inference)
 - [Advanced Usage](#advanced-usage)
+  - [Configuration Management](#configuration-management)
+  - [Using UNIX Pipes with PCLI2](#using-unix-pipes-with-pcli2)
 - [Commands Reference](#commands-reference)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -383,6 +392,165 @@ pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 -
 
 This command processes all assets in the specified folder simultaneously, making it efficient for large-scale similarity searches. The progress flag provides visual feedback during long-running operations.
 
+### Working with Metadata
+
+Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata. Metadata helps you categorize, filter, and find assets based on custom properties like material, supplier, weight, or any other characteristic relevant to your workflow.
+
+#### Metadata Operations
+
+PCLI2 provides several commands for working with asset metadata:
+
+1. **Create/Update Individual Asset Metadata**:
+
+   The `metadata create` command adds or updates a single metadata field on an asset. This is useful for setting specific properties on individual assets:
+
+   ```bash
+   # Add or update a single metadata field on an asset
+   pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
+
+   # Add or update a single metadata field on an asset by UUID
+   pcli2 asset metadata create --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Weight" --value "15.5" --type "number"
+   ```
+
+2. **Retrieve Asset Metadata**:
+
+   Use the `metadata get` command to view all metadata associated with an asset:
+
+   ```bash
+   # Get all metadata for an asset in JSON format (default)
+   pcli2 asset metadata get --path "/Root/Folder/Model.stl"
+
+   # Get all metadata for an asset in CSV format (suitable for batch operations)
+   pcli2 asset metadata get --uuid "123e4567-e89b-12d3-a456-426614174000" --format csv
+   ```
+
+3. **Delete Asset Metadata**:
+
+   The `metadata delete` command removes specific metadata fields from an asset without affecting other metadata on the same asset:
+
+   ```bash
+   # Delete specific metadata fields from an asset
+   pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
+
+   # Delete metadata fields using comma-separated list
+   pcli2 asset metadata delete --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Material,Weight,Description"
+   ```
+
+   The delete command now uses the dedicated API endpoint to properly remove metadata fields from assets, rather than fetching all metadata and re-updating the asset without the specified fields.
+
+4. **Create/Update Metadata for Multiple Assets**:
+
+   For bulk operations, use the `metadata create-batch` command to update multiple assets at once using a CSV file:
+
+   ```bash
+   # Create or update metadata for multiple assets from a CSV file
+   pcli2 asset metadata create-batch --csv-file "metadata.csv"
+   ```
+
+#### CSV Format for Batch Metadata Operations
+
+The CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --csv-file` is designed for seamless round-trip operations:
+
+```csv
+ASSET_PATH,NAME,VALUE
+/Root/Folder/Model1.stl,Material,Steel
+/Root/Folder/Model1.stl,Weight,"15.5 kg"
+/Root/Folder/Model2.ipt,Material,Aluminum
+/Root/Folder/Model2.ipt,Supplier,Richardson Electronics
+```
+
+The CSV format specifications:
+- **Header Row**: Must contain exactly `ASSET_PATH,NAME,VALUE` in that order
+- **ASSET_PATH**: Full path to the asset in Physna (e.g., `/Root/Folder/Model.stl`)
+- **NAME**: Name of the metadata field to set
+- **VALUE**: Value to assign to the metadata field
+- **File Encoding**: Must be UTF-8 encoded
+- **Quoting**: Values containing commas, quotes, or newlines must be enclosed in double quotes
+- **Escaping**: Double quotes within values must be escaped by doubling them (e.g., `"15.5"" diameter"`)
+- **Empty Rows**: Will be ignored during processing
+- **Multiple Fields**: If an asset has multiple metadata fields to update, include multiple rows with the same ASSET_PATH but different NAME and VALUE combinations
+
+**Example Command:**
+```bash
+# Create/update metadata for multiple assets from a CSV file
+pcli2 asset metadata create-batch --csv-file "metadata.csv"
+```
+
+**Note:** The `create-batch` command processes each row as a single metadata field assignment for an asset. Multiple rows with the same ASSET_PATH will update multiple metadata fields for that asset in a single API call.
+
+#### Advanced Metadata Workflow: Export, Modify, Reimport
+
+One of the most powerful features of PCLI2 is the ability to export metadata, modify it externally, and reimport it:
+
+1. **Export Metadata**:
+   ```bash
+   # Export all metadata for an asset to a CSV file
+   pcli2 asset metadata get --path "/Root/Folder/Model.stl" --format csv > model_metadata.csv
+
+   # Export metadata for multiple assets in a folder
+   pcli2 asset list --path "/Root/Folder/" --metadata --format csv > folder_metadata.csv
+   ```
+
+2. **Modify Metadata Externally**:
+   - Open the CSV file in a spreadsheet application (Excel, Google Sheets, etc.)
+   - Make the desired changes to metadata values
+   - Save the file in CSV format
+
+3. **Reimport Modified Metadata**:
+   ```bash
+   # Update assets with modified metadata
+   pcli2 asset metadata create-batch --csv-file "modified_metadata.csv"
+   ```
+
+This workflow enables powerful bulk metadata operations while maintaining the flexibility to use familiar spreadsheet tools for data manipulation.
+
+#### Metadata Field Types
+
+PCLI2 supports three metadata field types:
+
+1. **Text** (default): String values
+   ```bash
+   pcli2 asset metadata create --path "/Root/Model.stl" --name "Description" --value "Sample part description" --type "text"
+   ```
+
+2. **Number**: Numeric values
+   ```bash
+   pcli2 asset metadata create --path "/Root/Model.stl" --name "Weight" --value "15.5" --type "number"
+   ```
+
+3. **Boolean**: True/False values
+   ```bash
+   pcli2 asset metadata create --path "/Root/Model.stl" --name "Approved" --value "true" --type "boolean"
+   ```
+
+#### Best Practices
+
+The following are just recommendations. You can use any threshold value you would like between 0%-100%:
+
+1. **Start with moderate thresholds** (80-85%) for balanced results
+2. **Use folder-based matching for bulk operations** to leverage parallel processing
+3. **Monitor progress** for long-running operations using the `--progress` flag
+4. **Adjust concurrency** based on your system's capabilities and API rate limits
+5. **Save results to files** when performing extensive matching operations
+6. **Use appropriate output formats** for your intended use case (JSON for scripting, CSV for spreadsheets)
+
+### Metadata Inference
+
+Automatically apply metadata from a reference asset to geometrically similar assets using PCLI2's metadata inference capability:
+
+```bash
+# Apply specific metadata fields from a reference asset to similar assets
+pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Material,Cost" --threshold 90.0
+
+# Apply metadata recursively to create chains of similar assets
+pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Category" --threshold 85.0 --recursive
+
+# Apply multiple metadata fields with different thresholds
+pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
+```
+
+The metadata inference command helps you efficiently propagate metadata across geometrically similar assets, reducing manual work and ensuring consistency in your asset database.
+
 ## Advanced Usage
 
 ### Configuration Management
@@ -445,6 +613,85 @@ The priority order for URL configuration is:
 2. Active environment configuration
 3. Global configuration settings
 4. Default hardcoded URLs (lowest priority)
+
+### Using UNIX Pipes with PCLI2
+
+PCLI2's structured output formats make it easy to pipe data to other command-line tools for further processing and analysis. This enables powerful workflows that combine PCLI2 with other utilities to manipulate, filter, and transform your data.
+
+#### Basic Pipe Operations
+
+PCLI2 outputs can be piped to standard Unix tools like `grep`, `awk`, `sed`, and others:
+
+```bash
+# Filter assets by name using grep
+pcli2 asset list --format csv | grep "bearing"
+
+# Count the number of assets
+pcli2 asset list --format csv | wc -l
+
+# Extract specific columns using cut (for CSV format)
+pcli2 asset list --format csv | cut -d',' -f1,3
+```
+
+#### Working with Structured Data Tools
+
+For more sophisticated data manipulation, PCLI2 works well with structured data processing tools:
+
+**Using jq for JSON processing:**
+```bash
+# Extract specific fields from JSON output
+pcli2 asset list --format json | jq '.[].name'
+
+# Filter assets based on a condition
+pcli2 asset list --format json | jq '.[] | select(.size > 10000)'
+```
+
+**Using csvkit for CSV processing:**
+```bash
+# Sort assets by a specific column
+pcli2 asset list --format csv | csvsort -c "name"
+
+# Filter CSV data based on conditions
+pcli2 asset list --format csv | csvgrep -c "status" -m "active"
+```
+
+**Using NuShell for advanced data manipulation:**
+```bash
+# Convert CSV output and manipulate with NuShell
+pcli2 asset list --format csv --headers | nu -c 'from csv | select name size status | sort-by name'
+
+# More complex NuShell pipeline
+pcli2 asset list --format csv --headers | nu -c 'from csv | where size > 1000 | get name | sort'
+```
+
+#### Combining Multiple PCLI2 Commands
+
+You can chain multiple PCLI2 commands together for complex operations:
+
+```bash
+# Get a list of folders and process each one
+pcli2 folder list --format csv | tail -n +2 | while IFS=',' read -r uuid name path; do
+  echo "Processing folder: $name"
+  pcli2 asset list --folder-uuid "$uuid" --format json
+done
+```
+
+#### Best Practices for Pipelines
+
+1. **Use appropriate output formats**: Choose CSV for tabular data processing, JSON for hierarchical data manipulation, and avoid tree format for piping.
+
+2. **Include headers when needed**: Use `--headers` flag for CSV output when working with tools that expect header rows.
+
+3. **Handle large datasets**: For large outputs, consider using the `--limit` and `--offset` parameters to process data in chunks.
+
+4. **Error handling**: Redirect stderr appropriately when building pipelines:
+   ```bash
+   pcli2 asset list --format csv 2>/dev/null | head -n 10
+   ```
+
+5. **Performance considerations**: When chaining multiple API calls, consider the rate limits and use appropriate delays if needed.
+
+These pipeline capabilities enable you to create sophisticated automation scripts and integrate PCLI2 seamlessly into your existing command-line workflows.
 
 #### Linux Environment Variable Setup
 
@@ -580,227 +827,7 @@ pcli2 folder list --format tree
 
 The tenant commands do not support tree format as it doesn't make sense for tenant data.
 
-### Geometric Matching
 
-PCLI2 provides powerful geometric matching capabilities to find similar assets in your Physna tenant. This feature leverages advanced algorithms to identify assets with similar geometries, regardless of their orientation, scale, or position.
-
-#### Overview
-
-Geometric matching helps you:
-
-- Find duplicate or near-duplicate assets
-- Identify variations of the same part
-- Locate similar components across different projects
-- Reduce storage costs by identifying redundant assets
-- Improve design workflows by finding existing similar parts
-
-#### Threshold Settings
-
-The threshold parameter controls the minimum similarity percentage required for a match:
-
-- **0.0** - Return all possible matches (may include unrelated assets)
-- **50.0** - Very loose matching (many potential matches)
-- **80.0** - Default setting (good balance of accuracy and recall)
-- **90.0** - Strict matching (high confidence matches)
-- **95.0+** - Very strict matching (near duplicates only)
-
-#### Performance Options
-
-##### Concurrency Control
-
-Control how many simultaneous operations are performed:
-
-```bash
-# Process 5 assets simultaneously (default)
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 5
-
-# Process 10 assets simultaneously for faster results
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 10
-
-# Process 1 asset at a time for slower but more stable results
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 1
-```
-
-##### Progress Monitoring
-
-Monitor the progress of long-running folder-based operations:
-
-```bash
-# Show progress bar during folder matching
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --progress
-```
-
-#### Combining with Other Commands
-
-Chain commands together for powerful workflows:
-
-
-### Metadata Inference
-
-Automatically apply metadata from a reference asset to geometrically similar assets using PCLI2's metadata inference capability:
-
-```bash
-# Apply specific metadata fields from a reference asset to similar assets
-pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Material,Cost" --threshold 90.0
-
-# Apply metadata recursively to create chains of similar assets
-pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Category" --threshold 85.0 --recursive
-
-# Apply multiple metadata fields with different thresholds
-pcli2 asset metadata inference --path /Root/Parts/Bolt-M8x20.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
-```
-
-The metadata inference command helps you efficiently propagate metadata across geometrically similar assets, reducing manual work and ensuring consistency in your asset database.
-
-```bash
-# Find matches and save to a file
-pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 --format csv > matches.csv
-
-# Find matches and filter with grep
-pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 | grep "HighConfidencePart"
-```
-
-### Working with Metadata
-
-Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata. Metadata helps you categorize, filter, and find assets based on custom properties like material, supplier, weight, or any other characteristic relevant to your workflow.
-
-#### Metadata Operations
-
-PCLI2 provides several commands for working with asset metadata:
-
-1. **Create/Update Individual Asset Metadata**:
-
-   The `metadata create` command adds or updates a single metadata field on an asset. This is useful for setting specific properties on individual assets:
-
-   ```bash
-   # Add or update a single metadata field on an asset
-   pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
-
-   # Add or update a single metadata field on an asset by UUID
-   pcli2 asset metadata create --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Weight" --value "15.5" --type "number"
-   ```
-
-2. **Retrieve Asset Metadata**:
-
-   Use the `metadata get` command to view all metadata associated with an asset:
-
-   ```bash
-   # Get all metadata for an asset in JSON format (default)
-   pcli2 asset metadata get --path "/Root/Folder/Model.stl"
-
-   # Get all metadata for an asset in CSV format (suitable for batch operations)
-   pcli2 asset metadata get --uuid "123e4567-e89b-12d3-a456-426614174000" --format csv
-   ```
-
-3. **Delete Asset Metadata**:
-
-   The `metadata delete` command removes specific metadata fields from an asset without affecting other metadata on the same asset:
-
-   ```bash
-   # Delete specific metadata fields from an asset
-   pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
-
-   # Delete metadata fields using comma-separated list
-   pcli2 asset metadata delete --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Material,Weight,Description"
-   ```
-
-   The delete command now uses the dedicated API endpoint to properly remove metadata fields from assets, rather than fetching all metadata and re-updating the asset without the specified fields.
-
-4. **Create/Update Metadata for Multiple Assets**:
-
-   For bulk operations, use the `metadata create-batch` command to update multiple assets at once using a CSV file:
-
-   ```bash
-   # Create or update metadata for multiple assets from a CSV file
-   pcli2 asset metadata create-batch --csv-file "metadata.csv"
-   ```
-
-#### CSV Format for Batch Metadata Operations
-
-The CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --csv-file` is designed for seamless round-trip operations:
-
-```csv
-ASSET_PATH,NAME,VALUE
-/Root/Folder/Model1.stl,Material,Steel
-/Root/Folder/Model1.stl,Weight,"15.5 kg"
-/Root/Folder/Model2.ipt,Material,Aluminum
-/Root/Folder/Model2.ipt,Supplier,Richardson Electronics
-```
-
-The CSV format specifications:
-- **Header Row**: Must contain exactly `ASSET_PATH,NAME,VALUE` in that order
-- **ASSET_PATH**: Full path to the asset in Physna (e.g., `/Root/Folder/Model.stl`)
-- **NAME**: Name of the metadata field to set
-- **VALUE**: Value to assign to the metadata field
-- **File Encoding**: Must be UTF-8 encoded
-- **Quoting**: Values containing commas, quotes, or newlines must be enclosed in double quotes
-- **Escaping**: Double quotes within values must be escaped by doubling them (e.g., `"15.5"" diameter"`)
-- **Empty Rows**: Will be ignored during processing
-- **Multiple Fields**: If an asset has multiple metadata fields to update, include multiple rows with the same ASSET_PATH but different NAME and VALUE combinations
-
-**Example Command:**
-```bash
-# Create/update metadata for multiple assets from a CSV file
-pcli2 asset metadata create-batch --csv-file "metadata.csv"
-```
-
-**Note:** The `create-batch` command processes each row as a single metadata field assignment for an asset. Multiple rows with the same ASSET_PATH will update multiple metadata fields for that asset in a single API call.
-
-#### Advanced Metadata Workflow: Export, Modify, Reimport
-
-One of the most powerful features of PCLI2 is the ability to export metadata, modify it externally, and reimport it:
-
-1. **Export Metadata**:
-   ```bash
-   # Export all metadata for an asset to a CSV file
-   pcli2 asset metadata get --path "/Root/Folder/Model.stl" --format csv > model_metadata.csv
-   
-   # Export metadata for multiple assets in a folder
-   pcli2 asset list --path "/Root/Folder/" --metadata --format csv > folder_metadata.csv
-   ```
-
-2. **Modify Metadata Externally**:
-   - Open the CSV file in a spreadsheet application (Excel, Google Sheets, etc.)
-   - Make the desired changes to metadata values
-   - Save the file in CSV format
-
-3. **Reimport Modified Metadata**:
-   ```bash
-   # Update assets with modified metadata
-   pcli2 asset metadata create-batch --csv-file "modified_metadata.csv"
-   ```
-
-This workflow enables powerful bulk metadata operations while maintaining the flexibility to use familiar spreadsheet tools for data manipulation.
-
-#### Metadata Field Types
-
-PCLI2 supports three metadata field types:
-
-1. **Text** (default): String values
-   ```bash
-   pcli2 asset metadata create --path "/Root/Model.stl" --name "Description" --value "Sample part description" --type "text"
-   ```
-
-2. **Number**: Numeric values
-   ```bash
-   pcli2 asset metadata create --path "/Root/Model.stl" --name "Weight" --value "15.5" --type "number"
-   ```
-
-3. **Boolean**: True/False values
-   ```bash
-   pcli2 asset metadata create --path "/Root/Model.stl" --name "Approved" --value "true" --type "boolean"
-   ```
-
-#### Best Practices
-
-The following are just recommendations. You can use any threshold value you would like between 0%-100%:
-
-1. **Start with moderate thresholds** (80-85%) for balanced results
-2. **Use folder-based matching for bulk operations** to leverage parallel processing
-3. **Monitor progress** for long-running operations using the `--progress` flag
-4. **Adjust concurrency** based on your system's capabilities and API rate limits
-5. **Save results to files** when performing extensive matching operations
-6. **Use appropriate output formats** for your intended use case (JSON for scripting, CSV for spreadsheets)
 
 ### Command Aliases and Short Argument Names
 

@@ -268,12 +268,14 @@ Get detailed information about specific folders or remove them when no longer ne
 # Get folder details
 pcli2 folder get --uuid FOLDER_UUID --format json
 
-# Delete a folder
+# Delete a folder (only removes the folder, not its contents)
 pcli2 folder delete --path "/Root/FolderToDelete"
+
+# Delete a folder and all its contents (assets and subfolders)
+pcli2 folder delete --path "/Root/FolderToDelete" --force
 ```
 
-**Note**: Deleting a folder will also remove all assets and subfolders within it. This action cannot be undone.
-```
+**Note**: By default, deleting a folder only removes the folder itself. To also delete all assets and subfolders within it, use the `--force` flag. This action cannot be undone.
 
 ### Working with Assets
 
@@ -305,26 +307,6 @@ pcli2 asset get --path /Root/MyFolder/model.stl
 
 # List all assets in a folder
 pcli2 asset list --path "/Root/MyFolder" --format json
-```
-
-#### Asset Dependencies
-
-Asset dependencies reveal the relationship between assemblies and their components. This is particularly useful for understanding complex CAD models:
-
-```bash
-# Get asset dependencies (components in assemblies, referenced assets)
-pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --format json
-
-# Get asset dependencies by UUID (path-based lookup is preferred)
-pcli2 asset dependencies --uuid ASSET_UUID --format json
-
-# Get asset dependencies recursively to show full hierarchy
-pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format tree
-
-# Get asset dependencies recursively in machine-readable formats
-pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format json
-pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format csv
-
 # Create metadata for multiple assets from a CSV file
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
 

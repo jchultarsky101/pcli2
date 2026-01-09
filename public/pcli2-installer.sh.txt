@@ -23,7 +23,7 @@ has_local 2>/dev/null || alias local=typeset
 set -u
 
 APP_NAME="pcli2"
-APP_VERSION="0.1.9"
+APP_VERSION="0.2.1"
 # Look for GitHub Enterprise-style base URL first
 if [ -n "${PCLI2_INSTALLER_GHE_BASE_URL:-}" ]; then
     INSTALLER_BASE_URL="$PCLI2_INSTALLER_GHE_BASE_URL"
@@ -35,7 +35,7 @@ if [ -n "${PCLI2_DOWNLOAD_URL:-}" ]; then
 elif [ -n "${INSTALLER_DOWNLOAD_URL:-}" ]; then
     ARTIFACT_DOWNLOAD_URL="$INSTALLER_DOWNLOAD_URL"
 else
-    ARTIFACT_DOWNLOAD_URL="${INSTALLER_BASE_URL}/jchultarsky101/pcli2/releases/download/v0.1.9"
+    ARTIFACT_DOWNLOAD_URL="${INSTALLER_BASE_URL}/jchultarsky101/pcli2/releases/download/v0.2.1"
 fi
 if [ -n "${PCLI2_PRINT_VERBOSE:-}" ]; then
     PRINT_VERBOSE="$PCLI2_PRINT_VERBOSE"
@@ -65,7 +65,7 @@ fi
 AUTH_TOKEN="${PCLI2_GITHUB_TOKEN:-}"
 
 read -r RECEIPT <<EORECEIPT
-{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_layout":"unspecified","install_prefix":"AXO_INSTALL_PREFIX","modify_path":true,"provider":{"source":"cargo-dist","version":"0.30.2"},"source":{"app_name":"pcli2","name":"pcli2","owner":"jchultarsky101","release_type":"github"},"version":"0.1.9"}
+{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_layout":"unspecified","install_prefix":"AXO_INSTALL_PREFIX","modify_path":true,"provider":{"source":"cargo-dist","version":"0.30.3"},"source":{"app_name":"pcli2","name":"pcli2","owner":"jchultarsky101","release_type":"github"},"version":"0.2.1"}
 EORECEIPT
 
 # Some Linux distributions don't set HOME
@@ -100,10 +100,10 @@ usage() {
     cat <<EOF
 pcli2-installer.sh
 
-The installer for pcli2 0.1.9
+The installer for pcli2 0.2.1
 
 This script detects what platform you're on and fetches an appropriate archive from
-https://github.com/jchultarsky101/pcli2/releases/download/v0.1.9
+https://github.com/jchultarsky101/pcli2/releases/download/v0.2.1
 then unpacks the binaries and installs them to
 
     \$CARGO_HOME/bin (or \$HOME/.cargo/bin)
@@ -206,7 +206,7 @@ download_binary_and_run_installer() {
             _arch="aarch64-apple-darwin"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="4a076551ee173216f979bd106f8e322ac47dc24a0fbcc28022ac0f8c968dabf4"
+            _checksum_value="ef8f37b0ae1e2df3f16ae0a89287da89916aa5efb0949893c22d7333dc4c2abf"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -220,7 +220,7 @@ download_binary_and_run_installer() {
             _arch="aarch64-unknown-linux-gnu"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="481dc489510aea757f7df465cd642c0df115a9eeca1bf8c71fc1d480f578b016"
+            _checksum_value="495eed5e371f3de3c465f0c16cca2de5f7bbf5b8393addd335f43847e6c4a62a"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -234,7 +234,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-apple-darwin"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="2f461780ae19bca49d75d81edafce9f7c5dea82fd65c1d3c0a4315d85e90ebc1"
+            _checksum_value="b4470694ecab57ec0393cf45c86c303de583b4687de22048eec90e656d45f6ce"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -248,7 +248,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-pc-windows-msvc"
             _zip_ext=".zip"
             _checksum_style="sha256"
-            _checksum_value="ff983bfa01ae4b7b314e123856347916a85d9dea2e41223c52cb260ba19b3199"
+            _checksum_value="f77aeb7bc1e4cdc0a983fdaca1c0d618447d596a80387dd3d1ff27c7c0da22de"
             _bins="pcli2.exe"
             _bins_js_array='"pcli2.exe"'
             _libs=""
@@ -262,7 +262,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-unknown-linux-gnu"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="3a92a00e435b218775f3d1f59c93a2bcf99466f92c83e84f1d86c930c5873887"
+            _checksum_value="9eedbec79da275629d9f1f33d0d13b90ba6886f8c2a88ac2e3ee64fe5bd56a58"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -335,7 +335,7 @@ download_binary_and_run_installer() {
             ;;
 
         ".tar."*)
-            ensure tar xf "$_file" --strip-components 1 -C "$_dir"
+            ensure tar xf "$_file" --no-same-owner --strip-components 1 -C "$_dir"
             ;;
         *)
             err "unknown archive format: $_zip_ext"

@@ -88,31 +88,7 @@
     </span>
   </div>
   <div class="release-body">
-    <h3>Added</h3>
-<ul>
-<li>Asset dependencies command to retrieve component relationships and referenced assets for assemblies</li>
-<li>Recursive dependency traversal with <code>--recursive</code> flag to show full assembly hierarchies</li>
-<li>Enhanced JSON output with <code>parentPath</code> field to preserve parent-child relationships in recursive mode</li>
-<li>Enhanced CSV output with <code>PARENT_PATH</code> column to preserve parent-child relationships in recursive mode</li>
-<li>Hierarchical tree visualization for recursive dependencies showing proper indentation structure</li>
-<li>Cycle detection and deduplication to prevent infinite loops during recursive traversal</li>
-<li>Consistent parameter handling with <code>PARAMETER_RECURSIVE</code> constant for reuse across commands</li>
-</ul>
-<h3>Changed</h3>
-<ul>
-<li>Improved tree format for asset dependencies to show original asset as root instead of generic "Asset Dependencies"</li>
-<li>Updated API client to use asset path instead of asset ID in dependencies endpoint URL as per API specification</li>
-<li>Enhanced error handling for invalid folder paths in folder list command to return appropriate error messages</li>
-<li>Standardized command structure with consistent parameter naming and help text</li>
-</ul>
-<h3>Fixed</h3>
-<ul>
-<li>Asset dependencies endpoint URL construction to use asset path instead of asset ID as required by API</li>
-<li>Folder list command to return error for invalid paths instead of showing all root folders</li>
-<li>Banner display consistency to show for both <code>help</code> subcommand and <code>--help</code> flag</li>
-<li>Compilation warnings and improved code safety throughout the codebase</li>
-</ul>
-
+    
   </div>
 </section>
     </div>

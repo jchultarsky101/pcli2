@@ -83,7 +83,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">1.</strong> Installation Guide</a></li><li class="chapter-item expanded "><a href="quickstart.html"><strong aria-hidden="true">2.</strong> Quick Start Guide</a></li><li class="chapter-item expanded "><a href="geometric-matching.html"><strong aria-hidden="true">3.</strong> Geometric Matching</a></li><li class="chapter-item expanded "><a href="metadata-inference.html"><strong aria-hidden="true">4.</strong> Metadata Inference</a></li><li class="chapter-item expanded "><a href="cross_platform.html"><strong aria-hidden="true">5.</strong> Cross-Platform Configuration</a></li><li class="chapter-item expanded "><a href="documentation_deployment.html"><strong aria-hidden="true">6.</strong> Documentation Deployment</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">1.</strong> Installation Guide</a></li><li class="chapter-item expanded "><a href="quickstart.html"><strong aria-hidden="true">2.</strong> Quick Start Guide</a></li><li class="chapter-item expanded "><a href="geometric-matching.html"><strong aria-hidden="true">3.</strong> Geometric Matching</a></li><li class="chapter-item expanded "><a href="metadata-operations.html"><strong aria-hidden="true">4.</strong> Metadata Operations</a></li><li class="chapter-item expanded "><a href="metadata-inference.html"><strong aria-hidden="true">5.</strong> Metadata Inference</a></li><li class="chapter-item expanded "><a href="cross_platform.html"><strong aria-hidden="true">6.</strong> Cross-Platform Configuration</a></li><li class="chapter-item expanded "><a href="documentation_deployment.html"><strong aria-hidden="true">7.</strong> Documentation Deployment</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -305,7 +305,29 @@ sudo cp target/release/pcli2 /usr/local/bin/
 <li><a href="quickstart.html#getting-help">Getting Help</a></li>
 </ul>
 <h2 id="authentication"><a class="header" href="#authentication">Authentication</a></h2>
-<p>Before using most PCLI2 commands, you need to authenticate with your Physna tenant:</p>
+<p>Before using most PCLI2 commands, you need to authenticate with your Physna tenant. First, you'll need to obtain your API credentials.</p>
+<h3 id="getting-api-credentials"><a class="header" href="#getting-api-credentials">Getting API Credentials</a></h3>
+<p>There are two methods to obtain your API credentials:</p>
+<h4 id="method-1-using-the-physna-web-interface-recommended"><a class="header" href="#method-1-using-the-physna-web-interface-recommended">Method 1: Using the Physna Web Interface (Recommended)</a></h4>
+<p>This is the newer, more user-friendly approach available to administrators:</p>
+<ol>
+<li>Log in to your Physna instance</li>
+<li>(Optional) Select a tenant from the tenant selector</li>
+<li>Click on <strong>Settings</strong> (the gear icon in the top-right corner)</li>
+<li>Navigate to the <strong>Users</strong> tab</li>
+<li>Create a new service account</li>
+<li>Record the <strong>Client ID</strong> and <strong>Client Secret</strong> for use with PCLI2</li>
+</ol>
+<h4 id="method-2-using-the-api-documentation-page-legacy"><a class="header" href="#method-2-using-the-api-documentation-page-legacy">Method 2: Using the API Documentation Page (Legacy)</a></h4>
+<p>This is the original approach using the API documentation interface:</p>
+<ol>
+<li>Navigate to the <a href="https://app-api.physna.com/v3/docs/">Physna OpenAPI Documentation page</a></li>
+<li>Log in with your Physna credentials</li>
+<li>Locate and execute the <code>POST /users/me/service-accounts</code> endpoint</li>
+<li>Record the <strong>Client ID</strong> and <strong>Client Secret</strong> from the response</li>
+</ol>
+<h3 id="logging-in"><a class="header" href="#logging-in">Logging In</a></h3>
+<p>Once you have your credentials, you can authenticate with PCLI2:</p>
 <pre><code class="language-bash"># Login with client credentials
 pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
 
@@ -324,29 +346,58 @@ pcli2 folder list
 pcli2 asset list --path /Root/MyFolder/
 </code></pre>
 <h2 id="working-with-assets"><a class="header" href="#working-with-assets">Working with Assets</a></h2>
-<p>Common asset operations you'll perform regularly:</p>
+<p>Asset management is a core function of PCLI2. These commands allow you to upload, retrieve, organize, and maintain your 3D models and other assets in Physna.</p>
+<h3 id="uploading-assets"><a class="header" href="#uploading-assets">Uploading Assets</a></h3>
+<p>The <code>asset create</code> command uploads individual files to your Physna tenant, placing them in the specified folder path. This is useful for adding single assets to your collection:</p>
 <pre><code class="language-bash"># Upload a single asset
 pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/
-
-# View asset details
+</code></pre>
+<p>For bulk operations, <code>asset create-batch</code> allows you to upload multiple files at once using glob patterns:</p>
+<pre><code class="language-bash"># Upload multiple assets
+pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
+</code></pre>
+<h3 id="viewing-and-managing-assets"><a class="header" href="#viewing-and-managing-assets">Viewing and Managing Assets</a></h3>
+<p>Use these commands to inspect and manage your assets:</p>
+<pre><code class="language-bash"># View asset details
 pcli2 asset get --path /Root/MyFolder/model.stl
 
 # Delete an asset
 pcli2 asset delete --path /Root/MyFolder/model.stl
-
-# Upload multiple assets
-pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
 </code></pre>
 <h2 id="geometric-matching"><a class="header" href="#geometric-matching">Geometric Matching</a></h2>
-<p>Find similar assets using PCLI2's powerful geometric matching:</p>
+<p>Geometric matching is a powerful feature that allows you to find assets with similar 3D geometry in your Physna tenant. This is particularly useful for identifying duplicate parts, finding design variations, or discovering similar components across different projects.</p>
 <pre><code class="language-bash"># Find matches for a single asset
 pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 85.0
 
 # Find matches for all assets in a folder (parallel processing)
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
 </code></pre>
-<h2 id="metadata-inference"><a class="header" href="#metadata-inference">Metadata Inference</a></h2>
-<p>Automatically apply metadata from a reference asset to geometrically similar assets using PCLI2's metadata inference capability:</p>
+<p>The threshold parameter controls the similarity requirement, where higher values (closer to 100) require closer matches. The progress flag provides visual feedback during long-running operations.</p>
+<h2 id="metadata-operations"><a class="header" href="#metadata-operations">Metadata Operations</a></h2>
+<p>Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata. Metadata helps you categorize, filter, and find assets based on custom properties like material, supplier, weight, or any other characteristic relevant to your workflow.</p>
+<h3 id="creating-and-updating-metadata"><a class="header" href="#creating-and-updating-metadata">Creating and Updating Metadata</a></h3>
+<p>The <code>metadata create</code> command adds or updates a single metadata field on an asset. This is useful for setting specific properties on individual assets:</p>
+<pre><code class="language-bash"># Add or update a single metadata field on an asset
+pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
+
+# Add or update multiple metadata fields on an asset
+pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Weight" --value "15.5" --type "number"
+</code></pre>
+<h3 id="retrieving-metadata"><a class="header" href="#retrieving-metadata">Retrieving Metadata</a></h3>
+<p>Use the <code>metadata get</code> command to view all metadata associated with an asset:</p>
+<pre><code class="language-bash"># Get all metadata for an asset
+pcli2 asset metadata get --path "/Root/Folder/Model.stl"
+</code></pre>
+<h3 id="deleting-metadata"><a class="header" href="#deleting-metadata">Deleting Metadata</a></h3>
+<p>The <code>metadata delete</code> command removes specific metadata fields from an asset without affecting other metadata on the same asset:</p>
+<pre><code class="language-bash"># Delete specific metadata fields from an asset
+pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
+
+# Delete metadata fields using comma-separated list
+pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material,Weight,Description"
+</code></pre>
+<h3 id="metadata-inference"><a class="header" href="#metadata-inference">Metadata Inference</a></h3>
+<p>Metadata inference automatically applies metadata from a reference asset to geometrically similar assets. This feature helps you efficiently propagate metadata across similar assets, reducing manual work and ensuring consistency in your asset database:</p>
 <pre><code class="language-bash"># Apply specific metadata fields from a reference asset to similar assets
 pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material,Cost" --threshold 85.0
 
@@ -356,7 +407,7 @@ pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Ca
 # Apply multiple metadata fields with different thresholds
 pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
 </code></pre>
-<p>The metadata inference command helps you efficiently propagate metadata across geometrically similar assets, reducing manual work and ensuring consistency in your asset database.</p>
+<p>The metadata operations help you efficiently manage your asset metadata, whether you need to add, update, retrieve, or delete specific metadata fields, or propagate metadata across geometrically similar assets.</p>
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>Manage your PCLI2 configuration:</p>
 <pre><code class="language-bash"># View current configuration
@@ -368,6 +419,44 @@ pcli2 config export --output my-config.yaml
 # Import configuration from a file
 pcli2 config import --file my-config.yaml
 </code></pre>
+<h2 id="multi-environment-configuration"><a class="header" href="#multi-environment-configuration">Multi-Environment Configuration</a></h2>
+<p>PCLI2 supports multiple environment configurations, allowing you to easily switch between different Physna instances (e.g., development, staging, production):</p>
+<pre><code class="language-bash"># Add a new environment configuration
+pcli2 config environment add --name "development" \
+  --api-url "https://dev-api.physna.com/v3" \
+  --ui-url "https://dev.physna.com" \
+  --auth-url "https://dev-auth.physna.com/oauth2/token"
+
+# Add a production environment
+pcli2 config environment add --name "production" \
+  --api-url "https://app-api.physna.com/v3" \
+  --ui-url "https://app.physna.com" \
+  --auth-url "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
+
+# List all environments
+pcli2 config environment list
+
+# Switch to an environment (with interactive selection)
+pcli2 config environment use
+
+# Or switch to an environment by name
+pcli2 config environment use --name development
+
+# Get details of the active environment
+pcli2 config environment get
+
+# Get details of a specific environment
+pcli2 config environment get --name production
+
+# Reset all environment configurations
+pcli2 config environment reset
+</code></pre>
+<p>Each environment can have its own:</p>
+<ul>
+<li>API base URL (for API calls)</li>
+<li>UI base URL (for comparison viewer links)</li>
+<li>Authentication URL (for OAuth2 token requests)</li>
+</ul>
 <h2 id="context-management"><a class="header" href="#context-management">Context Management</a></h2>
 <p>Work with multiple tenants efficiently:</p>
 <pre><code class="language-bash"># Set active context (tenant) using either tenant name or ID
@@ -429,6 +518,7 @@ pcli2 asset create --help
 <p>Geometric matching serves as the foundation for other powerful capabilities:</p>
 <ul>
 <li><strong>Metadata Inference</strong>: Automatically propagate metadata from reference assets to geometrically similar assets using <code>pcli2 asset metadata inference</code></li>
+<li><strong>Metadata Management</strong>: Create, update, retrieve, and delete metadata for assets using commands like <code>pcli2 asset metadata create</code>, <code>pcli2 asset metadata get</code>, and <code>pcli2 asset metadata delete</code></li>
 <li><strong>Part Family Management</strong>: Organize and categorize groups of similar components</li>
 <li><strong>Design Optimization</strong>: Identify opportunities for part consolidation and standardization</li>
 </ul>
@@ -661,9 +751,171 @@ Write-Host "Deduplication complete. Results saved to CSV files."
 <li><code>asset get</code> - Get detailed asset information</li>
 </ul>
 <p>Use <code>pcli2 asset geometric-match --help</code> and <code>pcli2 asset geometric-match-folder --help</code> for detailed command information.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="metadata-operations-1"><a class="header" href="#metadata-operations-1">Metadata Operations</a></h1>
+<p>PCLI2 provides comprehensive metadata operations for managing asset metadata including creating, retrieving, updating, and deleting asset metadata.</p>
+<h2 id="overview-1"><a class="header" href="#overview-1">Overview</a></h2>
+<p>Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations to help you manage your asset metadata efficiently.</p>
+<h2 id="metadata-operations-2"><a class="header" href="#metadata-operations-2">Metadata Operations</a></h2>
+<p>PCLI2 provides several commands for working with asset metadata:</p>
+<h3 id="1-createupdate-individual-asset-metadata"><a class="header" href="#1-createupdate-individual-asset-metadata">1. Create/Update Individual Asset Metadata</a></h3>
+<p>Add or update a single metadata field on an asset:</p>
+<pre><code class="language-bash"># Add or update a single metadata field on an asset
+pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
+
+# Add or update a single metadata field on an asset by UUID
+pcli2 asset metadata create --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Weight" --value "15.5" --type "number"
+</code></pre>
+<h3 id="2-retrieve-asset-metadata"><a class="header" href="#2-retrieve-asset-metadata">2. Retrieve Asset Metadata</a></h3>
+<p>Get all metadata for an asset:</p>
+<pre><code class="language-bash"># Get all metadata for an asset in JSON format (default)
+pcli2 asset metadata get --path "/Root/Folder/Model.stl"
+
+# Get all metadata for an asset in CSV format (suitable for batch operations)
+pcli2 asset metadata get --uuid "123e4567-e89b-12d3-a456-426614174000" --format csv
+</code></pre>
+<h3 id="3-delete-asset-metadata"><a class="header" href="#3-delete-asset-metadata">3. Delete Asset Metadata</a></h3>
+<p>Delete specific metadata fields from an asset:</p>
+<pre><code class="language-bash"># Delete specific metadata fields from an asset
+pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
+
+# Delete metadata fields using comma-separated list
+pcli2 asset metadata delete --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Material,Weight,Description"
+</code></pre>
+<p>The delete command now uses the dedicated API endpoint to properly remove metadata fields from assets, rather than fetching all metadata and re-updating the asset without the specified fields. This provides more efficient and accurate metadata deletion.</p>
+<h3 id="4-createupdate-metadata-for-multiple-assets"><a class="header" href="#4-createupdate-metadata-for-multiple-assets">4. Create/Update Metadata for Multiple Assets</a></h3>
+<p>Create or update metadata for multiple assets from a CSV file:</p>
+<pre><code class="language-bash"># Create or update metadata for multiple assets from a CSV file
+pcli2 asset metadata create-batch --csv-file "metadata.csv"
+</code></pre>
+<h2 id="csv-format-for-batch-metadata-operations"><a class="header" href="#csv-format-for-batch-metadata-operations">CSV Format for Batch Metadata Operations</a></h2>
+<p>The CSV format used by <code>asset metadata get --format csv</code> and <code>asset metadata create-batch --csv-file</code> is designed for seamless round-trip operations:</p>
+<pre><code class="language-csv">ASSET_PATH,NAME,VALUE
+/Root/Folder/Model1.stl,Material,Steel
+/Root/Folder/Model1.stl,Weight,"15.5 kg"
+/Root/Folder/Model2.ipt,Material,Aluminum
+/Root/Folder/Model2.ipt,Supplier,Richardson Electronics
+</code></pre>
+<p>The CSV format specifications:</p>
+<ul>
+<li><strong>Header Row</strong>: Must contain exactly <code>ASSET_PATH,NAME,VALUE</code> in that order</li>
+<li><strong>ASSET_PATH</strong>: Full path to the asset in Physna (e.g., <code>/Root/Folder/Model.stl</code>)</li>
+<li><strong>NAME</strong>: Name of the metadata field to set</li>
+<li><strong>VALUE</strong>: Value to assign to the metadata field</li>
+<li><strong>File Encoding</strong>: Must be UTF-8 encoded</li>
+<li><strong>Quoting</strong>: Values containing commas, quotes, or newlines must be enclosed in double quotes</li>
+<li><strong>Escaping</strong>: Double quotes within values must be escaped by doubling them (e.g., <code>"15.5"" diameter"</code>)</li>
+<li><strong>Empty Rows</strong>: Will be ignored during processing</li>
+<li><strong>Multiple Fields</strong>: If an asset has multiple metadata fields to update, include multiple rows with the same ASSET_PATH but different NAME and VALUE combinations</li>
+</ul>
+<p><strong>Example Command:</strong></p>
+<pre><code class="language-bash"># Create/update metadata for multiple assets from a CSV file
+pcli2 asset metadata create-batch --csv-file "metadata.csv"
+</code></pre>
+<p><strong>Note:</strong> The <code>create-batch</code> command processes each row as a single metadata field assignment for an asset. Multiple rows with the same ASSET_PATH will update multiple metadata fields for that asset in a single API call.</p>
+<h2 id="advanced-metadata-workflow-export-modify-reimport"><a class="header" href="#advanced-metadata-workflow-export-modify-reimport">Advanced Metadata Workflow: Export, Modify, Reimport</a></h2>
+<p>One of the most powerful features of PCLI2 is the ability to export metadata, modify it externally, and reimport it:</p>
+<ol>
+<li>
+<p><strong>Export Metadata</strong>:</p>
+<pre><code class="language-bash"># Export all metadata for an asset to a CSV file
+pcli2 asset metadata get --path "/Root/Folder/Model.stl" --format csv &gt; model_metadata.csv
+
+# Export metadata for multiple assets in a folder
+pcli2 asset list --path "/Root/Folder/" --metadata --format csv &gt; folder_metadata.csv
+</code></pre>
+</li>
+<li>
+<p><strong>Modify Metadata Externally</strong>:</p>
+<ul>
+<li>Open the CSV file in a spreadsheet application (Excel, Google Sheets, etc.)</li>
+<li>Make the desired changes to metadata values</li>
+<li>Save the file in CSV format</li>
+</ul>
+</li>
+<li>
+<p><strong>Reimport Modified Metadata</strong>:</p>
+<pre><code class="language-bash"># Update assets with modified metadata
+pcli2 asset metadata create-batch --csv-file "modified_metadata.csv"
+</code></pre>
+</li>
+</ol>
+<p>This workflow enables powerful bulk metadata operations while maintaining the flexibility to use familiar spreadsheet tools for data manipulation.</p>
+<h2 id="metadata-field-types"><a class="header" href="#metadata-field-types">Metadata Field Types</a></h2>
+<p>PCLI2 supports three metadata field types:</p>
+<ol>
+<li>
+<p><strong>Text</strong> (default): String values</p>
+<pre><code class="language-bash">pcli2 asset metadata create --path "/Root/Model.stl" --name "Description" --value "Sample part description" --type "text"
+</code></pre>
+</li>
+<li>
+<p><strong>Number</strong>: Numeric values</p>
+<pre><code class="language-bash">pcli2 asset metadata create --path "/Root/Model.stl" --name "Weight" --value "15.5" --type "number"
+</code></pre>
+</li>
+<li>
+<p><strong>Boolean</strong>: True/False values</p>
+<pre><code class="language-bash">pcli2 asset metadata create --path "/Root/Model.stl" --name "Approved" --value "true" --type "boolean"
+</code></pre>
+</li>
+</ol>
+<h2 id="best-practices-1"><a class="header" href="#best-practices-1">Best Practices</a></h2>
+<ol>
+<li><strong>Use Descriptive Names</strong>: Choose clear, consistent names for metadata fields across your organization</li>
+<li><strong>Validate Data Types</strong>: Ensure values match the expected data type for each field</li>
+<li><strong>Batch Operations</strong>: Use CSV batch operations for large-scale metadata updates</li>
+<li><strong>Backup Before Bulk Operations</strong>: Export metadata before performing bulk deletions</li>
+<li><strong>Test First</strong>: Use small test sets before applying operations to large asset collections</li>
+<li><strong>Use Proper Authentication</strong>: Ensure your credentials have appropriate permissions for metadata operations</li>
+</ol>
+<h2 id="error-handling-1"><a class="header" href="#error-handling-1">Error Handling</a></h2>
+<p>The metadata operations are designed to be resilient:</p>
+<ul>
+<li>Continues processing even if individual asset operations fail</li>
+<li>Provides detailed error messages for troubleshooting</li>
+<li>Automatically handles network failures with retries</li>
+<li>Validates input formats before processing</li>
+</ul>
+<p>Common error scenarios and their handling:</p>
+<ul>
+<li><strong>Missing assets</strong>: Command skips missing assets with appropriate warnings</li>
+<li><strong>Network failures</strong>: Individual operations retry, overall process continues</li>
+<li><strong>Permission issues</strong>: Skips inaccessible assets with warning messages</li>
+<li><strong>Invalid metadata</strong>: Logs error but continues processing other assets</li>
+<li><strong>API rate limits</strong>: Respects rate limits and waits before retrying</li>
+</ul>
+<h2 id="performance-considerations"><a class="header" href="#performance-considerations">Performance Considerations</a></h2>
+<h3 id="large-scale-operations"><a class="header" href="#large-scale-operations">Large-Scale Operations</a></h3>
+<p>For bulk metadata operations:</p>
+<pre><code class="language-bash"># Process during off-peak hours
+pcli2 asset metadata create-batch --csv-file "large_metadata.csv"
+</code></pre>
+<h3 id="monitoring-progress"><a class="header" href="#monitoring-progress">Monitoring Progress</a></h3>
+<p>Monitor progress during long-running operations:</p>
+<pre><code class="language-bash"># Show progress during batch operations
+pcli2 asset metadata create-batch --csv-file "metadata.csv" --progress
+</code></pre>
+<h2 id="integration-with-other-commands"><a class="header" href="#integration-with-other-commands">Integration with Other Commands</a></h2>
+<p>Metadata operations work seamlessly with other PCLI2 commands:</p>
+<pre><code class="language-bash"># Chain with asset operations
+pcli2 asset list --path "/Root/Parts/" --format csv | \
+pcli2 asset metadata create-batch --csv-file "metadata_updates.csv"
+
+# Export results for auditing
+pcli2 asset metadata get --path "/Root/Parts/Model.stl" --format csv &gt; metadata_export.csv
+</code></pre>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<ol>
+<li><strong>API Rate Limits</strong>: Extensive operations may be rate-limited by the Physna API</li>
+<li><strong>Processing Time</strong>: Large batch operations can take considerable time</li>
+<li><strong>Metadata Types</strong>: Only supports text, number, and boolean metadata fields</li>
+<li><strong>Asset Access</strong>: Can only process assets accessible to your authenticated user</li>
+<li><strong>Field Names</strong>: Metadata field names must be unique per asset and follow Physna naming conventions</li>
+</ol>
+<p>Always test operations on a small scale before running them on large datasets.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="metadata-inference-1"><a class="header" href="#metadata-inference-1">Metadata Inference</a></h1>
 <p>The metadata inference feature allows you to automatically apply metadata from a reference asset to geometrically similar assets, significantly reducing manual metadata entry work.</p>
-<h2 id="overview-1"><a class="header" href="#overview-1">Overview</a></h2>
+<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
 <p>Metadata inference works by:</p>
 <ol>
 <li>Taking a reference asset and specified metadata fields</li>
@@ -730,7 +982,7 @@ pcli2 asset metadata inference --path /Root/ProductLine/MainAssembly.stl --name 
 <pre><code class="language-bash"># Apply estimated costs to similar components
 pcli2 asset metadata inference --path /Root/Components/ReferenceBracket.stl --name "EstimatedCost,Currency" --threshold 88.0
 </code></pre>
-<h2 id="best-practices-1"><a class="header" href="#best-practices-1">Best Practices</a></h2>
+<h2 id="best-practices-2"><a class="header" href="#best-practices-2">Best Practices</a></h2>
 <h3 id="1-start-with-conservative-thresholds"><a class="header" href="#1-start-with-conservative-thresholds">1. Start with Conservative Thresholds</a></h3>
 <p>Begin with higher threshold values (85-90%) to ensure high-quality matches, then adjust based on results:</p>
 <pre><code class="language-bash">pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Material" --threshold 90.0
@@ -755,7 +1007,7 @@ pcli2 asset geometric-match --path /Root/Parts/Reference.stl --threshold 85.0 --
 # Apply metadata if preview looks good
 pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Material" --threshold 85.0
 </code></pre>
-<h2 id="error-handling-1"><a class="header" href="#error-handling-1">Error Handling</a></h2>
+<h2 id="error-handling-2"><a class="header" href="#error-handling-2">Error Handling</a></h2>
 <p>The metadata inference command is designed to be resilient:</p>
 <ul>
 <li>Continues processing even if individual asset operations fail</li>
@@ -770,17 +1022,17 @@ pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Material
 <li><strong>Permission issues</strong>: Skips problematic assets with warning messages</li>
 <li><strong>Invalid metadata</strong>: Logs error but continues processing other assets</li>
 </ul>
-<h2 id="performance-considerations"><a class="header" href="#performance-considerations">Performance Considerations</a></h2>
-<h3 id="large-scale-operations"><a class="header" href="#large-scale-operations">Large-Scale Operations</a></h3>
+<h2 id="performance-considerations-1"><a class="header" href="#performance-considerations-1">Performance Considerations</a></h2>
+<h3 id="large-scale-operations-1"><a class="header" href="#large-scale-operations-1">Large-Scale Operations</a></h3>
 <p>For bulk metadata inference operations:</p>
 <pre><code class="language-bash"># Process during off-peak hours
 pcli2 asset metadata inference --path /Root/LargeAssembly/Reference.stl --name "Category" --threshold 80.0 --recursive
 </code></pre>
-<h3 id="monitoring-progress"><a class="header" href="#monitoring-progress">Monitoring Progress</a></h3>
+<h3 id="monitoring-progress-1"><a class="header" href="#monitoring-progress-1">Monitoring Progress</a></h3>
 <p>Monitor progress during long-running operations using the available flags:</p>
 <pre><code class="language-bash">pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Material" --threshold 85.0 --recursive
 </code></pre>
-<h2 id="integration-with-other-commands"><a class="header" href="#integration-with-other-commands">Integration with Other Commands</a></h2>
+<h2 id="integration-with-other-commands-1"><a class="header" href="#integration-with-other-commands-1">Integration with Other Commands</a></h2>
 <p>Metadata inference works seamlessly with other PCLI2 commands:</p>
 <pre><code class="language-bash"># Chain with folder operations
 pcli2 folder list --path /Root/ProductLine/ | \
@@ -790,7 +1042,7 @@ pcli2 asset metadata inference --name "ProductLine" --threshold 85.0 --recursive
 pcli2 asset metadata inference --path /Root/Parts/Reference.stl --name "Category" --threshold 85.0 --recursive \
   --format csv &gt; metadata_propagation_log.csv
 </code></pre>
-<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<h2 id="limitations-1"><a class="header" href="#limitations-1">Limitations</a></h2>
 <ol>
 <li><strong>API Rate Limits</strong>: Extensive recursive operations may be rate-limited by the Physna API</li>
 <li><strong>Processing Time</strong>: Large recursive operations can take considerable time</li>
@@ -807,6 +1059,11 @@ export PCLI2_CONFIG_DIR="/custom/path/to/config"
 # Set custom cache directory (for all cache files)
 export PCLI2_CACHE_DIR="/custom/path/to/cache"
 
+# Set custom API, UI, and Auth URLs (overrides configuration)
+export PCLI2_API_BASE_URL="https://custom-api.example.com/v3"
+export PCLI2_UI_BASE_URL="https://custom-ui.example.com"
+export PCLI2_AUTH_BASE_URL="https://custom-auth.example.com/oauth2/token"
+
 # Useful for WSL users running Windows executables
 export PCLI2_CONFIG_DIR="/home/$USER/.pcli2"
 export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
@@ -815,6 +1072,9 @@ export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
 <ul>
 <li><code>PCLI2_CONFIG_DIR</code>: Custom directory for configuration file (<code>config.yml</code>). If not set, uses the system's default configuration directory.</li>
 <li><code>PCLI2_CACHE_DIR</code>: Custom directory for all cache files (asset cache, metadata cache, folder cache). If not set, uses the system's default cache directory.</li>
+<li><code>PCLI2_API_BASE_URL</code>: Custom API base URL (overrides configuration). If not set, uses the configured or default API URL.</li>
+<li><code>PCLI2_UI_BASE_URL</code>: Custom UI base URL (overrides configuration). If not set, uses the configured or default UI URL.</li>
+<li><code>PCLI2_AUTH_BASE_URL</code>: Custom authentication URL (overrides configuration). If not set, uses the configured or default auth URL.</li>
 </ul>
 <p>These environment variables allow PCLI2 to work seamlessly across different operating systems and environments, including:</p>
 <ul>

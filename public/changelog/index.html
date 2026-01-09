@@ -84,6 +84,14 @@
         <ul>
           
             <li class="">
+              <a href="v0.2.1/">v0.2.1</a>
+            </li>
+          
+            <li class="">
+              <a href="v0.2.0/">v0.2.0</a>
+            </li>
+          
+            <li class="">
               <a href="v0.1.9/">v0.1.9</a>
             </li>
           
@@ -119,6 +127,62 @@
       </nav>
 
       <div class="releases-list">
+        
+          
+          <section class="release ">
+  <h2 id="tag-v0.2.1">
+    <a href="v0.2.1/">
+      
+        0.2.1 - 2026-01-08
+      
+    </a>
+  </h2>
+  <div class="release-info">
+    <span class="flex items-center gap-2">
+      <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' class='w-6 h-6'>
+    <path stroke-linecap='round' stroke-linejoin='round' d='M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z' />
+    <path stroke-linecap='round' stroke-linejoin='round' d='M6 6h.008v.008H6V6z' /></svg>
+      v0.2.1
+    </span>
+    <span class="flex items-center gap-2">
+      
+        <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' class='w-6 h-6'><path stroke-linecap='round' stroke-linejoin='round' d='M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5' /></svg>
+        Jan  8 2026 at 22:51 UTC
+      
+    </span>
+  </div>
+  <div class="release-body">
+    
+  </div>
+</section>
+        
+          
+          <section class="release ">
+  <h2 id="tag-v0.2.0">
+    <a href="v0.2.0/">
+      
+        v0.2.0
+      
+    </a>
+  </h2>
+  <div class="release-info">
+    <span class="flex items-center gap-2">
+      <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' class='w-6 h-6'>
+    <path stroke-linecap='round' stroke-linejoin='round' d='M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z' />
+    <path stroke-linecap='round' stroke-linejoin='round' d='M6 6h.008v.008H6V6z' /></svg>
+      v0.2.0
+    </span>
+    <span class="flex items-center gap-2">
+      
+        <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' class='w-6 h-6'><path stroke-linecap='round' stroke-linejoin='round' d='M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5' /></svg>
+        Jan  8 2026 at 01:09 UTC
+      
+    </span>
+  </div>
+  <div class="release-body">
+    
+  </div>
+</section>
         
           
           <section class="release ">
@@ -172,31 +236,7 @@
     </span>
   </div>
   <div class="release-body">
-    <h3>Added</h3>
-<ul>
-<li>Asset dependencies command to retrieve component relationships and referenced assets for assemblies</li>
-<li>Recursive dependency traversal with <code>--recursive</code> flag to show full assembly hierarchies</li>
-<li>Enhanced JSON output with <code>parentPath</code> field to preserve parent-child relationships in recursive mode</li>
-<li>Enhanced CSV output with <code>PARENT_PATH</code> column to preserve parent-child relationships in recursive mode</li>
-<li>Hierarchical tree visualization for recursive dependencies showing proper indentation structure</li>
-<li>Cycle detection and deduplication to prevent infinite loops during recursive traversal</li>
-<li>Consistent parameter handling with <code>PARAMETER_RECURSIVE</code> constant for reuse across commands</li>
-</ul>
-<h3>Changed</h3>
-<ul>
-<li>Improved tree format for asset dependencies to show original asset as root instead of generic "Asset Dependencies"</li>
-<li>Updated API client to use asset path instead of asset ID in dependencies endpoint URL as per API specification</li>
-<li>Enhanced error handling for invalid folder paths in folder list command to return appropriate error messages</li>
-<li>Standardized command structure with consistent parameter naming and help text</li>
-</ul>
-<h3>Fixed</h3>
-<ul>
-<li>Asset dependencies endpoint URL construction to use asset path instead of asset ID as required by API</li>
-<li>Folder list command to return error for invalid paths instead of showing all root folders</li>
-<li>Banner display consistency to show for both <code>help</code> subcommand and <code>--help</code> flag</li>
-<li>Compilation warnings and improved code safety throughout the codebase</li>
-</ul>
-
+    
   </div>
 </section>
         
@@ -224,17 +264,7 @@
     </span>
   </div>
   <div class="release-body">
-    <h3>Added</h3>
-<ul>
-<li>Folder get command with UUID and path parameters support</li>
-<li>Debug tracing for folder path resolution to diagnose ETRACE folder issues</li>
-</ul>
-<h3>Fixed</h3>
-<ul>
-<li>Compilation errors in folder get command implementation</li>
-<li>Folder list issues related to ETRACE functionality</li>
-</ul>
-
+    
   </div>
 </section>
         
@@ -262,14 +292,7 @@
     </span>
   </div>
   <div class="release-body">
-    <h3>Changed</h3>
-<ul>
-<li>Updated CI workflow configurations</li>
-<li>Fixed JSON parsing errors in CI pipeline</li>
-<li>Updated cargo-dist runner list</li>
-<li>Updated Cargo.lock dependencies</li>
-</ul>
-
+    
   </div>
 </section>
         
@@ -297,19 +320,7 @@
     </span>
   </div>
   <div class="release-body">
-    <h3>Added</h3>
-<ul>
-<li>Asset metadata get command to CLI structure</li>
-<li>Workflow to automatically update 'latest' tag on release</li>
-<li>Comprehensive metadata documentation</li>
-</ul>
-<h3>Changed</h3>
-<ul>
-<li>Improved banner gradient colors and spacing</li>
-<li>Added visible aliases for metadata commands</li>
-<li>Reordered asset subcommands alphabetically in CLI help output</li>
-</ul>
-
+    
   </div>
 </section>
         
@@ -337,14 +348,7 @@
     </span>
   </div>
   <div class="release-body">
-    <h3>Changed</h3>
-<ul>
-<li>Updated documentation structure for GitHub Actions deployment</li>
-<li>Fixed broken documentation links by ensuring proper mdBook file structure</li>
-<li>Improved README.md structure and user flow</li>
-<li>Updated oranda.json with Apache-2.0 license identifier</li>
-</ul>
-
+    
   </div>
 </section>
         
@@ -372,35 +376,7 @@
     </span>
   </div>
   <div class="release-body">
-    <h3>Added</h3>
-<ul>
-<li>Cross-platform directory structure support using standard platform directories</li>
-<li>Automatic directory creation for configuration, cache, and data files</li>
-<li>Comprehensive documentation for data storage locations on all platforms</li>
-<li>Environment variable support for customizing directory locations</li>
-<li>Duplicate filtering for geometric matching results to remove reciprocal asset pairs</li>
-<li>Proper sorting of geometric matching results by match percentage (descending)</li>
-<li>LICENSE file accessibility fix for documentation website</li>
-<li>WSL installation test script for verifying installation on Windows Subsystem for Linux</li>
-</ul>
-<h3>Changed</h3>
-<ul>
-<li>Updated configuration to use proper cross-platform directories from <code>dirs</code> crate</li>
-<li>Improved error handling for first-time users with automatic configuration creation</li>
-<li>Enhanced documentation with cross-platform installation and usage instructions</li>
-<li>Updated Oranda configuration for proper GitHub Pages deployment</li>
-<li>Reworked README as single self-contained document to fix broken links</li>
-</ul>
-<h3>Fixed</h3>
-<ul>
-<li>Broken LICENSE links in documentation website that resulted in 404 errors</li>
-<li>Duplicate asset pairs in geometric matching results (A→B and B→A)</li>
-<li>Confusing error messages for first-time users trying to run PCLI2</li>
-<li>Inconsistent licensing information between README.md and LICENSE file</li>
-<li>Compilation warnings related to unused variables</li>
-<li>Documentation website CSS styling issues on GitHub Pages</li>
-</ul>
-
+    
   </div>
 </section>
         
@@ -428,17 +404,7 @@
     </span>
   </div>
   <div class="release-body">
-    <h3>Added</h3>
-<ul>
-<li>Initial release of PCLI2</li>
-<li>Basic asset management commands (create, list, get, delete)</li>
-<li>Folder management commands (create, list, get, delete, update)</li>
-<li>Tenant management functionality</li>
-<li>Authentication with OAuth2 client credentials flow</li>
-<li>Configuration management</li>
-<li>Context management for multi-tenant support</li>
-</ul>
-
+    
   </div>
 </section>
         

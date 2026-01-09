@@ -30,7 +30,7 @@ pub enum CliError {
     #[error("Tenant '{identifier}' not found")]
     TenantNotFound { identifier: String },
     /// Error when a folder cannot be found by path or ID
-    #[error("Folder '{0}' not found")]
+    #[error("Folder '{0}' not found. Please verify the folder path exists in your tenant.")]
     FolderNotFound(String),
 
     #[error("API error: {0}")]

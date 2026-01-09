@@ -17,6 +17,7 @@ Based on lessons learned from the previous version, we have developed a new and 
   - [Working with Assets](#working-with-assets)
   - [Working with Asset Dependencies](#working-with-asset-dependencies)
   - [Geometric Matching](#geometric-matching)
+    - [Best Practices](#best-practices)
   - [Working with Metadata](#working-with-metadata)
     - [Metadata Inference](#metadata-inference)
 - [Advanced Usage](#advanced-usage)
@@ -392,6 +393,17 @@ pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 -
 
 This command processes all assets in the specified folder simultaneously, making it efficient for large-scale similarity searches. The progress flag provides visual feedback during long-running operations.
 
+#### Best Practices
+
+The following are just recommendations. You can use any threshold value you would like between 0%-100%:
+
+1. **Start with moderate thresholds** (80-85%) for balanced results
+2. **Use folder-based matching for bulk operations** to leverage parallel processing
+3. **Monitor progress** for long-running operations using the `--progress` flag
+4. **Adjust concurrency** based on your system's capabilities and API rate limits
+5. **Save results to files** when performing extensive matching operations
+6. **Use appropriate output formats** for your intended use case (JSON for scripting, CSV for spreadsheets)
+
 ### Working with Metadata
 
 Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata. Metadata helps you categorize, filter, and find assets based on custom properties like material, supplier, weight, or any other characteristic relevant to your workflow.
@@ -525,14 +537,6 @@ PCLI2 supports three metadata field types:
 
 #### Best Practices
 
-The following are just recommendations. You can use any threshold value you would like between 0%-100%:
-
-1. **Start with moderate thresholds** (80-85%) for balanced results
-2. **Use folder-based matching for bulk operations** to leverage parallel processing
-3. **Monitor progress** for long-running operations using the `--progress` flag
-4. **Adjust concurrency** based on your system's capabilities and API rate limits
-5. **Save results to files** when performing extensive matching operations
-6. **Use appropriate output formats** for your intended use case (JSON for scripting, CSV for spreadsheets)
 
 ### Metadata Inference
 

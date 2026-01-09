@@ -324,9 +324,6 @@ pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --form
 pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format json
 pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format csv
 
-# Upload asset with metadata
-pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/ --metadata "metadata.json"
-
 # Create metadata for multiple assets from a CSV file
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
 ```
@@ -377,29 +374,6 @@ The recursive mode preserves parent-child relationships in the output:
 - **CSV format**: Includes `PARENT_PATH` column to show parent-child relationships
 
 This allows you to understand the complete assembly structure and perform bill-of-materials analysis.
-
-Metadata is essential for organizing and searching your assets effectively. PCLI2 supports adding metadata via JSON files:
-
-1. **Create a metadata JSON file**:
-   ```json
-   {
-     "part_number": "ABC123",
-     "description": "Sample part description",
-     "material": "Aluminum",
-     "weight": 1.25,
-     "created_by": "engineering-team"
-   }
-   ```
-
-2. **Apply metadata to an asset**:
-   ```bash
-   pcli2 asset create --file model.stl --path /Parts/Model --metadata "metadata.json"
-   ```
-
-3. **Update/create existing asset metadata**:
-   ```bash
-   pcli2 asset metadata create-batch --csv-file "updated_metadata.csv"
-   ```
 
 ### Geometric Matching
 

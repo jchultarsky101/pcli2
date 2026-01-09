@@ -47,10 +47,52 @@ pub enum CommonError {
 }
 
 /// Report an error consistently with user-facing output.
-/// 
+///
 /// This function displays errors in a user-friendly format without internal logging.
 pub fn report_error<E: std::fmt::Display>(error: &E) {
-    eprintln!("{}", error);
+    eprintln!("Error: {}", error);
+}
+
+/// Report an error with detailed information including technical details and user guidance.
+///
+/// This function provides a comprehensive error message that includes:
+/// - A clear error title
+/// - Technical details about what went wrong
+/// - Actionable steps the user can take to resolve the issue
+/// - Relevant command examples when applicable
+pub fn report_detailed_error<E: std::fmt::Display>(error: &E, context: Option<&str>) {
+    let error_str = error.to_string();
+    let user_friendly_msg = create_user_friendly_error(&error_str);
+
+    // Print the main error message
+    eprintln!("Error: {}", user_friendly_msg);
+
+    // Add context if provided
+    if let Some(ctx) = context {
+        eprintln!("Context: {}", ctx);
+    }
+
+    // Log the technical details for debugging
+    tracing::error!("Technical error details: {} (context: {:?})", error, context);
+}
+
+/// Report an error with suggested remediation steps.
+///
+/// This function provides error messages with specific steps users can take to resolve the issue.
+pub fn report_error_with_remediation<E: std::fmt::Display>(error: &E, remediation_steps: &[&str]) {
+    let error_str = error.to_string();
+    let user_friendly_msg = create_user_friendly_error(&error_str);
+
+    eprintln!("Error: {}", user_friendly_msg);
+
+    if !remediation_steps.is_empty() {
+        eprintln!("\nTo resolve this issue, try the following:");
+        for (i, step) in remediation_steps.iter().enumerate() {
+            eprintln!("  {}. {}", i + 1, step);
+        }
+    }
+
+    tracing::error!("Error with remediation: {} (steps: {:?})", error, remediation_steps);
 }
 
 /// Report an error with a custom user message for better clarity.

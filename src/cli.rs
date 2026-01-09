@@ -263,7 +263,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                     let client_secret_result = keyring.put("default", "client-secret".to_string(), client_secret.clone());
                     
                     if client_id_result.is_err() || client_secret_result.is_err() {
-                        eprintln!("Error storing client credentials");
+                        error_utils::report_error_with_remediation(
+                            &CliError::SecurityError(String::from("Failed to store client credentials")),
+                            &[
+                                "Check that your system's keyring service is running",
+                                "Try logging in again with 'pcli2 auth login'"
+                            ]
+                        );
                         return Err(CliError::SecurityError(String::from("Failed to store client credentials")));
                     }
                     
@@ -275,12 +281,25 @@ pub async fn execute_command() -> Result<(), CliError> {
                             if token_result.is_ok() {
                                 Ok(())
                             } else {
-                                eprintln!("Error storing access token");
+                                error_utils::report_error_with_remediation(
+                                    &CliError::SecurityError(String::from("Failed to store access token")),
+                                    &[
+                                        "Check that your system's keyring service is running",
+                                        "Try logging in again with 'pcli2 auth login'"
+                                    ]
+                                );
                                 Err(CliError::SecurityError(String::from("Failed to store access token")))
                             }
                         }
                         Err(e) => {
-                            eprintln!("Login failed: {}", e);
+                            error_utils::report_error_with_remediation(
+                                &format!("Login failed: {}", e),
+                                &[
+                                    "Verify your client ID and client secret are correct",
+                                    "Check your internet connection",
+                                    "Ensure your credentials have not expired"
+                                ]
+                            );
                             Err(CliError::SecurityError(String::from("Login failed")))
                         }
                     }
@@ -293,7 +312,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                             Ok(())
                         }
                         Err(e) => {
-                            eprintln!("Error deleting access token: {}", e);
+                            error_utils::report_error_with_remediation(
+                                &format!("Error deleting access token: {}", e),
+                                &[
+                                    "Check that your system's keyring service is running",
+                                    "Try logging in again with 'pcli2 auth login'"
+                                ]
+                            );
                             Err(CliError::SecurityError(String::from("Failed to delete access token")))
                         }
                     }
@@ -374,7 +399,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                             Ok(())
                         }
                         Ok(None) => {
-                            eprintln!("No access token found. Please login first.");
+                            error_utils::report_error_with_remediation(
+                                &"No access token found. Please login first.",
+                                &[
+                                    "Log in with 'pcli2 auth login --client-id <id> --client-secret <secret>'",
+                                    "Verify your credentials are correct"
+                                ]
+                            );
                             Ok(())
                         }
                         Err(e) => {
@@ -551,7 +582,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 let available_envs = configuration.list_environments();
 
                                 if available_envs.is_empty() {
-                                    eprintln!("No environments available");
+                                    error_utils::report_error_with_remediation(
+                                        &"No environments available",
+                                        &[
+                                            "Add an environment with 'pcli2 config environment add'",
+                                            "Check that your configuration file is properly set up"
+                                        ]
+                                    );
                                     return Ok(());
                                 }
 
@@ -580,7 +617,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                                         env_name.to_string()
                                     }
                                     Err(_) => {
-                                        eprintln!("No environment selected");
+                                        error_utils::report_error_with_remediation(
+                                            &"No environment selected",
+                                            &[
+                                                "Run 'pcli2 config environment use' again to select an environment",
+                                                "Add an environment with 'pcli2 config environment add' if none exist"
+                                            ]
+                                        );
                                         return Ok(());
                                     }
                                 }
@@ -759,7 +802,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 if let Some(active_env) = configuration.get_active_environment() {
                                     active_env
                                 } else {
-                                    eprintln!("No active environment set");
+                                    error_utils::report_error_with_remediation(
+                                        &"No active environment set",
+                                        &[
+                                            "Set an active environment with 'pcli2 config environment use'",
+                                            "Add an environment with 'pcli2 config environment add' if none exist"
+                                        ]
+                                    );
                                     return Ok(());
                                 }
                             };
@@ -842,7 +891,14 @@ pub async fn execute_command() -> Result<(), CliError> {
                                     }
                                 }
                             } else {
-                                eprintln!("Environment '{}' not found", target_env_name);
+                                error_utils::report_error_with_remediation(
+                                    &format!("Environment '{}' not found", target_env_name),
+                                    &[
+                                        "Check the environment name spelling",
+                                        "List available environments with 'pcli2 config environment list'",
+                                        "Add the environment with 'pcli2 config environment add'"
+                                    ]
+                                );
                             }
 
                             Ok(())

@@ -228,22 +228,28 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             Ok(asset) => {
                 // Update the asset's metadata with automatic registration of new keys
                 if let Err(e) = api.update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), metadata).await {
-                    eprintln!("❌ Failed to update metadata for asset '{}': {}", asset_path, e);
-                    eprintln!("💡 Possible causes:");
-                    eprintln!("   - Invalid metadata field names or values");
-                    eprintln!("   - Insufficient permissions to modify this asset");
-                    eprintln!("   - Network connectivity issues");
-                    eprintln!("   - Asset may have been deleted or modified recently");
+                    error_utils::report_error_with_remediation(
+                        &format!("Failed to update metadata for asset '{}': {}", asset_path, e),
+                        &[
+                            "Verify metadata field names and values are valid",
+                            "Check that you have sufficient permissions to modify this asset",
+                            "Verify your network connectivity",
+                            "Confirm the asset hasn't been deleted or modified recently"
+                        ]
+                    );
                 }
             }
             Err(_e) => {
-                eprintln!("❌ Asset not found: '{}'", asset_path);
-                eprintln!("💡 Possible causes:");
-                eprintln!("   - Asset path in CSV file doesn't match actual asset path");
-                eprintln!("   - Asset may have been deleted from the system");
-                eprintln!("   - Wrong tenant selected for this asset");
-                eprintln!("   - Path format mismatch (e.g., leading slash differences)");
-                eprintln!("💡 Suggestion: Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command");
+                error_utils::report_error_with_remediation(
+                    &format!("Asset not found: '{}'", asset_path),
+                    &[
+                        "Verify the asset path in your CSV file matches the actual asset path in Physna",
+                        "Check that the asset hasn't been deleted from the system",
+                        "Verify you're using the correct tenant for this asset",
+                        "Check for path format mismatches (e.g., leading slash differences)",
+                        "Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command"
+                    ]
+                );
             }
         }
     }
@@ -612,7 +618,14 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     trace!("Found {} assets across all folders", all_assets.len());
 
     if all_assets.is_empty() {
-        eprintln!("No assets found in the specified folder(s)");
+        error_utils::report_error_with_remediation(
+            &"No assets found in the specified folder(s)",
+            &[
+                "Verify the folder path is correct",
+                "Check that the folder contains assets",
+                "Ensure you have permissions to access the specified folder(s)"
+            ]
+        );
         return Ok(());
     }
 
@@ -811,10 +824,24 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
             }
             Ok(Err(e)) => {
-                eprintln!("Error processing asset: {:?}", e);
+                error_utils::report_error_with_remediation(
+                    &format!("Error processing asset: {:?}", e),
+                    &[
+                        "Check your network connection",
+                        "Verify the asset exists and is accessible",
+                        "Retry the operation"
+                    ]
+                );
             }
             Err(e) => {
-                eprintln!("Task failed: {:?}", e);
+                error_utils::report_error_with_remediation(
+                    &format!("Task failed: {:?}", e),
+                    &[
+                        "Check your network connection",
+                        "Verify your authentication credentials are valid",
+                        "Retry the operation"
+                    ]
+                );
             }
         }
 

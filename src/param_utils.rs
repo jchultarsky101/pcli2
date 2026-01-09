@@ -24,8 +24,8 @@ async fn resolve_tenant_by_name(
     debug!("Resolving tenant by name: {}", tenant_name);
     
     // First, try to list all tenants to see if we can resolve the identifier
-    let tenants = client.list_tenants().await?;
-    
+    let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, false).await?;
+
     // Look for an exact match by tenant ID first
     match tenants.iter().find(|t| t.tenant_short_name.eq(tenant_name)) {
         Some(tenant) => Ok(tenant.try_into()?),
@@ -61,8 +61,8 @@ pub async fn resolve_tenant_by_uuid(
     debug!("Resolving tenant by UID: {}", tenant_uuid);
     
     // First, try to list all tenants to see if we can resolve the identifier
-    let tenants = client.list_tenants().await?;
-    
+    let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, false).await?;
+
     // Look for an exact match by tenant ID first
     match tenants.iter().find(|t| t.tenant_uuid.eq(tenant_uuid)) {
         Some(tenant) => Ok(tenant.try_into()?),

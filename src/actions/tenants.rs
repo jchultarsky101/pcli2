@@ -1,7 +1,7 @@
 use clap::ArgMatches;
 use tracing::trace;
 use crate::{
-    commands::params::{PARAMETER_NAME},
+    commands::params::{PARAMETER_NAME, PARAMETER_REFRESH},
     configuration::Configuration,
     error_utils,
     format::{OutputFormat, Formattable, FormattingError, OutputFormatter},
@@ -21,7 +21,7 @@ impl ContextInfo {
     pub async fn from_configuration(configuration: &Configuration) -> Result<ContextInfo, CliActionError> {
         if let Some(active_tenant_uuid) = configuration.active_tenant_uuid() {
             let mut api = PhysnaApiClient::try_default()?;
-            let tenants = api.list_tenants().await?;
+            let tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await?;
             let active_tenant = tenants.into_iter().find(|t| t.tenant_uuid.eq(active_tenant_uuid));
 
             match active_tenant {
@@ -117,7 +117,7 @@ pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionE
 
     let mut api = PhysnaApiClient::try_default()?;
 
-    match api.list_tenants().await {
+    match crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await {
         Ok(tenant_settings) => {
             // Convert to a format that can be handled by the Formattable trait
             let tenant_list = crate::model::TenantList::from(tenant_settings);
@@ -139,7 +139,7 @@ pub async fn print_active_tenant_name() -> Result<(), CliActionError> {
 
     if let Some(active_tenant_uuid) = configuration.active_tenant_uuid() {
         let mut api = PhysnaApiClient::try_default()?;
-        let tenants = api.list_tenants().await?;
+        let tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await?;
         let active_tenant = tenants.into_iter().find(|t| t.tenant_uuid.eq(active_tenant_uuid));
         match active_tenant {
             Some(active_tenant) => {
@@ -159,8 +159,12 @@ pub async fn print_active_tenant_name() -> Result<(), CliActionError> {
 pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
 
     let name = sub_matches.get_one::<String>(PARAMETER_NAME);
+    let refresh = sub_matches.get_flag(PARAMETER_REFRESH);
     let mut api = PhysnaApiClient::try_default()?;
-    let tenants = api.list_tenants().await?;
+
+    // Get tenants from cache or API depending on refresh flag
+    let tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, refresh).await
+        .map_err(|e| CliActionError::ApiError(e))?;
             
     // If no name was provided, show interactive selection
     let selected_tenant = if let Some(name) = name {
@@ -240,7 +244,7 @@ pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActio
     let mut api = PhysnaApiClient::try_default()?;
 
     // Get all tenants to search through
-    let all_tenants = api.list_tenants().await?;
+    let all_tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await?;
 
     // Find the specific tenant based on either UUID or name
     let tenant_setting = if let Some(uuid) = tenant_uuid_param {
@@ -312,7 +316,7 @@ pub async fn print_active_tenant_name_with_format(sub_matches: &ArgMatches) -> R
 
     if let Some(active_tenant_uuid) = configuration.get_active_tenant_uuid() {
         let mut api = PhysnaApiClient::try_default()?;
-        let tenants = api.list_tenants().await?;
+        let tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await?;
         let active_tenant = tenants.into_iter().find(|t| t.tenant_uuid.eq(&active_tenant_uuid));
 
         match active_tenant {

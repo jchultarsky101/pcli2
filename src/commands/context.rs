@@ -18,7 +18,8 @@ pub fn context_command() -> Command {
                 Command::new(COMMAND_TENANT)
                     .about("Set or select an active tenant")
                     .arg(tenant_name_parameter().required(false))
-                    .arg(tenant_id_parameter()),
+                    .arg(tenant_id_parameter())
+                    .arg(crate::commands::params::refresh_parameter()),
             ),
         )
         .subcommand(

@@ -382,7 +382,6 @@ pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 -
 ```
 
 This command processes all assets in the specified folder simultaneously, making it efficient for large-scale similarity searches. The progress flag provides visual feedback during long-running operations.
-```
 
 ## Advanced Usage
 
@@ -399,7 +398,6 @@ pcli2 config get path
 ```
 
 Configuration management allows you to customize PCLI2's behavior and store settings that persist across sessions. The configuration includes settings for API endpoints, authentication, caching, and other operational parameters.
-```
 
 #### Multi-Environment Configuration
 

@@ -193,19 +193,29 @@ You'll only need to login once per session, which is valid for several hours. Th
 
 ### Tenants
 
-Physna is a multi-tenant system. Your organization may have multiple instances of Physna, which are called "tenants". Each tenant is separate by default, though cross-tenant queries can be configured.
+Physna operates on a multi-tenant architecture, meaning your organization may have multiple separate Physna instances called "tenants". Each tenant is isolated by default, though cross-tenant queries can be configured by administrators.
 
-#### List available tenants
+#### Managing Tenants
+
+Use the tenant command to list and view available tenants in your organization:
+
 ```bash
 pcli2 tenant list --format csv
 ```
 
-#### Select active tenant
+#### Setting an Active Tenant
+
+To avoid specifying a tenant for every command, you can set an active tenant using the context command:
+
 ```bash
 pcli2 context set tenant
 ```
 
-You can also override the tenant for a command by explicitly specifying it with the `--tenant` argument. You can use either the tenant name or tenant ID:
+This command will prompt you to select a tenant from your available options.
+
+#### Overriding Tenant Selection
+
+For specific commands, you can override the active tenant by explicitly specifying it with the `--tenant` argument. You can use either the tenant name or tenant ID:
 
 ```bash
 # Using tenant name
@@ -215,7 +225,16 @@ pcli2 asset list --tenant "Demo Environment 1"
 pcli2 asset list --tenant 123e4567-e89b-12d3-a456-426614174000
 ```
 
+The tenant parameter accepts either the human-readable tenant name or the unique identifier (UUID) for precise targeting.
+```
+
 ### Working with Folders
+
+Folder management is essential for organizing your assets in Physna. These commands allow you to create, view, and manage the folder structure where your assets are stored.
+
+#### Listing Folders
+
+Use the folder list command to view your folder structure in various formats:
 
 ```bash
 # List all folders in your tenant (tree view)
@@ -226,13 +245,25 @@ pcli2 folder list --format json
 
 # List subfolders under a specific path
 pcli2 folder list --path /Root/MyFolder --format csv
+```
 
+#### Creating Folders
+
+You can create new folders in two ways: by specifying a parent folder ID or by using a path:
+
+```bash
 # Create a subfolder
 pcli2 folder create --name "Sub Folder" --parent-folder-id PARENT_FOLDER_UUID
 
 # Create a subfolder using path
 pcli2 folder create --name "Sub Folder" --path "/Root/Parent"
+```
 
+#### Viewing and Managing Folders
+
+Get detailed information about specific folders or remove them when no longer needed:
+
+```bash
 # Get folder details
 pcli2 folder get --uuid FOLDER_UUID --format json
 
@@ -240,26 +271,46 @@ pcli2 folder get --uuid FOLDER_UUID --format json
 pcli2 folder delete --path "/Root/FolderToDelete"
 ```
 
+**Note**: Deleting a folder will also remove all assets and subfolders within it. This action cannot be undone.
+```
+
 ### Working with Assets
 
-Common asset operations you'll perform regularly:
+Asset management is a core function of PCLI2. These commands allow you to upload, retrieve, organize, and maintain your 3D models and other assets in Physna.
+
+#### Uploading Assets
+
+The `asset create` command uploads individual files to your Physna tenant, placing them in the specified folder path. This is useful for adding single assets to your collection:
 
 ```bash
 # Upload a single asset
 pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/
+```
 
+For bulk operations, `asset create-batch` allows you to upload multiple files at once using glob patterns:
+
+```bash
+# Upload multiple assets
+pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
+```
+
+#### Viewing and Managing Assets
+
+Use these commands to inspect and manage your assets:
+
+```bash
 # View asset details
 pcli2 asset get --path /Root/MyFolder/model.stl
 
-# Delete an asset
-pcli2 asset delete --path /Root/MyFolder/model.stl
-
-# Upload multiple assets
-pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
-
 # List all assets in a folder
 pcli2 asset list --path "/Root/MyFolder" --format json
+```
 
+#### Asset Dependencies
+
+Asset dependencies reveal the relationship between assemblies and their components. This is particularly useful for understanding complex CAD models:
+
+```bash
 # Get asset dependencies (components in assemblies, referenced assets)
 pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --format json
 
@@ -273,15 +324,23 @@ pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --form
 pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format json
 pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --format csv
 
-# Update/create asset metadata
-pcli2 asset create-metadata-batch --csv-file "metadata.csv"
-
 # Upload asset with metadata
 pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/ --metadata "metadata.json"
 
 # Create metadata for multiple assets from a CSV file
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
 ```
+
+#### Deleting Assets
+
+When you need to remove assets from your Physna tenant, use the delete command:
+
+```bash
+# Delete an asset
+pcli2 asset delete --path /Root/MyFolder/model.stl
+```
+
+This permanently removes the asset from your tenant and cannot be undone.
 
 ### Working with Asset Dependencies
 
@@ -344,21 +403,36 @@ Metadata is essential for organizing and searching your assets effectively. PCLI
 
 ### Geometric Matching
 
-Find similar assets using PCLI2's powerful geometric matching:
+Geometric matching is a powerful feature that allows you to find assets with similar 3D geometry in your Physna tenant. This is particularly useful for identifying duplicate parts, finding design variations, or discovering similar components across different projects.
+
+#### Single Asset Matching
+
+Use the geometric-match command to find similar assets to a specific reference model:
 
 ```bash
 # Find matches for a single asset
 pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 85.0
+```
 
+The threshold parameter controls the similarity requirement, where higher values (closer to 100) require closer matches.
+
+#### Folder-Based Matching
+
+For bulk operations, use geometric-match-folder to find similar assets for all models in a folder:
+
+```bash
 # Find matches for all assets in a folder (parallel processing)
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+```
+
+This command processes all assets in the specified folder simultaneously, making it efficient for large-scale similarity searches. The progress flag provides visual feedback during long-running operations.
 ```
 
 ## Advanced Usage
 
 ### Configuration Management
 
-PCLI2 automatically manages configuration for you, but you can view and modify it:
+PCLI2 automatically manages configuration settings for you, storing them in platform-appropriate locations. You can view, export, import, and modify configuration settings as needed:
 
 ```bash
 # View current configuration
@@ -366,6 +440,9 @@ pcli2 config get
 
 # View configuration file path
 pcli2 config get path
+```
+
+Configuration management allows you to customize PCLI2's behavior and store settings that persist across sessions. The configuration includes settings for API endpoints, authentication, caching, and other operational parameters.
 ```
 
 #### Multi-Environment Configuration
@@ -631,31 +708,40 @@ pcli2 asset geometric-match --path /Root/Reference.stl --threshold 80.0 | grep "
 
 ### Working with Metadata
 
-Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata.
+Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata. Metadata helps you categorize, filter, and find assets based on custom properties like material, supplier, weight, or any other characteristic relevant to your workflow.
 
 #### Metadata Operations
 
 PCLI2 provides several commands for working with asset metadata:
 
 1. **Create/Update Individual Asset Metadata**:
+
+   The `metadata create` command adds or updates a single metadata field on an asset. This is useful for setting specific properties on individual assets:
+
    ```bash
    # Add or update a single metadata field on an asset
    pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
-   
+
    # Add or update a single metadata field on an asset by UUID
    pcli2 asset metadata create --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Weight" --value "15.5" --type "number"
    ```
 
 2. **Retrieve Asset Metadata**:
+
+   Use the `metadata get` command to view all metadata associated with an asset:
+
    ```bash
    # Get all metadata for an asset in JSON format (default)
    pcli2 asset metadata get --path "/Root/Folder/Model.stl"
-   
+
    # Get all metadata for an asset in CSV format (suitable for batch operations)
    pcli2 asset metadata get --uuid "123e4567-e89b-12d3-a456-426614174000" --format csv
    ```
 
 3. **Delete Asset Metadata**:
+
+   The `metadata delete` command removes specific metadata fields from an asset without affecting other metadata on the same asset:
+
    ```bash
    # Delete specific metadata fields from an asset
    pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
@@ -667,6 +753,9 @@ PCLI2 provides several commands for working with asset metadata:
    The delete command now uses the dedicated API endpoint to properly remove metadata fields from assets, rather than fetching all metadata and re-updating the asset without the specified fields.
 
 4. **Create/Update Metadata for Multiple Assets**:
+
+   For bulk operations, use the `metadata create-batch` command to update multiple assets at once using a CSV file:
+
    ```bash
    # Create or update metadata for multiple assets from a CSV file
    pcli2 asset metadata create-batch --csv-file "metadata.csv"

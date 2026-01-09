@@ -91,7 +91,7 @@ async fn main() {
             process::exit(0);
         },
         Err(e) => {
-            error_utils::report_error(&e);
+            error_utils::report_detailed_error(&e, Some("Command execution failed"));
             let main_error = MainError::CliError(e);
             process::exit(main_error.exit_code());
         }

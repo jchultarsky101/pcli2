@@ -169,7 +169,14 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
     } else {
         // Interactive selection using TUI
         if tenants.is_empty() {
-            eprintln!("No tenants available");
+            error_utils::report_error_with_remediation(
+                &"No tenants available",
+                &[
+                    "Verify your authentication credentials are valid",
+                    "Check that you have access to at least one tenant",
+                    "Log in again with 'pcli2 auth login'"
+                ]
+            );
             return Ok(());
         }
         
@@ -191,7 +198,14 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
                 tenants.iter().find(|t| t.tenant_short_name == tenant_name).cloned()
             }
             Err(_) => {
-                eprintln!("No tenant selected");
+                error_utils::report_error_with_remediation(
+                    &"No tenant selected",
+                    &[
+                        "Run 'pcli2 context set tenant' again to select a tenant",
+                        "Verify you have access to at least one tenant",
+                        "Check your authentication credentials"
+                    ]
+                );
                 return Ok(());
             }
         }
@@ -206,7 +220,14 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
         // Save configuration
         configuration.save_to_default()?;
     } else {
-            eprintln!("Tenant '{}' not found", name.unwrap()); // Safe to unwrap since we checked above
+            error_utils::report_error_with_remediation(
+                &format!("Tenant '{}' not found", name.unwrap()),
+                &[
+                    "Check the tenant name spelling",
+                    "List available tenants with 'pcli2 tenant list'",
+                    "Verify you have access to this tenant"
+                ]
+            ); // Safe to unwrap since we checked above
     }
 
     Ok(())
@@ -336,7 +357,14 @@ pub async fn clear_active_tenant() -> Result<(), CliActionError> {
             Ok(())
         }
         Err(e) => {
-            eprintln!("Error saving configuration: {}", e);
+            error_utils::report_error_with_remediation(
+                &format!("Error saving configuration: {}", e),
+                &[
+                    "Check that you have write permissions to the configuration directory",
+                    "Verify the configuration file is not locked by another process",
+                    "Ensure you have sufficient disk space"
+                ]
+            );
             Err(CliActionError::ConfigurationError(e))
         }
     }

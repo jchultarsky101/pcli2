@@ -46,7 +46,7 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     } else {
                         hierarchy.filter_by_path(path.as_str()).ok_or(CliError::FolderNotFound(path))?.to_folder_list()
                     };
-        
+
                 println!("{}", folder_list.format(format)?);
             }
     }

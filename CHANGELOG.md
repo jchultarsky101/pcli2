@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-01-09
+
+### Fixed
+- Improved error messages with consistent formatting and user-friendly guidance
+- Added fun emojis to error messages for better visual indication
+- Enhanced error remediation with specific steps for users
+
+## [0.2.1] - 2026-01-08
+
+### Fixed
+- Fixed tenant parameter issue in `asset metadata delete` command that was causing "Mismatch between definition and access of tenant" error
+- Fixed metadata delete command to use the proper API endpoint for deleting specific metadata fields from assets instead of fetching all metadata and re-updating the asset
+- Improved error handling and documentation for metadata operations
+
 ## [0.2.0] - 2026-01-08
 
 ### Added
@@ -169,7 +183,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/physna/pcli2/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/physna/pcli2/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/physna/pcli2/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/physna/pcli2/compare/v0.1.7...v0.1.8

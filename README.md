@@ -71,12 +71,14 @@ PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub
    - **Linux**: `pcli2-installer.sh` (Universal script)
 
 ##### Using the Universal Installer Script (macOS/Linux):
+
 ```bash
 # Download and run the installer script
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
 
 #### Method 2: Manual Installation
+
 ```bash
 # Extract the archive (example for Linux)
 tar -xf pcli2-x86_64-unknown-linux-gnu.tar.xz
@@ -226,7 +228,6 @@ pcli2 asset list --tenant 123e4567-e89b-12d3-a456-426614174000
 ```
 
 The tenant parameter accepts either the human-readable tenant name or the unique identifier (UUID) for precise targeting.
-```
 
 ### Working with Folders
 
@@ -326,7 +327,6 @@ pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --recursive --form
 
 # Create metadata for multiple assets from a CSV file
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
-```
 
 #### Deleting Assets
 

@@ -780,7 +780,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     Ok(asset_matches)
                 }
                 Err(e) => {
-                    error_utils::report_warning(&format!("Failed to perform geometric search for asset {}: {}", asset_clone.name(), e));
+                    error_utils::report_warning(&format!("🔍 Failed to perform geometric search for asset {}: {}", asset_clone.name(), e));
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
                     }

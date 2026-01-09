@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-01-09
+
+### Changed
+- Reorganized documentation sections by moving "Geometric Matching", "Working with Metadata", and "Metadata Inference" to "Basic Usage"
+- Made "Metadata Inference" a subsection under "Working with Metadata" for better organization
+- Simplified Quick Start instructions by removing references to OpenAPI Documentation page for service account creation
+- Clarified folder delete behavior with and without --force flag in documentation
+- Moved "Best Practices" section to end of Geometric Matching section where it belongs
+- Added comprehensive documentation section about using UNIX pipes with PCLI2 for advanced data processing
+
 ## [0.2.2] - 2026-01-09
 
 ### Fixed

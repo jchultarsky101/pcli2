@@ -15,7 +15,35 @@ This guide will help you get started with PCLI2 quickly by walking through commo
 
 ## Authentication
 
-Before using most PCLI2 commands, you need to authenticate with your Physna tenant:
+Before using most PCLI2 commands, you need to authenticate with your Physna tenant. First, you'll need to obtain your API credentials.
+
+### Getting API Credentials
+
+There are two ways to obtain your API credentials:
+
+#### Method 1: Using the Physna Web Interface (Recommended)
+
+This is the newer, more user-friendly approach that administrators can use:
+
+1. Login to your Physna instance
+2. (Optional) Select a tenant
+3. Click on Settings (the gear icon in the top right of the page)
+4. Select Users
+5. Create a new service account
+6. Note the Client ID and Client Secret, you will need those to login with PCLI2
+
+#### Method 2: Using the API SwaggerUI (Legacy)
+
+This is the older approach using the API documentation:
+
+1. Log in to the [Physna OpenAPI Documentation page](https://app-api.physna.com/v3/docs/)
+2. Authenticate with your Physna credentials
+3. Execute the POST /users/me/service-accounts endpoint
+4. Note down your Client ID and Client Secret
+
+### Logging In
+
+Once you have your credentials, you can authenticate with PCLI2:
 
 ```bash
 # Login with client credentials

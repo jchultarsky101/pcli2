@@ -82,7 +82,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">1.</strong> Installation Guide</a></li><li class="chapter-item expanded "><a href="quickstart.html" class="active"><strong aria-hidden="true">2.</strong> Quick Start Guide</a></li><li class="chapter-item expanded "><a href="geometric-matching.html"><strong aria-hidden="true">3.</strong> Geometric Matching</a></li><li class="chapter-item expanded "><a href="metadata-inference.html"><strong aria-hidden="true">4.</strong> Metadata Inference</a></li><li class="chapter-item expanded "><a href="cross_platform.html"><strong aria-hidden="true">5.</strong> Cross-Platform Configuration</a></li><li class="chapter-item expanded "><a href="documentation_deployment.html"><strong aria-hidden="true">6.</strong> Documentation Deployment</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">1.</strong> Installation Guide</a></li><li class="chapter-item expanded "><a href="quickstart.html" class="active"><strong aria-hidden="true">2.</strong> Quick Start Guide</a></li><li class="chapter-item expanded "><a href="geometric-matching.html"><strong aria-hidden="true">3.</strong> Geometric Matching</a></li><li class="chapter-item expanded "><a href="metadata-operations.html"><strong aria-hidden="true">4.</strong> Metadata Operations</a></li><li class="chapter-item expanded "><a href="metadata-inference.html"><strong aria-hidden="true">5.</strong> Metadata Inference</a></li><li class="chapter-item expanded "><a href="cross_platform.html"><strong aria-hidden="true">6.</strong> Cross-Platform Configuration</a></li><li class="chapter-item expanded "><a href="documentation_deployment.html"><strong aria-hidden="true">7.</strong> Documentation Deployment</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -161,7 +161,29 @@
 <li><a href="#getting-help">Getting Help</a></li>
 </ul>
 <h2 id="authentication"><a class="header" href="#authentication">Authentication</a></h2>
-<p>Before using most PCLI2 commands, you need to authenticate with your Physna tenant:</p>
+<p>Before using most PCLI2 commands, you need to authenticate with your Physna tenant. First, you'll need to obtain your API credentials.</p>
+<h3 id="getting-api-credentials"><a class="header" href="#getting-api-credentials">Getting API Credentials</a></h3>
+<p>There are two methods to obtain your API credentials:</p>
+<h4 id="method-1-using-the-physna-web-interface-recommended"><a class="header" href="#method-1-using-the-physna-web-interface-recommended">Method 1: Using the Physna Web Interface (Recommended)</a></h4>
+<p>This is the newer, more user-friendly approach available to administrators:</p>
+<ol>
+<li>Log in to your Physna instance</li>
+<li>(Optional) Select a tenant from the tenant selector</li>
+<li>Click on <strong>Settings</strong> (the gear icon in the top-right corner)</li>
+<li>Navigate to the <strong>Users</strong> tab</li>
+<li>Create a new service account</li>
+<li>Record the <strong>Client ID</strong> and <strong>Client Secret</strong> for use with PCLI2</li>
+</ol>
+<h4 id="method-2-using-the-api-documentation-page-legacy"><a class="header" href="#method-2-using-the-api-documentation-page-legacy">Method 2: Using the API Documentation Page (Legacy)</a></h4>
+<p>This is the original approach using the API documentation interface:</p>
+<ol>
+<li>Navigate to the <a href="https://app-api.physna.com/v3/docs/">Physna OpenAPI Documentation page</a></li>
+<li>Log in with your Physna credentials</li>
+<li>Locate and execute the <code>POST /users/me/service-accounts</code> endpoint</li>
+<li>Record the <strong>Client ID</strong> and <strong>Client Secret</strong> from the response</li>
+</ol>
+<h3 id="logging-in"><a class="header" href="#logging-in">Logging In</a></h3>
+<p>Once you have your credentials, you can authenticate with PCLI2:</p>
 <pre><code class="language-bash"># Login with client credentials
 pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
 
@@ -180,29 +202,58 @@ pcli2 folder list
 pcli2 asset list --path /Root/MyFolder/
 </code></pre>
 <h2 id="working-with-assets"><a class="header" href="#working-with-assets">Working with Assets</a></h2>
-<p>Common asset operations you'll perform regularly:</p>
+<p>Asset management is a core function of PCLI2. These commands allow you to upload, retrieve, organize, and maintain your 3D models and other assets in Physna.</p>
+<h3 id="uploading-assets"><a class="header" href="#uploading-assets">Uploading Assets</a></h3>
+<p>The <code>asset create</code> command uploads individual files to your Physna tenant, placing them in the specified folder path. This is useful for adding single assets to your collection:</p>
 <pre><code class="language-bash"># Upload a single asset
 pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/
-
-# View asset details
+</code></pre>
+<p>For bulk operations, <code>asset create-batch</code> allows you to upload multiple files at once using glob patterns:</p>
+<pre><code class="language-bash"># Upload multiple assets
+pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
+</code></pre>
+<h3 id="viewing-and-managing-assets"><a class="header" href="#viewing-and-managing-assets">Viewing and Managing Assets</a></h3>
+<p>Use these commands to inspect and manage your assets:</p>
+<pre><code class="language-bash"># View asset details
 pcli2 asset get --path /Root/MyFolder/model.stl
 
 # Delete an asset
 pcli2 asset delete --path /Root/MyFolder/model.stl
-
-# Upload multiple assets
-pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
 </code></pre>
 <h2 id="geometric-matching"><a class="header" href="#geometric-matching">Geometric Matching</a></h2>
-<p>Find similar assets using PCLI2's powerful geometric matching:</p>
+<p>Geometric matching is a powerful feature that allows you to find assets with similar 3D geometry in your Physna tenant. This is particularly useful for identifying duplicate parts, finding design variations, or discovering similar components across different projects.</p>
 <pre><code class="language-bash"># Find matches for a single asset
 pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 85.0
 
 # Find matches for all assets in a folder (parallel processing)
 pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
 </code></pre>
-<h2 id="metadata-inference"><a class="header" href="#metadata-inference">Metadata Inference</a></h2>
-<p>Automatically apply metadata from a reference asset to geometrically similar assets using PCLI2's metadata inference capability:</p>
+<p>The threshold parameter controls the similarity requirement, where higher values (closer to 100) require closer matches. The progress flag provides visual feedback during long-running operations.</p>
+<h2 id="metadata-operations"><a class="header" href="#metadata-operations">Metadata Operations</a></h2>
+<p>Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata. Metadata helps you categorize, filter, and find assets based on custom properties like material, supplier, weight, or any other characteristic relevant to your workflow.</p>
+<h3 id="creating-and-updating-metadata"><a class="header" href="#creating-and-updating-metadata">Creating and Updating Metadata</a></h3>
+<p>The <code>metadata create</code> command adds or updates a single metadata field on an asset. This is useful for setting specific properties on individual assets:</p>
+<pre><code class="language-bash"># Add or update a single metadata field on an asset
+pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
+
+# Add or update multiple metadata fields on an asset
+pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Weight" --value "15.5" --type "number"
+</code></pre>
+<h3 id="retrieving-metadata"><a class="header" href="#retrieving-metadata">Retrieving Metadata</a></h3>
+<p>Use the <code>metadata get</code> command to view all metadata associated with an asset:</p>
+<pre><code class="language-bash"># Get all metadata for an asset
+pcli2 asset metadata get --path "/Root/Folder/Model.stl"
+</code></pre>
+<h3 id="deleting-metadata"><a class="header" href="#deleting-metadata">Deleting Metadata</a></h3>
+<p>The <code>metadata delete</code> command removes specific metadata fields from an asset without affecting other metadata on the same asset:</p>
+<pre><code class="language-bash"># Delete specific metadata fields from an asset
+pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
+
+# Delete metadata fields using comma-separated list
+pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material,Weight,Description"
+</code></pre>
+<h3 id="metadata-inference"><a class="header" href="#metadata-inference">Metadata Inference</a></h3>
+<p>Metadata inference automatically applies metadata from a reference asset to geometrically similar assets. This feature helps you efficiently propagate metadata across similar assets, reducing manual work and ensuring consistency in your asset database:</p>
 <pre><code class="language-bash"># Apply specific metadata fields from a reference asset to similar assets
 pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material,Cost" --threshold 85.0
 
@@ -212,7 +263,7 @@ pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Ca
 # Apply multiple metadata fields with different thresholds
 pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
 </code></pre>
-<p>The metadata inference command helps you efficiently propagate metadata across geometrically similar assets, reducing manual work and ensuring consistency in your asset database.</p>
+<p>The metadata operations help you efficiently manage your asset metadata, whether you need to add, update, retrieve, or delete specific metadata fields, or propagate metadata across geometrically similar assets.</p>
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>Manage your PCLI2 configuration:</p>
 <pre><code class="language-bash"># View current configuration
@@ -224,6 +275,44 @@ pcli2 config export --output my-config.yaml
 # Import configuration from a file
 pcli2 config import --file my-config.yaml
 </code></pre>
+<h2 id="multi-environment-configuration"><a class="header" href="#multi-environment-configuration">Multi-Environment Configuration</a></h2>
+<p>PCLI2 supports multiple environment configurations, allowing you to easily switch between different Physna instances (e.g., development, staging, production):</p>
+<pre><code class="language-bash"># Add a new environment configuration
+pcli2 config environment add --name "development" \
+  --api-url "https://dev-api.physna.com/v3" \
+  --ui-url "https://dev.physna.com" \
+  --auth-url "https://dev-auth.physna.com/oauth2/token"
+
+# Add a production environment
+pcli2 config environment add --name "production" \
+  --api-url "https://app-api.physna.com/v3" \
+  --ui-url "https://app.physna.com" \
+  --auth-url "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
+
+# List all environments
+pcli2 config environment list
+
+# Switch to an environment (with interactive selection)
+pcli2 config environment use
+
+# Or switch to an environment by name
+pcli2 config environment use --name development
+
+# Get details of the active environment
+pcli2 config environment get
+
+# Get details of a specific environment
+pcli2 config environment get --name production
+
+# Reset all environment configurations
+pcli2 config environment reset
+</code></pre>
+<p>Each environment can have its own:</p>
+<ul>
+<li>API base URL (for API calls)</li>
+<li>UI base URL (for comparison viewer links)</li>
+<li>Authentication URL (for OAuth2 token requests)</li>
+</ul>
 <h2 id="context-management"><a class="header" href="#context-management">Context Management</a></h2>
 <p>Work with multiple tenants efficiently:</p>
 <pre><code class="language-bash"># Set active context (tenant) using either tenant name or ID

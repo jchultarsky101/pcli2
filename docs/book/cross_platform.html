@@ -82,7 +82,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">1.</strong> Installation Guide</a></li><li class="chapter-item expanded "><a href="quickstart.html"><strong aria-hidden="true">2.</strong> Quick Start Guide</a></li><li class="chapter-item expanded "><a href="geometric-matching.html"><strong aria-hidden="true">3.</strong> Geometric Matching</a></li><li class="chapter-item expanded "><a href="metadata-inference.html"><strong aria-hidden="true">4.</strong> Metadata Inference</a></li><li class="chapter-item expanded "><a href="cross_platform.html" class="active"><strong aria-hidden="true">5.</strong> Cross-Platform Configuration</a></li><li class="chapter-item expanded "><a href="documentation_deployment.html"><strong aria-hidden="true">6.</strong> Documentation Deployment</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="index.html">Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">1.</strong> Installation Guide</a></li><li class="chapter-item expanded "><a href="quickstart.html"><strong aria-hidden="true">2.</strong> Quick Start Guide</a></li><li class="chapter-item expanded "><a href="geometric-matching.html"><strong aria-hidden="true">3.</strong> Geometric Matching</a></li><li class="chapter-item expanded "><a href="metadata-operations.html"><strong aria-hidden="true">4.</strong> Metadata Operations</a></li><li class="chapter-item expanded "><a href="metadata-inference.html"><strong aria-hidden="true">5.</strong> Metadata Inference</a></li><li class="chapter-item expanded "><a href="cross_platform.html" class="active"><strong aria-hidden="true">6.</strong> Cross-Platform Configuration</a></li><li class="chapter-item expanded "><a href="documentation_deployment.html"><strong aria-hidden="true">7.</strong> Documentation Deployment</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -155,6 +155,11 @@ export PCLI2_CONFIG_DIR="/custom/path/to/config"
 # Set custom cache directory (for all cache files)
 export PCLI2_CACHE_DIR="/custom/path/to/cache"
 
+# Set custom API, UI, and Auth URLs (overrides configuration)
+export PCLI2_API_BASE_URL="https://custom-api.example.com/v3"
+export PCLI2_UI_BASE_URL="https://custom-ui.example.com"
+export PCLI2_AUTH_BASE_URL="https://custom-auth.example.com/oauth2/token"
+
 # Useful for WSL users running Windows executables
 export PCLI2_CONFIG_DIR="/home/$USER/.pcli2"
 export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
@@ -163,6 +168,9 @@ export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
 <ul>
 <li><code>PCLI2_CONFIG_DIR</code>: Custom directory for configuration file (<code>config.yml</code>). If not set, uses the system's default configuration directory.</li>
 <li><code>PCLI2_CACHE_DIR</code>: Custom directory for all cache files (asset cache, metadata cache, folder cache). If not set, uses the system's default cache directory.</li>
+<li><code>PCLI2_API_BASE_URL</code>: Custom API base URL (overrides configuration). If not set, uses the configured or default API URL.</li>
+<li><code>PCLI2_UI_BASE_URL</code>: Custom UI base URL (overrides configuration). If not set, uses the configured or default UI URL.</li>
+<li><code>PCLI2_AUTH_BASE_URL</code>: Custom authentication URL (overrides configuration). If not set, uses the configured or default auth URL.</li>
 </ul>
 <p>These environment variables allow PCLI2 to work seamlessly across different operating systems and environments, including:</p>
 <ul>

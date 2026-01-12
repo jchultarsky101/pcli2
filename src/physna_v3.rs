@@ -262,7 +262,19 @@ impl PhysnaApiClient {
                 }
                 Err(e) => {
                     // Return an authentication error with details
-                    Err(ApiError::AuthError(format!("Failed to refresh token: {}", e)))
+                    let error_msg = e.to_string();
+                    let user_friendly_msg = if error_msg.contains("invalid_client") {
+                        "Failed to refresh token: Invalid client credentials. Please check your client ID and secret, and log in again with 'pcli2 auth login'."
+                    } else if error_msg.contains("invalid_grant") {
+                        "Failed to refresh token: Invalid authorization grant. Please log in again with 'pcli2 auth login'."
+                    } else if error_msg.contains("unauthorized_client") {
+                        "Failed to refresh token: Unauthorized client. Please verify your client credentials and try logging in again with 'pcli2 auth login'."
+                    } else if error_msg.contains("invalid_request") {
+                        "Failed to refresh token: Invalid request. Please verify your credentials and try logging in again with 'pcli2 auth login'."
+                    } else {
+                        &format!("Failed to refresh token: {}", e)
+                    };
+                    Err(ApiError::AuthError(user_friendly_msg.to_string()))
                 }
             }
         } else {

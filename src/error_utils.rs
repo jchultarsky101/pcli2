@@ -111,13 +111,21 @@ pub fn report_warning<E: std::fmt::Display>(warning: &E) {
 }
 
 /// Create a user-friendly error message from a technical error
-/// 
+///
 /// This function tries to provide user-friendly error messages for common technical errors
 pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
     let error_str = error.to_string();
-    
+
     // Check for common error patterns and provide user-friendly messages
-    if error_str.contains("401") || error_str.to_lowercase().contains("unauthorized") {
+    if error_str.contains("invalid_client") {
+        "Authentication failed: Invalid client credentials. Please check your client ID and secret, and log in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("invalid_grant") {
+        "Authentication failed: Invalid authorization grant. Please log in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("unauthorized_client") {
+        "Authentication failed: Unauthorized client. Please verify your client credentials and try logging in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("invalid_request") {
+        "Authentication failed: Invalid request. Please verify your credentials and try logging in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("401") || error_str.to_lowercase().contains("unauthorized") {
         "Authentication failed. Please check your access token and try logging in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("403") || error_str.to_lowercase().contains("forbidden") {
         "Access forbidden. You don't have permission to perform this operation.".to_string()

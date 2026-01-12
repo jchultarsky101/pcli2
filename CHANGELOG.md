@@ -12,12 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented comprehensive tenant caching system with 1-hour TTL
 - Added tenant cache persistence to disk for improved performance
 
+### Changed
+- Improved error messages for authentication failures to be more user-friendly
+- Enhanced error handling for common API error responses
+
 ## [0.2.4] - 2024-01-09
 
 ### Added
 - Added `--refresh` flag to `context set tenant` command to force fetching fresh tenant list from API
 - Implemented comprehensive tenant caching system with 1-hour TTL
 - Added tenant cache persistence to disk for improved performance
+
+### Changed
+- Improved error messages for authentication failures to be more user-friendly
+- Enhanced error handling for common API error responses
 
 ## [0.2.3] - 2024-01-09
 

@@ -118,7 +118,7 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
 
     // Check for common error patterns and provide user-friendly messages
     if error_str.contains("invalid_client") {
-        "Authentication failed: Invalid client credentials. Please check your client ID and secret, and log in again with 'pcli2 auth login'.".to_string()
+        "Authentication failed: Invalid client credentials. This could be due to:\n  - Incorrect client ID or secret\n  - Expired or revoked client credentials\n  - Disabled service account\n  Please verify your credentials and log in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("invalid_grant") {
         "Authentication failed: Invalid authorization grant. Please log in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("unauthorized_client") {

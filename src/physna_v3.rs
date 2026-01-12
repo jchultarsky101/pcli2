@@ -264,7 +264,7 @@ impl PhysnaApiClient {
                     // Return an authentication error with details
                     let error_msg = e.to_string();
                     let user_friendly_msg = if error_msg.contains("invalid_client") {
-                        "Failed to refresh token: Invalid client credentials. Please check your client ID and secret, and log in again with 'pcli2 auth login'."
+                        "Failed to refresh token: Invalid client credentials. This could be due to:\n  - Incorrect client ID or secret\n  - Expired or revoked client credentials\n  - Disabled service account\n  Please verify your credentials and log in again with 'pcli2 auth login'."
                     } else if error_msg.contains("invalid_grant") {
                         "Failed to refresh token: Invalid authorization grant. Please log in again with 'pcli2 auth login'."
                     } else if error_msg.contains("unauthorized_client") {

@@ -11,6 +11,14 @@
     "theme": "dark"
   },
   "components": {
+    "artifacts": {
+      "package_managers": {
+        "preferred": {
+          "cargo": "pcli2"
+        }
+      },
+      "cargo_dist": false
+    },
     "changelog": true,
     "mdbook": {
       "path": "docs"

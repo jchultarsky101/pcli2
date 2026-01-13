@@ -1297,12 +1297,16 @@ impl PhysnaApiClient {
     /// # Example
     /// ```no_run
     /// use pcli2::physna_v3::PhysnaApiClient;
-    /// 
+    /// use uuid::Uuid;
+    /// use std::path::Path;
+    ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///     let mut client = PhysnaApiClient::new();
-    ///     let asset = client.create_asset("tenant-uuid", "/path/to/file.stl", Some("/Root/MyFolder"), None).await?;
-    ///     println!("Created asset with UUID: {}", asset.id);
+    ///     let tenant_uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    ///     let folder_uuid = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap();
+    ///     let asset = client.create_asset(&tenant_uuid, Path::new("/path/to/file.stl"), &"/Root/MyFolder".to_string(), &folder_uuid).await?;
+    ///     println!("Created asset with UUID: {}", asset.uuid());
     ///     Ok(())
     /// }
     /// ```
@@ -1489,11 +1493,14 @@ impl PhysnaApiClient {
     /// # Example
     /// ```no_run
     /// use pcli2::physna_v3::PhysnaApiClient;
-    /// 
+    /// use uuid::Uuid;
+    ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///     let mut client = PhysnaApiClient::new();
-    ///     let matches = client.geometric_search("tenant-uuid", "asset-uuid", 85.0).await?;
+    ///     let tenant_uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    ///     let asset_uuid = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap();
+    ///     let matches = client.geometric_search(&tenant_uuid, &asset_uuid, 85.0).await?;
     ///     for match_result in &matches.matches {
     ///         println!("Found match: {} ({}% similar)", match_result.path(), match_result.score());
     ///     }

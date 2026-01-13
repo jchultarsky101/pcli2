@@ -1695,6 +1695,253 @@ impl GeometricMatch {
     }
 }
 
+/// Represents a part match with forward and reverse similarity percentages
+///
+/// This structure holds information about a single part match, including the
+/// matching asset and both forward and reverse match percentages.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartMatch {
+    /// The matching asset details
+    pub asset: AssetResponse,
+    /// The forward match percentage
+    #[serde(rename = "forwardMatchPercentage")]
+    pub forward_match_percentage: Option<f64>,
+    /// The reverse match percentage
+    #[serde(rename = "reverseMatchPercentage")]
+    pub reverse_match_percentage: Option<f64>,
+    /// The transformation matrix for the match
+    #[serde(rename = "transformation")]
+    pub transformation: Option<TransformationMatrix>,
+    /// The comparison URL for viewing the match in the UI
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: Option<String>,
+}
+
+impl PartMatch {
+    /// Get the asset ID
+    pub fn asset_uuid(&self) -> &Uuid {
+        &self.asset.uuid
+    }
+
+    /// Get the asset path
+    pub fn path(&self) -> &str {
+        &self.asset.path
+    }
+
+    /// Get the forward match percentage (0.0 to 100.0)
+    pub fn forward_score(&self) -> f64 {
+        self.forward_match_percentage.unwrap_or(0.0)
+    }
+
+    /// Get the reverse match percentage (0.0 to 100.0)
+    pub fn reverse_score(&self) -> f64 {
+        self.reverse_match_percentage.unwrap_or(0.0)
+    }
+}
+
+/// Response structure for part search operations
+///
+/// This structure holds the results of a part search operation, including
+/// the list of matching assets and pagination/filter information.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartSearchResponse {
+    /// The list of matching assets
+    pub matches: Vec<PartMatch>,
+    /// Pagination information
+    #[serde(rename = "pageData")]
+    pub page_data: Option<PageData>,
+    /// Filter information
+    #[serde(rename = "filterData")]
+    pub filter_data: Option<FilterData>,
+}
+
+impl CsvRecordProducer for PartSearchResponse {
+    /// Get the CSV header row for PartSearchResponse records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "ASSET_ID".to_string(),
+            "PATH".to_string(),
+            "FORWARD_SCORE".to_string(),
+            "REVERSE_SCORE".to_string(),
+        ]
+    }
+
+    /// Convert the PartSearchResponse to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.matches
+            .iter()
+            .map(|m| {
+                vec![
+                    m.asset_uuid().to_string(),
+                    m.path().to_string(),
+                    format!("{}", m.forward_score()), // Full precision
+                    format!("{}", m.reverse_score()), // Full precision
+                ]
+            })
+            .collect()
+    }
+}
+
+/// Enhanced response structure for part search that includes reference asset information
+///
+/// This structure extends the basic PartSearchResponse by including information about
+/// the reference asset that was searched against, making it easier to understand
+/// the context of the matches.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancedPartSearchResponse {
+    /// The reference asset that was searched against
+    #[serde(rename = "referenceAsset")]
+    pub reference_asset: AssetResponse,
+    /// The list of matching assets
+    pub matches: Vec<PartMatch>,
+}
+
+impl CsvRecordProducer for EnhancedPartSearchResponse {
+    /// Get the CSV header row for EnhancedPartSearchResponse records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "FORWARD_MATCH_PERCENTAGE".to_string(),
+            "REVERSE_MATCH_PERCENTAGE".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+        ]
+    }
+
+    /// Convert the EnhancedPartSearchResponse to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.matches
+            .iter()
+            .map(|m| {
+                vec![
+                    self.reference_asset.path.clone(),
+                    m.path().to_string(),
+                    format!("{}", m.forward_score()), // Full precision
+                    format!("{}", m.reverse_score()), // Full precision
+                    self.reference_asset.uuid.to_string(),
+                    m.asset_uuid().to_string(),
+                ]
+            })
+            .collect()
+    }
+}
+
+impl OutputFormatter for EnhancedPartSearchResponse {
+    type Item = EnhancedPartSearchResponse;
+
+    /// Format the EnhancedPartSearchResponse according to the specified output format
+    ///
+    /// This method formats the EnhancedPartSearchResponse based on the requested format:
+    /// - JSON: Outputs as JSON with optional pretty printing
+    /// - CSV: Outputs as CSV with optional headers
+    /// - Tree: Not supported for this type
+    fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    serde_json::to_string_pretty(self)
+                } else {
+                    serde_json::to_string(self)
+                }
+                .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })
+            }
+            OutputFormat::Csv(options) => {
+                let mut wtr = Writer::from_writer(vec![]);
+
+                if options.with_headers {
+                    wtr.serialize(EnhancedPartSearchResponse::csv_header())?;
+                }
+
+                // Sort records by forward match percentage (descending)
+                let mut records = self.as_csv_records();
+                records.sort_by(|a, b| {
+                    // Parse the forward match percentage as f64 for comparison
+                    let score_a = a[2].parse::<f64>().unwrap_or(0.0);
+                    let score_b = b[2].parse::<f64>().unwrap_or(0.0);
+                    score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                for record in records {
+                    wtr.serialize(&record)?;
+                }
+
+                let data = wtr.into_inner()
+                    .map_err(|e| FormattingError::CsvIntoInnerError(e))?;
+                String::from_utf8(data)
+                    .map_err(|e| FormattingError::Utf8Error(e))
+            }
+            OutputFormat::Tree(_) => {
+                // For tree format, output as JSON since tree doesn't make sense for search results
+                serde_json::to_string_pretty(self)
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })
+            }
+        }
+    }
+}
+
+impl EnhancedPartSearchResponse {
+    /// Format the EnhancedPartSearchResponse with consideration for metadata flag
+    pub fn format_with_metadata_flag(&self, format: OutputFormat, _include_metadata: bool) -> Result<String, FormattingError> {
+        // For part search, metadata inclusion doesn't change the structure significantly
+        // since the main data is the forward and reverse match percentages
+        self.format(format)
+    }
+}
+
+/// Represents a matching pair from part search with both reference and candidate assets
+///
+/// This structure holds information about a single part match, including both the
+/// reference asset (the one being searched) and the candidate asset (the matching one),
+/// along with both forward and reverse match percentages.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartMatchPair {
+    /// The reference asset that was searched against
+    #[serde(rename = "referenceAsset")]
+    pub reference_asset: AssetResponse,
+    /// The matching candidate asset
+    #[serde(rename = "candidateAsset")]
+    pub candidate_asset: AssetResponse,
+    /// The forward match percentage
+    #[serde(rename = "forwardMatchPercentage")]
+    pub forward_match_percentage: Option<f64>,
+    /// The reverse match percentage
+    #[serde(rename = "reverseMatchPercentage")]
+    pub reverse_match_percentage: Option<f64>,
+    /// The transformation matrix for the match
+    #[serde(rename = "transformation")]
+    pub transformation: Option<TransformationMatrix>,
+    /// The comparison URL for viewing the match in the UI
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: Option<String>,
+}
+
+impl CsvRecordProducer for PartMatchPair {
+    /// Get the CSV header row for PartMatchPair records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "FORWARD_MATCH_PERCENTAGE".to_string(),
+            "REVERSE_MATCH_PERCENTAGE".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+        ]
+    }
+
+    /// Convert the PartMatchPair to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.reference_asset.path.clone(),
+            self.candidate_asset.path.clone(),
+            format!("{}", self.forward_match_percentage.unwrap_or(0.0)),
+            format!("{}", self.reverse_match_percentage.unwrap_or(0.0)),
+            self.reference_asset.uuid.to_string(),
+            self.candidate_asset.uuid.to_string(),
+        ]]
+    }
+}
+
 /// Represents a 4x4 transformation matrix
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransformationMatrix {

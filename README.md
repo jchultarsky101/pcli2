@@ -17,7 +17,6 @@ Based on lessons learned from the previous version, we have developed a new and 
   - [Working with Assets](#working-with-assets)
   - [Working with Asset Dependencies](#working-with-asset-dependencies)
   - [Geometric Matching](#geometric-matching)
-    - [Best Practices](#best-practices)
   - [Working with Metadata](#working-with-metadata)
     - [Metadata Inference](#metadata-inference)
 - [Advanced Usage](#advanced-usage)
@@ -572,9 +571,6 @@ PCLI2 supports three metadata field types:
    ```bash
    pcli2 asset metadata create --path "/Root/Model.stl" --name "Approved" --value "true" --type "boolean"
    ```
-
-#### Best Practices
-
 
 ### Metadata Inference
 

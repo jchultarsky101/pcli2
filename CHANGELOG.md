@@ -11,10 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `--refresh` flag to `context set tenant` command to force fetching fresh tenant list from API
 - Implemented comprehensive tenant caching system with 1-hour TTL
 - Added tenant cache persistence to disk for improved performance
+- Added PCLI2_FORMAT environment variable support for default output format
+- Added PCLI2_HEADERS environment variable support for default CSV header inclusion
+- Added comprehensive documentation for system keyring integration and security
+- Added documentation for environment variable precedence and usage
 
 ### Changed
-- Improved error messages for authentication failures to be more user-friendly
-- Enhanced error handling for common API error responses
+- Switched to system keyring as default for secure credential storage (was dev-keyring)
+- Optimized keyring access to reduce multiple authorization prompts on macOS
+- Improved error message formatting to remove raw technical data dumps
+- Removed redundant context messages from error output for cleaner user experience
+- Updated documentation to prevent automatic GitHub release detection
+- Enhanced credential storage to support environment-specific credentials
 
 ## [0.2.4] - 2024-01-09
 

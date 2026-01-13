@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed redundant context messages from error output for cleaner user experience
 - Updated documentation to prevent automatic GitHub release detection
 - Enhanced credential storage to support environment-specific credentials
+- Fixed cross-platform compatibility for keyring functionality to work on Windows, macOS and Linux
 
 ## [0.2.3] - 2024-01-09
 

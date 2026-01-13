@@ -17,13 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added documentation for environment variable precedence and usage
 
 ### Changed
-- Switched to system keyring as default for secure credential storage (was dev-keyring)
-- Optimized keyring access to reduce multiple authorization prompts on macOS
+- Reverted to dev-keyring as default for broader platform compatibility (was system keyring)
 - Improved error message formatting to remove raw technical data dumps
 - Removed redundant context messages from error output for cleaner user experience
 - Updated documentation to prevent automatic GitHub release detection
 - Enhanced credential storage to support environment-specific credentials
-- Fixed cross-platform compatibility for keyring functionality to work on Windows, macOS and Linux
+- Added PCLI2_FORMAT and PCLI2_HEADERS environment variable support with proper precedence
 
 ## [0.2.3] - 2024-01-09
 

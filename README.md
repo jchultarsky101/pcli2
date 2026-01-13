@@ -125,6 +125,16 @@ pcli2 --version
 ```
 If successful, this should print the PCLI2 version.
 
+### First-Time Authorization
+
+When you run PCLI2 for the first time after installation, you may see authorization prompts requesting permission to access your system's secure credential storage (keyring). This is normal and required for secure credential storage:
+
+- **macOS**: A dialog will appear asking you to allow PCLI2 to access the keychain
+- **Windows**: You may see a User Account Control (UAC) prompt
+- **Linux**: You may be prompted to unlock the keyring
+
+The authorization is typically remembered for subsequent runs.
+
 ### Updating PCLI2
 
 To update PCLI2 when using pre-built installers:
@@ -199,6 +209,34 @@ pcli2 auth logout
 ```
 
 You'll only need to login once per session, which is valid for several hours. The credentials are securely stored using your system's keychain. PCLI2 will automatically renew your access token if necessary.
+
+### Security and Authentication
+
+PCLI2 uses your operating system's secure credential storage to protect your API credentials:
+
+#### System Keyring Integration
+
+PCLI2 automatically integrates with your system's secure credential storage:
+
+- **macOS**: Uses Keychain Services for secure credential storage
+- **Windows**: Uses Windows Credential Manager
+- **Linux**: Uses Secret Service API or KWallet
+
+#### First-Time Authorization
+
+When you run PCLI2 for the first time after installation, you may see authorization prompts requesting permission to access the system keyring:
+
+- **macOS**: A dialog will appear asking you to allow PCLI2 to access the keychain
+- **Windows**: You may see a User Account Control (UAC) prompt
+- **Linux**: You may be prompted to unlock the keyring
+
+This is normal and required for secure credential storage. The authorization is typically remembered for subsequent runs.
+
+#### Authorization Prompts
+
+- On **macOS**, you may see multiple authorization prompts during the first run as PCLI2 accesses different credential types (access token, client ID, client secret)
+- The system will remember your authorization decision for future runs
+- If you deny access, authentication commands will fail until you grant permission
 
 
 ## Basic Usage
@@ -617,6 +655,30 @@ The priority order for URL configuration is:
 2. Active environment configuration
 3. Global configuration settings
 4. Default hardcoded URLs (lowest priority)
+
+### Environment Variables for Output Formatting
+
+PCLI2 supports environment variables for configuring output formatting options:
+
+- `PCLI2_FORMAT`: Sets the default output format (json, csv, tree). Can be overridden by the `--format` flag.
+- `PCLI2_HEADERS`: Controls whether CSV output includes headers (true, 1, yes, on). Can be overridden by the `--headers` flag.
+
+Example usage:
+```bash
+# Set default format to CSV
+export PCLI2_FORMAT=csv
+
+# Enable headers for CSV output by default
+export PCLI2_HEADERS=true
+
+# Both can be overridden by command-line flags
+pcli2 config get --format json  # Uses JSON despite PCLI2_FORMAT=csv
+```
+
+The priority order for format configuration is:
+1. Command-line flags (highest priority)
+2. Environment variables
+3. Default values (lowest priority)
 
 ### Using UNIX Pipes with PCLI2
 

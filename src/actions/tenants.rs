@@ -298,7 +298,12 @@ pub async fn print_active_tenant_name_with_format(sub_matches: &ArgMatches) -> R
     trace!("Executing 'context get tenant' with format options");
 
     // Get format parameters directly from sub_matches since context commands don't have all format flags
-    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap();
+    let format_str_owned = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
+        format_val.clone()
+    } else {
+        "json".to_string()
+    };
+    let format_str = &format_str_owned;
 
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);

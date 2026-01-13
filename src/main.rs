@@ -91,7 +91,7 @@ async fn main() {
             process::exit(0);
         },
         Err(e) => {
-            error_utils::report_detailed_error(&e, Some("Command execution failed"));
+            error_utils::report_detailed_error(&e, None);  // Remove generic context
             let main_error = MainError::CliError(e);
             process::exit(main_error.exit_code());
         }

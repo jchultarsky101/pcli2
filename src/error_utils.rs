@@ -67,13 +67,16 @@ pub fn report_detailed_error<E: std::fmt::Display>(error: &E, context: Option<&s
     // Print the main error message
     eprintln!("❌ Error: {}", user_friendly_msg);
 
-    // Add context if provided
+    // Add context if provided and meaningful (not generic messages)
     if let Some(ctx) = context {
-        eprintln!("📋 Context: {}", ctx);
+        // Skip generic context messages that don't add value
+        if !ctx.trim().is_empty() && ctx != "Command execution failed" {
+            eprintln!("📋 Context: {}", ctx);
+        }
     }
 
-    // Log the technical details for debugging
-    tracing::error!("Technical error details: {} (context: {:?})", error, context);
+    // Log the technical details for debugging (only in debug/trace mode)
+    tracing::debug!("Technical error details: {} (context: {:?})", error, context);
 }
 
 /// Report an error with suggested remediation steps.
@@ -92,7 +95,7 @@ pub fn report_error_with_remediation<E: std::fmt::Display>(error: &E, remediatio
         }
     }
 
-    tracing::error!("Error with remediation: {} (steps: {:?})", error, remediation_steps);
+    tracing::debug!("Error with remediation: {} (steps: {:?})", error, remediation_steps);
 }
 
 /// Report an error with a custom user message for better clarity.

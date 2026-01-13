@@ -122,18 +122,21 @@ impl TryDefault for PhysnaApiClient {
         let configuration = crate::configuration::Configuration::load_or_create_default()
             .map_err(|e| ApiError::AuthError(format!("Failed to load configuration: {}", e)))?;
 
+        // Use the active environment name for keyring storage, fallback to "default" if no environment is set
+        let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+
+        #[allow(unused_mut)]
         let mut keyring = Keyring::default();
-        let token = keyring.get("default", "access-token".to_string())?;
-        match token {
+        // Get all environment credentials in a single operation to reduce keyring access calls
+        let (access_token, client_id, client_secret) = keyring.get_environment_credentials(&environment_name)?;
+
+        match access_token {
             Some(token) => {
                 let mut client = PhysnaApiClient::new_with_configuration(&configuration).with_access_token(token);
 
                 // Try to get client credentials for automatic token refresh
-                if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                    keyring.get("default", "client-id".to_string()),
-                    keyring.get("default", "client-secret".to_string())
-                ) {
-                    client = client.with_client_credentials(client_id, client_secret);
+                if let (Some(id), Some(secret)) = (client_id, client_secret) {
+                    client = client.with_client_credentials(id, secret);
                     Ok(client)
                 } else {
                     Err(ApiError::MissingCredentials)

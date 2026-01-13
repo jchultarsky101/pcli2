@@ -226,14 +226,20 @@ pub async fn execute_command() -> Result<(), CliError> {
             match sub_matches.subcommand() {
                 Some((COMMAND_LOGIN, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_AUTH, COMMAND_LOGIN);
-                    
+
+                    let configuration = Configuration::load_or_create_default()?;
+
+                    // Use the active environment name for keyring storage, fallback to "default" if no environment is set
+                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+
                     // Try to get client credentials from command line or stored values
+                    #[allow(unused_mut)]
                     let mut keyring = Keyring::default();
                     let client_id = match sub_matches.get_one::<String>(PARAMETER_CLIENT_ID) {
                         Some(id) => id.clone(),
                         None => {
                             // Try to get stored client ID
-                            match keyring.get("default", "client-id".to_string()) {
+                            match keyring.get(&environment_name, "client-id".to_string()) {
                                 Ok(Some(stored_id)) => stored_id,
                                 _ => {
                                     return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_ID.to_string()));
@@ -241,12 +247,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                             }
                         }
                     };
-                    
+
                     let client_secret = match sub_matches.get_one::<String>(PARAMETER_CLIENT_SECRET) {
                         Some(secret) => secret.clone(),
                         None => {
                             // Try to get stored client secret
-                            match keyring.get("default", "client-secret".to_string()) {
+                            match keyring.get(&environment_name, "client-secret".to_string()) {
                                 Ok(Some(stored_secret)) => stored_secret,
                                 _ => {
                                     return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_SECRET.to_string()));
@@ -254,14 +260,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                             }
                         }
                     };
-                    
-                    let configuration = Configuration::load_or_create_default()?;
+
                     let auth_client = AuthClient::new_with_configuration(client_id.clone(), client_secret.clone(), &configuration);
-                    
+
                     // Store the client credentials so they're available for token refresh
-                    let client_id_result = keyring.put("default", "client-id".to_string(), client_id.clone());
-                    let client_secret_result = keyring.put("default", "client-secret".to_string(), client_secret.clone());
-                    
+                    let client_id_result = keyring.put(&environment_name, "client-id".to_string(), client_id.clone());
+                    let client_secret_result = keyring.put(&environment_name, "client-secret".to_string(), client_secret.clone());
+
                     if client_id_result.is_err() || client_secret_result.is_err() {
                         error_utils::report_error_with_remediation(
                             &CliError::SecurityError(String::from("Failed to store client credentials")),
@@ -272,12 +277,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                         );
                         return Err(CliError::SecurityError(String::from("Failed to store client credentials")));
                     }
-                    
+
                     match auth_client.get_access_token().await {
                         Ok(token) => {
                             // Store the access token
-                            let token_result = keyring.put("default", "access-token".to_string(), token);
-                            
+                            let token_result = keyring.put(&environment_name, "access-token".to_string(), token);
+
                             if token_result.is_ok() {
                                 Ok(())
                             } else {
@@ -306,8 +311,14 @@ pub async fn execute_command() -> Result<(), CliError> {
                 }
                 Some((COMMAND_LOGOUT, _)) => {
                     trace!("Executing logout command");
+
+                    let configuration = Configuration::load_or_create_default()?;
+                    // Use the active environment name for keyring storage, fallback to "default" if no environment is set
+                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+
+                    #[allow(unused_mut)]
                     let mut keyring = Keyring::default();
-                    match keyring.delete("default", "access-token".to_string()) {
+                    match keyring.delete(&environment_name, "access-token".to_string()) {
                         Ok(()) => {
                             Ok(())
                         }
@@ -327,7 +338,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Executing auth token get command");
 
                     // Get format parameters directly from sub_matches since auth commands don't have metadata flag
-                    let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+                    let format_str_owned = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                        format_val.clone()
+                    } else {
+                        "json".to_string()
+                    };
+                    let format_str = &format_str_owned;
 
                     let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
                     let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
@@ -341,9 +357,14 @@ pub async fn execute_command() -> Result<(), CliError> {
 
                     let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
 
+                    let configuration = Configuration::load_or_create_default()?;
+                    // Use the active environment name for keyring storage, fallback to "default" if no environment is set
+                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+
                     // Try to get access token from keyring
+                    #[allow(unused_mut)]
                     let mut keyring = Keyring::default();
-                    match keyring.get("default", "access-token".to_string()) {
+                    match keyring.get(&environment_name, "access-token".to_string()) {
                         Ok(Some(token)) => {
                             // Create a simple struct to hold the token for formatting
                             #[derive(serde::Serialize)]
@@ -496,7 +517,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                         }
                         _ => {
                             // Get format parameters directly from sub_matches since config commands don't have all format flags
-                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+                            let format_str_owned = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                                format_val.clone()
+                            } else {
+                                "json".to_string()
+                            };
+                            let format_str = &format_str_owned;
 
                             let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
                             let pretty = sub_matches.get_flag(PARAMETER_PRETTY);

@@ -13,7 +13,7 @@ license = false
 eula = false
 
 [features]
-default = ["dev-keyring"]
+default = []
 dev-keyring = []
 
 [dependencies]

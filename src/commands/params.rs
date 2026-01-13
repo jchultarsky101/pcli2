@@ -99,7 +99,6 @@ pub fn format_parameter() -> Arg {
         .long(PARAMETER_FORMAT)
         .num_args(1)
         .required(false)
-        .default_value("json")
         .global(true)
         .help("Output data format")
         .value_parser(OutputFormat::names())

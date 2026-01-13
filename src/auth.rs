@@ -90,11 +90,34 @@ impl AuthClient {
 
             // Try to parse as JSON for better formatting
             let error_details = match serde_json::from_str::<serde_json::Value>(&error_text) {
-                Ok(error_json) => format!("{:?}", error_json),
+                Ok(error_json) => {
+                    // Extract specific error information for better user messages
+                    if let Some(error_val) = error_json.get("error") {
+                        let error_str = error_val.as_str().unwrap_or("unknown");
+
+                        match error_str {
+                            "invalid_client" => {
+                                "Invalid client credentials. Please check your client ID and secret.".to_string()
+                            },
+                            "invalid_grant" => {
+                                "Invalid grant. The authorization grant or refresh token is invalid.".to_string()
+                            },
+                            "unauthorized_client" => {
+                                "Unauthorized client. The client is not authorized to use this authorization grant type.".to_string()
+                            },
+                            "invalid_request" => {
+                                "Invalid request. The request is missing required parameters or contains invalid parameters.".to_string()
+                            },
+                            _ => format!("{:?}", error_json),
+                        }
+                    } else {
+                        format!("{:?}", error_json)
+                    }
+                },
                 Err(_) => error_text
             };
 
-            Err(AuthError::AuthFailed(format!("HTTP {}: {}", status, error_details)))
+            Err(AuthError::AuthFailed(format!("Authentication failed: HTTP {} {}", status, error_details)))
         }
     }
 }

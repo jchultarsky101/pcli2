@@ -5,9 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.4] - 2026-01-13
 
-## [0.2.3] - 2026-01-09
+### Added
+- Added `--refresh` flag to `context set tenant` command to force fetching fresh tenant list from API
+- Implemented comprehensive tenant caching system with 1-hour TTL
+- Added tenant cache persistence to disk for improved performance
+- Added PCLI2_FORMAT environment variable support for default output format
+- Added PCLI2_HEADERS environment variable support for default CSV header inclusion
+- Added comprehensive documentation for system keyring integration and security
+- Added documentation for environment variable precedence and usage
+
+### Changed
+- Switched to system keyring as default for secure credential storage (was dev-keyring)
+- Optimized keyring access to reduce multiple authorization prompts on macOS
+- Improved error message formatting to remove raw technical data dumps
+- Removed redundant context messages from error output for cleaner user experience
+- Updated documentation to prevent automatic GitHub release detection
+- Enhanced credential storage to support environment-specific credentials
+
+## [0.2.3] - 2024-01-09
+
+### Added
+- Added `--refresh` flag to `context set tenant` command to force fetching fresh tenant list from API
+- Implemented comprehensive tenant caching system with 1-hour TTL
+- Added tenant cache persistence to disk for improved performance
+
+### Changed
+- Improved error messages for authentication failures to be more user-friendly
+- Enhanced error handling for common API error responses
+
+## [0.2.3] - 2024-01-09
 
 ### Changed
 - Reorganized documentation sections by moving "Geometric Matching", "Working with Metadata", and "Metadata Inference" to "Basic Usage"
@@ -17,14 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved "Best Practices" section to end of Geometric Matching section where it belongs
 - Added comprehensive documentation section about using UNIX pipes with PCLI2 for advanced data processing
 
-## [0.2.2] - 2026-01-09
+## [0.2.2] - 2024-01-09
 
 ### Fixed
 - Improved error messages with consistent formatting and user-friendly guidance
 - Added fun emojis to error messages for better visual indication
 - Enhanced error remediation with specific steps for users
 
-## [0.2.1] - 2026-01-08
+## [0.2.1] - 2024-01-08
 
 ### Fixed
 - Fixed tenant parameter issue in `asset metadata delete` command that was causing "Mismatch between definition and access of tenant" error
@@ -61,13 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Authentication flow now properly uses configuration-based URLs
 - Cross-environment tenant conflicts resolved by clearing active tenant on environment switch
 - OAuth2 client credentials flow compliance with proper header requirements
-
-## [0.2.1] - 2026-01-08
-
-### Fixed
-- Fixed tenant parameter issue in `asset metadata delete` command that was causing "Mismatch between definition and access of tenant" error
-- Fixed metadata delete command to use the proper API endpoint for deleting specific metadata fields from assets instead of fetching all metadata and re-updating the asset
-- Improved error handling and documentation for metadata operations
 
 ## [0.1.8] - 2025-10-31
 
@@ -193,7 +214,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/physna/pcli2/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/physna/pcli2/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/physna/pcli2/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/physna/pcli2/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/physna/pcli2/compare/v0.1.8...v0.2.0

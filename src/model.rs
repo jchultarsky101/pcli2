@@ -83,10 +83,10 @@ pub fn normalize_path(path: impl AsRef<str>) -> String {
 /// # Examples
 /// ```
 /// use pcli2::model::Folder;
+/// use uuid::Uuid;
 ///
 /// let folder = Folder::new(
-///     Some(123),
-///     Some("uuid-123".to_string()),
+///     Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
 ///     "My Folder".to_string(),
 ///     "/Root/My Folder".to_string()
 /// );

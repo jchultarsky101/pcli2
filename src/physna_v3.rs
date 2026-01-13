@@ -122,18 +122,21 @@ impl TryDefault for PhysnaApiClient {
         let configuration = crate::configuration::Configuration::load_or_create_default()
             .map_err(|e| ApiError::AuthError(format!("Failed to load configuration: {}", e)))?;
 
+        // Use the active environment name for keyring storage, fallback to "default" if no environment is set
+        let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+
+        #[allow(unused_mut)]
         let mut keyring = Keyring::default();
-        let token = keyring.get("default", "access-token".to_string())?;
-        match token {
+        // Get all environment credentials in a single operation to reduce keyring access calls
+        let (access_token, client_id, client_secret) = keyring.get_environment_credentials(&environment_name)?;
+
+        match access_token {
             Some(token) => {
                 let mut client = PhysnaApiClient::new_with_configuration(&configuration).with_access_token(token);
 
                 // Try to get client credentials for automatic token refresh
-                if let (Ok(Some(client_id)), Ok(Some(client_secret))) = (
-                    keyring.get("default", "client-id".to_string()),
-                    keyring.get("default", "client-secret".to_string())
-                ) {
-                    client = client.with_client_credentials(client_id, client_secret);
+                if let (Some(id), Some(secret)) = (client_id, client_secret) {
+                    client = client.with_client_credentials(id, secret);
                     Ok(client)
                 } else {
                     Err(ApiError::MissingCredentials)
@@ -262,7 +265,19 @@ impl PhysnaApiClient {
                 }
                 Err(e) => {
                     // Return an authentication error with details
-                    Err(ApiError::AuthError(format!("Failed to refresh token: {}", e)))
+                    let error_msg = e.to_string();
+                    let user_friendly_msg = if error_msg.contains("invalid_client") {
+                        "Failed to refresh token: Invalid client credentials. This could be due to:\n  - Incorrect client ID or secret\n  - Expired or revoked client credentials\n  - Disabled service account\n  Please verify your credentials and log in again with 'pcli2 auth login'."
+                    } else if error_msg.contains("invalid_grant") {
+                        "Failed to refresh token: Invalid authorization grant. Please log in again with 'pcli2 auth login'."
+                    } else if error_msg.contains("unauthorized_client") {
+                        "Failed to refresh token: Unauthorized client. Please verify your client credentials and try logging in again with 'pcli2 auth login'."
+                    } else if error_msg.contains("invalid_request") {
+                        "Failed to refresh token: Invalid request. Please verify your credentials and try logging in again with 'pcli2 auth login'."
+                    } else {
+                        &format!("Failed to refresh token: {}", e)
+                    };
+                    Err(ApiError::AuthError(user_friendly_msg.to_string()))
                 }
             }
         } else {
@@ -1282,12 +1297,16 @@ impl PhysnaApiClient {
     /// # Example
     /// ```no_run
     /// use pcli2::physna_v3::PhysnaApiClient;
-    /// 
+    /// use uuid::Uuid;
+    /// use std::path::Path;
+    ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///     let mut client = PhysnaApiClient::new();
-    ///     let asset = client.create_asset("tenant-uuid", "/path/to/file.stl", Some("/Root/MyFolder"), None).await?;
-    ///     println!("Created asset with UUID: {}", asset.id);
+    ///     let tenant_uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    ///     let folder_uuid = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap();
+    ///     let asset = client.create_asset(&tenant_uuid, Path::new("/path/to/file.stl"), &"/Root/MyFolder".to_string(), &folder_uuid).await?;
+    ///     println!("Created asset with UUID: {}", asset.uuid());
     ///     Ok(())
     /// }
     /// ```
@@ -1474,11 +1493,14 @@ impl PhysnaApiClient {
     /// # Example
     /// ```no_run
     /// use pcli2::physna_v3::PhysnaApiClient;
-    /// 
+    /// use uuid::Uuid;
+    ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///     let mut client = PhysnaApiClient::new();
-    ///     let matches = client.geometric_search("tenant-uuid", "asset-uuid", 85.0).await?;
+    ///     let tenant_uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    ///     let asset_uuid = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap();
+    ///     let matches = client.geometric_search(&tenant_uuid, &asset_uuid, 85.0).await?;
     ///     for match_result in &matches.matches {
     ///         println!("Found match: {} ({}% similar)", match_result.path(), match_result.score());
     ///     }

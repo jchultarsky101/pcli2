@@ -24,8 +24,8 @@ async fn resolve_tenant_by_name(
     debug!("Resolving tenant by name: {}", tenant_name);
     
     // First, try to list all tenants to see if we can resolve the identifier
-    let tenants = client.list_tenants().await?;
-    
+    let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, false).await?;
+
     // Look for an exact match by tenant ID first
     match tenants.iter().find(|t| t.tenant_short_name.eq(tenant_name)) {
         Some(tenant) => Ok(tenant.try_into()?),
@@ -37,21 +37,58 @@ pub async fn get_format_parameter_value(sub_matches: &ArgMatches) -> OutputForma
 
     trace!("Resolving output format options...");
 
-    // Usig clap, we have configured the 'format' argument to always have a default value ("json"). Because of that, it is safe to unwrap.
-    let format = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap();
+    // Determine format based on precedence:
+    // 1. User specified --format (explicit command line)
+    // 2. Environment variable PCLI2_FORMAT (when no explicit format provided)
+    // 3. Default value of "json"
+
+    // Check if format was explicitly provided by user
+    let format_string = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+        // User explicitly provided --format argument
+        format_val.clone()
+    } else {
+        // Format was not explicitly provided by user, check environment variable first
+        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
+            env_format
+        } else {
+            // Use default value
+            "json".to_string()
+        }
+    };
+
     let with_metadata = sub_matches.get_flag(PARAMETER_METADATA);
-    let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
+
+    // Check headers flag with precedence:
+    // 1. User specified --headers (explicit command line)
+    // 2. Environment variable PCLI2_HEADERS (when no explicit headers flag provided)
+    // 3. Default value of false
+    let with_headers = if sub_matches.value_source(PARAMETER_HEADERS) == Some(clap::parser::ValueSource::CommandLine) {
+        // User explicitly provided --headers flag
+        sub_matches.get_flag(PARAMETER_HEADERS)
+    } else {
+        // Headers flag was not explicitly provided, check environment variable
+        if let Ok(env_headers) = std::env::var("PCLI2_HEADERS") {
+            // Convert environment variable to boolean
+            // Accept "true", "1", "yes", "on" as true; everything else as false (case insensitive)
+            let env_headers_lower = env_headers.to_lowercase();
+            matches!(env_headers_lower.as_str(), "true" | "1" | "yes" | "on")
+        } else {
+            // Use default value (false)
+            sub_matches.get_flag(PARAMETER_HEADERS)
+        }
+    };
+
     let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
 
-    trace!("Format: {}", format);
+    trace!("Format: {}", format_string);
     trace!("With headers: {}", with_headers);
     trace!("With metadata: {}", with_metadata);
     trace!("Pretty: {}", pretty);
 
     let options = OutputFormatOptions { with_metadata, with_headers, pretty };
-    
+
     // Using clap, we allow only valid values for the --format parameter. Because of that it is safe to unwrap.
-    OutputFormat::from_string_with_options(format, options).unwrap().to_owned()
+    OutputFormat::from_string_with_options(&format_string, options).unwrap().to_owned()
 }
 
 pub async fn resolve_tenant_by_uuid(
@@ -61,8 +98,8 @@ pub async fn resolve_tenant_by_uuid(
     debug!("Resolving tenant by UID: {}", tenant_uuid);
     
     // First, try to list all tenants to see if we can resolve the identifier
-    let tenants = client.list_tenants().await?;
-    
+    let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, false).await?;
+
     // Look for an exact match by tenant ID first
     match tenants.iter().find(|t| t.tenant_uuid.eq(tenant_uuid)) {
         Some(tenant) => Ok(tenant.try_into()?),

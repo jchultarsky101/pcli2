@@ -131,6 +131,38 @@ cargo build --release
 sudo cp target/release/pcli2 /usr/local/bin/
 ```
 
+## Security and Authentication
+
+PCLI2 uses your operating system's secure credential storage to protect your API credentials:
+
+### System Keyring Integration
+
+PCLI2 automatically integrates with your system's secure credential storage:
+
+- **macOS**: Uses Keychain Services for secure credential storage
+- **Windows**: Uses Windows Credential Manager
+- **Linux**: Uses Secret Service API or KWallet
+
+### First-Time Authorization
+
+When you run PCLI2 for the first time after installation, you may see authorization prompts requesting permission to access the system keyring:
+
+- **macOS**: A dialog will appear asking you to allow PCLI2 to access the keychain
+- **Windows**: You may see a User Account Control (UAC) prompt
+- **Linux**: You may be prompted to unlock the keyring
+
+This is normal and required for secure credential storage. The authorization is typically remembered for subsequent runs.
+
+### Credential Storage
+
+Your API credentials (client ID, client secret, and access tokens) are securely encrypted and stored in your system's keyring. These credentials are environment-specific and stored separately for each configured environment.
+
+### Authorization Prompts
+
+- On **macOS**, you may see multiple authorization prompts during the first run as PCLI2 accesses different credential types (access token, client ID, client secret)
+- The system will remember your authorization decision for future runs
+- If you deny access, authentication commands will fail until you grant permission
+
 ## Troubleshooting
 
 ### Common Issues
@@ -138,6 +170,8 @@ sudo cp target/release/pcli2 /usr/local/bin/
 1. **Permission denied when copying binary**: Use `sudo` or copy to a directory you own
 2. **Command not found**: Ensure the binary directory is in your PATH
 3. **Build failures**: Make sure you have the latest stable Rust version
+4. **Keyring access denied**: Grant permission when prompted, or check system keyring settings
+5. **Authentication failures**: Ensure keyring access is granted and credentials are properly stored
 
 ### Getting Help
 
@@ -145,5 +179,6 @@ If you encounter issues during installation:
 
 1. Check that all prerequisites are met
 2. Verify your Rust installation is working
-3. Consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page
-4. Contact the Physna development team for support
+3. Ensure keyring access permissions are granted
+4. Consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page
+5. Contact the Physna development team for support

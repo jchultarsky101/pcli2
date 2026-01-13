@@ -67,13 +67,16 @@ pub fn report_detailed_error<E: std::fmt::Display>(error: &E, context: Option<&s
     // Print the main error message
     eprintln!("❌ Error: {}", user_friendly_msg);
 
-    // Add context if provided
+    // Add context if provided and meaningful (not generic messages)
     if let Some(ctx) = context {
-        eprintln!("📋 Context: {}", ctx);
+        // Skip generic context messages that don't add value
+        if !ctx.trim().is_empty() && ctx != "Command execution failed" {
+            eprintln!("📋 Context: {}", ctx);
+        }
     }
 
-    // Log the technical details for debugging
-    tracing::error!("Technical error details: {} (context: {:?})", error, context);
+    // Log the technical details for debugging (only in debug/trace mode)
+    tracing::debug!("Technical error details: {} (context: {:?})", error, context);
 }
 
 /// Report an error with suggested remediation steps.
@@ -92,7 +95,7 @@ pub fn report_error_with_remediation<E: std::fmt::Display>(error: &E, remediatio
         }
     }
 
-    tracing::error!("Error with remediation: {} (steps: {:?})", error, remediation_steps);
+    tracing::debug!("Error with remediation: {} (steps: {:?})", error, remediation_steps);
 }
 
 /// Report an error with a custom user message for better clarity.
@@ -111,13 +114,21 @@ pub fn report_warning<E: std::fmt::Display>(warning: &E) {
 }
 
 /// Create a user-friendly error message from a technical error
-/// 
+///
 /// This function tries to provide user-friendly error messages for common technical errors
 pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
     let error_str = error.to_string();
-    
+
     // Check for common error patterns and provide user-friendly messages
-    if error_str.contains("401") || error_str.to_lowercase().contains("unauthorized") {
+    if error_str.contains("invalid_client") {
+        "Authentication failed: Invalid client credentials. This could be due to:\n  - Incorrect client ID or secret\n  - Expired or revoked client credentials\n  - Disabled service account\n  Please verify your credentials and log in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("invalid_grant") {
+        "Authentication failed: Invalid authorization grant. Please log in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("unauthorized_client") {
+        "Authentication failed: Unauthorized client. Please verify your client credentials and try logging in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("invalid_request") {
+        "Authentication failed: Invalid request. Please verify your credentials and try logging in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("401") || error_str.to_lowercase().contains("unauthorized") {
         "Authentication failed. Please check your access token and try logging in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("403") || error_str.to_lowercase().contains("forbidden") {
         "Access forbidden. You don't have permission to perform this operation.".to_string()

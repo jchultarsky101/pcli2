@@ -551,6 +551,103 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     Ok(())
 }
 
+pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing part match command...");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
+    let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
+
+    // Get threshold parameter
+    let threshold = sub_matches.get_one::<f64>("threshold")
+        .copied()
+        .unwrap_or(80.0);
+
+    // Get format parameters directly from sub_matches since part match commands have all format flags
+    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap();
+
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
+
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata,
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(|e| CliActionError::FormattingError(e))?;
+
+    // Resolve asset ID from either UUID parameter or path
+    let asset = if let Some(uuid) = asset_uuid_param {
+        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
+    } else if let Some(asset_path) = asset_path_param {
+        // Get asset by path
+        api.get_asset_by_path(&tenant.uuid, asset_path).await?
+    } else {
+        // This shouldn't happen due to our earlier check, but just in case
+        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+    };
+
+    // Perform part search
+    let mut search_results = api.part_search(&tenant.uuid, &asset.uuid(), threshold).await?;
+
+    // Load configuration to get the UI base URL
+    let configuration = crate::configuration::Configuration::load_or_create_default()
+        .map_err(|e| CliError::ConfigurationError(
+            crate::configuration::ConfigurationError::FailedToLoadData {
+                cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+            }
+        ))?;
+    let ui_base_url = configuration.get_ui_base_url();
+
+    // Populate comparison URLs for each match
+    for match_result in &mut search_results.matches {
+        let comparison_url = format!(
+            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
+            ui_base_url, // Use configurable UI base URL
+            tenant.name, // Use tenant short name in path
+            asset.uuid(),
+            match_result.asset.uuid,
+            tenant.uuid, // Use tenant UUID in query params
+            tenant.uuid, // Use tenant UUID in query params
+            match_result.forward_match_percentage.unwrap_or(0.0),
+            match_result.reverse_match_percentage.unwrap_or(0.0)
+        );
+        match_result.comparison_url = Some(comparison_url);
+    }
+
+    // Create a basic AssetResponse from the asset for the reference
+    let reference_asset_response = crate::model::AssetResponse {
+        uuid: asset.uuid(),
+        tenant_id: tenant.uuid, // Use the tenant UUID
+        path: asset.path(),
+        folder_id: None, // We don't have folder ID in the Asset struct
+        asset_type: "asset".to_string(), // Default asset type
+        created_at: "".to_string(), // Placeholder for creation time
+        updated_at: "".to_string(), // Placeholder for update time
+        state: "active".to_string(), // Default state
+        is_assembly: false, // Default is not assembly
+        metadata: std::collections::HashMap::new(), // Empty metadata
+        parent_folder_id: None, // No parent folder ID
+        owner_id: None, // No owner ID
+    };
+
+    // Create enhanced response that includes the reference asset information
+    let enhanced_response = crate::model::EnhancedPartSearchResponse {
+        reference_asset: reference_asset_response,
+        matches: search_results.matches,
+    };
+
+    println!("{}", enhanced_response.format(format)?);
+
+    Ok(())
+}
+
 pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing geometric match folder command...");
 

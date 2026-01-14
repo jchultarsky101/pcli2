@@ -170,6 +170,33 @@ pub fn asset_command() -> Command {
             ),
     )
     .subcommand(
+        Command::new("part-match")
+            .about("Find geometrically similar assets using part search algorithm")
+            .arg(tenant_parameter())
+            .arg(uuid_parameter())
+            .arg(path_parameter())
+            .arg(
+                Arg::new("threshold")
+                    .short('s')
+                    .long("threshold")
+                    .num_args(1)
+                    .required(false)
+                    .default_value("80.0")
+                    .help("Similarity threshold (0.00 to 100.00)")
+                    .value_parser(clap::value_parser!(f64)),
+            )
+            .arg(format_with_headers_parameter())
+            .arg(format_with_metadata_parameter())
+            .arg(format_pretty_parameter())
+            .arg(format_parameter().default_value("json").value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .group(
+                ArgGroup::new("reference_asset")
+                    .args(["uuid", "path"])
+                    .multiple(false)
+                    .required(true)
+            ),
+    )
+    .subcommand(
         Command::new(COMMAND_MATCH_FOLDER)
             .about("Find geometrically similar assets for all assets in one or more folders")
             .arg(tenant_parameter())

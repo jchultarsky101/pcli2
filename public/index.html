@@ -75,7 +75,7 @@
   <div class="artifact-header target">
     <h4>Install v0.2.4</h4>
     
-      <div><small class="published-date">Published on Jan 13 2026 at 22:07 UTC</small></div>
+      <div><small class="published-date">Published on Jan 14 2026 at 17:36 UTC</small></div>
     
 
     <ul class="arches">
@@ -1398,33 +1398,98 @@
 <p>The tenant commands do not support tree format as it doesn't make sense for tenant data.</p>
 <h3>Command Aliases and Short Argument Names</h3>
 <p>Some commands have shorter aliases. For example <code>list</code> has an alias of <code>ls</code>. Similarly, some command arguments have short names too. For example <code>--path</code> can be provided as <code>-p</code>. See the help for details.</p>
-<h3>Cleaning Up</h3>
-<p>To completely remove PCLI2 data:</p>
-<h4>Delete configuration file</h4>
+<h3>Uninstalling PCLI2</h3>
+<p>To completely uninstall PCLI2 from your system, follow the instructions for your platform:</p>
+<h4>Windows</h4>
+<p><strong>Uninstall via Control Panel:</strong></p>
+<ol>
+<li>Open <strong>Control Panel</strong> → <strong>Programs and Features</strong></li>
+<li>Find <strong>PCLI2</strong> in the list of installed programs</li>
+<li>Select it and click <strong>Uninstall</strong></li>
+<li>Follow the prompts to complete the removal</li>
+</ol>
+<p><strong>Alternative method using command line:</strong></p>
+<pre style="background-color:#263238;"><span style="color:#eeffff;"># </span><span style="font-style:italic;color:#c792ea;">If</span><span style="color:#eeffff;"> you still have access to the original MSI file:
+</span><span style="color:#c792ea;">msiexec</span><span style="color:#eeffff;"> /x pcli2-x86_64-pc-windows-msvc.msi
+</span><span style="color:#eeffff;">
+</span><span style="color:#eeffff;"># Or </span><span style="font-style:italic;color:#c792ea;">if</span><span style="color:#eeffff;"> you know the product code:
+</span><span style="color:#c792ea;">msiexec</span><span style="color:#eeffff;"> /x {PRODUCT_CODE}
+</span></pre>
+
+<p><strong>Manual cleanup (if needed):</strong></p>
+<pre style="background-color:#263238;"><span style="color:#eeffff;"># Remove configuration directory
+</span><span style="color:#c792ea;">rmdir</span><span style="color:#eeffff;"> /s </span><span style="color:#89ddff;">"%</span><span style="color:#eeffff;">APPDATA</span><span style="color:#89ddff;">%</span><span style="color:#c3e88d;">\pcli2</span><span style="color:#89ddff;">"
+</span><span style="color:#eeffff;">
+</span><span style="color:#eeffff;"># Remove cache directory
+</span><span style="color:#c792ea;">rmdir</span><span style="color:#eeffff;"> /s </span><span style="color:#89ddff;">"%</span><span style="color:#eeffff;">LOCALAPPDATA</span><span style="color:#89ddff;">%</span><span style="color:#c3e88d;">\pcli2</span><span style="color:#89ddff;">"
+</span><span style="color:#eeffff;">
+</span><span style="color:#eeffff;"># Remove data directory
+</span><span style="color:#c792ea;">rmdir</span><span style="color:#eeffff;"> /s </span><span style="color:#89ddff;">"%</span><span style="color:#eeffff;">LOCALAPPDATA</span><span style="color:#89ddff;">%</span><span style="color:#c3e88d;">\pcli2-data</span><span style="color:#89ddff;">"
+</span></pre>
+
+<h4>macOS</h4>
+<p><strong>Uninstall using the installer script:</strong></p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Run the installer script with uninstall flag (if supported)
+</span><span style="color:#82aaff;">curl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">proto </span><span style="color:#89ddff;">'</span><span style="color:#c3e88d;">=https</span><span style="color:#89ddff;">' --</span><span style="color:#f78c6c;">tlsv1</span><span style="color:#82aaff;">.2</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">LsSf</span><span style="color:#82aaff;"> https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh </span><span style="color:#89ddff;">| </span><span style="color:#82aaff;">sh</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">s</span><span style="color:#89ddff;"> --</span><span style="color:#82aaff;"> --uninstall
+</span></pre>
+
+<p><strong>Manual removal:</strong></p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Remove the executable (typically installed in /usr/local/bin/)
+</span><span style="color:#82aaff;">sudo rm /usr/local/bin/pcli2
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Remove configuration directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/Library/Application</span><span style="color:#89ddff;">\ </span><span style="color:#82aaff;">Support/pcli2
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Remove cache directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/Library/Caches/pcli2
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Remove data directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/Library/Application</span><span style="color:#89ddff;">\ </span><span style="color:#82aaff;">Support/pcli2/data
+</span></pre>
+
+<h4>Linux</h4>
+<p><strong>Uninstall using the installer script:</strong></p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Run the installer script with uninstall flag (if supported)
+</span><span style="color:#82aaff;">curl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">proto </span><span style="color:#89ddff;">'</span><span style="color:#c3e88d;">=https</span><span style="color:#89ddff;">' --</span><span style="color:#f78c6c;">tlsv1</span><span style="color:#82aaff;">.2</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">LsSf</span><span style="color:#82aaff;"> https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh </span><span style="color:#89ddff;">| </span><span style="color:#82aaff;">sh</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">s</span><span style="color:#89ddff;"> --</span><span style="color:#82aaff;"> --uninstall
+</span></pre>
+
+<p><strong>Manual removal:</strong></p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Remove the executable (common locations)
+</span><span style="color:#82aaff;">sudo rm /usr/local/bin/pcli2
+</span><span style="font-style:italic;color:#546e7a;"># OR
+</span><span style="color:#82aaff;">sudo rm /usr/bin/pcli2
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Remove configuration directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/.config/pcli2
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Remove cache directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/.cache/pcli2
+</span><span style="color:#eeffff;">
+</span><span style="font-style:italic;color:#546e7a;"># Remove data directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/.local/share/pcli2
+</span></pre>
+
+<h4>Removing Configuration and Data Files</h4>
+<p>Regardless of platform, to completely remove all PCLI2 data including configuration, cache, and stored credentials:</p>
 <pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find configuration file location
 </span><span style="color:#82aaff;">pcli2 config get path
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Delete the file and directory
+</span><span style="font-style:italic;color:#546e7a;"># Remove configuration directory
 </span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="color:#89ddff;">"$(</span><span style="color:#82aaff;">dirname </span><span style="color:#89ddff;">"$(</span><span style="color:#82aaff;">pcli2 config get path</span><span style="color:#89ddff;">)")"
-</span></pre>
-
-<h4>Delete cache directory</h4>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find cache directory location (check config)
-</span><span style="color:#82aaff;">pcli2 config get </span><span style="color:#89ddff;">| </span><span style="color:#82aaff;">grep cache_path
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Delete cache directory
-</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/path/to/cache/directory/from/config</span><span style="color:#89ddff;">"
-</span></pre>
-
-<h4>Manual cleanup (if directories were created outside standard locations)</h4>
-<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Check for any PCLI2 directories
-</span><span style="color:#82aaff;">find </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">type</span><span style="color:#82aaff;"> d</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">name </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">*pcli2*</span><span style="color:#89ddff;">" </span><span style="color:#f78c6c;">2</span><span style="color:#89ddff;">&gt;</span><span style="color:#82aaff;">/dev/null
+</span><span style="font-style:italic;color:#546e7a;"># Remove cache directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/path/to/cache/directory</span><span style="color:#89ddff;">"  </span><span style="font-style:italic;color:#546e7a;"># Platform-specific location
 </span><span style="color:#eeffff;">
-</span><span style="font-style:italic;color:#546e7a;"># Remove any found directories
-</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/pcli2.cache
-</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="font-style:italic;color:#ff5370;">~</span><span style="color:#82aaff;">/.pcli2
+</span><span style="font-style:italic;color:#546e7a;"># Remove data directory
+</span><span style="color:#82aaff;">rm</span><span style="color:#89ddff;"> -</span><span style="color:#f78c6c;">rf </span><span style="color:#89ddff;">"</span><span style="color:#c3e88d;">/path/to/data/directory</span><span style="color:#89ddff;">"   </span><span style="font-style:italic;color:#546e7a;"># Platform-specific location
 </span></pre>
 
+<p>Platform-specific locations:</p>
+<ul>
+<li><strong>Windows</strong>: <code>%APPDATA%\pcli2\</code>, <code>%LOCALAPPDATA%\pcli2\cache\</code>, <code>%LOCALAPPDATA%\pcli2\data\</code></li>
+<li><strong>macOS</strong>: <code>~/Library/Application Support/pcli2/</code>, <code>~/Library/Caches/pcli2/</code>, <code>~/Library/Application Support/pcli2/data/</code></li>
+<li><strong>Linux</strong>: <code>~/.config/pcli2/</code>, <code>~/.cache/pcli2/</code>, <code>~/.local/share/pcli2/</code></li>
+</ul>
 <p>PCLI2 follows standard platform conventions for data storage, so all data can be easily located and removed using standard file system operations.</p>
 <h2>Commands Reference</h2>
 <p>The application uses a hierarchy of commands:</p>

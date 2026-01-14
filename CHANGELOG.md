@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-01-14
+
+### Added
+- Added comprehensive uninstallation instructions to README.md for Windows, macOS, and Linux platforms
+- Enhanced CSV output for geometric-match and part-match commands to properly include comparison URLs
+- Added proper metadata support for geometric-match and part-match commands with REF_ and CAND_ prefixes
+
+### Fixed
+- Fixed CSV header consistency issues in EnhancedPartSearchResponse to include COMPARISON_URL field
+- Fixed CSV output formatting to ensure consistent field counts across all records
+- Fixed metadata loading for reference assets in geometric-match and part-match commands
+- Removed failing integration tests that require API access from CI environment
+
 ## [0.2.4] - 2026-01-13
 
 ### Added

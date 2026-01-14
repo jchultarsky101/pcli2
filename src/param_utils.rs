@@ -38,11 +38,15 @@ pub async fn get_format_parameter_value(sub_matches: &ArgMatches) -> OutputForma
     trace!("Resolving output format options...");
 
     // Determine format based on precedence:
+    // 1. User specified --format (explicit command line) - only when user provides a non-default value
+    // 2. Environment variable PCLI2_FORMAT (when no explicit format provided)
+    // 3. Default value of "json"
+
+    // Determine format based on precedence:
     // 1. User specified --format (explicit command line)
     // 2. Environment variable PCLI2_FORMAT (when no explicit format provided)
     // 3. Default value of "json"
 
-    // Check if format was explicitly provided by user
     let format_string = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
         // User explicitly provided --format argument
         format_val.clone()

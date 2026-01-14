@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch
+            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch, part_match_asset
         },
         folders::{
             create_folder,
@@ -162,6 +162,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Routing to asset geometric match...");
 
                     geometric_match_asset(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("part-match", sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, "part-match");
+                    trace!("Routing to asset part match...");
+
+                    part_match_asset(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_MATCH_FOLDER, sub_matches)) => {
@@ -516,11 +523,18 @@ pub async fn execute_command() -> Result<(), CliError> {
                             Ok(())
                         }
                         _ => {
-                            // Get format parameters directly from sub_matches since config commands don't have all format flags
+                            // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
                             let format_str_owned = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                                // User explicitly provided --format argument
                                 format_val.clone()
                             } else {
-                                "json".to_string()
+                                // Format was not explicitly provided by user, check environment variable first
+                                if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
+                                    env_format
+                                } else {
+                                    // Use default value
+                                    "json".to_string()
+                                }
                             };
                             let format_str = &format_str_owned;
 
@@ -680,8 +694,19 @@ pub async fn execute_command() -> Result<(), CliError> {
                         Some(("list", sub_matches)) => {
                             trace!("Executing config environment list command");
 
-                            // Get format parameters from sub_matches
-                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap_or(&"json".to_string()).clone();
+                            // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
+                            let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                                // User explicitly provided --format argument
+                                format_val.clone()
+                            } else {
+                                // Format was not explicitly provided by user, check environment variable first
+                                if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
+                                    env_format
+                                } else {
+                                    // Use default value
+                                    "json".to_string()
+                                }
+                            };
 
                             let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
                             let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
@@ -801,8 +826,19 @@ pub async fn execute_command() -> Result<(), CliError> {
                         Some(("get", sub_matches)) => {
                             trace!("Executing config environment get command");
 
-                            // Get format parameters from sub_matches
-                            let format_str = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap_or(&"json".to_string()).clone();
+                            // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
+                            let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                                // User explicitly provided --format argument
+                                format_val.clone()
+                            } else {
+                                // Format was not explicitly provided by user, check environment variable first
+                                if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
+                                    env_format
+                                } else {
+                                    // Use default value
+                                    "json".to_string()
+                                }
+                            };
 
                             let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
                             let pretty = sub_matches.get_flag(PARAMETER_PRETTY);

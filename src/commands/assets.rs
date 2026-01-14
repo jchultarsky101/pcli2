@@ -30,7 +30,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+                .arg(format_parameter().default_value("json").value_parser([FORMAT_JSON, FORMAT_CSV]))
                 .group(asset_identifier_multiple_group()),
         )
         .subcommand(
@@ -57,7 +57,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+                .arg(format_parameter().default_value("json").value_parser([FORMAT_JSON, FORMAT_CSV]))
                 .arg(
                     Arg::new(PARAMETER_CONCURRENT)
                         .long(PARAMETER_CONCURRENT)
@@ -104,7 +104,7 @@ pub fn asset_command() -> Command {
                 .arg(path_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
+                .arg(format_parameter().default_value("json").value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
                 .arg(recursive_parameter())
                 .group(asset_identifier_group()),
         )
@@ -161,7 +161,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().default_value("json").value_parser([FORMAT_JSON, FORMAT_CSV]))
             .group(
                 ArgGroup::new("reference_asset")
                     .args(["uuid", "path"])
@@ -229,7 +229,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().default_value("json").value_parser([FORMAT_JSON, FORMAT_CSV]))
             .arg(
                 Arg::new("concurrent")
                     .long("concurrent")

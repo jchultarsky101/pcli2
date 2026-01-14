@@ -18,7 +18,7 @@ dev-keyring = []
 
 [dependencies]
 bincode = "1.3.3"
-clap = { version = "4.5.45", features = ["derive"] }
+clap = { version = "4.5.45", features = ["derive", "env"] }
 color-print = "0.3.4"
 dirs = "5.0.1"
 exitcode = "1.1.2"

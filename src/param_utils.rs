@@ -37,50 +37,19 @@ pub async fn get_format_parameter_value(sub_matches: &ArgMatches) -> OutputForma
 
     trace!("Resolving output format options...");
 
-    // Determine format based on precedence:
-    // 1. User specified --format (explicit command line) - only when user provides a non-default value
-    // 2. Environment variable PCLI2_FORMAT (when no explicit format provided)
-    // 3. Default value of "json"
-
-    // Determine format based on precedence:
+    // Get format parameter - Clap handles environment variable precedence automatically
     // 1. User specified --format (explicit command line)
     // 2. Environment variable PCLI2_FORMAT (when no explicit format provided)
-    // 3. Default value of "json"
-
-    let format_string = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
-        // User explicitly provided --format argument
-        format_val.clone()
-    } else {
-        // Format was not explicitly provided by user, check environment variable first
-        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-            env_format
-        } else {
-            // Use default value
-            "json".to_string()
-        }
-    };
+    // 3. Default value of "json" (set in the argument definition)
+    let format_string = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap().clone();
 
     let with_metadata = sub_matches.get_flag(PARAMETER_METADATA);
 
-    // Check headers flag with precedence:
+    // Get headers flag - Clap handles environment variable precedence automatically
     // 1. User specified --headers (explicit command line)
     // 2. Environment variable PCLI2_HEADERS (when no explicit headers flag provided)
-    // 3. Default value of false
-    let with_headers = if sub_matches.value_source(PARAMETER_HEADERS) == Some(clap::parser::ValueSource::CommandLine) {
-        // User explicitly provided --headers flag
-        sub_matches.get_flag(PARAMETER_HEADERS)
-    } else {
-        // Headers flag was not explicitly provided, check environment variable
-        if let Ok(env_headers) = std::env::var("PCLI2_HEADERS") {
-            // Convert environment variable to boolean
-            // Accept "true", "1", "yes", "on" as true; everything else as false (case insensitive)
-            let env_headers_lower = env_headers.to_lowercase();
-            matches!(env_headers_lower.as_str(), "true" | "1" | "yes" | "on")
-        } else {
-            // Use default value (false)
-            sub_matches.get_flag(PARAMETER_HEADERS)
-        }
-    };
+    // 3. Default value of false (implicit for boolean flags)
+    let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
 
     let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
 

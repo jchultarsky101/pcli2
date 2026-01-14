@@ -99,6 +99,8 @@ pub fn format_parameter() -> Arg {
         .long(PARAMETER_FORMAT)
         .num_args(1)
         .required(false)
+        .env("PCLI2_FORMAT")
+        .default_value("json")
         .global(true)
         .help("Output data format")
         .value_parser(OutputFormat::names())
@@ -119,6 +121,7 @@ pub fn format_with_headers_parameter() -> Arg {
         .long(PARAMETER_HEADERS)
         .action(ArgAction::SetTrue)
         .required(false)
+        .env("PCLI2_HEADERS")
         .help("Format the output with headers")
 }
 

@@ -567,7 +567,16 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
         .unwrap_or(80.0);
 
     // Get format parameters directly from sub_matches since part match commands have all format flags
-    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap();
+    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
+        format_val.clone()
+    } else {
+        // Check environment variable first, then use default
+        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
+            env_format
+        } else {
+            "json".to_string()
+        }
+    };
 
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
@@ -643,7 +652,8 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
         matches: search_results.matches,
     };
 
-    println!("{}", enhanced_response.format(format)?);
+    // Format the response considering the metadata flag
+    println!("{}", enhanced_response.format_with_metadata_flag(format, with_metadata)?);
 
     Ok(())
 }

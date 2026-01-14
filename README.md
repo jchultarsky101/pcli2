@@ -896,37 +896,109 @@ The tenant commands do not support tree format as it doesn't make sense for tena
 Some commands have shorter aliases. For example `list` has an alias of `ls`. Similarly, some command arguments have short names too. For example `--path` can be provided as `-p`. See the help for details.
 
 
-### Cleaning Up
+### Uninstalling PCLI2
 
-To completely remove PCLI2 data:
+To completely uninstall PCLI2 from your system, follow the instructions for your platform:
 
-#### Delete configuration file
+#### Windows
+
+**Uninstall via Control Panel:**
+1. Open **Control Panel** → **Programs and Features**
+2. Find **PCLI2** in the list of installed programs
+3. Select it and click **Uninstall**
+4. Follow the prompts to complete the removal
+
+**Alternative method using command line:**
+```cmd
+# If you still have access to the original MSI file:
+msiexec /x pcli2-x86_64-pc-windows-msvc.msi
+
+# Or if you know the product code:
+msiexec /x {PRODUCT_CODE}
+```
+
+**Manual cleanup (if needed):**
+```cmd
+# Remove configuration directory
+rmdir /s "%APPDATA%\pcli2"
+
+# Remove cache directory
+rmdir /s "%LOCALAPPDATA%\pcli2"
+
+# Remove data directory
+rmdir /s "%LOCALAPPDATA%\pcli2-data"
+```
+
+#### macOS
+
+**Uninstall using the installer script:**
+```bash
+# Run the installer script with uninstall flag (if supported)
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh -s -- --uninstall
+```
+
+**Manual removal:**
+```bash
+# Remove the executable (typically installed in /usr/local/bin/)
+sudo rm /usr/local/bin/pcli2
+
+# Remove configuration directory
+rm -rf ~/Library/Application\ Support/pcli2
+
+# Remove cache directory
+rm -rf ~/Library/Caches/pcli2
+
+# Remove data directory
+rm -rf ~/Library/Application\ Support/pcli2/data
+```
+
+#### Linux
+
+**Uninstall using the installer script:**
+```bash
+# Run the installer script with uninstall flag (if supported)
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh -s -- --uninstall
+```
+
+**Manual removal:**
+```bash
+# Remove the executable (common locations)
+sudo rm /usr/local/bin/pcli2
+# OR
+sudo rm /usr/bin/pcli2
+
+# Remove configuration directory
+rm -rf ~/.config/pcli2
+
+# Remove cache directory
+rm -rf ~/.cache/pcli2
+
+# Remove data directory
+rm -rf ~/.local/share/pcli2
+```
+
+#### Removing Configuration and Data Files
+
+Regardless of platform, to completely remove all PCLI2 data including configuration, cache, and stored credentials:
+
 ```bash
 # Find configuration file location
 pcli2 config get path
 
-# Delete the file and directory
+# Remove configuration directory
 rm -rf "$(dirname "$(pcli2 config get path)")"
+
+# Remove cache directory
+rm -rf "/path/to/cache/directory"  # Platform-specific location
+
+# Remove data directory
+rm -rf "/path/to/data/directory"   # Platform-specific location
 ```
 
-#### Delete cache directory
-```bash
-# Find cache directory location (check config)
-pcli2 config get | grep cache_path
-
-# Delete cache directory
-rm -rf "/path/to/cache/directory/from/config"
-```
-
-#### Manual cleanup (if directories were created outside standard locations)
-```bash
-# Check for any PCLI2 directories
-find ~ -type d -name "*pcli2*" 2>/dev/null
-
-# Remove any found directories
-rm -rf ~/pcli2.cache
-rm -rf ~/.pcli2
-```
+Platform-specific locations:
+- **Windows**: `%APPDATA%\pcli2\`, `%LOCALAPPDATA%\pcli2\cache\`, `%LOCALAPPDATA%\pcli2\data\`
+- **macOS**: `~/Library/Application Support/pcli2/`, `~/Library/Caches/pcli2/`, `~/Library/Application Support/pcli2/data/`
+- **Linux**: `~/.config/pcli2/`, `~/.cache/pcli2/`, `~/.local/share/pcli2/`
 
 PCLI2 follows standard platform conventions for data storage, so all data can be easily located and removed using standard file system operations.
 

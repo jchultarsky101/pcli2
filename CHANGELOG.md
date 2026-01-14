@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-01-14
+
+### Added
+- Added part-match and part-match-folder commands for finding part matches between assets
+- Added comprehensive documentation for part matching functionality
+- Added concurrent processing option for part-match-folder with configurable limits (1-10)
+- Added progress tracking with multi-progress bars for part-match-folder operations
+- Added exclusive flag for part-match-folder to limit matches to specified folders only
+- Added proper comparison URLs for part matching results in both JSON and CSV formats
+- Added metadata support for part matching with REF_ and CAND_ prefixes in CSV output
+
 ## [0.2.4] - 2026-01-14
 
 ### Added
@@ -227,7 +238,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/physna/pcli2/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/physna/pcli2/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/physna/pcli2/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/physna/pcli2/compare/v0.2.1...v0.2.2

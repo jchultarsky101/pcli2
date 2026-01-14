@@ -17,6 +17,7 @@ Based on lessons learned from the previous version, we have developed a new and 
   - [Working with Assets](#working-with-assets)
   - [Working with Asset Dependencies](#working-with-asset-dependencies)
   - [Geometric Matching](#geometric-matching)
+  - [Part Matching](#part-matching)
   - [Working with Metadata](#working-with-metadata)
     - [Metadata Inference](#metadata-inference)
 - [Advanced Usage](#advanced-usage)
@@ -440,6 +441,38 @@ The following are just recommendations. You can use any threshold value you woul
 4. **Adjust concurrency** based on your system's capabilities and API rate limits
 5. **Save results to files** when performing extensive matching operations
 6. **Use appropriate output formats** for your intended use case (JSON for scripting, CSV for spreadsheets)
+
+#### Part Matching
+
+Part matching is a specialized feature that finds parts within assemblies, rather than direct part-to-part comparisons. This is particularly useful for identifying components that make up larger assemblies or finding similar sub-assemblies within complex designs.
+
+Use the part-match command to find parts within assemblies similar to a specific reference model:
+
+```bash
+# Find parts within assemblies for a single asset
+pcli2 asset part-match --path /Root/Folder/ReferenceModel.stl --threshold 85.0
+```
+
+The key difference from geometric matching is that part matching outputs two similarity scores:
+- **Forward match percentage**: Measures how well the reference asset matches as a part within the candidate assembly
+- **Reverse match percentage**: Measures how well the candidate asset matches as a part within the reference assembly
+
+The threshold parameter controls the minimum similarity requirement for both directions.
+
+#### Part Matching Output
+
+Part matching results include both forward and reverse match percentages to indicate the directional relationship between parts and assemblies:
+
+```bash
+# View part matching results in CSV format with headers
+pcli2 asset part-match --path /Root/Folder/ReferenceModel.stl --threshold 80 --format csv --headers
+```
+
+The CSV output includes columns for both similarity scores:
+- `FORWARD_MATCH_PERCENTAGE`: Similarity when reference is considered a part of candidate
+- `REVERSE_MATCH_PERCENTAGE`: Similarity when candidate is considered a part of reference
+
+This bidirectional matching approach is ideal for discovering hierarchical relationships between components and assemblies in your design database.
 
 ### Working with Metadata
 

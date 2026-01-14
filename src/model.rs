@@ -1985,6 +1985,20 @@ pub struct PartMatchPair {
     pub comparison_url: Option<String>,
 }
 
+impl PartMatchPair {
+    /// Create a new PartMatchPair from a reference asset and a part match
+    pub fn from_reference_and_match(reference_asset: AssetResponse, match_result: PartMatch) -> Self {
+        PartMatchPair {
+            reference_asset,
+            candidate_asset: match_result.asset,
+            forward_match_percentage: match_result.forward_match_percentage,
+            reverse_match_percentage: match_result.reverse_match_percentage,
+            transformation: match_result.transformation,
+            comparison_url: match_result.comparison_url,
+        }
+    }
+}
+
 impl CsvRecordProducer for PartMatchPair {
     /// Get the CSV header row for PartMatchPair records
     fn csv_header() -> Vec<String> {

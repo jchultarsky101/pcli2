@@ -206,7 +206,7 @@ download_binary_and_run_installer() {
             _arch="aarch64-apple-darwin"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="70f7badb2290633d0961c8d3eb9268b0e012aa6ebb1b662394116e0db988fd70"
+            _checksum_value="66a3b083a683498cd10c5e632950f94913838fcf36c7424c32f567f7e19fd4de"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -220,7 +220,7 @@ download_binary_and_run_installer() {
             _arch="aarch64-unknown-linux-gnu"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="d69308eb007206f3f4759146c1797be37880aeac97c7fb385c074559b28058b4"
+            _checksum_value="852cb99c898faad095daa3bea05e85a8a1ba2c15e4cfb41578254b2aeb143381"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -234,7 +234,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-apple-darwin"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="6d1eb10b2a74512b625a4423bc51611c786cf1f7f09015223cf3580937b5b5e9"
+            _checksum_value="568a44f2fa4a50f6d5c9f127c1076861af4653b5bb0cbe8dc0d5905ca32db842"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -248,7 +248,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-pc-windows-msvc"
             _zip_ext=".zip"
             _checksum_style="sha256"
-            _checksum_value="a07a4d7543e60a0bfba329ce8410a15d6ffd861fee7bb34df22bb5b19fbe1762"
+            _checksum_value="f930db66bde5a73d92742653239489971119704df98a60125724186919caee63"
             _bins="pcli2.exe"
             _bins_js_array='"pcli2.exe"'
             _libs=""
@@ -262,7 +262,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-unknown-linux-gnu"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="31aa8ecc9b2fb81ef90a3a5dc39605f8fdfc757ce9e02947dbd8062035024b37"
+            _checksum_value="75ce7c7e95c3480a15f03c22d37aa6638ce5b64e94dbd590a3445e4d7a584313"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""

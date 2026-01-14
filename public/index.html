@@ -75,7 +75,7 @@
   <div class="artifact-header target">
     <h4>Install v0.2.4</h4>
     
-      <div><small class="published-date">Published on Jan 14 2026 at 17:36 UTC</small></div>
+      <div><small class="published-date">Published on Jan 14 2026 at 18:39 UTC</small></div>
     
 
     <ul class="arches">
@@ -648,6 +648,7 @@
 <li><a href="#working-with-assets" rel="noopener noreferrer">Working with Assets</a></li>
 <li><a href="#working-with-asset-dependencies" rel="noopener noreferrer">Working with Asset Dependencies</a></li>
 <li><a href="#geometric-matching" rel="noopener noreferrer">Geometric Matching</a></li>
+<li><a href="#part-matching" rel="noopener noreferrer">Part Matching</a></li>
 <li><a href="#working-with-metadata" rel="noopener noreferrer">Working with Metadata</a>
 <ul>
 <li><a href="#metadata-inference" rel="noopener noreferrer">Metadata Inference</a></li>
@@ -993,6 +994,31 @@
 <li><strong>Save results to files</strong> when performing extensive matching operations</li>
 <li><strong>Use appropriate output formats</strong> for your intended use case (JSON for scripting, CSV for spreadsheets)</li>
 </ol>
+<h4>Part Matching</h4>
+<p>Part matching is a specialized feature that finds parts within assemblies, rather than direct part-to-part comparisons. This is particularly useful for identifying components that make up larger assemblies or finding similar sub-assemblies within complex designs.</p>
+<p>Use the part-match command to find parts within assemblies similar to a specific reference model:</p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># Find parts within assemblies for a single asset
+</span><span style="color:#82aaff;">pcli2 asset part-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Folder/ReferenceModel.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 85.0
+</span></pre>
+
+<p>The key difference from geometric matching is that part matching outputs two similarity scores:</p>
+<ul>
+<li><strong>Forward match percentage</strong>: Measures how well the reference asset matches as a part within the candidate assembly</li>
+<li><strong>Reverse match percentage</strong>: Measures how well the candidate asset matches as a part within the reference assembly</li>
+</ul>
+<p>The threshold parameter controls the minimum similarity requirement for both directions.</p>
+<h4>Part Matching Output</h4>
+<p>Part matching results include both forward and reverse match percentages to indicate the directional relationship between parts and assemblies:</p>
+<pre style="background-color:#263238;"><span style="font-style:italic;color:#546e7a;"># View part matching results in CSV format with headers
+</span><span style="color:#82aaff;">pcli2 asset part-match</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">path</span><span style="color:#82aaff;"> /Root/Folder/ReferenceModel.stl</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">threshold</span><span style="color:#82aaff;"> 80</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">format</span><span style="color:#82aaff;"> csv</span><span style="color:#89ddff;"> --</span><span style="color:#f78c6c;">headers
+</span></pre>
+
+<p>The CSV output includes columns for both similarity scores:</p>
+<ul>
+<li><code>FORWARD_MATCH_PERCENTAGE</code>: Similarity when reference is considered a part of candidate</li>
+<li><code>REVERSE_MATCH_PERCENTAGE</code>: Similarity when candidate is considered a part of reference</li>
+</ul>
+<p>This bidirectional matching approach is ideal for discovering hierarchical relationships between components and assemblies in your design database.</p>
 <h3>Working with Metadata</h3>
 <p>Metadata is essential for organizing and searching your assets effectively. PCLI2 supports comprehensive metadata operations including creating, retrieving, updating, and deleting asset metadata. Metadata helps you categorize, filter, and find assets based on custom properties like material, supplier, weight, or any other characteristic relevant to your workflow.</p>
 <h4>Metadata Operations</h4>

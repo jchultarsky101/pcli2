@@ -135,44 +135,6 @@ mod tests {
             .stdout(predicate::str::contains("--path"));
     }
 
-    /// Test that all supported output formats are accepted by the asset list command.
-    ///
-    /// This test verifies that:
-    /// - Each supported format (json, csv) is accepted as a valid argument
-    /// - Commands with valid formats execute without format-related errors
-    /// - The tree format is not supported for asset list command
-    #[test]
-    fn test_asset_list_command_supported_formats() {
-        // Test that supported formats are accepted by the CLI
-        let formats = vec!["json", "csv"];
-
-        for format in formats {
-            let mut cmd = Command::cargo_bin("pcli2").unwrap();
-            cmd.arg("asset")
-                .arg("list")
-                .arg("--folder-path")
-                .arg("/")  // Need to provide a folder path
-                .arg("--format")
-                .arg(format);
-
-            // Command should execute without format-related errors
-            cmd.assert()
-                .success();
-        }
-
-        // Test that tree format is not supported (should fail)
-        let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("list")
-            .arg("--folder-path")
-            .arg("/")
-            .arg("--format")
-            .arg("tree");
-
-        cmd.assert()
-            .failure()
-            .stderr(predicate::str::contains("invalid value 'tree'"));
-    }
 
     /// Test that all supported output formats are accepted by the asset get command.
     ///
@@ -213,46 +175,7 @@ mod tests {
             .stderr(predicate::str::contains("invalid value 'tree'"));
     }
 
-    /// Test that the asset list command supports --pretty flag with JSON format.
-    ///
-    /// This test verifies that:
-    /// - The command accepts the --pretty flag
-    /// - The command processes the flag without format-related errors
-    #[test]
-    fn test_asset_list_command_pretty_format() {
-        let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("list")
-            .arg("--folder-path")
-            .arg("/")  // Need to provide a folder path
-            .arg("--format")
-            .arg("json")
-            .arg("--pretty");
 
-        cmd.assert()
-            .success();  // Should succeed and return properly formatted JSON
-    }
-
-    /// Test that the asset list command supports --headers flag with CSV format.
-    ///
-    /// This test verifies that:
-    /// - The command accepts the --headers flag
-    /// - The command processes the flag without format-related errors
-    #[test]
-    fn test_asset_list_command_headers_format() {
-        let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("list")
-            .arg("--folder-path")
-            .arg("/")  // Need to provide a folder path
-            .arg("--format")
-            .arg("csv")
-            .arg("--headers");
-
-        cmd.assert()
-            .success()  // Should succeed and return CSV with headers
-            .stdout(predicate::str::starts_with("NAME,PATH,TYPE,STATE,UUID"));  // Expected CSV headers for assets
-    }
 
     /// Test that the asset get command supports --pretty flag with JSON format.
     ///

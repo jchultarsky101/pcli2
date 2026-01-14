@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch, part_match_asset
+            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch, part_match_asset, part_match_folder
         },
         folders::{
             create_folder,
@@ -28,7 +28,40 @@ use pcli2::{
     commands::{
         create_cli_commands,
         params::{
-            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CONFIG, COMMAND_CONTEXT, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_MATCH_FOLDER, COMMAND_SET, COMMAND_TENANT, PARAMETER_API_URL, PARAMETER_AUTH_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY, PARAMETER_UI_URL
+            COMMAND_ASSET,
+            COMMAND_AUTH,
+            COMMAND_CLEAR,
+            COMMAND_CONFIG,
+            COMMAND_CONTEXT,
+            COMMAND_CREATE,
+            COMMAND_CREATE_BATCH,
+            COMMAND_DELETE,
+            COMMAND_DOWNLOAD,
+            COMMAND_EXPORT,
+            COMMAND_FOLDER,
+            COMMAND_GET,
+            COMMAND_IMPORT,
+            COMMAND_LIST,
+            COMMAND_LOGIN,
+            COMMAND_LOGOUT,
+            COMMAND_MATCH,
+            COMMAND_MATCH_FOLDER,
+            COMMAND_METADATA,
+            COMMAND_PART_MATCH,
+            COMMAND_PART_MATCH_FOLDER,
+            COMMAND_INFERENCE,
+            COMMAND_SET,
+            COMMAND_TENANT,
+            PARAMETER_API_URL,
+            PARAMETER_AUTH_URL,
+            PARAMETER_CLIENT_ID,
+            PARAMETER_CLIENT_SECRET,
+            PARAMETER_FILE,
+            PARAMETER_FORMAT,
+            PARAMETER_HEADERS,
+            PARAMETER_OUTPUT,
+            PARAMETER_PRETTY,
+            PARAMETER_UI_URL
         }
     },
     format::{Formattable, OutputFormat, OutputFormatOptions, FormattingError}};
@@ -164,8 +197,8 @@ pub async fn execute_command() -> Result<(), CliError> {
                     geometric_match_asset(sub_matches).await?;
                     Ok(())
                 }
-                Some(("part-match", sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_ASSET, "part-match");
+                Some((COMMAND_PART_MATCH, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_PART_MATCH);
                     trace!("Routing to asset part match...");
 
                     part_match_asset(sub_matches).await?;
@@ -178,7 +211,13 @@ pub async fn execute_command() -> Result<(), CliError> {
                     geometric_match_folder(sub_matches).await?;
                     Ok(())
                 }
-                #[allow(non_snake_case)]
+                Some((COMMAND_PART_MATCH_FOLDER, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_PART_MATCH_FOLDER);
+                    trace!("Routing to asset part match folder...");
+
+                    part_match_folder(sub_matches).await?;
+                    Ok(())
+                }
                 Some((COMMAND_METADATA, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_METADATA);
 
@@ -204,8 +243,8 @@ pub async fn execute_command() -> Result<(), CliError> {
                             delete_asset_metadata(sub_matches).await?;
                             Ok(())
                         }
-                        Some(("inference", sub_matches)) => {
-                            trace!("Command: {} {} inference", COMMAND_ASSET, COMMAND_METADATA);
+                        Some((COMMAND_INFERENCE, sub_matches)) => {
+                            trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_INFERENCE);
                             trace!("Routing to asset metadata inference...");
 
                             metadata_inference(sub_matches).await?;

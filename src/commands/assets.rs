@@ -11,7 +11,7 @@ use crate::commands::params::{
     multiple_files_parameter, path_parameter, recursive_parameter,
     tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH,
     COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_DOWNLOAD_FOLDER, COMMAND_GET,
-    COMMAND_LIST, COMMAND_MATCH, COMMAND_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
+    COMMAND_LIST, COMMAND_MATCH, COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
     PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
@@ -189,6 +189,57 @@ pub fn asset_command() -> Command {
     .subcommand(
         Command::new(COMMAND_MATCH_FOLDER)
             .about("Find geometrically similar assets for all assets in one or more folders")
+            .arg(tenant_parameter())
+            .arg(
+                Arg::new(PARAMETER_FOLDER_PATH)
+                    .short('p')
+                    .long(PARAMETER_FOLDER_PATH)
+                    .num_args(1..) // Accept one or more values
+                    .required(true)
+                    .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
+                    .action(clap::ArgAction::Append), // Allow multiple --path flags
+            )
+            .arg(
+                Arg::new("threshold")
+                    .short('s')
+                    .long("threshold")
+                    .num_args(1)
+                    .required(false)
+                    .default_value("80.0")
+                    .help("Similarity threshold (0.00 to 100.00)")
+                    .value_parser(clap::value_parser!(f64)),
+            )
+            .arg(
+                Arg::new("exclusive")
+                    .long("exclusive")
+                    .action(ArgAction::SetTrue)
+                    .required(false)
+                    .help("Only show matches where both assets belong to the specified paths"),
+            )
+            .arg(format_with_headers_parameter())
+            .arg(format_with_metadata_parameter())
+            .arg(format_pretty_parameter())
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(
+                Arg::new("concurrent")
+                    .long("concurrent")
+                    .num_args(1)
+                    .required(false)
+                    .default_value("1")
+                    .help("Maximum number of concurrent operations (range: 1-10)")
+                    .value_parser(clap::value_parser!(usize)),
+            )
+            .arg(
+                Arg::new("progress")
+                    .long("progress")
+                    .action(ArgAction::SetTrue)
+                    .required(false)
+                    .help("Display progress bar during processing"),
+            )
+    )
+    .subcommand(
+        Command::new(COMMAND_PART_MATCH_FOLDER)
+            .about("Find part matches for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(
                 Arg::new(PARAMETER_FOLDER_PATH)

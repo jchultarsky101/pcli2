@@ -1577,7 +1577,114 @@ impl PhysnaApiClient {
         debug!("Geometric search completed for asset_id: {} with {} total matches", asset_uuid, final_response.matches.len());
         Ok(final_response)
     }
-    
+
+    /// Perform a part search to find geometrically similar assets using the part search algorithm
+    ///
+    /// This method uses Physna's advanced part search algorithms to find assets with similar
+    /// geometry to the provided reference asset. The part search algorithm may provide different
+    /// results than the standard geometric search, potentially with forward and reverse match percentages.
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The UUID of the tenant containing the assets
+    /// * `asset_uuid` - The UUID of the reference asset to search for matches
+    /// * `threshold` - The similarity threshold as a percentage (0.00 to 100.00)
+    ///                Lower values return more matches, higher values return fewer but more similar matches
+    ///
+    /// # Returns
+    /// * `Ok(GeometricSearchResponse)` - The search results containing similar assets
+    /// * `Err(ApiError)` - If there's an HTTP error, authentication issue, or other API error
+    ///
+    /// # Example
+    /// ```no_run
+    /// use pcli2::physna_v3::PhysnaApiClient;
+    /// use uuid::Uuid;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let mut client = PhysnaApiClient::new();
+    ///     let tenant_uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")?;
+    ///     let asset_uuid = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000")?;
+    ///     let matches = client.part_search(&tenant_uuid, &asset_uuid, 85.0).await?;
+    ///     for match_result in &matches.matches {
+    ///         println!("Found match: {} (forward: {:.2}%, reverse: {:.2}%)",
+    ///             match_result.path(),
+    ///             match_result.forward_match_percentage.unwrap_or(0.0),
+    ///             match_result.reverse_match_percentage.unwrap_or(0.0));
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn part_search(&mut self, tenant_uuid: &Uuid, asset_uuid: &Uuid, threshold: f64) -> Result<crate::model::PartSearchResponse, ApiError> {
+        debug!("Starting part search for tenant_uuid: {}, asset_uuid: {}, threshold: {}", tenant_uuid, asset_uuid, threshold);
+        let url = format!("{}/tenants/{}/assets/{}/part-search", self.base_url, tenant_uuid, asset_uuid);
+
+        // Initialize with page 1 and reasonable page size
+        let mut all_matches = Vec::new();
+        let mut page = 1;
+        let per_page = 100; // Larger page size for efficiency
+
+        loop {
+            debug!("Fetching page {} of part search results", page);
+
+            // Build request body with the correct structure
+            let body = serde_json::json!({
+                "page": page,
+                "perPage": per_page,
+                "searchQuery": "",
+                "filters": {
+                    "folders": [],
+                    "metadata": {},
+                    "extensions": []  // Empty array as requested
+                },
+                "minThreshold": threshold  // Use threshold directly as percentage
+            });
+
+            debug!("Sending part search request to: {}", url);
+            // Execute POST request
+            let result: Result<crate::model::PartSearchResponse, ApiError> = self.post(&url, &body).await;
+
+            match result {
+                Ok(response) => {
+                    // Check if we have pagination data
+                    if let Some(page_data) = &response.page_data {
+                        debug!("Page {}/{} with {} total matches", page_data.current_page, page_data.last_page, page_data.total);
+
+                        // Add matches from this page to our collection
+                        all_matches.extend(response.matches);
+
+                        // Check if we've reached the last page
+                        if page_data.current_page >= page_data.last_page {
+                            debug!("Reached last page of results");
+                            break;
+                        }
+
+                        // Move to next page
+                        page += 1;
+                    } else {
+                        // No pagination data - just return the response as-is
+                        debug!("No pagination data in response, returning single page");
+                        return Ok(response);
+                    }
+                }
+                Err(e) => {
+                    // Return error immediately
+                    debug!("Part search failed: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // Create a response with all matches and combined pagination data
+        let final_response = crate::model::PartSearchResponse {
+            matches: all_matches,
+            page_data: None, // We've aggregated all pages
+            filter_data: None,
+        };
+
+        debug!("Part search completed for asset_id: {} with {} total matches", asset_uuid, final_response.matches.len());
+        Ok(final_response)
+    }
+
     /// Create multiple assets by uploading files matching a glob pattern
     /// 
     /// This method uploads multiple files as assets in the specified tenant.

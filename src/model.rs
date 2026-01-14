@@ -1806,6 +1806,7 @@ impl CsvRecordProducer for EnhancedPartSearchResponse {
             "REVERSE_MATCH_PERCENTAGE".to_string(),
             "REFERENCE_ASSET_UUID".to_string(),
             "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
         ]
     }
 
@@ -1821,6 +1822,7 @@ impl CsvRecordProducer for EnhancedPartSearchResponse {
                     format!("{}", m.reverse_score()), // Full precision
                     self.reference_asset.uuid.to_string(),
                     m.asset_uuid().to_string(),
+                    m.comparison_url.clone().unwrap_or_default(),
                 ]
             })
             .collect()
@@ -1837,55 +1839,122 @@ impl OutputFormatter for EnhancedPartSearchResponse {
     /// - CSV: Outputs as CSV with optional headers
     /// - Tree: Not supported for this type
     fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
-        match f {
-            OutputFormat::Json(options) => {
-                if options.pretty {
-                    serde_json::to_string_pretty(self)
-                } else {
-                    serde_json::to_string(self)
-                }
-                .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })
-            }
-            OutputFormat::Csv(options) => {
-                let mut wtr = Writer::from_writer(vec![]);
+        // Extract the metadata flag from the format options
+        let with_metadata = match &f {
+            OutputFormat::Json(options) => options.with_metadata,
+            OutputFormat::Csv(options) => options.with_metadata,
+            OutputFormat::Tree(options) => options.with_metadata,
+        };
 
-                if options.with_headers {
-                    wtr.serialize(EnhancedPartSearchResponse::csv_header())?;
-                }
-
-                // Sort records by forward match percentage (descending)
-                let mut records = self.as_csv_records();
-                records.sort_by(|a, b| {
-                    // Parse the forward match percentage as f64 for comparison
-                    let score_a = a[2].parse::<f64>().unwrap_or(0.0);
-                    let score_b = b[2].parse::<f64>().unwrap_or(0.0);
-                    score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
-                });
-
-                for record in records {
-                    wtr.serialize(&record)?;
-                }
-
-                let data = wtr.into_inner()
-                    .map_err(|e| FormattingError::CsvIntoInnerError(e))?;
-                String::from_utf8(data)
-                    .map_err(|e| FormattingError::Utf8Error(e))
-            }
-            OutputFormat::Tree(_) => {
-                // For tree format, output as JSON since tree doesn't make sense for search results
-                serde_json::to_string_pretty(self)
-                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })
-            }
-        }
+        self.format_with_metadata_flag(f, with_metadata)
     }
 }
 
 impl EnhancedPartSearchResponse {
     /// Format the EnhancedPartSearchResponse with consideration for metadata flag
-    pub fn format_with_metadata_flag(&self, format: OutputFormat, _include_metadata: bool) -> Result<String, FormattingError> {
-        // For part search, metadata inclusion doesn't change the structure significantly
-        // since the main data is the forward and reverse match percentages
-        self.format(format)
+    pub fn format_with_metadata_flag(&self, f: OutputFormat, include_metadata: bool) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    Ok(serde_json::to_string_pretty(self)?)
+                } else {
+                    Ok(serde_json::to_string(self)?)
+                }
+            }
+            OutputFormat::Csv(options) => {
+                let mut wtr = csv::Writer::from_writer(vec![]);
+
+                // Pre-calculate the metadata keys that will be used for both header and all records to ensure consistency
+                let mut header_metadata_keys = Vec::new();
+                if include_metadata {
+                    // Collect all unique metadata keys from ALL matches for consistent headers
+                    let mut all_metadata_keys = std::collections::HashSet::new();
+
+                    // Collect metadata keys from reference asset
+                    for key in self.reference_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+
+                    // Collect metadata keys from all matching assets
+                    for match_result in &self.matches {
+                        for key in match_result.asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+                    }
+
+                    // Sort metadata keys for consistent column ordering
+                    let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                    sorted_keys.sort();
+                    header_metadata_keys = sorted_keys;
+                }
+
+                if options.with_headers {
+                    if include_metadata {
+                        // Include metadata columns in the header
+                        let mut base_headers = Self::csv_header();
+
+                        // Extend headers with metadata columns using the pre-calculated keys
+                        for key in &header_metadata_keys {
+                            base_headers.push(format!("REF_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        }
+
+                        wtr.serialize(base_headers.as_slice())?;
+                    } else {
+                        wtr.serialize(EnhancedPartSearchResponse::csv_header())?;
+                    }
+                }
+
+                for match_result in &self.matches {
+                    if include_metadata {
+                        // Include metadata values in the output
+                        let mut base_values = vec![
+                            self.reference_asset.path.clone(),
+                            match_result.path().to_string(),
+                            format!("{}", match_result.forward_score()),
+                            format!("{}", match_result.reverse_score()),
+                            self.reference_asset.uuid.to_string(),
+                            match_result.asset_uuid().to_string(),
+                            match_result.comparison_url.clone().unwrap_or_default(),
+                        ];
+
+                        // Add metadata values for each key that was included in the header
+                        for key in &header_metadata_keys {
+                            // Add reference asset metadata value (same for all records)
+                            let ref_value = self.reference_asset.metadata.get(key)
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or_default();
+                            base_values.push(ref_value);
+
+                            // Add candidate asset metadata value (specific to this match)
+                            let cand_value = match_result.asset.metadata.get(key)
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or_default();
+                            base_values.push(cand_value);
+                        }
+
+                        wtr.serialize(base_values.as_slice())?;
+                    } else {
+                        let base_values = vec![
+                            self.reference_asset.path.clone(),
+                            match_result.path().to_string(),
+                            format!("{}", match_result.forward_score()),
+                            format!("{}", match_result.reverse_score()),
+                            self.reference_asset.uuid.to_string(),
+                            match_result.asset_uuid().to_string(),
+                            match_result.comparison_url.clone().unwrap_or_default(),
+                        ];
+                        wtr.serialize(base_values.as_slice())?;
+                    }
+                }
+
+                let data = wtr.into_inner()?;
+                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+            }
+            _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
+        }
     }
 }
 
@@ -1926,6 +1995,7 @@ impl CsvRecordProducer for PartMatchPair {
             "REVERSE_MATCH_PERCENTAGE".to_string(),
             "REFERENCE_ASSET_UUID".to_string(),
             "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
         ]
     }
 
@@ -1938,6 +2008,7 @@ impl CsvRecordProducer for PartMatchPair {
             format!("{}", self.reverse_match_percentage.unwrap_or(0.0)),
             self.reference_asset.uuid.to_string(),
             self.candidate_asset.uuid.to_string(),
+            self.comparison_url.clone().unwrap_or_default(),
         ]]
     }
 }
@@ -2187,16 +2258,95 @@ impl OutputFormatter for GeometricMatchPair {
                 let mut wtr = csv::Writer::from_writer(vec![]);
 
                 if options.with_headers {
-                    wtr.serialize(GeometricMatchPair::csv_header())?;
+                    if options.with_metadata {
+                        // Include metadata columns in the header
+                        let mut base_headers = GeometricMatchPair::csv_header();
+
+                        // Get unique metadata keys from both reference and candidate assets
+                        let mut all_metadata_keys = std::collections::HashSet::new();
+
+                        // Collect metadata keys from reference asset
+                        for key in self.reference_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Collect metadata keys from candidate asset
+                        for key in self.candidate_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Sort metadata keys for consistent column ordering
+                        let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                        sorted_keys.sort();
+
+                        // Extend headers with metadata columns
+                        for key in &sorted_keys {
+                            base_headers.push(format!("REF_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        }
+
+                        wtr.serialize(base_headers.as_slice())?;
+                    } else {
+                        wtr.serialize(GeometricMatchPair::csv_header())?;
+                    }
                 }
 
-                wtr.serialize((
-                    &self.reference_asset.path,
-                    &self.candidate_asset.path,
-                    &self.match_percentage,
-                    &self.reference_asset.uuid.to_string(),
-                    &self.candidate_asset.uuid.to_string(),
-                ))?;
+                if options.with_metadata {
+                    // Include metadata values in the output
+                    let mut base_values = vec![
+                        self.reference_asset.path.clone(),
+                        self.candidate_asset.path.clone(),
+                        format!("{}", self.match_percentage),
+                        self.reference_asset.uuid.to_string(),
+                        self.candidate_asset.uuid.to_string(),
+                        self.comparison_url.clone().unwrap_or_default(),
+                    ];
+
+                    // Get unique metadata keys from both reference and candidate assets
+                    let mut all_metadata_keys = std::collections::HashSet::new();
+
+                    // Collect metadata keys from reference asset
+                    for key in self.reference_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+
+                    // Collect metadata keys from candidate asset
+                    for key in self.candidate_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+
+                    // Sort metadata keys for consistent column ordering
+                    let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                    sorted_keys.sort();
+
+                    // Add metadata values for each key
+                    for key in &sorted_keys {
+                        // Add reference asset metadata value
+                        let ref_value = self.reference_asset.metadata.get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(ref_value);
+
+                        // Add candidate asset metadata value
+                        let cand_value = self.candidate_asset.metadata.get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(cand_value);
+                    }
+
+                    wtr.serialize(base_values.as_slice())?;
+                } else {
+                    wtr.serialize((
+                        &self.reference_asset.path,
+                        &self.candidate_asset.path,
+                        &self.match_percentage,
+                        &self.reference_asset.uuid.to_string(),
+                        &self.candidate_asset.uuid.to_string(),
+                        &self.comparison_url.clone().unwrap_or_default(),
+                    ))?;
+                }
 
                 let data = wtr.into_inner()?;
                 String::from_utf8(data).map_err(FormattingError::Utf8Error)

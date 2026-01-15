@@ -1623,8 +1623,19 @@ impl PhysnaApiClient {
         let mut page = 1;
         let per_page = 100; // Larger page size for efficiency
 
+        // Safety counter to prevent infinite loops
+        let mut safety_counter = 0;
+        let max_pages = 1000; // Reasonable upper limit
+
         loop {
             debug!("Fetching page {} of part search results", page);
+
+            // Safety check to prevent infinite loops
+            safety_counter += 1;
+            if safety_counter > max_pages {
+                debug!("Safety counter exceeded, stopping to prevent infinite loop");
+                break;
+            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({
@@ -1725,8 +1736,19 @@ impl PhysnaApiClient {
         let mut page = 1;
         let per_page = 100; // Larger page size for efficiency
 
+        // Safety counter to prevent infinite loops
+        let mut safety_counter = 0;
+        let max_pages = 1000; // Reasonable upper limit
+
         loop {
             debug!("Fetching page {} of visual search results", page);
+
+            // Safety check to prevent infinite loops
+            safety_counter += 1;
+            if safety_counter > max_pages {
+                debug!("Safety counter exceeded, stopping to prevent infinite loop");
+                break;
+            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({
@@ -1759,7 +1781,7 @@ impl PhysnaApiClient {
                             break;
                         }
 
-                        // Move to next page
+                        // Move to next page - increment for next iteration
                         page += 1;
                     } else {
                         // No pagination data - just return the response as-is

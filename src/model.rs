@@ -2005,8 +2005,8 @@ impl CsvRecordProducer for PartMatchPair {
         vec![
             "REFERENCE_ASSET_PATH".to_string(),
             "CANDIDATE_ASSET_PATH".to_string(),
-            "FORWARD_MATCH_PERCENTAGE".to_string(),
-            "REVERSE_MATCH_PERCENTAGE".to_string(),
+            "SCORE_1".to_string(), // Generic score field that can be forward match % for geometric/part or empty for visual
+            "SCORE_2".to_string(), // Generic score field that can be reverse match % for geometric/part or empty for visual
             "REFERENCE_ASSET_UUID".to_string(),
             "CANDIDATE_ASSET_UUID".to_string(),
             "COMPARISON_URL".to_string(),

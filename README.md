@@ -18,6 +18,7 @@ Based on lessons learned from the previous version, we have developed a new and 
   - [Working with Asset Dependencies](#working-with-asset-dependencies)
   - [Geometric Matching](#geometric-matching)
   - [Part Matching](#part-matching)
+  - [Visual Matching](#visual-matching)
   - [Working with Metadata](#working-with-metadata)
     - [Metadata Inference](#metadata-inference)
 - [Advanced Usage](#advanced-usage)
@@ -473,6 +474,57 @@ The CSV output includes columns for both similarity scores:
 - `REVERSE_MATCH_PERCENTAGE`: Similarity when candidate is considered a part of reference
 
 This bidirectional matching approach is ideal for discovering hierarchical relationships between components and assemblies in your design database.
+
+### Visual Matching
+
+Visual matching is a specialized feature that finds assets with similar visual appearance using advanced computer vision algorithms. Unlike geometric matching which focuses on 3D shape similarity, or part matching which identifies hierarchical relationships, visual matching identifies assets that look similar from a visual standpoint.
+
+#### Single Asset Visual Matching
+
+Use the visual-match command to find visually similar assets to a specific reference model:
+
+```bash
+# Find visually similar assets for a single asset
+pcli2 asset visual-match --path /Root/Folder/ReferenceModel.stl
+```
+
+Visual matching results are ordered by relevance as determined by the visual search algorithm. Unlike geometric and part matching, visual matching does not use a threshold parameter and does not provide similarity percentages since the results are ranked by visual similarity rather than a percentage-based comparison.
+
+#### Folder-Based Visual Matching
+
+For bulk operations, use visual-match-folder to find visually similar assets for all models in one or more folders:
+
+```bash
+# Find visually similar assets for all assets in a folder (parallel processing)
+pcli2 asset visual-match-folder --path /Root/SearchFolder/ --format csv --progress
+
+# Find visually similar assets across multiple folders
+pcli2 asset visual-match-folder --path /Root/Folder1/ --path /Root/Folder2/ --format json --progress
+
+# Use exclusive flag to limit results to matches within specified folders only
+pcli2 asset visual-match-folder --path /Root/SearchFolder/ --exclusive --format csv --progress
+```
+
+This command processes all assets in the specified folder(s) simultaneously, making it efficient for large-scale visual similarity searches. The progress flag provides visual feedback during long-running operations.
+
+#### Visual Matching Output
+
+Visual matching results differ from geometric and part matching in that they do not include similarity percentages:
+
+```bash
+# View visual matching results in CSV format with headers
+pcli2 asset visual-match --path /Root/Folder/ReferenceModel.stl --format csv --headers --metadata
+```
+
+The CSV output includes columns for:
+- `REFERENCE_ASSET_PATH`: Path of the reference asset
+- `CANDIDATE_ASSET_PATH`: Path of the visually similar asset
+- `REFERENCE_ASSET_UUID`: UUID of the reference asset
+- `CANDIDATE_ASSET_UUID`: UUID of the visually similar asset
+- `COMPARISON_URL`: URL to view the comparison in the Physna UI
+- Metadata columns (when using `--metadata` flag): `REF_*` and `CAND_*` prefixed columns for reference and candidate asset metadata
+
+Visual matching is particularly useful for identifying assets with similar visual characteristics, textures, or appearances that may not be captured by geometric analysis alone.
 
 ### Working with Metadata
 

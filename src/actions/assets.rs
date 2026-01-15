@@ -1691,14 +1691,45 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         crate::format::OutputFormat::Csv(_) => {
             let mut wtr = csv::Writer::from_writer(vec![]);
 
+            // Pre-calculate the metadata keys that will be used for headers and all records
+            let mut header_metadata_keys = Vec::new();
+            if with_metadata {
+                // Collect all unique metadata keys from ALL match pairs for consistent headers
+                let mut all_metadata_keys = std::collections::HashSet::new();
+                for match_pair in &visual_match_pairs {
+                    for key in match_pair.reference_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+                    for key in match_pair.candidate_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+                }
+
+                // Sort metadata keys for consistent column ordering
+                let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                sorted_keys.sort();
+                header_metadata_keys = sorted_keys;
+            }
+
             if with_headers {
-                if let Err(e) = wtr.serialize(crate::model::VisualMatchPair::csv_header().as_slice()) {
+                // Build header with metadata columns
+                let mut base_headers = crate::model::VisualMatchPair::csv_header();
+
+                if with_metadata {
+                    // Add metadata columns with prefixes
+                    for key in &header_metadata_keys {
+                        base_headers.push(format!("REF_{}", key.to_uppercase()));
+                        base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                    }
+                }
+
+                if let Err(e) = wtr.serialize(base_headers.as_slice()) {
                     return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
                 }
             }
 
             for match_pair in &visual_match_pairs {
-                let record = vec![
+                let mut base_values = vec![
                     match_pair.reference_asset.path.clone(),
                     match_pair.candidate_asset.path.clone(),
                     match_pair.reference_asset.uuid.to_string(),
@@ -1706,7 +1737,26 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                     match_pair.comparison_url.clone().unwrap_or_default(),
                 ];
 
-                if let Err(e) = wtr.serialize(record.as_slice()) {
+                if with_metadata {
+                    // Add metadata values for each key that was included in the header
+                    for key in &header_metadata_keys {
+                        // Add reference asset metadata value
+                        let ref_value = match_pair.reference_asset.metadata.get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(ref_value);
+
+                        // Add candidate asset metadata value
+                        let cand_value = match_pair.candidate_asset.metadata.get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(cand_value);
+                    }
+                }
+
+                if let Err(e) = wtr.serialize(base_values.as_slice()) {
                     return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
                 }
             }

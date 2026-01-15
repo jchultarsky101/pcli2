@@ -1673,9 +1673,22 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     };
 
     // Create enhanced response that includes the reference asset information
+    // For visual search, we need to ensure match percentages are handled properly
+    // since visual search doesn't have similarity scores
+    let adjusted_matches: Vec<crate::model::PartMatch> = search_results.matches
+        .into_iter()
+        .map(|mut match_item| {
+            // Set match percentages to None for visual search since they don't apply
+            match_item.forward_match_percentage = None;
+            match_item.reverse_match_percentage = None;
+            match_item
+        })
+        .collect();
+
+    // Create enhanced response that includes the reference asset information
     let enhanced_response = crate::model::EnhancedPartSearchResponse {
         reference_asset: reference_asset_response,
-        matches: search_results.matches,
+        matches: adjusted_matches,
     };
 
     // Format the response considering the metadata flag

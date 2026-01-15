@@ -1,6 +1,6 @@
 [package]
 name = "pcli2"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
 description = "CLI client for the Physna public API - Advanced 3D Geometry Search and Analysis"

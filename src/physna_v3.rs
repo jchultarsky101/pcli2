@@ -1758,6 +1758,11 @@ impl PhysnaApiClient {
 
         match result {
             Ok(mut response) => {
+                // Limit results to 50 to ensure we don't exceed expected page size
+                if response.matches.len() > 50 {
+                    response.matches.truncate(50);
+                }
+
                 // Clear pagination data since we're only getting the first page
                 response.page_data = None;
 

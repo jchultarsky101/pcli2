@@ -1623,19 +1623,11 @@ impl PhysnaApiClient {
         let mut page = 1;
         let per_page = 100; // Larger page size for efficiency
 
-        // Safety counter to prevent infinite loops
-        let mut safety_counter = 0;
-        let max_pages = 1000; // Reasonable upper limit
+        // Track the maximum last_page value seen to prevent infinite loops
+        let mut max_last_page_seen = 0;
 
         loop {
             debug!("Fetching page {} of part search results", page);
-
-            // Safety check to prevent infinite loops
-            safety_counter += 1;
-            if safety_counter > max_pages {
-                debug!("Safety counter exceeded, stopping to prevent infinite loop");
-                break;
-            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({
@@ -1660,12 +1652,18 @@ impl PhysnaApiClient {
                     if let Some(page_data) = &response.page_data {
                         debug!("Page {}/{} with {} total matches", page_data.current_page, page_data.last_page, page_data.total);
 
+                        // Update the maximum last_page value seen
+                        if page_data.last_page > max_last_page_seen {
+                            max_last_page_seen = page_data.last_page;
+                        }
+
                         // Add matches from this page to our collection
                         all_matches.extend(response.matches);
 
-                        // Check if we've reached the last page
-                        if page_data.current_page >= page_data.last_page {
-                            debug!("Reached last page of results");
+                        // Check if we've reached the last page or gone beyond what we've seen
+                        if page_data.current_page >= page_data.last_page || page > max_last_page_seen {
+                            debug!("Reached last page of results or beyond max seen: current={}, last={}, requested={}",
+                                   page_data.current_page, page_data.last_page, page);
                             break;
                         }
 
@@ -1736,19 +1734,11 @@ impl PhysnaApiClient {
         let mut page = 1;
         let per_page = 100; // Larger page size for efficiency
 
-        // Safety counter to prevent infinite loops
-        let mut safety_counter = 0;
-        let max_pages = 1000; // Reasonable upper limit
+        // Track the maximum last_page value seen to prevent infinite loops
+        let mut max_last_page_seen = 0;
 
         loop {
             debug!("Fetching page {} of visual search results", page);
-
-            // Safety check to prevent infinite loops
-            safety_counter += 1;
-            if safety_counter > max_pages {
-                debug!("Safety counter exceeded, stopping to prevent infinite loop");
-                break;
-            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({
@@ -1772,12 +1762,18 @@ impl PhysnaApiClient {
                     if let Some(page_data) = &response.page_data {
                         debug!("Page {}/{} with {} total matches", page_data.current_page, page_data.last_page, page_data.total);
 
+                        // Update the maximum last_page value seen
+                        if page_data.last_page > max_last_page_seen {
+                            max_last_page_seen = page_data.last_page;
+                        }
+
                         // Add matches from this page to our collection
                         all_matches.extend(response.matches);
 
-                        // Check if we've reached the last page
-                        if page_data.current_page >= page_data.last_page {
-                            debug!("Reached last page of results");
+                        // Check if we've reached the last page or gone beyond what we've seen
+                        if page_data.current_page >= page_data.last_page || page > max_last_page_seen {
+                            debug!("Reached last page of results or beyond max seen: current={}, last={}, requested={}",
+                                   page_data.current_page, page_data.last_page, page);
                             break;
                         }
 

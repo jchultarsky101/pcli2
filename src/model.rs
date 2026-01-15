@@ -1985,6 +1985,21 @@ pub struct PartMatchPair {
     pub comparison_url: Option<String>,
 }
 
+/// Represents a pair of assets that matched in a visual search
+/// This structure excludes match percentages since visual search doesn't provide them
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VisualMatchPair {
+    /// The reference asset (the one being compared against)
+    #[serde(rename = "referenceAsset")]
+    pub reference_asset: AssetResponse,
+    /// The candidate asset (the one that matched)
+    #[serde(rename = "candidateAsset")]
+    pub candidate_asset: AssetResponse,
+    /// The comparison URL for viewing the match in the UI
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: Option<String>,
+}
+
 impl PartMatchPair {
     /// Create a new PartMatchPair from a reference asset and a part match
     pub fn from_reference_and_match(reference_asset: AssetResponse, match_result: PartMatch) -> Self {
@@ -2020,6 +2035,30 @@ impl CsvRecordProducer for PartMatchPair {
             self.candidate_asset.path.clone(),
             format!("{}", self.forward_match_percentage.unwrap_or(0.0)),
             format!("{}", self.reverse_match_percentage.unwrap_or(0.0)),
+            self.reference_asset.uuid.to_string(),
+            self.candidate_asset.uuid.to_string(),
+            self.comparison_url.clone().unwrap_or_default(),
+        ]]
+    }
+}
+
+impl CsvRecordProducer for VisualMatchPair {
+    /// Get the CSV header row for VisualMatchPair records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
+        ]
+    }
+
+    /// Convert the VisualMatchPair to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.reference_asset.path.clone(),
+            self.candidate_asset.path.clone(),
             self.reference_asset.uuid.to_string(),
             self.candidate_asset.uuid.to_string(),
             self.comparison_url.clone().unwrap_or_default(),

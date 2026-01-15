@@ -1673,26 +1673,64 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     };
 
     // Create enhanced response that includes the reference asset information
-    // For visual search, we need to ensure match percentages are handled properly
-    // since visual search doesn't have similarity scores
-    let adjusted_matches: Vec<crate::model::PartMatch> = search_results.matches
+    // Create visual match pairs that exclude match percentages since visual search doesn't have them
+    let visual_match_pairs: Vec<crate::model::VisualMatchPair> = search_results.matches
         .into_iter()
-        .map(|mut match_item| {
-            // Set match percentages to None for visual search since they don't apply
-            match_item.forward_match_percentage = None;
-            match_item.reverse_match_percentage = None;
-            match_item
+        .map(|match_result| crate::model::VisualMatchPair {
+            reference_asset: reference_asset_response.clone(),
+            candidate_asset: match_result.asset,
+            comparison_url: match_result.comparison_url,
         })
         .collect();
 
-    // Create enhanced response that includes the reference asset information
-    let enhanced_response = crate::model::EnhancedPartSearchResponse {
-        reference_asset: reference_asset_response,
-        matches: adjusted_matches,
-    };
+    // Format the response based on the output format
+    match format {
+        crate::format::OutputFormat::Json(_) => {
+            println!("{}", serde_json::to_string_pretty(&visual_match_pairs)?);
+        }
+        crate::format::OutputFormat::Csv(_) => {
+            let mut wtr = csv::Writer::from_writer(vec![]);
 
-    // Format the response considering the metadata flag
-    println!("{}", enhanced_response.format_with_metadata_flag(format, with_metadata)?);
+            if with_headers {
+                if let Err(e) = wtr.serialize(crate::model::VisualMatchPair::csv_header().as_slice()) {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                }
+            }
+
+            for match_pair in &visual_match_pairs {
+                let record = vec![
+                    match_pair.reference_asset.path.clone(),
+                    match_pair.candidate_asset.path.clone(),
+                    match_pair.reference_asset.uuid.to_string(),
+                    match_pair.candidate_asset.uuid.to_string(),
+                    match_pair.comparison_url.clone().unwrap_or_default(),
+                ];
+
+                if let Err(e) = wtr.serialize(record.as_slice()) {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                }
+            }
+
+            let data = match wtr.into_inner() {
+                Ok(data) => data,
+                Err(e) => {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                }
+            };
+            let output = match String::from_utf8(data) {
+                Ok(s) => s,
+                Err(e) => {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                }
+            };
+
+            print!("{}", output);
+        }
+        _ => {
+            // Default to JSON
+            println!("{}", serde_json::to_string_pretty(&visual_match_pairs)?);
+        }
+    }
 
     Ok(())
 }
@@ -2010,10 +2048,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
             let mut flattened_matches = Vec::new();
             for enhanced_response in all_matches {
                 for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result
-                    ));
+                    flattened_matches.push(crate::model::VisualMatchPair {
+                        reference_asset: enhanced_response.reference_asset.clone(),
+                        candidate_asset: match_result.asset,
+                        comparison_url: match_result.comparison_url,
+                    });
                 }
             }
             println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
@@ -2023,10 +2062,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
             let mut flattened_matches = Vec::new();
             for enhanced_response in all_matches {
                 for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result
-                    ));
+                    flattened_matches.push(crate::model::VisualMatchPair {
+                        reference_asset: enhanced_response.reference_asset.clone(),
+                        candidate_asset: match_result.asset,
+                        comparison_url: match_result.comparison_url,
+                    });
                 }
             }
 
@@ -2056,7 +2096,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
             if with_headers {
                 // Build header with metadata columns
-                let mut base_headers = crate::model::PartMatchPair::csv_header();
+                let mut base_headers = crate::model::VisualMatchPair::csv_header();
 
                 if with_metadata {
                     // Add metadata columns with prefixes
@@ -2075,9 +2115,6 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 let mut base_values = vec![
                     match_pair.reference_asset.path.clone(),
                     match_pair.candidate_asset.path.clone(),
-                    // For visual match, we don't have match percentages, so we'll use empty strings
-                    "".to_string(), // Forward match percentage placeholder
-                    "".to_string(), // Reverse match percentage placeholder
                     match_pair.reference_asset.uuid.to_string(),
                     match_pair.candidate_asset.uuid.to_string(),
                     match_pair.comparison_url.clone().unwrap_or_default(),
@@ -2127,10 +2164,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
             let mut flattened_matches = Vec::new();
             for enhanced_response in all_matches {
                 for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result
-                    ));
+                    flattened_matches.push(crate::model::VisualMatchPair {
+                        reference_asset: enhanced_response.reference_asset.clone(),
+                        candidate_asset: match_result.asset,
+                        comparison_url: match_result.comparison_url,
+                    });
                 }
             }
             println!("{}", serde_json::to_string_pretty(&flattened_matches)?);

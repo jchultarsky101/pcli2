@@ -1736,86 +1736,40 @@ impl PhysnaApiClient {
         debug!("Starting visual search for tenant_uuid: {}, asset_uuid: {}", tenant_uuid, asset_uuid);
         let url = format!("{}/tenants/{}/assets/{}/visual-search", self.base_url, tenant_uuid, asset_uuid);
 
-        // Initialize with page 1 and reasonable page size
-        let mut all_matches = Vec::new();
-        let mut page = 1;
-        let per_page = 100; // Larger page size for efficiency
+        // Visual search - get first page with 50 results (top matches)
+        let page = 1;
+        let per_page = 50; // Reasonable page size for visual search
 
-        // Track the maximum last_page value seen to prevent infinite loops
-        let mut max_last_page_seen = 0;
-        let max_pages_limit = 50; // Hard limit to prevent excessive API calls
-
-        loop {
-            debug!("Fetching page {} of visual search results", page);
-
-            // Check if we've hit the hard limit
-            if page > max_pages_limit {
-                debug!("Reached hard page limit of {}, stopping to prevent excessive API calls", max_pages_limit);
-                break;
+        // Build request body with the correct structure
+        let body = serde_json::json!({
+            "page": page,
+            "perPage": per_page,
+            "searchQuery": "",
+            "filters": {
+                "folders": [],
+                "metadata": {},
+                "extensions": []  // Empty array as requested
             }
+        });
 
-            // Build request body with the correct structure
-            let body = serde_json::json!({
-                "page": page,
-                "perPage": per_page,
-                "searchQuery": "",
-                "filters": {
-                    "folders": [],
-                    "metadata": {},
-                    "extensions": []  // Empty array as requested
-                }
-            });
+        debug!("Sending visual search request to: {}", url);
+        // Execute POST request
+        let result: Result<crate::model::PartSearchResponse, ApiError> = self.post(&url, &body).await;
 
-            debug!("Sending visual search request to: {}", url);
-            // Execute POST request
-            let result: Result<crate::model::PartSearchResponse, ApiError> = self.post(&url, &body).await;
+        match result {
+            Ok(mut response) => {
+                // Clear pagination data since we're only getting the first page
+                response.page_data = None;
 
-            match result {
-                Ok(response) => {
-                    // Check if we have pagination data
-                    if let Some(page_data) = &response.page_data {
-                        debug!("Page {}/{} with {} total matches", page_data.current_page, page_data.last_page, page_data.total);
-
-                        // Update the maximum last_page value seen
-                        if page_data.last_page > max_last_page_seen {
-                            max_last_page_seen = page_data.last_page;
-                        }
-
-                        // Add matches from this page to our collection
-                        all_matches.extend(response.matches);
-
-                        // Check if we've reached the last page or gone beyond what we've seen
-                        if page_data.current_page >= page_data.last_page || page > max_last_page_seen {
-                            debug!("Reached last page of results or beyond max seen: current={}, last={}, requested={}",
-                                   page_data.current_page, page_data.last_page, page);
-                            break;
-                        }
-
-                        // Move to next page - increment for next iteration
-                        page += 1;
-                    } else {
-                        // No pagination data - just return the response as-is
-                        debug!("No pagination data in response, returning single page");
-                        return Ok(response);
-                    }
-                }
-                Err(e) => {
-                    // Return error immediately
-                    debug!("Visual search failed: {}", e);
-                    return Err(e);
-                }
+                debug!("Visual search completed for asset_id: {} with {} total matches", asset_uuid, response.matches.len());
+                Ok(response)
+            }
+            Err(e) => {
+                // Return error immediately
+                debug!("Visual search failed: {}", e);
+                Err(e)
             }
         }
-
-        // Create a response with all matches and combined pagination data
-        let final_response = crate::model::PartSearchResponse {
-            matches: all_matches,
-            page_data: None, // We've aggregated all pages
-            filter_data: None,
-        };
-
-        debug!("Visual search completed for asset_id: {} with {} total matches", asset_uuid, final_response.matches.len());
-        Ok(final_response)
     }
 
     /// Create multiple assets by uploading files matching a glob pattern

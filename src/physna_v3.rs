@@ -1625,9 +1625,16 @@ impl PhysnaApiClient {
 
         // Track the maximum last_page value seen to prevent infinite loops
         let mut max_last_page_seen = 0;
+        let max_pages_limit = 50; // Hard limit to prevent excessive API calls
 
         loop {
             debug!("Fetching page {} of part search results", page);
+
+            // Check if we've hit the hard limit
+            if page > max_pages_limit {
+                debug!("Reached hard page limit of {}, stopping to prevent excessive API calls", max_pages_limit);
+                break;
+            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({
@@ -1736,9 +1743,16 @@ impl PhysnaApiClient {
 
         // Track the maximum last_page value seen to prevent infinite loops
         let mut max_last_page_seen = 0;
+        let max_pages_limit = 50; // Hard limit to prevent excessive API calls
 
         loop {
             debug!("Fetching page {} of visual search results", page);
+
+            // Check if we've hit the hard limit
+            if page > max_pages_limit {
+                debug!("Reached hard page limit of {}, stopping to prevent excessive API calls", max_pages_limit);
+                break;
+            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({

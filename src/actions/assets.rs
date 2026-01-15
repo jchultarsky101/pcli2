@@ -511,16 +511,30 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
 
     // Populate comparison URLs for each match
     for match_result in &mut search_results.matches {
-        let comparison_url = format!(
-            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
-            ui_base_url, // Use configurable UI base URL
-            tenant.name, // Use tenant short name in path
-            asset.uuid(),
-            match_result.asset.uuid,
-            tenant.uuid, // Use tenant UUID in query params
-            tenant.uuid, // Use tenant UUID in query params
-            match_result.match_percentage
-        );
+        let base_url = ui_base_url.trim_end_matches('/');
+        let comparison_url = if base_url.ends_with("/tenants") {
+            format!(
+                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                base_url, // Use configurable UI base URL without trailing slash
+                tenant.name, // Use tenant short name in path
+                asset.uuid(),
+                match_result.asset.uuid,
+                tenant.uuid, // Use tenant UUID in query params
+                tenant.uuid, // Use tenant UUID in query params
+                match_result.match_percentage
+            )
+        } else {
+            format!(
+                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                base_url, // Use configurable UI base URL without trailing slash
+                tenant.name, // Use tenant short name in path
+                asset.uuid(),
+                match_result.asset.uuid,
+                tenant.uuid, // Use tenant UUID in query params
+                tenant.uuid, // Use tenant UUID in query params
+                match_result.match_percentage
+            )
+        };
         match_result.comparison_url = Some(comparison_url);
     }
 
@@ -629,17 +643,32 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
 
     // Populate comparison URLs for each match
     for match_result in &mut search_results.matches {
-        let comparison_url = format!(
-            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
-            ui_base_url, // Use configurable UI base URL
-            tenant.name, // Use tenant short name in path
-            asset.uuid(),
-            match_result.asset.uuid,
-            tenant.uuid, // Use tenant UUID in query params
-            tenant.uuid, // Use tenant UUID in query params
-            match_result.forward_match_percentage.unwrap_or(0.0),
-            match_result.reverse_match_percentage.unwrap_or(0.0)
-        );
+        let base_url = ui_base_url.trim_end_matches('/');
+        let comparison_url = if base_url.ends_with("/tenants") {
+            format!(
+                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
+                base_url, // Use configurable UI base URL without trailing slash
+                tenant.name, // Use tenant short name in path
+                asset.uuid(),
+                match_result.asset.uuid,
+                tenant.uuid, // Use tenant UUID in query params
+                tenant.uuid, // Use tenant UUID in query params
+                match_result.forward_match_percentage.unwrap_or(0.0),
+                match_result.reverse_match_percentage.unwrap_or(0.0)
+            )
+        } else {
+            format!(
+                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
+                base_url, // Use configurable UI base URL without trailing slash
+                tenant.name, // Use tenant short name in path
+                asset.uuid(),
+                match_result.asset.uuid,
+                tenant.uuid, // Use tenant UUID in query params
+                tenant.uuid, // Use tenant UUID in query params
+                match_result.forward_match_percentage.unwrap_or(0.0),
+                match_result.reverse_match_percentage.unwrap_or(0.0)
+            )
+        };
         match_result.comparison_url = Some(comparison_url);
     }
 
@@ -847,16 +876,30 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                         let ui_base_url = configuration.get_ui_base_url();
 
                         // Populate comparison URL for this match
-                        let comparison_url = format!(
-                            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
-                            ui_base_url, // Use configurable UI base URL
-                            tenant_clone.name, // Use tenant short name in path
-                            asset_uuid,
-                            match_result.asset.uuid,
-                            tenant_uuid, // Use tenant UUID in query params
-                            tenant_uuid, // Use tenant UUID in query params
-                            match_result.match_percentage
-                        );
+                        let base_url = ui_base_url.trim_end_matches('/');
+                        let comparison_url = if base_url.ends_with("/tenants") {
+                            format!(
+                                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                                base_url, // Use configurable UI base URL without trailing slash
+                                tenant_clone.name, // Use tenant short name in path
+                                asset_uuid,
+                                match_result.asset.uuid,
+                                tenant_uuid, // Use tenant UUID in query params
+                                tenant_uuid, // Use tenant UUID in query params
+                                match_result.match_percentage
+                            )
+                        } else {
+                            format!(
+                                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
+                                base_url, // Use configurable UI base URL without trailing slash
+                                tenant_clone.name, // Use tenant short name in path
+                                asset_uuid,
+                                match_result.asset.uuid,
+                                tenant_uuid, // Use tenant UUID in query params
+                                tenant_uuid, // Use tenant UUID in query params
+                                match_result.match_percentage
+                            )
+                        };
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
@@ -1294,17 +1337,32 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                         let ui_base_url = configuration.get_ui_base_url();
 
                         // Populate comparison URL for this match
-                        let comparison_url = format!(
-                            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
-                            ui_base_url, // Use configurable UI base URL
-                            tenant_clone.name, // Use tenant short name in path
-                            asset_uuid,
-                            match_result.asset.uuid,
-                            tenant_uuid, // Use tenant UUID in query params
-                            tenant_uuid, // Use tenant UUID in query params
-                            match_result.forward_match_percentage.unwrap_or(0.0),
-                            match_result.reverse_match_percentage.unwrap_or(0.0)
-                        );
+                        let base_url = ui_base_url.trim_end_matches('/');
+                        let comparison_url = if base_url.ends_with("/tenants") {
+                            format!(
+                                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
+                                base_url, // Use configurable UI base URL without trailing slash
+                                tenant_clone.name, // Use tenant short name in path
+                                asset_uuid,
+                                match_result.asset.uuid,
+                                tenant_uuid, // Use tenant UUID in query params
+                                tenant_uuid, // Use tenant UUID in query params
+                                match_result.forward_match_percentage.unwrap_or(0.0),
+                                match_result.reverse_match_percentage.unwrap_or(0.0)
+                            )
+                        } else {
+                            format!(
+                                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
+                                base_url, // Use configurable UI base URL without trailing slash
+                                tenant_clone.name, // Use tenant short name in path
+                                asset_uuid,
+                                match_result.asset.uuid,
+                                tenant_uuid, // Use tenant UUID in query params
+                                tenant_uuid, // Use tenant UUID in query params
+                                match_result.forward_match_percentage.unwrap_or(0.0),
+                                match_result.reverse_match_percentage.unwrap_or(0.0)
+                            )
+                        };
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
@@ -1631,15 +1689,28 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
 
     // Populate comparison URLs for each match
     for match_result in &mut search_results.matches {
-        let comparison_url = format!(
-            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
-            ui_base_url, // Use configurable UI base URL
-            tenant.name, // Use tenant short name in path
-            asset.uuid(),
-            match_result.asset.uuid,
-            tenant.uuid, // Use tenant UUID in query params
-            tenant.uuid, // Use tenant UUID in query params
-        );
+        let base_url = ui_base_url.trim_end_matches('/');
+        let comparison_url = if base_url.ends_with("/tenants") {
+            format!(
+                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
+                base_url, // Use configurable UI base URL without trailing slash
+                tenant.name, // Use tenant short name in path
+                asset.uuid(),
+                match_result.asset.uuid,
+                tenant.uuid, // Use tenant UUID in query params
+                tenant.uuid, // Use tenant UUID in query params
+            )
+        } else {
+            format!(
+                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
+                base_url, // Use configurable UI base URL without trailing slash
+                tenant.name, // Use tenant short name in path
+                asset.uuid(),
+                match_result.asset.uuid,
+                tenant.uuid, // Use tenant UUID in query params
+                tenant.uuid, // Use tenant UUID in query params
+            )
+        };
         match_result.comparison_url = Some(comparison_url);
     }
 
@@ -1952,15 +2023,28 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                         let ui_base_url = configuration.get_ui_base_url();
 
                         // Populate comparison URL for this match
-                        let comparison_url = format!(
-                            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
-                            ui_base_url, // Use configurable UI base URL
-                            tenant_clone.name, // Use tenant short name in path
-                            asset_uuid,
-                            match_result.asset.uuid,
-                            tenant_uuid, // Use tenant UUID in query params
-                            tenant_uuid, // Use tenant UUID in query params
-                        );
+                        let base_url = ui_base_url.trim_end_matches('/');
+                        let comparison_url = if base_url.ends_with("/tenants") {
+                            format!(
+                                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
+                                base_url, // Use configurable UI base URL without trailing slash
+                                tenant_clone.name, // Use tenant short name in path
+                                asset_uuid,
+                                match_result.asset.uuid,
+                                tenant_uuid, // Use tenant UUID in query params
+                                tenant_uuid, // Use tenant UUID in query params
+                            )
+                        } else {
+                            format!(
+                                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
+                                base_url, // Use configurable UI base URL without trailing slash
+                                tenant_clone.name, // Use tenant short name in path
+                                asset_uuid,
+                                match_result.asset.uuid,
+                                tenant_uuid, // Use tenant UUID in query params
+                                tenant_uuid, // Use tenant UUID in query params
+                            )
+                        };
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag

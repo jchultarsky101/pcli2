@@ -77,9 +77,13 @@ PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub
 
 1. Visit the [Latest Release](https://github.com/jchultarsky101/pcli2/releases/latest)
 2. Download the appropriate installer for your platform:
-   - **Windows**: `pcli2-x86_64-pc-windows-msvc.msi` (Installer)
-   - **macOS**: `pcli2-installer.sh` (Universal script)
-   - **Linux**: `pcli2-installer.sh` (Universal script)
+   - **Windows**:
+     - `pcli2-x86_64-pc-windows-msvc.msi` (Installer) - *Does NOT include `pcli2-update` command*
+     - `pcli2-installer.ps1` (PowerShell script) - *Includes `pcli2-update` command*
+   - **macOS**: `pcli2-installer.sh` (Universal script) - *Includes `pcli2-update` command*
+   - **Linux**: `pcli2-installer.sh` (Universal script) - *Includes `pcli2-update` command*
+
+**Important Note for Windows Users**: The Windows MSI installer does not include the `pcli2-update` command. If you want to be able to update PCLI2 using the `pcli2-update` command, use the PowerShell installer script instead of the MSI installer. Alternatively, you can use the universal installer script within WSL (Windows Subsystem for Linux).
 
 ##### Using the Universal Installer Script (macOS/Linux):
 
@@ -87,6 +91,8 @@ PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub
 # Download and run the installer script
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
+
+**Note**: This installation method includes the `pcli2-update` command for easy updates.
 
 #### Method 2: Manual Installation
 
@@ -138,18 +144,29 @@ The authorization is typically remembered for subsequent runs.
 
 ### Updating PCLI2
 
-To update PCLI2 when using pre-built installers:
+The update mechanism depends on how you installed PCLI2:
+
+#### If Installed via Universal Installer Script (macOS/Linux) or Shell/PowerShell Scripts:
 ```bash
 pcli2-update
 ```
 
-This command should check if a new version is available and automatically install it.
+This command checks if a new version is available and automatically installs it.
 
-For manual update, simply execute the installer script:
-
+For macOS/Linux users:
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
+
+For Windows users using PowerShell:
+```powershell
+irm https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.ps1 | iex
+```
+
+#### If Installed via Windows MSI Installer:
+The Windows MSI installer does **not** include a `pcli2-update` executable. To upgrade to a new version, you must download and run the new version of the MSI installer from the [releases page](https://github.com/jchultarsky101/pcli2/releases/latest).
+
+**Important Note**: Users who installed PCLI2 using the Windows MSI installer will not have access to the `pcli2-update` command. This is a limitation of the MSI installation method. For automatic updates on Windows, use the PowerShell installer script instead.
 
 For source builds:
 ```bash

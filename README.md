@@ -338,9 +338,14 @@ pcli2 folder get --uuid FOLDER_UUID --format json
 pcli2 folder rename --folder-path "/Root/OldFolderName" --name "NewFolderName"
 pcli2 folder rename --folder-uuid FOLDER_UUID --name "NewFolderName"
 
-# Move a folder to a new parent folder
+# Move a folder to a new parent folder (between non-root folders)
 pcli2 folder move --folder-path "/Root/FolderToMove" --parent-folder-path "/New/Parent/Path"
 pcli2 folder move --folder-uuid FOLDER_UUID --parent-folder-uuid PARENT_FOLDER_UUID
+
+# Move a folder to the root level (known issue: may cause folder to disappear temporarily)
+# Note: Moving to root level has a known API issue where the folder may not appear correctly
+# It's recommended to move to a specific subfolder instead
+pcli2 folder move --folder-path "/Some/Subfolder/FolderToMove" --parent-folder-path "/"
 
 # Delete a folder (only works if the folder is empty)
 pcli2 folder delete --path "/Root/FolderToDelete"
@@ -350,6 +355,12 @@ pcli2 folder delete --path "/Root/FolderToDelete" --force
 ```
 
 **Note**: By default, the folder delete command will only work if the folder is empty. If the folder contains any subfolders or assets, the command will throw an error. To delete a folder that is not empty, you need to specify the `--force` option, which will make PCLI2 recursively delete all assets and subfolders before deleting the base folder. This action cannot be undone.
+
+**Important Notes about Folder Move**:
+- The `folder move` command works reliably when moving between non-root folders
+- There is a known issue with the Physna API when moving folders to the root level (`--parent-folder-path /`)
+- When moving to root, the folder may temporarily disappear from the folder hierarchy
+- If you need to move a folder to root level, consider creating it directly in the root or contact support for assistance with the API issue
 
 ### Working with Assets
 
@@ -1139,7 +1150,9 @@ pcli2
 │   ├── get              Get folder details
 │   ├── delete           Delete a folder
 │   ├── rename           Rename a folder
+│   │   └── --folder-path, --folder-uuid, --name
 │   └── move             Move a folder to a new parent folder
+│       └── --folder-path, --folder-uuid, --parent-folder-path, --parent-folder-uuid
 ├── tenant
 │   ├── list             List all available tenants
 │   └── get              Get specific tenant details

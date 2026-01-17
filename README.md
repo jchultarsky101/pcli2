@@ -164,8 +164,6 @@ irm https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-insta
 #### If Installed via Windows MSI Installer:
 The Windows MSI installer does **not** include a `pcli2-update` executable. To upgrade to a new version, you must download and run the new version of the MSI installer from the [releases page](https://github.com/jchultarsky101/pcli2/releases/latest).
 
-**Important Note**: Users who installed PCLI2 using the Windows MSI installer will not have access to the `pcli2-update` command. This is a limitation of the MSI installation method. For automatic updates on Windows, use the PowerShell installer script instead.
-
 For source builds:
 ```bash
 cd /path/to/pcli2

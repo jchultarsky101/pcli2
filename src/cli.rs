@@ -14,7 +14,9 @@ use pcli2::{
             create_folder,
             delete_folder,
             list_folders,
-            print_folder_details
+            print_folder_details,
+            rename_folder,
+            move_folder
         },
         tenants::{
             clear_active_tenant,
@@ -139,6 +141,18 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_DELETE);
 
                     delete_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("rename", sub_matches)) => {
+                    trace!("Command: {} rename", COMMAND_FOLDER);
+
+                    rename_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("move", sub_matches)) => {
+                    trace!("Command: {} move", COMMAND_FOLDER);
+
+                    move_folder(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

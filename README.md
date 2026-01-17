@@ -328,11 +328,19 @@ pcli2 folder create --name "Sub Folder" --path "/Root/Parent"
 
 #### Viewing and Managing Folders
 
-Get detailed information about specific folders or remove them when no longer needed:
+Get detailed information about specific folders, rename, move, or remove them when no longer needed:
 
 ```bash
 # Get folder details
 pcli2 folder get --uuid FOLDER_UUID --format json
+
+# Rename a folder
+pcli2 folder rename --folder-path "/Root/OldFolderName" --name "NewFolderName"
+pcli2 folder rename --folder-uuid FOLDER_UUID --name "NewFolderName"
+
+# Move a folder to a new parent folder
+pcli2 folder move --folder-path "/Root/FolderToMove" --parent-folder-path "/New/Parent/Path"
+pcli2 folder move --folder-uuid FOLDER_UUID --parent-folder-uuid PARENT_FOLDER_UUID
 
 # Delete a folder (only works if the folder is empty)
 pcli2 folder delete --path "/Root/FolderToDelete"
@@ -1129,7 +1137,9 @@ pcli2
 │   ├── create           Create a new folder
 │   ├── list             List all folders in a parent folder
 │   ├── get              Get folder details
-│   └── delete           Delete a folder
+│   ├── delete           Delete a folder
+│   ├── rename           Rename a folder
+│   └── move             Move a folder to a new parent folder
 ├── tenant
 │   ├── list             List all available tenants
 │   └── get              Get specific tenant details

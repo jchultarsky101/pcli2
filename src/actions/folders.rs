@@ -90,6 +90,85 @@ pub async fn print_folder_details(sub_matches: &ArgMatches) -> Result<(), CliErr
     Ok(())
 }
 
+pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
+    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
+    let new_name = sub_matches.get_one::<String>(PARAMETER_NAME)
+        .ok_or(CliError::MissingRequiredArgument(PARAMETER_NAME.to_string()))?
+        .clone();
+
+    // Validate that only one folder parameter is provided (mutual exclusivity handled by clap group)
+    if folder_uuid_param.is_some() && folder_path_param.is_some() {
+        return Err(CliError::MissingRequiredArgument("Only one of --folder-uuid or --folder-path can be specified, not both".to_string()));
+    }
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    // Resolve folder ID from either ID parameter or path
+    let folder_uuid = if let Some(uuid) = folder_uuid_param {
+        uuid.clone()
+    } else if let Some(path) = folder_path_param {
+        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+    } else {
+        return Err(CliError::MissingRequiredArgument(format!("Missing folder identifier")));
+    };
+
+    // Attempt to rename the folder
+    if let Err(e) = api.rename_folder(&tenant.uuid.to_string(), &folder_uuid.to_string(), &new_name).await {
+        // If we got here, the folder was successfully found/resolved, but the rename operation failed
+        // This could be due to permissions, API endpoint issues, etc.
+        return Err(CliError::FolderRenameFailed(folder_uuid.to_string(), e.to_string()));
+    }
+
+    Ok(())
+}
+
+pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
+    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
+    let parent_folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_PARENT_FOLDER_UUID);
+    let parent_folder_path_param = sub_matches.get_one::<String>(PARAMETER_PARENT_FOLDER_PATH);
+
+    // Validate that only one folder parameter is provided (mutual exclusivity handled by clap group)
+    if folder_uuid_param.is_some() && folder_path_param.is_some() {
+        return Err(CliError::MissingRequiredArgument("Only one of --folder-uuid or --folder-path can be specified, not both".to_string()));
+    }
+
+    // Validate that only one parent folder parameter is provided (mutual exclusivity handled by clap group)
+    if parent_folder_uuid_param.is_some() && parent_folder_path_param.is_some() {
+        return Err(CliError::MissingRequiredArgument("Only one of --parent-folder-uuid or --parent-folder-path can be specified, not both".to_string()));
+    }
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    // Resolve folder ID from either ID parameter or path
+    let folder_uuid = if let Some(uuid) = folder_uuid_param {
+        uuid.clone()
+    } else if let Some(path) = folder_path_param {
+        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+    } else {
+        return Err(CliError::MissingRequiredArgument(format!("Missing folder identifier")));
+    };
+
+    // Resolve parent folder ID from either ID parameter or path
+    let parent_folder_uuid = if let Some(uuid) = parent_folder_uuid_param {
+        Some(uuid.clone())
+    } else if let Some(path) = parent_folder_path_param {
+        Some(resolve_folder_uuid_by_path(&mut api, &tenant, path).await?)
+    } else {
+        // If no parent is specified, move to root (None)
+        None
+    };
+
+    api.move_folder(&tenant.uuid.to_string(), &folder_uuid.to_string(), parent_folder_uuid).await?;
+
+    Ok(())
+}
+
 pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     
     let name = sub_matches.get_one::<String>(PARAMETER_NAME)

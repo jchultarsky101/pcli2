@@ -33,6 +33,10 @@ pub enum CliError {
     #[error("Folder '{0}' not found. Please verify the folder path exists in your tenant.")]
     FolderNotFound(String),
 
+    /// Error when a folder rename operation fails after successful path resolution
+    #[error("Failed to rename folder '{0}'. The folder was found but the rename operation failed. This could be due to permissions or API limitations. Error details: {1}")]
+    FolderRenameFailed(String, String),
+
     #[error("API error: {0}")]
     PhysnaExtendedApiError(#[from] physna_v3::ApiError),
 

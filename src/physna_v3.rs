@@ -663,13 +663,69 @@ impl PhysnaApiClient {
     
     pub async fn update_folder(&mut self, tenant_id: &str, folder_id: &str, name: &str) -> Result<crate::model::FolderResponse, ApiError> {
         let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_id, folder_id);
-        
+
         let body = serde_json::json!({
             "name": name
         });
-        
+
         // The API returns a SingleFolderResponse with a "folder" field
         let response: crate::model::SingleFolderResponse = self.put(&url, &body).await?;
+        Ok(response.folder)
+    }
+
+    /// Rename a folder by ID
+    ///
+    /// This method renames the specified folder in the tenant.
+    ///
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the folder
+    /// * `folder_id` - The UUID of the folder to rename
+    /// * `new_name` - The new name for the folder
+    ///
+    /// # Returns
+    /// * `Ok(FolderResponse)` - Successfully renamed folder
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn rename_folder(&mut self, tenant_id: &str, folder_id: &str, new_name: &str) -> Result<crate::model::FolderResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders/{}/name", self.base_url, tenant_id, folder_id);
+
+        let body = serde_json::json!({
+            "name": new_name
+        });
+
+        // The API returns a SingleFolderResponse with a "folder" field
+        let response: crate::model::SingleFolderResponse = self.patch(&url, &body).await?;
+        Ok(response.folder)
+    }
+
+    /// Move a folder to a new parent folder
+    ///
+    /// This method moves the specified folder to a new parent folder.
+    ///
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the folder
+    /// * `folder_id` - The UUID of the folder to move
+    /// * `new_parent_folder_id` - The UUID of the new parent folder (None for root level)
+    ///
+    /// # Returns
+    /// * `Ok(FolderResponse)` - Successfully moved folder
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn move_folder(&mut self, tenant_id: &str, folder_id: &str, new_parent_folder_id: Option<Uuid>) -> Result<crate::model::FolderResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders/{}/parent", self.base_url, tenant_id, folder_id);
+
+        // Build request body with the parent folder ID
+        let body = if let Some(parent_id) = new_parent_folder_id {
+            serde_json::json!({
+                "parentFolderId": parent_id.to_string()
+            })
+        } else {
+            // When moving to root, set parentFolderId to null
+            serde_json::json!({
+                "parentFolderId": serde_json::Value::Null
+            })
+        };
+
+        // The API returns a SingleFolderResponse with a "folder" field
+        let response: crate::model::SingleFolderResponse = self.patch(&url, &body).await?;
         Ok(response.folder)
     }
     
@@ -781,24 +837,48 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - If there was an error during API calls
     pub async fn get_folder_uuid_by_path(&mut self, tenant_uuid: &Uuid, folder_path: &str) -> Result<Option<Uuid>, ApiError> {
         debug!("Resolving folder path: {} for tenant: {} using FolderHierarchy", folder_path, tenant_uuid);
-        
-        // Use the proven FolderHierarchy implementation to resolve the path
-        match FolderHierarchy::build_from_api(self, tenant_uuid).await {
-            Ok(hierarchy) => {
-                
-                // Use the hierarchy to find the folder by path
-                if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
-                    debug!("Found folder at path '{}': {}", folder_path, folder_node.folder.uuid);
-                    Ok(Some(folder_node.folder.uuid.clone()))
-                } else {
-                    debug!("Folder not found at path: {}", folder_path);
-                    Ok(None)
+
+        // Normalize the path first
+        let normalized_path = crate::model::normalize_path(folder_path);
+
+        // Special handling for root path "/"
+        if normalized_path == "/" {
+            // For root path, get the root folders
+            let root_folders_response = self.list_folders_in_parent(tenant_uuid, None, Some(1), Some(1000)).await?;
+
+            if !root_folders_response.folders.is_empty() {
+                // Return the first root folder UUID
+                Ok(Some(root_folders_response.folders[0].uuid))
+            } else {
+                // If no root folders exist, return None
+                Ok(None)
+            }
+        } else {
+            // Remove leading slash for hierarchy lookup
+            let path_for_hierarchy = normalized_path.strip_prefix('/').unwrap_or(&normalized_path);
+
+            // First, try direct lookup for root-level folders as primary approach
+            // This handles cases where the folder is directly under root
+            let root_folders_response = self.list_folders_in_parent(tenant_uuid, None, Some(1), Some(1000)).await?;
+
+            // Look for a root folder that matches the path (for single-level paths like "test2")
+            for folder in &root_folders_response.folders {
+                if folder.name == path_for_hierarchy {
+                    debug!("Found root folder '{}' with UUID: {}", folder.name, folder.uuid);
+                    return Ok(Some(folder.uuid));
                 }
             }
-            Err(e) => {
-                error!("Error building folder hierarchy: {}", e);
-                Err(ApiError::ConflictError(format!("Failed to build folder hierarchy: {}", e)))
+
+            // If direct lookup fails, try the folder hierarchy approach for nested paths
+            if let Ok(hierarchy) = FolderHierarchy::build_from_api(self, tenant_uuid).await {
+                if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
+                    debug!("Found folder at path '{}' using hierarchy: {}", folder_path, folder_node.folder.uuid);
+                    return Ok(Some(folder_node.folder.uuid.clone()));
+                }
             }
+
+            debug!("Folder not found at path: {}", folder_path);
+            Ok(None)
         }
     }
     

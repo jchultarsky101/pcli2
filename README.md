@@ -92,8 +92,6 @@ PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
 
-**Note**: This installation method includes the `pcli2-update` command for easy updates.
-
 #### Method 2: Manual Installation
 
 ```bash

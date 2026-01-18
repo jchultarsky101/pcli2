@@ -40,11 +40,12 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 hierarchy.print_tree();
             }
         _ => {
-                // Convert to folder list with only direct children if not recursive
+                // Convert to folder list with only direct children for non-tree formats
                 let folder_list = if path.eq("/") {
                         hierarchy.to_direct_children_list()
                     } else {
-                        hierarchy.filter_by_path(path.as_str()).ok_or(CliError::FolderNotFound(path))?.to_folder_list()
+                        // Use get_children_by_path to get only direct children, not all descendants
+                        hierarchy.get_children_by_path(path.as_str()).ok_or(CliError::FolderNotFound(path))?
                     };
 
                 println!("{}", folder_list.format(format)?);
@@ -155,10 +156,17 @@ pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     // Resolve parent folder ID from either ID parameter or path
-    let parent_folder_uuid = if let Some(uuid) = parent_folder_uuid_param {
+    let parent_folder_uuid: Option<Uuid> = if let Some(uuid) = parent_folder_uuid_param {
         Some(uuid.clone())
     } else if let Some(path) = parent_folder_path_param {
-        Some(resolve_folder_uuid_by_path(&mut api, &tenant, path).await?)
+        // Use get_folder_uuid_by_path to get the actual UUID, then handle root case separately
+        let normalized_path = crate::model::normalize_path(path);
+        if normalized_path == "/" {
+            // Root path means no parent (None)
+            None
+        } else {
+            api.get_folder_uuid_by_path(&tenant.uuid, path).await?
+        }
     } else {
         // If no parent is specified, move to root (None)
         None
@@ -269,4 +277,36 @@ async fn delete_folder_contents(api: &mut PhysnaApiClient, tenant: &crate::model
     }
 
     Ok(())
+}
+
+pub async fn resolve_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Resolving folder path to UUID...");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    let folder_path = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH)
+        .ok_or(CliError::MissingRequiredArgument("folder-path is required".to_string()))?;
+
+    trace!("Resolving path: {}", folder_path);
+
+    // Special handling for root path "/"
+    if crate::model::normalize_path(folder_path) == "/" {
+        // The root path "/" doesn't correspond to a specific folder UUID
+        // It represents the root level which contains multiple folders
+        // We should return a special indication rather than an error
+        println!("ROOT");
+        return Ok(());
+    }
+
+    match api.get_folder_uuid_by_path(&tenant.uuid, folder_path).await? {
+        Some(uuid) => {
+            println!("{}", uuid);
+            Ok(())
+        },
+        None => {
+            Err(CliError::FolderNotFound(folder_path.clone()))
+        }
+    }
 }

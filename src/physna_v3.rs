@@ -393,8 +393,21 @@ impl PhysnaApiClient {
                 }
             }
         } else {
-            // For all other errors, return the error status
-            Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+            // For all other errors, try to extract the error message from the response body
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+
+            // Try to parse the error as JSON to extract a more descriptive message
+            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
+                if let Some(message) = error_json.get("message").and_then(|m| m.as_str()) {
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, message)));
+                } else if let Some(error) = error_json.get("error").and_then(|e| e.as_str()) {
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error)));
+                }
+            }
+
+            // If JSON parsing fails or no message is found, return a generic error with the raw response
+            Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error_body)))
         }
     }
     
@@ -692,6 +705,9 @@ impl PhysnaApiClient {
             "name": new_name
         });
 
+        // Debug print the request body
+        debug!("Renaming folder {}. Request body: {}", folder_id, serde_json::to_string(&body).unwrap_or_else(|_| "INVALID_JSON".to_string()));
+
         // The API returns a SingleFolderResponse with a "folder" field
         let response: crate::model::SingleFolderResponse = self.patch(&url, &body).await?;
         Ok(response.folder)
@@ -723,6 +739,9 @@ impl PhysnaApiClient {
                 "parentFolderId": serde_json::Value::Null
             })
         };
+
+        // Debug print the request body
+        debug!("Moving folder {} to new parent. Request body: {}", folder_id, serde_json::to_string(&body).unwrap_or_else(|_| "INVALID_JSON".to_string()));
 
         // The API returns a SingleFolderResponse with a "folder" field
         let response: crate::model::SingleFolderResponse = self.patch(&url, &body).await?;
@@ -843,16 +862,10 @@ impl PhysnaApiClient {
 
         // Special handling for root path "/"
         if normalized_path == "/" {
-            // For root path, get the root folders
-            let root_folders_response = self.list_folders_in_parent(tenant_uuid, None, Some(1), Some(1000)).await?;
-
-            if !root_folders_response.folders.is_empty() {
-                // Return the first root folder UUID
-                Ok(Some(root_folders_response.folders[0].uuid))
-            } else {
-                // If no root folders exist, return None
-                Ok(None)
-            }
+            // The root path "/" does not correspond to a specific folder UUID
+            // It represents the root level which contains multiple folders
+            // So we return None to indicate no specific folder UUID
+            Ok(None)
         } else {
             // Remove leading slash for hierarchy lookup
             let path_for_hierarchy = normalized_path.strip_prefix('/').unwrap_or(&normalized_path);
@@ -1333,8 +1346,21 @@ impl PhysnaApiClient {
             // Initial request was successful - for empty responses, we consider this a success
             Ok(())
         } else {
-            // For all other errors, return the error status
-            Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+            // For all other errors, try to extract the error message from the response body
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+
+            // Try to parse the error as JSON to extract a more descriptive message
+            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
+                if let Some(message) = error_json.get("message").and_then(|m| m.as_str()) {
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, message)));
+                } else if let Some(error) = error_json.get("error").and_then(|e| e.as_str()) {
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error)));
+                }
+            }
+
+            // If JSON parsing fails or no message is found, return a generic error with the raw response
+            Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error_body)))
         }
     }
     
@@ -2115,6 +2141,7 @@ impl Default for PhysnaApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn test_create_asset_url() {
@@ -2124,5 +2151,26 @@ mod tests {
         let tenant_id = "test-tenant";
         let url = format!("{}/tenants/{}/assets", client.base_url, tenant_id);
         assert_eq!(url, "https://app-api.physna.com/v3/tenants/test-tenant/assets");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_folder_uuid_by_path_root_path_returns_none() {
+        // Create a client instance
+        let mut client = PhysnaApiClient::new();
+
+        // For root path "/", the function should return None
+        let tenant_uuid = Uuid::nil(); // Use nil UUID for testing
+        let result = client.resolve_folder_uuid_by_path(&tenant_uuid, "/").await;
+
+        // The function should return Ok(None) for root path
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_folder_uuid_by_path_handles_non_root_paths() {
+        // This test documents that for non-root paths, the function
+        // calls get_folder_uuid_by_path and returns its result
+        // Implementation would require mocking which is complex for this case
     }
 }

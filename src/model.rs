@@ -33,7 +33,8 @@ pub enum ModelError {
 /// Normalize a path with these rules:
 /// 1) Remove leading "/HOME" if present
 /// 2) Remove any trailing '/'
-/// 3) Ensure the result starts with exactly one '/'
+/// 3) Collapse multiple consecutive '/' into a single '/'
+/// 4) Ensure the result starts with exactly one '/'
 ///
 /// Examples:
 ///   "/myroot/mysub/more/"         -> "/myroot/mysub/more"
@@ -41,6 +42,7 @@ pub enum ModelError {
 ///   "/HOME/myroot/mysub/more/"    -> "/myroot/mysub/more"
 ///   "/HOME"                       -> "/"
 ///   "////"                        -> "/"
+///   "/myroot//mysub///more/"      -> "/myroot/mysub/more"
 pub fn normalize_path(path: impl AsRef<str>) -> String {
     let mut s = path.as_ref().trim();
 
@@ -55,8 +57,12 @@ pub fn normalize_path(path: impl AsRef<str>) -> String {
     // Remove trailing '/'
     s = s.trim_end_matches('/');
 
-    // Remove all leading '/'
-    let without_leading = s.trim_start_matches('/');
+    // Split by '/' and filter out empty parts to collapse multiple consecutive slashes
+    let parts: Vec<&str> = s.split('/').filter(|part| !part.is_empty()).collect();
+    let result = parts.join("/");
+
+    // Handle the case where the original path was just slashes (e.g. "/", "//", "///")
+    let without_leading = if !result.is_empty() { result.as_str() } else { "" };
 
     // Ensure exactly one leading '/'
     let mut out = String::with_capacity(without_leading.len() + 1);
@@ -64,6 +70,77 @@ pub fn normalize_path(path: impl AsRef<str>) -> String {
     out.push_str(without_leading);
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_path_basic_cases() {
+        assert_eq!(normalize_path("/myroot/mysub/more/"), "/myroot/mysub/more");
+        assert_eq!(normalize_path("myroot/mysub/more"), "/myroot/mysub/more");
+        assert_eq!(normalize_path("/HOME/myroot/mysub/more/"), "/myroot/mysub/more");
+        assert_eq!(normalize_path("/HOME"), "/");
+        assert_eq!(normalize_path("////"), "/");
+    }
+
+    #[test]
+    fn test_normalize_path_consecutive_slashes() {
+        assert_eq!(normalize_path("/myroot//mysub///more/"), "/myroot/mysub/more");
+        assert_eq!(normalize_path("Root//Folder"), "/Root/Folder");
+        assert_eq!(normalize_path("//double//slash//test"), "/double/slash/test");
+        assert_eq!(normalize_path("///"), "/");
+        assert_eq!(normalize_path(""), "/");
+    }
+
+    #[test]
+    fn test_normalize_path_home_handling() {
+        assert_eq!(normalize_path("/HOME"), "/");
+        assert_eq!(normalize_path("/home"), "/");
+        assert_eq!(normalize_path("/HOME/"), "/");
+        assert_eq!(normalize_path("/home/"), "/");
+        assert_eq!(normalize_path("/HOME/test"), "/test");
+        assert_eq!(normalize_path("/home/test"), "/test");
+        assert_eq!(normalize_path("/HOME/test/"), "/test");
+        assert_eq!(normalize_path("/home/test/"), "/test");
+
+        // Ensure case insensitivity
+        assert_eq!(normalize_path("/HoMe"), "/");
+        assert_eq!(normalize_path("/hOmE/test"), "/test");
+    }
+
+    #[test]
+    fn test_normalize_path_edge_cases() {
+        assert_eq!(normalize_path("/"), "/");
+        assert_eq!(normalize_path(""), "/");
+        assert_eq!(normalize_path("   "), "/");
+        assert_eq!(normalize_path("   /   "), "/");
+        assert_eq!(normalize_path("   /test/   "), "/test");
+        assert_eq!(normalize_path("test"), "/test");
+        assert_eq!(normalize_path("test/"), "/test");
+        assert_eq!(normalize_path("/test"), "/test");
+        assert_eq!(normalize_path("/////test"), "/test");
+        assert_eq!(normalize_path("test/////"), "/test");
+    }
+
+    #[test]
+    fn test_normalize_path_trailing_slashes() {
+        assert_eq!(normalize_path("/test/"), "/test");
+        assert_eq!(normalize_path("/test//"), "/test");
+        assert_eq!(normalize_path("/test///"), "/test");
+        assert_eq!(normalize_path("test/"), "/test");
+        assert_eq!(normalize_path("test//"), "/test");
+        assert_eq!(normalize_path("test///"), "/test");
+    }
+
+    #[test]
+    fn test_normalize_path_leading_slashes() {
+        assert_eq!(normalize_path("//test"), "/test");
+        assert_eq!(normalize_path("///test"), "/test");
+        assert_eq!(normalize_path("////test"), "/test");
+        assert_eq!(normalize_path("/////test"), "/test");
+    }
 }
 
 /// Represents a folder in the Physna system
@@ -88,7 +165,9 @@ pub fn normalize_path(path: impl AsRef<str>) -> String {
 /// let folder = Folder::new(
 ///     Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
 ///     "My Folder".to_string(),
-///     "/Root/My Folder".to_string()
+///     "/Root/My Folder".to_string(),
+///     0,  // assets count
+///     0   // folders count
 /// );
 /// ```
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -100,6 +179,12 @@ pub struct Folder {
     name: String,
     /// Full path of the folder
     path: String,
+    /// Number of assets in the folder
+    #[serde(rename = "assetsCount")]
+    assets_count: u32,
+    /// Number of subfolders in the folder
+    #[serde(rename = "foldersCount")]
+    folders_count: u32,
 }
 
 impl Folder {
@@ -109,8 +194,10 @@ impl Folder {
     /// * `uuid` - UUID from the API
     /// * `name` - Name of the folder
     /// * `path` - Full path of the folder
-    pub fn new(uuid: Uuid, name: String, path: String) -> Folder {
-        Folder { uuid, name, path }
+    /// * `assets_count` - Number of assets in the folder
+    /// * `folders_count` - Number of subfolders in the folder
+    pub fn new(uuid: Uuid, name: String, path: String, assets_count: u32, folders_count: u32) -> Folder {
+        Folder { uuid, name, path, assets_count, folders_count }
     }
 
     /// Create a Folder from a FolderResponse with a specified path
@@ -123,12 +210,24 @@ impl Folder {
             uuid: folder_response.uuid,
             name: folder_response.name,
             path,
+            assets_count: folder_response.assets_count,
+            folders_count: folder_response.folders_count,
         }
     }
 
     /// Get the UUID of the folder
     pub fn uuid(&self) -> &Uuid {
         self.uuid.as_ref()
+    }
+
+    /// Get the number of assets in the folder
+    pub fn assets_count(&self) -> u32 {
+        self.assets_count
+    }
+
+    /// Get the number of subfolders in the folder
+    pub fn folders_count(&self) -> u32 {
+        self.folders_count
     }
 
     /// Set the name of the folder
@@ -163,6 +262,8 @@ impl From<FolderResponse> for Folder {
             uuid: fr.uuid.clone(),
             name: fr.name.clone(),
             path: "".to_string(),
+            assets_count: fr.assets_count,
+            folders_count: fr.folders_count,
         }
     }
 }
@@ -173,6 +274,8 @@ impl From<SingleFolderResponse> for Folder {
             uuid: fr.folder.uuid.clone(),
             name: fr.folder.name.clone(),
             path: "".to_string(),
+            assets_count: fr.folder.assets_count,
+            folders_count: fr.folder.folders_count,
         }
     }
 }
@@ -180,12 +283,18 @@ impl From<SingleFolderResponse> for Folder {
 impl CsvRecordProducer for Folder {
     /// Get the CSV header row for Folder records
     fn csv_header() -> Vec<String> {
-        vec!["NAME".to_string(), "UUID".to_string()]
+        vec!["NAME".to_string(), "PATH".to_string(), "ASSETS_COUNT".to_string(), "FOLDERS_COUNT".to_string(), "UUID".to_string()]
     }
 
     /// Convert the Folder to CSV records
     fn as_csv_records(&self) -> Vec<Vec<String>> {
-        vec![vec![self.name(), self.uuid().to_string()]]
+        vec![vec![
+            self.name(),
+            self.path(),
+            self.assets_count().to_string(),
+            self.folders_count().to_string(),
+            self.uuid().to_string()
+        ]]
     }
 
     /// Generate CSV output with a header row
@@ -248,6 +357,10 @@ pub struct FolderBuilder {
     name: Option<String>,
     /// Full path of the folder
     path: Option<String>,
+    /// Number of assets in the folder
+    assets_count: Option<u32>,
+    /// Number of subfolders in the folder
+    folders_count: Option<u32>,
 }
 
 impl FolderBuilder {
@@ -257,12 +370,26 @@ impl FolderBuilder {
             uuid: None,
             name: None,
             path: None,
+            assets_count: None,
+            folders_count: None,
         }
     }
 
     /// Set the UUID of the folder
     pub fn uuid(&mut self, uuid: Uuid) -> &mut FolderBuilder {
         self.uuid = Some(uuid);
+        self
+    }
+
+    /// Set the number of assets in the folder
+    pub fn assets_count(&mut self, assets_count: u32) -> &mut FolderBuilder {
+        self.assets_count = Some(assets_count);
+        self
+    }
+
+    /// Set the number of subfolders in the folder
+    pub fn folders_count(&mut self, folders_count: u32) -> &mut FolderBuilder {
+        self.folders_count = Some(folders_count);
         self
     }
 
@@ -307,7 +434,10 @@ impl FolderBuilder {
             None => name.clone(),
         };
 
-        Ok(Folder::new(uuid, name, path))
+        let assets_count = self.assets_count.unwrap_or(0);
+        let folders_count = self.folders_count.unwrap_or(0);
+
+        Ok(Folder::new(uuid, name, path, assets_count, folders_count))
     }
 }
 

@@ -86,4 +86,10 @@ pub fn folder_command() -> Command {
                 .group(folder_identifier_group())
                 .group(parent_folder_identifier_group()),
         )
+        .subcommand(
+            Command::new("resolve")
+                .about("Resolve a folder path to its UUID")
+                .arg(tenant_parameter())
+                .arg(folder_path_parameter()),
+        )
 }

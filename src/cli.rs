@@ -16,7 +16,8 @@ use pcli2::{
             list_folders,
             print_folder_details,
             rename_folder,
-            move_folder
+            move_folder,
+            resolve_folder
         },
         tenants::{
             clear_active_tenant,
@@ -153,6 +154,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Command: {} move", COMMAND_FOLDER);
 
                     move_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("resolve", sub_matches)) => {
+                    trace!("Command: {} resolve", COMMAND_FOLDER);
+
+                    resolve_folder(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

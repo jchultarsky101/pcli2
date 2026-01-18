@@ -78,6 +78,7 @@ pub fn folder_command() -> Command {
         .subcommand(
             Command::new("move")
                 .about("Move a folder to a new parent folder")
+                .visible_alias("mv")
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())

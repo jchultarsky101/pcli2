@@ -349,6 +349,8 @@ pcli2 folder rename --folder-uuid FOLDER_UUID --name "NewFolderName"
 # Move a folder to a new parent folder (between non-root folders)
 pcli2 folder move --folder-path "/Root/FolderToMove" --parent-folder-path "/New/Parent/Path"
 pcli2 folder move --folder-uuid FOLDER_UUID --parent-folder-uuid PARENT_FOLDER_UUID
+# Or using the alias
+pcli2 folder mv --folder-path "/Root/FolderToMove" --parent-folder-path "/New/Parent/Path"
 
 # Move a folder to the root level (known issue: may cause folder to disappear temporarily)
 # Note: Moving to root level has a known API issue where the folder may not appear correctly
@@ -1159,7 +1161,7 @@ pcli2
 │   ├── delete           Delete a folder
 │   ├── rename           Rename a folder
 │   │   └── --folder-path, --folder-uuid, --name
-│   └── move             Move a folder to a new parent folder
+│   └── move             Move a folder to a new parent folder (alias: mv)
 │       └── --folder-path, --folder-uuid, --parent-folder-path, --parent-folder-uuid
 ├── tenant
 │   ├── list             List all available tenants

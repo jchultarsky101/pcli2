@@ -8,13 +8,16 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch, part_match_asset, part_match_folder
+            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch, part_match_asset, part_match_folder, visual_match_asset, visual_match_folder
         },
         folders::{
             create_folder,
             delete_folder,
             list_folders,
-            print_folder_details
+            print_folder_details,
+            rename_folder,
+            move_folder,
+            resolve_folder
         },
         tenants::{
             clear_active_tenant,
@@ -49,6 +52,8 @@ use pcli2::{
             COMMAND_METADATA,
             COMMAND_PART_MATCH,
             COMMAND_PART_MATCH_FOLDER,
+            COMMAND_VISUAL_MATCH,
+            COMMAND_VISUAL_MATCH_FOLDER,
             COMMAND_INFERENCE,
             COMMAND_SET,
             COMMAND_TENANT,
@@ -139,6 +144,24 @@ pub async fn execute_command() -> Result<(), CliError> {
                     delete_folder(sub_matches).await?;
                     Ok(())
                 }
+                Some(("rename", sub_matches)) => {
+                    trace!("Command: {} rename", COMMAND_FOLDER);
+
+                    rename_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("move", sub_matches)) => {
+                    trace!("Command: {} move", COMMAND_FOLDER);
+
+                    move_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("resolve", sub_matches)) => {
+                    trace!("Command: {} resolve", COMMAND_FOLDER);
+
+                    resolve_folder(sub_matches).await?;
+                    Ok(())
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
@@ -216,6 +239,20 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Routing to asset part match folder...");
 
                     part_match_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_VISUAL_MATCH, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_VISUAL_MATCH);
+                    trace!("Routing to asset visual match...");
+
+                    visual_match_asset(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_VISUAL_MATCH_FOLDER, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_VISUAL_MATCH_FOLDER);
+                    trace!("Routing to asset visual match folder...");
+
+                    visual_match_folder(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_METADATA, sub_matches)) => {

@@ -66,4 +66,30 @@ pub fn folder_command() -> Command {
                 )
                 .group(folder_identifier_group()),
         )
+        .subcommand(
+            Command::new("rename")
+                .about("Rename a folder")
+                .arg(tenant_parameter())
+                .arg(folder_uuid_parameter())
+                .arg(folder_path_parameter())
+                .arg(name_parameter())
+                .group(folder_identifier_group()),
+        )
+        .subcommand(
+            Command::new("move")
+                .about("Move a folder to a new parent folder")
+                .arg(tenant_parameter())
+                .arg(folder_uuid_parameter())
+                .arg(folder_path_parameter())
+                .arg(parent_folder_uuid_parameter())
+                .arg(parent_folder_path_parameter())
+                .group(folder_identifier_group())
+                .group(parent_folder_identifier_group()),
+        )
+        .subcommand(
+            Command::new("resolve")
+                .about("Resolve a folder path to its UUID")
+                .arg(tenant_parameter())
+                .arg(folder_path_parameter()),
+        )
 }

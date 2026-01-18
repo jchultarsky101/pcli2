@@ -18,6 +18,7 @@ Based on lessons learned from the previous version, we have developed a new and 
   - [Working with Asset Dependencies](#working-with-asset-dependencies)
   - [Geometric Matching](#geometric-matching)
   - [Part Matching](#part-matching)
+  - [Visual Matching](#visual-matching)
   - [Working with Metadata](#working-with-metadata)
     - [Metadata Inference](#metadata-inference)
 - [Advanced Usage](#advanced-usage)
@@ -76,9 +77,13 @@ PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub
 
 1. Visit the [Latest Release](https://github.com/jchultarsky101/pcli2/releases/latest)
 2. Download the appropriate installer for your platform:
-   - **Windows**: `pcli2-x86_64-pc-windows-msvc.msi` (Installer)
-   - **macOS**: `pcli2-installer.sh` (Universal script)
-   - **Linux**: `pcli2-installer.sh` (Universal script)
+   - **Windows**:
+     - `pcli2-x86_64-pc-windows-msvc.msi` (Installer) - *Does NOT include `pcli2-update` command*
+     - `pcli2-installer.ps1` (PowerShell script) - *Includes `pcli2-update` command*
+   - **macOS**: `pcli2-installer.sh` (Universal script) - *Includes `pcli2-update` command*
+   - **Linux**: `pcli2-installer.sh` (Universal script) - *Includes `pcli2-update` command*
+
+**Important Note for Windows Users**: The Windows MSI installer does not include the `pcli2-update` command. If you want to be able to update PCLI2 using the `pcli2-update` command, use the PowerShell installer script instead of the MSI installer. Alternatively, you can use the universal installer script within WSL (Windows Subsystem for Linux).
 
 ##### Using the Universal Installer Script (macOS/Linux):
 
@@ -137,18 +142,27 @@ The authorization is typically remembered for subsequent runs.
 
 ### Updating PCLI2
 
-To update PCLI2 when using pre-built installers:
+The update mechanism depends on how you installed PCLI2:
+
+#### If Installed via Universal Installer Script (macOS/Linux) or Shell/PowerShell Scripts:
 ```bash
 pcli2-update
 ```
 
-This command should check if a new version is available and automatically install it.
+This command checks if a new version is available and automatically installs it.
 
-For manual update, simply execute the installer script:
-
+For macOS/Linux users:
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
+
+For Windows users using PowerShell:
+```powershell
+irm https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.ps1 | iex
+```
+
+#### If Installed via Windows MSI Installer:
+The Windows MSI installer does **not** include a `pcli2-update` executable. To upgrade to a new version, you must download and run the new version of the MSI installer from the [releases page](https://github.com/jchultarsky101/pcli2/releases/latest).
 
 For source builds:
 ```bash
@@ -310,11 +324,24 @@ pcli2 folder create --name "Sub Folder" --path "/Root/Parent"
 
 #### Viewing and Managing Folders
 
-Get detailed information about specific folders or remove them when no longer needed:
+Get detailed information about specific folders, rename, move, or remove them when no longer needed:
 
 ```bash
 # Get folder details
 pcli2 folder get --uuid FOLDER_UUID --format json
+
+# Rename a folder
+pcli2 folder rename --folder-path "/Root/OldFolderName" --name "NewFolderName"
+pcli2 folder rename --folder-uuid FOLDER_UUID --name "NewFolderName"
+
+# Move a folder to a new parent folder (between non-root folders)
+pcli2 folder move --folder-path "/Root/FolderToMove" --parent-folder-path "/New/Parent/Path"
+pcli2 folder move --folder-uuid FOLDER_UUID --parent-folder-uuid PARENT_FOLDER_UUID
+
+# Move a folder to the root level (known issue: may cause folder to disappear temporarily)
+# Note: Moving to root level has a known API issue where the folder may not appear correctly
+# It's recommended to move to a specific subfolder instead
+pcli2 folder move --folder-path "/Some/Subfolder/FolderToMove" --parent-folder-path "/"
 
 # Delete a folder (only works if the folder is empty)
 pcli2 folder delete --path "/Root/FolderToDelete"
@@ -324,6 +351,12 @@ pcli2 folder delete --path "/Root/FolderToDelete" --force
 ```
 
 **Note**: By default, the folder delete command will only work if the folder is empty. If the folder contains any subfolders or assets, the command will throw an error. To delete a folder that is not empty, you need to specify the `--force` option, which will make PCLI2 recursively delete all assets and subfolders before deleting the base folder. This action cannot be undone.
+
+**Important Notes about Folder Move**:
+- The `folder move` command works reliably when moving between non-root folders
+- There is a known issue with the Physna API when moving folders to the root level (`--parent-folder-path /`)
+- When moving to root, the folder may temporarily disappear from the folder hierarchy
+- If you need to move a folder to root level, consider creating it directly in the root or contact support for assistance with the API issue
 
 ### Working with Assets
 
@@ -473,6 +506,57 @@ The CSV output includes columns for both similarity scores:
 - `REVERSE_MATCH_PERCENTAGE`: Similarity when candidate is considered a part of reference
 
 This bidirectional matching approach is ideal for discovering hierarchical relationships between components and assemblies in your design database.
+
+### Visual Matching
+
+Visual matching is a specialized feature that finds assets with similar visual appearance using advanced computer vision algorithms. Unlike geometric matching which focuses on 3D shape similarity, or part matching which identifies hierarchical relationships, visual matching identifies assets that look similar from a visual standpoint.
+
+#### Single Asset Visual Matching
+
+Use the visual-match command to find visually similar assets to a specific reference model:
+
+```bash
+# Find visually similar assets for a single asset
+pcli2 asset visual-match --path /Root/Folder/ReferenceModel.stl
+```
+
+Visual matching results are ordered by relevance as determined by the visual search algorithm. Unlike geometric and part matching, visual matching does not use a threshold parameter and does not provide similarity percentages since the results are ranked by visual similarity rather than a percentage-based comparison.
+
+#### Folder-Based Visual Matching
+
+For bulk operations, use visual-match-folder to find visually similar assets for all models in one or more folders:
+
+```bash
+# Find visually similar assets for all assets in a folder (parallel processing)
+pcli2 asset visual-match-folder --path /Root/SearchFolder/ --format csv --progress
+
+# Find visually similar assets across multiple folders
+pcli2 asset visual-match-folder --path /Root/Folder1/ --path /Root/Folder2/ --format json --progress
+
+# Use exclusive flag to limit results to matches within specified folders only
+pcli2 asset visual-match-folder --path /Root/SearchFolder/ --exclusive --format csv --progress
+```
+
+This command processes all assets in the specified folder(s) simultaneously, making it efficient for large-scale visual similarity searches. The progress flag provides visual feedback during long-running operations.
+
+#### Visual Matching Output
+
+Visual matching results differ from geometric and part matching in that they do not include similarity percentages:
+
+```bash
+# View visual matching results in CSV format with headers
+pcli2 asset visual-match --path /Root/Folder/ReferenceModel.stl --format csv --headers --metadata
+```
+
+The CSV output includes columns for:
+- `REFERENCE_ASSET_PATH`: Path of the reference asset
+- `CANDIDATE_ASSET_PATH`: Path of the visually similar asset
+- `REFERENCE_ASSET_UUID`: UUID of the reference asset
+- `CANDIDATE_ASSET_UUID`: UUID of the visually similar asset
+- `COMPARISON_URL`: URL to view the comparison in the Physna UI
+- Metadata columns (when using `--metadata` flag): `REF_*` and `CAND_*` prefixed columns for reference and candidate asset metadata
+
+Visual matching is particularly useful for identifying assets with similar visual characteristics, textures, or appearances that may not be captured by geometric analysis alone.
 
 ### Working with Metadata
 
@@ -1060,7 +1144,11 @@ pcli2
 │   ├── create           Create a new folder
 │   ├── list             List all folders in a parent folder
 │   ├── get              Get folder details
-│   └── delete           Delete a folder
+│   ├── delete           Delete a folder
+│   ├── rename           Rename a folder
+│   │   └── --folder-path, --folder-uuid, --name
+│   └── move             Move a folder to a new parent folder
+│       └── --folder-path, --folder-uuid, --parent-folder-path, --parent-folder-uuid
 ├── tenant
 │   ├── list             List all available tenants
 │   └── get              Get specific tenant details

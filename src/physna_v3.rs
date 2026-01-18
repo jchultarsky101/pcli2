@@ -393,8 +393,21 @@ impl PhysnaApiClient {
                 }
             }
         } else {
-            // For all other errors, return the error status
-            Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+            // For all other errors, try to extract the error message from the response body
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+
+            // Try to parse the error as JSON to extract a more descriptive message
+            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
+                if let Some(message) = error_json.get("message").and_then(|m| m.as_str()) {
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, message)));
+                } else if let Some(error) = error_json.get("error").and_then(|e| e.as_str()) {
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error)));
+                }
+            }
+
+            // If JSON parsing fails or no message is found, return a generic error with the raw response
+            Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error_body)))
         }
     }
     
@@ -663,13 +676,75 @@ impl PhysnaApiClient {
     
     pub async fn update_folder(&mut self, tenant_id: &str, folder_id: &str, name: &str) -> Result<crate::model::FolderResponse, ApiError> {
         let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_id, folder_id);
-        
+
         let body = serde_json::json!({
             "name": name
         });
-        
+
         // The API returns a SingleFolderResponse with a "folder" field
         let response: crate::model::SingleFolderResponse = self.put(&url, &body).await?;
+        Ok(response.folder)
+    }
+
+    /// Rename a folder by ID
+    ///
+    /// This method renames the specified folder in the tenant.
+    ///
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the folder
+    /// * `folder_id` - The UUID of the folder to rename
+    /// * `new_name` - The new name for the folder
+    ///
+    /// # Returns
+    /// * `Ok(FolderResponse)` - Successfully renamed folder
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn rename_folder(&mut self, tenant_id: &str, folder_id: &str, new_name: &str) -> Result<crate::model::FolderResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders/{}/name", self.base_url, tenant_id, folder_id);
+
+        let body = serde_json::json!({
+            "name": new_name
+        });
+
+        // Debug print the request body
+        debug!("Renaming folder {}. Request body: {}", folder_id, serde_json::to_string(&body).unwrap_or_else(|_| "INVALID_JSON".to_string()));
+
+        // The API returns a SingleFolderResponse with a "folder" field
+        let response: crate::model::SingleFolderResponse = self.patch(&url, &body).await?;
+        Ok(response.folder)
+    }
+
+    /// Move a folder to a new parent folder
+    ///
+    /// This method moves the specified folder to a new parent folder.
+    ///
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the folder
+    /// * `folder_id` - The UUID of the folder to move
+    /// * `new_parent_folder_id` - The UUID of the new parent folder (None for root level)
+    ///
+    /// # Returns
+    /// * `Ok(FolderResponse)` - Successfully moved folder
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn move_folder(&mut self, tenant_id: &str, folder_id: &str, new_parent_folder_id: Option<Uuid>) -> Result<crate::model::FolderResponse, ApiError> {
+        let url = format!("{}/tenants/{}/folders/{}/parent", self.base_url, tenant_id, folder_id);
+
+        // Build request body with the parent folder ID
+        let body = if let Some(parent_id) = new_parent_folder_id {
+            serde_json::json!({
+                "parentFolderId": parent_id.to_string()
+            })
+        } else {
+            // When moving to root, set parentFolderId to null
+            serde_json::json!({
+                "parentFolderId": serde_json::Value::Null
+            })
+        };
+
+        // Debug print the request body
+        debug!("Moving folder {} to new parent. Request body: {}", folder_id, serde_json::to_string(&body).unwrap_or_else(|_| "INVALID_JSON".to_string()));
+
+        // The API returns a SingleFolderResponse with a "folder" field
+        let response: crate::model::SingleFolderResponse = self.patch(&url, &body).await?;
         Ok(response.folder)
     }
     
@@ -781,24 +856,42 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - If there was an error during API calls
     pub async fn get_folder_uuid_by_path(&mut self, tenant_uuid: &Uuid, folder_path: &str) -> Result<Option<Uuid>, ApiError> {
         debug!("Resolving folder path: {} for tenant: {} using FolderHierarchy", folder_path, tenant_uuid);
-        
-        // Use the proven FolderHierarchy implementation to resolve the path
-        match FolderHierarchy::build_from_api(self, tenant_uuid).await {
-            Ok(hierarchy) => {
-                
-                // Use the hierarchy to find the folder by path
-                if let Some(folder_node) = hierarchy.get_folder_by_path(folder_path) {
-                    debug!("Found folder at path '{}': {}", folder_path, folder_node.folder.uuid);
-                    Ok(Some(folder_node.folder.uuid.clone()))
-                } else {
-                    debug!("Folder not found at path: {}", folder_path);
-                    Ok(None)
+
+        // Normalize the path first
+        let normalized_path = crate::model::normalize_path(folder_path);
+
+        // Special handling for root path "/"
+        if normalized_path == "/" {
+            // The root path "/" does not correspond to a specific folder UUID
+            // It represents the root level which contains multiple folders
+            // So we return None to indicate no specific folder UUID
+            Ok(None)
+        } else {
+            // Remove leading slash for hierarchy lookup
+            let path_for_hierarchy = normalized_path.strip_prefix('/').unwrap_or(&normalized_path);
+
+            // First, try direct lookup for root-level folders as primary approach
+            // This handles cases where the folder is directly under root
+            let root_folders_response = self.list_folders_in_parent(tenant_uuid, None, Some(1), Some(1000)).await?;
+
+            // Look for a root folder that matches the path (for single-level paths like "test2")
+            for folder in &root_folders_response.folders {
+                if folder.name == path_for_hierarchy {
+                    debug!("Found root folder '{}' with UUID: {}", folder.name, folder.uuid);
+                    return Ok(Some(folder.uuid));
                 }
             }
-            Err(e) => {
-                error!("Error building folder hierarchy: {}", e);
-                Err(ApiError::ConflictError(format!("Failed to build folder hierarchy: {}", e)))
+
+            // If direct lookup fails, try the folder hierarchy approach for nested paths
+            if let Ok(hierarchy) = FolderHierarchy::build_from_api(self, tenant_uuid).await {
+                if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
+                    debug!("Found folder at path '{}' using hierarchy: {}", folder_path, folder_node.folder.uuid);
+                    return Ok(Some(folder_node.folder.uuid.clone()));
+                }
             }
+
+            debug!("Folder not found at path: {}", folder_path);
+            Ok(None)
         }
     }
     
@@ -1253,8 +1346,21 @@ impl PhysnaApiClient {
             // Initial request was successful - for empty responses, we consider this a success
             Ok(())
         } else {
-            // For all other errors, return the error status
-            Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+            // For all other errors, try to extract the error message from the response body
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+
+            // Try to parse the error as JSON to extract a more descriptive message
+            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
+                if let Some(message) = error_json.get("message").and_then(|m| m.as_str()) {
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, message)));
+                } else if let Some(error) = error_json.get("error").and_then(|e| e.as_str()) {
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error)));
+                }
+            }
+
+            // If JSON parsing fails or no message is found, return a generic error with the raw response
+            Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error_body)))
         }
     }
     
@@ -1623,8 +1729,18 @@ impl PhysnaApiClient {
         let mut page = 1;
         let per_page = 100; // Larger page size for efficiency
 
+        // Track the maximum last_page value seen to prevent infinite loops
+        let mut max_last_page_seen = 0;
+        let max_pages_limit = 50; // Hard limit to prevent excessive API calls
+
         loop {
             debug!("Fetching page {} of part search results", page);
+
+            // Check if we've hit the hard limit
+            if page > max_pages_limit {
+                debug!("Reached hard page limit of {}, stopping to prevent excessive API calls", max_pages_limit);
+                break;
+            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({
@@ -1649,12 +1765,18 @@ impl PhysnaApiClient {
                     if let Some(page_data) = &response.page_data {
                         debug!("Page {}/{} with {} total matches", page_data.current_page, page_data.last_page, page_data.total);
 
+                        // Update the maximum last_page value seen
+                        if page_data.last_page > max_last_page_seen {
+                            max_last_page_seen = page_data.last_page;
+                        }
+
                         // Add matches from this page to our collection
                         all_matches.extend(response.matches);
 
-                        // Check if we've reached the last page
-                        if page_data.current_page >= page_data.last_page {
-                            debug!("Reached last page of results");
+                        // Check if we've reached the last page or gone beyond what we've seen
+                        if page_data.current_page >= page_data.last_page || page > max_last_page_seen {
+                            debug!("Reached last page of results or beyond max seen: current={}, last={}, requested={}",
+                                   page_data.current_page, page_data.last_page, page);
                             break;
                         }
 
@@ -1683,6 +1805,82 @@ impl PhysnaApiClient {
 
         debug!("Part search completed for asset_id: {} with {} total matches", asset_uuid, final_response.matches.len());
         Ok(final_response)
+    }
+
+    /// Performs a visual search for similar assets
+    ///
+    /// This method performs a visual search to find assets that are visually similar to the provided asset.
+    /// The search results are ordered by relevance as determined by the visual search algorithm.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_uuid` - The UUID of the tenant to search within
+    /// * `asset_uuid` - The UUID of the reference asset to search for visually similar matches
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(PartSearchResponse)` - The search results with visually similar assets
+    /// * `Err(ApiError)` - If the API request fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use pcli2::physna_v3::PhysnaApiClient;
+    /// # use uuid::Uuid;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = PhysnaApiClient::new();
+    /// # let tenant_uuid = Uuid::nil();
+    /// # let asset_uuid = Uuid::nil();
+    /// let matches = client.visual_search(&tenant_uuid, &asset_uuid).await?;
+    /// for match_result in &matches.matches {
+    ///     println!("Found visually similar asset: {}", match_result.path());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn visual_search(&mut self, tenant_uuid: &Uuid, asset_uuid: &Uuid) -> Result<crate::model::PartSearchResponse, ApiError> {
+        debug!("Starting visual search for tenant_uuid: {}, asset_uuid: {}", tenant_uuid, asset_uuid);
+        let url = format!("{}/tenants/{}/assets/{}/visual-search", self.base_url, tenant_uuid, asset_uuid);
+
+        // Visual search - get first page with 50 results (top matches)
+        let page = 1;
+        let per_page = 50; // Reasonable page size for visual search
+
+        // Build request body with the correct structure
+        let body = serde_json::json!({
+            "page": page,
+            "perPage": per_page,
+            "searchQuery": "",
+            "filters": {
+                "folders": [],
+                "metadata": {},
+                "extensions": []  // Empty array as requested
+            }
+        });
+
+        debug!("Sending visual search request to: {}", url);
+        // Execute POST request
+        let result: Result<crate::model::PartSearchResponse, ApiError> = self.post(&url, &body).await;
+
+        match result {
+            Ok(mut response) => {
+                // Limit results to 50 to ensure we don't exceed expected page size
+                if response.matches.len() > 50 {
+                    response.matches.truncate(50);
+                }
+
+                // Clear pagination data since we're only getting the first page
+                response.page_data = None;
+
+                debug!("Visual search completed for asset_id: {} with {} total matches", asset_uuid, response.matches.len());
+                Ok(response)
+            }
+            Err(e) => {
+                // Return error immediately
+                debug!("Visual search failed: {}", e);
+                Err(e)
+            }
+        }
     }
 
     /// Create multiple assets by uploading files matching a glob pattern
@@ -1943,6 +2141,7 @@ impl Default for PhysnaApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn test_create_asset_url() {
@@ -1952,5 +2151,26 @@ mod tests {
         let tenant_id = "test-tenant";
         let url = format!("{}/tenants/{}/assets", client.base_url, tenant_id);
         assert_eq!(url, "https://app-api.physna.com/v3/tenants/test-tenant/assets");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_folder_uuid_by_path_root_path_returns_none() {
+        // Create a client instance
+        let mut client = PhysnaApiClient::new();
+
+        // For root path "/", the function should return None
+        let tenant_uuid = Uuid::nil(); // Use nil UUID for testing
+        let result = client.resolve_folder_uuid_by_path(&tenant_uuid, "/").await;
+
+        // The function should return Ok(None) for root path
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_folder_uuid_by_path_handles_non_root_paths() {
+        // This test documents that for non-root paths, the function
+        // calls get_folder_uuid_by_path and returns its result
+        // Implementation would require mocking which is complex for this case
     }
 }

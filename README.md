@@ -306,9 +306,15 @@ pcli2 folder list --format tree
 # List folders under the root folder in your active tenant
 pcli2 folder list --format json
 
-# List subfolders under a specific path
+# List subfolders under a specific path (shows only direct children, not entire subtree)
 pcli2 folder list --path /Root/MyFolder --format csv
 ```
+
+**Important Notes about Folder List**:
+- The `--format tree` option displays the complete hierarchical structure of folders
+- All other formats (`json`, `csv`) display only the direct children of the specified path, not the entire subtree
+- When no path is specified, the command defaults to the root path (`/`)
+- The CSV format includes columns for NAME, PATH, ASSETS_COUNT, FOLDERS_COUNT, and UUID
 
 #### Creating Folders
 
@@ -334,6 +340,12 @@ pcli2 folder get --uuid FOLDER_UUID --format json
 pcli2 folder rename --folder-path "/Root/OldFolderName" --name "NewFolderName"
 pcli2 folder rename --folder-uuid FOLDER_UUID --name "NewFolderName"
 
+**Important Notes about Folder Rename**:
+- The command supports both path-based and UUID-based identification of the folder to rename
+- When using path-based identification, the path is automatically normalized (consecutive slashes collapsed, leading "/HOME" removed)
+- The rename operation updates only the folder name, not its path or parent location
+- If the rename operation fails, it may be due to permissions, API issues, or invalid folder identifiers
+
 # Move a folder to a new parent folder (between non-root folders)
 pcli2 folder move --folder-path "/Root/FolderToMove" --parent-folder-path "/New/Parent/Path"
 pcli2 folder move --folder-uuid FOLDER_UUID --parent-folder-uuid PARENT_FOLDER_UUID
@@ -354,9 +366,9 @@ pcli2 folder delete --path "/Root/FolderToDelete" --force
 
 **Important Notes about Folder Move**:
 - The `folder move` command works reliably when moving between non-root folders
-- There is a known issue with the Physna API when moving folders to the root level (`--parent-folder-path /`)
-- When moving to root, the folder may temporarily disappear from the folder hierarchy
-- If you need to move a folder to root level, consider creating it directly in the root or contact support for assistance with the API issue
+- Moving folders to the root level (`--parent-folder-path /`) is now properly supported
+- When using path-based parameters, the paths are automatically normalized (consecutive slashes collapsed, leading "/HOME" removed)
+- The command supports both UUID-based and path-based identification for both the folder to move and the destination parent folder
 
 ### Working with Assets
 

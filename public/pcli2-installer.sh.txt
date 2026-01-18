@@ -23,7 +23,7 @@ has_local 2>/dev/null || alias local=typeset
 set -u
 
 APP_NAME="pcli2"
-APP_VERSION="0.2.4"
+APP_VERSION="0.2.5"
 # Look for GitHub Enterprise-style base URL first
 if [ -n "${PCLI2_INSTALLER_GHE_BASE_URL:-}" ]; then
     INSTALLER_BASE_URL="$PCLI2_INSTALLER_GHE_BASE_URL"
@@ -35,7 +35,7 @@ if [ -n "${PCLI2_DOWNLOAD_URL:-}" ]; then
 elif [ -n "${INSTALLER_DOWNLOAD_URL:-}" ]; then
     ARTIFACT_DOWNLOAD_URL="$INSTALLER_DOWNLOAD_URL"
 else
-    ARTIFACT_DOWNLOAD_URL="${INSTALLER_BASE_URL}/jchultarsky101/pcli2/releases/download/v0.2.4"
+    ARTIFACT_DOWNLOAD_URL="${INSTALLER_BASE_URL}/jchultarsky101/pcli2/releases/download/v0.2.5"
 fi
 if [ -n "${PCLI2_PRINT_VERBOSE:-}" ]; then
     PRINT_VERBOSE="$PCLI2_PRINT_VERBOSE"
@@ -65,7 +65,7 @@ fi
 AUTH_TOKEN="${PCLI2_GITHUB_TOKEN:-}"
 
 read -r RECEIPT <<EORECEIPT
-{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_layout":"unspecified","install_prefix":"AXO_INSTALL_PREFIX","modify_path":true,"provider":{"source":"cargo-dist","version":"0.30.3"},"source":{"app_name":"pcli2","name":"pcli2","owner":"jchultarsky101","release_type":"github"},"version":"0.2.4"}
+{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_layout":"unspecified","install_prefix":"AXO_INSTALL_PREFIX","modify_path":true,"provider":{"source":"cargo-dist","version":"0.30.3"},"source":{"app_name":"pcli2","name":"pcli2","owner":"jchultarsky101","release_type":"github"},"version":"0.2.5"}
 EORECEIPT
 
 # Some Linux distributions don't set HOME
@@ -100,10 +100,10 @@ usage() {
     cat <<EOF
 pcli2-installer.sh
 
-The installer for pcli2 0.2.4
+The installer for pcli2 0.2.5
 
 This script detects what platform you're on and fetches an appropriate archive from
-https://github.com/jchultarsky101/pcli2/releases/download/v0.2.4
+https://github.com/jchultarsky101/pcli2/releases/download/v0.2.5
 then unpacks the binaries and installs them to
 
     \$CARGO_HOME/bin (or \$HOME/.cargo/bin)
@@ -206,7 +206,7 @@ download_binary_and_run_installer() {
             _arch="aarch64-apple-darwin"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="66a3b083a683498cd10c5e632950f94913838fcf36c7424c32f567f7e19fd4de"
+            _checksum_value="9206e0c77242aed6e3f31b5dcd0c88c4888ee7e0f5256f586a057ab19ea9062c"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -220,7 +220,7 @@ download_binary_and_run_installer() {
             _arch="aarch64-unknown-linux-gnu"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="852cb99c898faad095daa3bea05e85a8a1ba2c15e4cfb41578254b2aeb143381"
+            _checksum_value="06f5de4d7ddba5e62f7b8c6c1f6844b7c637ca41e09cbab1d958dc40d3a8f060"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -234,7 +234,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-apple-darwin"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="568a44f2fa4a50f6d5c9f127c1076861af4653b5bb0cbe8dc0d5905ca32db842"
+            _checksum_value="e51a0258e07956f4857c41f7ae1b2a4c499de9a2c62b86a7cbe9b58dc5780f25"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""
@@ -248,7 +248,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-pc-windows-msvc"
             _zip_ext=".zip"
             _checksum_style="sha256"
-            _checksum_value="f930db66bde5a73d92742653239489971119704df98a60125724186919caee63"
+            _checksum_value="dab8106007b278ea01bb25617043d84aa883cf9b2f450c99979e66de5bcb9a86"
             _bins="pcli2.exe"
             _bins_js_array='"pcli2.exe"'
             _libs=""
@@ -262,7 +262,7 @@ download_binary_and_run_installer() {
             _arch="x86_64-unknown-linux-gnu"
             _zip_ext=".tar.xz"
             _checksum_style="sha256"
-            _checksum_value="75ce7c7e95c3480a15f03c22d37aa6638ce5b64e94dbd590a3445e4d7a584313"
+            _checksum_value="555e00a15b89e6cbb09f30d447143bfc017e8f2eed54b96060ea0df642d23158"
             _bins="pcli2"
             _bins_js_array='"pcli2"'
             _libs=""

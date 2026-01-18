@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-01-17
+
+### Added
+- Added resolve-folder command to resolve a folder path to its UUID
+- Added comprehensive test suite for path normalization with edge cases
+- Added assets_count and folders_count fields to Folder model for richer folder information
+- Added 'issues/' directory to .gitignore
+
+### Changed
+- Improved normalize_path function to handle consecutive slashes and collapse them into single slashes
+- Modified folder list command to show only direct children for non-tree formats (previously showed all descendants)
+- Enhanced error handling in API client to extract meaningful error messages from response bodies
+- Updated folder move command to properly handle root path cases
+- Modified list_folders to use get_children_by_path for non-tree formats
+- Enhanced CSV output for folders to include PATH, ASSETS_COUNT, and FOLDERS_COUNT fields
+- Improved documentation for folder rename and move commands with comprehensive examples
+- Updated README.md and quickstart guide to reflect changes in folder command behavior
+
+## [0.2.6] - 2026-01-16
+
+### Added
+- Added visual-match and visual-match-folder commands for finding visually similar assets
+- Added comprehensive documentation for visual matching functionality
+- Added concurrent processing option for visual-match-folder with configurable limits (1-10)
+- Added progress tracking with multi-progress bars for visual-match-folder operations
+- Added exclusive flag for visual-match-folder to limit matches to specified folders only
+- Added metadata support for visual matching with REF_ and CAND_ prefixes in CSV output
+
 ## [0.2.5] - 2026-01-14
 
 ### Added
@@ -238,7 +266,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/physna/pcli2/compare/v0.2.6...v0.2.7
+[0.2.6]: https://github.com/physna/pcli2/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/physna/pcli2/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/physna/pcli2/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/physna/pcli2/compare/v0.2.2...v0.2.3

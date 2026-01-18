@@ -61,8 +61,11 @@ Learn to navigate your Physna tenant using PCLI2:
 # List available tenants
 pcli2 tenant list
 
-# List folders in the root directory
+# List folders in the root directory (shows only direct children, not entire subtree)
 pcli2 folder list
+
+# List folders in tree format to see the complete hierarchy
+pcli2 folder list --format tree
 
 # List assets in a specific folder
 pcli2 asset list --path /Root/MyFolder/

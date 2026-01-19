@@ -211,6 +211,7 @@ pub fn folder_uuid_parameter() -> Arg {
 /// Create the path parameter.
 pub fn folder_path_parameter() -> Arg {
     Arg::new(PARAMETER_FOLDER_PATH)
+        .short('p')
         .long(PARAMETER_FOLDER_PATH)
         .num_args(1)
         .required(true)

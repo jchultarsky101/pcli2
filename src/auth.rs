@@ -117,7 +117,7 @@ impl AuthClient {
                 Err(_) => error_text
             };
 
-            Err(AuthError::AuthFailed(format!("Authentication failed: HTTP {} {}", status, error_details)))
+            Err(AuthError::AuthFailed(format!("HTTP {} {}", status, error_details)))
         }
     }
 }

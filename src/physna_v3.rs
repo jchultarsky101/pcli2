@@ -267,17 +267,25 @@ impl PhysnaApiClient {
                     // Return an authentication error with details
                     let error_msg = e.to_string();
                     let user_friendly_msg = if error_msg.contains("invalid_client") {
-                        "Failed to refresh token: Invalid client credentials. This could be due to:\n  - Incorrect client ID or secret\n  - Expired or revoked client credentials\n  - Disabled service account\n  Please verify your credentials and log in again with 'pcli2 auth login'."
+                        "Invalid client credentials. This could be due to:\n  - Incorrect client ID or secret\n  - Expired or revoked client credentials\n  - Disabled service account\n  Please verify your credentials and log in again with 'pcli2 auth login'.".to_string()
                     } else if error_msg.contains("invalid_grant") {
-                        "Failed to refresh token: Invalid authorization grant. Please log in again with 'pcli2 auth login'."
+                        "Invalid authorization grant. Please log in again with 'pcli2 auth login'.".to_string()
                     } else if error_msg.contains("unauthorized_client") {
-                        "Failed to refresh token: Unauthorized client. Please verify your client credentials and try logging in again with 'pcli2 auth login'."
+                        "Unauthorized client. Please verify your client credentials and log in again with 'pcli2 auth login'.".to_string()
                     } else if error_msg.contains("invalid_request") {
-                        "Failed to refresh token: Invalid request. Please verify your credentials and try logging in again with 'pcli2 auth login'."
+                        "Invalid request. Please verify your credentials and log in again with 'pcli2 auth login'.".to_string()
                     } else {
-                        &format!("Failed to refresh token: {}", e)
+                        // Check if the error message already contains authentication context to avoid repetition
+                        let error_str = e.to_string();
+                        if error_str.starts_with("Authentication failed:") {
+                            // Extract the actual error details after "Authentication failed:"
+                            let actual_error = error_str.strip_prefix("Authentication failed: ").unwrap_or(&error_str);
+                            format!("{} - Please log in again with 'pcli2 auth login'.", actual_error)
+                        } else {
+                            format!("{} - Please log in again with 'pcli2 auth login'.", error_str)
+                        }
                     };
-                    Err(ApiError::AuthError(user_friendly_msg.to_string()))
+                    Err(ApiError::AuthError(user_friendly_msg))
                 }
             }
         } else {

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-01-19
+
+### Fixed
+- Fixed AssetStateCounts deserialization to match actual API response format
+- Made all AssetStateCounts fields optional to handle missing values gracefully
+- Renamed AssetStateCounts fields to match API response (indexing, finished, failed, unsupported, no-3d-data)
+- Updated CSV headers to match JSON field names for consistency in tenant state command
+- Updated documentation for tenant state command with detailed usage examples
+
+### Added
+- Added comprehensive documentation for tenant state command in README.md
+- Added detailed descriptions for each asset state field (indexing, finished, failed, unsupported, no-3d-data)
+
 ## [0.2.7] - 2026-01-17
 
 ### Added

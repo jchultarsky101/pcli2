@@ -165,7 +165,7 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
     // Get tenants from cache or API depending on refresh flag
     let tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, refresh).await
         .map_err(|e| CliActionError::ApiError(e))?;
-            
+
     // If no name was provided, show interactive selection
     let selected_tenant = if let Some(name) = name {
         // Find tenant by name (existing logic)
@@ -183,17 +183,17 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
             );
             return Ok(());
         }
-        
+
         // Create options for the select menu
         let options: Vec<String> = tenants.iter()
             .map(|tenant| format!("{}: {} ({})", tenant.tenant_short_name, tenant.tenant_display_name, tenant.tenant_uuid))
             .collect();
-        
+
         // Use inquire to create an interactive selection
         let ans = inquire::Select::new("Select a tenant:", options)
             .with_help_message("Choose the tenant you want to set as active")
             .prompt();
-            
+
         match ans {
             Ok(choice) => {
                 let tenant_name = choice.split_once(':').map(|(before, _)| before.trim()).unwrap();
@@ -214,13 +214,13 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
             }
         }
     };
-                    
+
     // Set the active tenant in configuration
     let mut configuration = Configuration::load_default()?;
     if let Some(selected_tenant) = selected_tenant {
         let tenant = Tenant::try_from(&selected_tenant)?;
         configuration.set_active_tenant(&tenant);
-                
+
         // Save configuration
         configuration.save_to_default()?;
     } else {
@@ -388,5 +388,54 @@ pub async fn print_current_context(sub_matches: &ArgMatches) -> Result<(), CliAc
 
     println!("{}", context_info.format(&format)?);
 
+    Ok(())
+}
+
+pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
+    trace!("Executing tenant state command...");
+
+    // Get format parameters directly from sub_matches
+    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .cloned()
+        .unwrap_or_else(|| "json".to_string());
+
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+
+    // Create format options with metadata set to false since tenant state counts don't have metadata
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata: false,
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(|e| CliActionError::FormattingError(e))?;
+
+    let configuration = Configuration::load_default()
+        .map_err(|e| CliActionError::ConfigurationError(e))?;
+    let mut api = PhysnaApiClient::try_default()
+        .map_err(|e| CliActionError::ApiError(e))?;
+    let tenant = crate::param_utils::get_tenant(&mut api, sub_matches, &configuration).await
+        .map_err(|e| match e {
+            crate::error::CliError::ConfigurationError(config_error) => CliActionError::ConfigurationError(config_error),
+            crate::error::CliError::MissingRequiredArgument(msg) => CliActionError::MissingRequiredArgument(msg),
+            crate::error::CliError::TenantNotFound { identifier } => CliActionError::TenantNotFound { identifier },
+            crate::error::CliError::FormattingError(fmt_error) => CliActionError::FormattingError(fmt_error),
+            crate::error::CliError::ActionError(action_error) => action_error, // Already a CliActionError
+            crate::error::CliError::PhysnaExtendedApiError(api_error) => CliActionError::ApiError(api_error),
+            crate::error::CliError::SecurityError(msg) => CliActionError::MissingRequiredArgument(msg),
+            crate::error::CliError::UnsupportedSubcommand(msg) => CliActionError::MissingRequiredArgument(msg),
+            crate::error::CliError::JsonError(json_error) => CliActionError::JsonError(json_error),
+            crate::error::CliError::FolderNotFound(path) => CliActionError::MissingRequiredArgument(format!("Folder not found: {}", path)),
+            crate::error::CliError::FolderListError(_) => CliActionError::MissingRequiredArgument("Folder list error".to_string()),
+            crate::error::CliError::UuidParsingError(uuid_error) => CliActionError::UuidPartsinError(uuid_error),
+            crate::error::CliError::FolderRenameFailed(_, _) => CliActionError::MissingRequiredArgument("Folder rename failed".to_string()),
+        })?;
+
+    // Get the asset state counts from the API
+    let state_counts = api.get_asset_state_counts(&tenant.uuid).await?;
+
+    println!("{}", state_counts.format(&format)?);
     Ok(())
 }

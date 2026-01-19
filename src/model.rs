@@ -2991,3 +2991,75 @@ impl OutputFormatter for AssetDependenciesResponse {
 }
 
 
+
+/// Represents asset state counts for a tenant
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct AssetStateCounts {
+    /// Number of assets in "processing" state
+    #[serde(rename = "processing")]
+    pub processing: u32,
+    /// Number of assets in "ready" state
+    #[serde(rename = "ready")]
+    pub ready: u32,
+    /// Number of assets in "failed" state
+    #[serde(rename = "failed")]
+    pub failed: u32,
+    /// Number of assets in "deleted" state
+    #[serde(rename = "deleted")]
+    pub deleted: u32,
+}
+
+impl AssetStateCounts {
+    /// Create a new AssetStateCounts instance
+    pub fn new(processing: u32, ready: u32, failed: u32, deleted: u32) -> AssetStateCounts {
+        AssetStateCounts {
+            processing,
+            ready,
+            failed,
+            deleted,
+        }
+    }
+}
+
+impl crate::format::Formattable for AssetStateCounts {
+    fn format(&self, f: &crate::format::OutputFormat) -> Result<String, crate::format::FormattingError> {
+        match f {
+            crate::format::OutputFormat::Json(options) => {
+                let json = if options.pretty {
+                    serde_json::to_string_pretty(self)
+                } else {
+                    serde_json::to_string(self)
+                };
+                match json {
+                    Ok(json_str) => Ok(json_str),
+                    Err(e) => Err(crate::format::FormattingError::JsonSerializationError(e)),
+                }
+            }
+            crate::format::OutputFormat::Csv(options) => {
+                let mut wtr = csv::Writer::from_writer(vec![]);
+                
+                if options.with_headers {
+                    wtr.serialize(("PROCESSING", "READY", "FAILED", "DELETED"))?;
+                }
+                
+                wtr.serialize((
+                    self.processing,
+                    self.ready,
+                    self.failed,
+                    self.deleted,
+                ))?;
+                
+                let data = wtr.into_inner()?;
+                let csv_string = String::from_utf8(data)?;
+                Ok(csv_string)
+            }
+            crate::format::OutputFormat::Tree(_) => {
+                // For tree format, just return a simple representation
+                Ok(format!(
+                    "Asset State Counts:\n  Processing: {}\n  Ready: {}\n  Failed: {}\n  Deleted: {}",
+                    self.processing, self.ready, self.failed, self.deleted
+                ))
+            }
+        }
+    }
+}

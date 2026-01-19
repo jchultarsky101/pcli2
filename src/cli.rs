@@ -110,6 +110,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                     get_tenant_details(sub_matches).await?;
                     Ok(())
                 }
+                Some(("state", sub_matches)) => {
+                    trace!("Command: {} state", COMMAND_TENANT);
+
+                    pcli2::actions::tenants::get_tenant_state_counts(sub_matches).await?;
+                    Ok(())
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),

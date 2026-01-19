@@ -2065,9 +2065,34 @@ impl PhysnaApiClient {
         
         Ok(response)
     }
-    
+
+    /// Get asset state counts from the Physna API
+    ///
+    /// This function retrieves the count of assets in each state (processing, ready, failed, deleted) for a specific tenant.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_uuid` - The UUID of the tenant to get asset state counts for
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(AssetStateCounts)` - Successfully fetched asset state counts
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn get_asset_state_counts(&mut self, tenant_uuid: &Uuid) -> Result<crate::model::AssetStateCounts, ApiError> {
+        debug!("Getting asset state counts for tenant_uuid: {}", tenant_uuid);
+
+        let url = format!("{}/tenants/{}/assets/state-counts", self.base_url, tenant_uuid);
+        debug!("Asset state counts request URL: {}", url);
+
+        // Execute the GET request using the generic method
+        let response: crate::model::AssetStateCounts = self.get(&url).await?;
+        debug!("Successfully retrieved asset state counts for tenant_uuid: {}", tenant_uuid);
+
+        Ok(response)
+    }
+
     /// Download asset file from the Physna API
-    /// 
+    ///
     /// This method downloads the raw file content of the specified asset from the Physna API.
     /// The file content is returned as a vector of bytes that can be saved to disk.
     /// 

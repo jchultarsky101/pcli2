@@ -291,6 +291,33 @@ pcli2 asset list --tenant 123e4567-e89b-12d3-a456-426614174000
 
 The tenant parameter accepts either the human-readable tenant name or the unique identifier (UUID) for precise targeting.
 
+#### Checking Tenant Asset State
+
+Use the tenant state command to get counts of assets in different processing states within your tenant:
+
+```bash
+# Get asset state counts in JSON format (default)
+pcli2 tenant state
+
+# Get asset state counts in pretty-printed JSON
+pcli2 tenant state --pretty
+
+# Get asset state counts in CSV format
+pcli2 tenant state --format csv
+
+# Get asset state counts in CSV format with headers
+pcli2 tenant state --format csv --headers
+```
+
+The command returns counts for the following asset states:
+- **indexing**: Assets currently being processed/uploaded
+- **finished**: Assets that have completed processing and are ready for use
+- **failed**: Assets that failed during processing
+- **unsupported**: Assets with file formats not supported by Physna
+- **no-3d-data**: Assets that were uploaded but contain no 3D geometry data
+
+All fields are optional and will default to 0 if not present in the API response, ensuring robust handling of varying API responses.
+
 ### Working with Folders
 
 Folder management is essential for organizing your assets in Physna. These commands allow you to create, view, and manage the folder structure where your assets are stored.

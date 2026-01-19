@@ -89,6 +89,7 @@ pub const PARAMETER_REFRESH: &str = "refresh";
 pub const PARAMETER_RECURSIVE: &str = "recursive";
 pub const PARAMETER_CONCURRENT: &str = "concurrent";
 pub const PARAMETER_PROGRESS: &str = "progress";
+pub const PARAMETER_FOLDER_PATHS: &str = "folder-paths";
 
 // Format options
 pub const FORMAT_CSV: &str = "csv";

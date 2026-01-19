@@ -7,8 +7,8 @@ use std::io;
 
 /// Generate completions for the specified shell and write to stdout.
 pub fn generate_completions(shell: &str) -> Result<(), CliError> {
-    // We need to get the command definition, not the matches
-    let mut cmd = crate::commands::completions::completions_command();
+    // We need to get the full CLI command structure, not just the completions command
+    let mut cmd = crate::commands::create_full_command();
 
     match shell {
         "bash" => {

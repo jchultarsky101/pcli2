@@ -27,6 +27,17 @@ pub mod completions;
 ///
 /// An `ArgMatches` instance containing the parsed command-line arguments.
 pub fn create_cli_commands() -> ArgMatches {
+    create_full_command().get_matches()
+}
+
+/// Create the full CLI command structure without parsing arguments.
+///
+/// This function creates the complete command structure for use with completion generation.
+///
+/// # Returns
+///
+/// A `Command` instance containing the full CLI structure.
+pub fn create_full_command() -> Command {
     Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -42,5 +53,4 @@ pub fn create_cli_commands() -> ArgMatches {
         .subcommand(context::context_command())
         .subcommand(config::config_command())
         .subcommand(completions::completions_command())
-        .get_matches()
 }

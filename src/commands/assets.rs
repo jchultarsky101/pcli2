@@ -12,7 +12,7 @@ use crate::commands::params::{
     tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH,
     COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_DOWNLOAD_FOLDER, COMMAND_GET,
     COMMAND_LIST, COMMAND_MATCH, COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH_FOLDER, COMMAND_VISUAL_MATCH, COMMAND_VISUAL_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
-    PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_PROGRESS,
+    PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_PATHS, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
 
@@ -128,7 +128,8 @@ pub fn asset_command() -> Command {
                 .about("Download all assets in a folder as a ZIP archive")
                 .arg(tenant_parameter())
                 .arg(
-                    Arg::new(PARAMETER_FOLDER_PATH)
+                    Arg::new(PARAMETER_FOLDER_PATHS)
+                        .long(PARAMETER_FOLDER_PATHS)
                         .num_args(1..) // Accept one or more values
                         .required(true)
                         .help("Folder path(s) to download (can be provided multiple times or as comma-separated values)")
@@ -136,6 +137,7 @@ pub fn asset_command() -> Command {
                 )
                 .arg(
                     Arg::new(PARAMETER_FILE)
+                        .long(PARAMETER_FILE)
                         .num_args(1)
                         .required(false)
                         .help("Output file path (default: <folder_name>.zip in the current directory)")
@@ -191,9 +193,9 @@ pub fn asset_command() -> Command {
             .about("Find geometrically similar assets for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(
-                Arg::new(PARAMETER_FOLDER_PATH)
+                Arg::new(PARAMETER_FOLDER_PATHS)
                     .short('p')
-                    .long(PARAMETER_FOLDER_PATH)
+                    .long(PARAMETER_FOLDER_PATHS)
                     .num_args(1..) // Accept one or more values
                     .required(true)
                     .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
@@ -242,9 +244,9 @@ pub fn asset_command() -> Command {
             .about("Find part matches for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(
-                Arg::new(PARAMETER_FOLDER_PATH)
+                Arg::new(PARAMETER_FOLDER_PATHS)
                     .short('p')
-                    .long(PARAMETER_FOLDER_PATH)
+                    .long(PARAMETER_FOLDER_PATHS)
                     .num_args(1..) // Accept one or more values
                     .required(true)
                     .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
@@ -305,9 +307,9 @@ pub fn asset_command() -> Command {
             .about("Find visually similar assets for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(
-                Arg::new(PARAMETER_FOLDER_PATH)
+                Arg::new(PARAMETER_FOLDER_PATHS)
                     .short('p')
-                    .long(PARAMETER_FOLDER_PATH)
+                    .long(PARAMETER_FOLDER_PATHS)
                     .num_args(1..) // Accept one or more values
                     .required(true)
                     .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")

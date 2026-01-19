@@ -51,10 +51,20 @@ impl TenantCache {
     /// * `Ok(PathBuf)` - The path to the tenant cache file
     /// * `Err` - If there was an error getting the cache directory
     fn get_cache_file_path() -> Result<PathBuf, CacheError> {
+        // Load configuration to get the active environment name
+        let configuration = crate::configuration::Configuration::load_or_create_default()
+            .map_err(|e| CacheError::Other(format!("Could not load configuration: {}", e)))?;
+
+        let environment_name = configuration.get_active_environment()
+            .unwrap_or_else(|| "default".to_string());
+
+        // Sanitize environment name to be a valid filename
+        let sanitized_env_name = environment_name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
+
         // Check for PCLI2_CACHE_DIR environment variable first
         if let Ok(cache_dir_str) = std::env::var("PCLI2_CACHE_DIR") {
             let mut cache_path = PathBuf::from(cache_dir_str);
-            cache_path.push("tenant_cache.json");
+            cache_path.push(format!("tenant_cache_{}.json", sanitized_env_name));
             return Ok(cache_path);
         }
 
@@ -62,7 +72,7 @@ impl TenantCache {
             CacheError::Other("Could not determine cache directory".to_string())
         })?;
         path.push("pcli2");
-        path.push("tenant_cache.json");
+        path.push(format!("tenant_cache_{}.json", sanitized_env_name));
         Ok(path)
     }
 

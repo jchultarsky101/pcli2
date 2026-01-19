@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive test suite for path normalization with edge cases
 - Added assets_count and folders_count fields to Folder model for richer folder information
 - Added 'issues/' directory to .gitignore
+- Added completions command to generate shell completions for bash, zsh, fish, powershell, and elvish
+- Added documentation for shell completions setup
 
 ### Changed
 - Improved normalize_path function to handle consecutive slashes and collapse them into single slashes

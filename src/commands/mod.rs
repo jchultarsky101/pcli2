@@ -15,6 +15,7 @@ pub mod folder;
 pub mod metadata;
 pub mod params;
 pub mod tenant;
+pub mod completions;
 
 /// Create and configure all CLI commands and their arguments.
 ///
@@ -40,5 +41,6 @@ pub fn create_cli_commands() -> ArgMatches {
         .subcommand(assets::asset_command())
         .subcommand(context::context_command())
         .subcommand(config::config_command())
+        .subcommand(completions::completions_command())
         .get_matches()
 }

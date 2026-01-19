@@ -1178,6 +1178,7 @@ pcli2
 │   ├── set              Set active context (tenant)
 │   ├── get              Get current context
 │   └── clear            Clear active context
+├── completions        Generate shell completions for various shells
 └── help                 Show help information
 ```
 
@@ -1197,6 +1198,30 @@ pcli2 asset create --help
 ```
 
 You can also use the `-h` or `--help` flag with any command to get detailed usage information.
+
+### Shell Completions
+
+PCLI2 supports shell completions for various shells. To generate completions:
+
+```bash
+# Generate ZSH completions
+pcli2 completions zsh > ~/.zsh/completion/_pcli2
+
+# Add the completion directory to your ZSH configuration (~/.zshrc)
+fpath=(~/.zsh/completion $fpath)
+autoload -U compinit && compinit
+
+# Generate Bash completions
+pcli2 completions bash > /etc/bash_completion.d/pcli2
+
+# Generate Fish completions
+pcli2 completions fish > ~/.config/fish/completions/pcli2.fish
+
+# Generate PowerShell completions
+pcli2 completions powershell > pcli2.ps1
+```
+
+After installing the completions, restart your shell or source your configuration file to enable tab completion for PCLI2 commands.
 
 ## Troubleshooting
 

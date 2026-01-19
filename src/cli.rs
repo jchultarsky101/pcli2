@@ -1051,6 +1051,16 @@ pub async fn execute_command() -> Result<(), CliError> {
                 ))),
             }
         }
+        Some(("completions", sub_matches)) => {
+            trace!("Command: completions");
+
+            let shell = sub_matches.get_one::<String>("shell")
+                .ok_or(CliError::MissingRequiredArgument("shell is required".to_string()))?;
+
+            // Generate completions for the specified shell
+            pcli2::actions::completions::generate_completions(shell)?;
+            Ok(())
+        }
         _ => Err(CliError::UnsupportedSubcommand(String::from("unknown"))),
     }
 }

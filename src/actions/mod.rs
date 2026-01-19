@@ -3,6 +3,7 @@ use thiserror::Error;
 pub mod assets;
 pub mod folders;
 pub mod tenants;
+pub mod completions;
 
 #[derive(Debug, Error)]
 pub enum CliActionError {

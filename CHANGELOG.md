@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved error messages to provide clearer guidance when no tenant is selected
 - Updated environment switching message to be more informative about tenant selection
 - Fixed tenant cache to be environment-specific, resolving issues when switching environments
+- Added tenant state command to get asset state counts (processing, ready, failed, deleted)
+- Added AssetStateCounts model to represent asset state counts
+- Implemented API call to retrieve asset state counts from the API
 
 ## [0.2.6] - 2026-01-16
 

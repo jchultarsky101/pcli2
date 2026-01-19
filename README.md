@@ -1165,7 +1165,8 @@ pcli2
 │       └── -p/--folder-path, --folder-uuid, -pp/--parent-folder-path, --parent-folder-uuid
 ├── tenant
 │   ├── list             List all available tenants
-│   └── get              Get specific tenant details
+│   ├── get              Get specific tenant details
+│   └── state            Get asset state counts for the current tenant
 ├── auth
 │   ├── login            Authenticate with client credentials
 │   ├── logout           Clear authentication tokens

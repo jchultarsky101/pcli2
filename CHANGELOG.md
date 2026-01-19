@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced CSV output for folders to include PATH, ASSETS_COUNT, and FOLDERS_COUNT fields
 - Improved documentation for folder rename and move commands with comprehensive examples
 - Updated README.md and quickstart guide to reflect changes in folder command behavior
+- Made -p a consistent short form for --folder-path parameter across all commands
+- Improved error messages to provide clearer guidance when no tenant is selected
+- Updated environment switching message to be more informative about tenant selection
+- Fixed tenant cache to be environment-specific, resolving issues when switching environments
 
 ## [0.2.6] - 2026-01-16
 

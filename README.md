@@ -1140,10 +1140,10 @@ The application uses a hierarchy of commands:
 ```
 pcli2
 ├── asset
-│   ├── create              Create a new asset by uploading a file
-│   ├── create-batch        Create multiple assets by uploading files matching a glob pattern
+│   ├── create              Create a new asset by uploading a file (-p/--folder-path)
+│   ├── create-batch        Create multiple assets by uploading files matching a glob pattern (-p/--folder-path)
 │   ├── dependencies        Get dependencies for an asset (components in assemblies, referenced assets) with --recursive flag for full hierarchy (alias: dep)
-│   ├── list                List all assets in a folder
+│   ├── list                List all assets in a folder (-p/--folder-path)
 │   ├── get                 Get asset details
 │   ├── delete              Delete an asset
 │   ├── geometric-match     Find geometrically similar assets for a single asset
@@ -1160,9 +1160,9 @@ pcli2
 │   ├── get              Get folder details
 │   ├── delete           Delete a folder
 │   ├── rename           Rename a folder
-│   │   └── --folder-path, --folder-uuid, --name
+│   │   └── -p/--folder-path, --folder-uuid, --name
 │   └── move             Move a folder to a new parent folder (alias: mv)
-│       └── --folder-path, --folder-uuid, --parent-folder-path, --parent-folder-uuid
+│       └── -p/--folder-path, --folder-uuid, -pp/--parent-folder-path, --parent-folder-uuid
 ├── tenant
 │   ├── list             List all available tenants
 │   └── get              Get specific tenant details

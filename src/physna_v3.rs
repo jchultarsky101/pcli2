@@ -2081,7 +2081,7 @@ impl PhysnaApiClient {
     pub async fn get_asset_state_counts(&mut self, tenant_uuid: &Uuid) -> Result<crate::model::AssetStateCounts, ApiError> {
         debug!("Getting asset state counts for tenant_uuid: {}", tenant_uuid);
 
-        let url = format!("{}/v3/tenants/{}/assets/state-counts", self.base_url, tenant_uuid);
+        let url = format!("{}/tenants/{}/assets/state", self.base_url, tenant_uuid);
         debug!("Asset state counts request URL: {}", url);
 
         // Execute the GET request using the generic method

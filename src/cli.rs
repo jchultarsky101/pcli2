@@ -750,7 +750,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                             configuration.clear_active_tenant();
                             configuration.save_to_default()?;
 
-                            println!("Switched to environment '{}' (active tenant cleared)", selected_env_name);
+                            println!("Switched to environment '{}'. Select a tenant with 'pcli2 context set tenant' before running commands.", selected_env_name);
                             Ok(())
                         }
                         Some(("remove", sub_matches)) => {

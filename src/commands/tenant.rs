@@ -34,6 +34,7 @@ pub fn tenant_command() -> Command {
         .subcommand(
             Command::new("state")
                 .about("Get asset state counts for the current tenant")
+                .arg(crate::commands::params::tenant_parameter())
                 .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),

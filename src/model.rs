@@ -2995,29 +2995,38 @@ impl OutputFormatter for AssetDependenciesResponse {
 /// Represents asset state counts for a tenant
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct AssetStateCounts {
-    /// Number of assets in "processing" state
-    #[serde(rename = "processing")]
-    pub processing: u32,
-    /// Number of assets in "ready" state
-    #[serde(rename = "ready")]
-    pub ready: u32,
-    /// Number of assets in "failed" state
-    #[serde(rename = "failed")]
-    pub failed: u32,
-    /// Number of assets in "deleted" state
-    #[serde(rename = "deleted")]
-    pub deleted: u32,
+    /// Number of assets currently indexing/processing
+    #[serde(rename = "indexing", default)]
+    pub processing: Option<u32>,
+    /// Number of assets that have finished processing (ready)
+    #[serde(rename = "finished", default)]
+    pub ready: Option<u32>,
+    /// Number of assets that failed to process
+    #[serde(rename = "failed", default)]
+    pub failed: Option<u32>,
+    /// Number of assets that are unsupported
+    #[serde(rename = "unsupported", default)]
+    pub unsupported: Option<u32>,
+    /// Number of assets with no 3D data
+    #[serde(rename = "no-3d-data", default)]
+    pub no_3d_data: Option<u32>,
 }
 
 impl AssetStateCounts {
     /// Create a new AssetStateCounts instance
-    pub fn new(processing: u32, ready: u32, failed: u32, deleted: u32) -> AssetStateCounts {
+    pub fn new(processing: Option<u32>, ready: Option<u32>, failed: Option<u32>, unsupported: Option<u32>, no_3d_data: Option<u32>) -> AssetStateCounts {
         AssetStateCounts {
             processing,
             ready,
             failed,
-            deleted,
+            unsupported,
+            no_3d_data,
         }
+    }
+
+    /// Helper method to get the value or 0 if None
+    fn get_or_default(value: Option<u32>) -> u32 {
+        value.unwrap_or(0)
     }
 }
 
@@ -3037,18 +3046,19 @@ impl crate::format::Formattable for AssetStateCounts {
             }
             crate::format::OutputFormat::Csv(options) => {
                 let mut wtr = csv::Writer::from_writer(vec![]);
-                
+
                 if options.with_headers {
-                    wtr.serialize(("PROCESSING", "READY", "FAILED", "DELETED"))?;
+                    wtr.serialize(("INDEXING", "FINISHED", "FAILED", "UNSUPPORTED", "NO-3D-DATA"))?;
                 }
-                
+
                 wtr.serialize((
-                    self.processing,
-                    self.ready,
-                    self.failed,
-                    self.deleted,
+                    AssetStateCounts::get_or_default(self.processing),
+                    AssetStateCounts::get_or_default(self.ready),
+                    AssetStateCounts::get_or_default(self.failed),
+                    AssetStateCounts::get_or_default(self.unsupported),
+                    AssetStateCounts::get_or_default(self.no_3d_data),
                 ))?;
-                
+
                 let data = wtr.into_inner()?;
                 let csv_string = String::from_utf8(data)?;
                 Ok(csv_string)
@@ -3056,8 +3066,12 @@ impl crate::format::Formattable for AssetStateCounts {
             crate::format::OutputFormat::Tree(_) => {
                 // For tree format, just return a simple representation
                 Ok(format!(
-                    "Asset State Counts:\n  Processing: {}\n  Ready: {}\n  Failed: {}\n  Deleted: {}",
-                    self.processing, self.ready, self.failed, self.deleted
+                    "Asset State Counts:\n  Processing: {}\n  Ready: {}\n  Failed: {}\n  Unsupported: {}\n  No 3D Data: {}",
+                    AssetStateCounts::get_or_default(self.processing),
+                    AssetStateCounts::get_or_default(self.ready),
+                    AssetStateCounts::get_or_default(self.failed),
+                    AssetStateCounts::get_or_default(self.unsupported),
+                    AssetStateCounts::get_or_default(self.no_3d_data)
                 ))
             }
         }

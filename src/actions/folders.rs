@@ -6,10 +6,15 @@ use crate::{commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PAR
 
 pub async fn resolve_folder_uuid_by_path(api: &mut PhysnaApiClient, tenant: &Tenant, path: &str) -> Result<Uuid, CliError> {
     trace!("Resolving the UUID for folder path {}...", path);
-    if let Some(folder_uuid) = api.get_folder_uuid_by_path(&tenant.uuid, path).await? {
-        Ok(folder_uuid)
-    } else {
-        Err(CliError::FolderNotFound(path.to_string()))
+
+    // Root path should be handled separately by the calling function, so this function is only for non-root paths
+    match api.get_folder_uuid_by_path(&tenant.uuid, path).await {
+        Ok(Some(folder_uuid)) => Ok(folder_uuid),
+        Ok(None) => Err(CliError::FolderNotFound(path.to_string())),
+        Err(api_error) => {
+            // Propagate API errors (like authentication errors) instead of converting them to FolderNotFound
+            Err(CliError::PhysnaExtendedApiError(api_error))
+        }
     }
 }
 
@@ -165,7 +170,7 @@ pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             // Root path means no parent (None)
             None
         } else {
-            api.get_folder_uuid_by_path(&tenant.uuid, path).await?
+            Some(resolve_folder_uuid_by_path(&mut api, &tenant, path).await?)
         }
     } else {
         // If no parent is specified, move to root (None)
@@ -198,7 +203,13 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let parent_folder_uuid = if let Some(uuid) = parent_folder_uuid_param {
         Some(uuid.clone())
     } else if let Some(path) = parent_folder_path_param {
-        Some(resolve_folder_uuid_by_path(&mut api, &tenant, path).await?)
+        let normalized_path = crate::model::normalize_path(path);
+        if normalized_path == "/" {
+            // Root path means no parent (None)
+            None
+        } else {
+            Some(resolve_folder_uuid_by_path(&mut api, &tenant, path).await?)
+        }
     } else {
         None
     };

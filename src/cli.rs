@@ -54,6 +54,7 @@ use pcli2::{
             COMMAND_PART_MATCH_FOLDER,
             COMMAND_VISUAL_MATCH,
             COMMAND_VISUAL_MATCH_FOLDER,
+            COMMAND_CLEAR_TOKEN,
             COMMAND_INFERENCE,
             COMMAND_SET,
             COMMAND_TENANT,
@@ -521,6 +522,54 @@ pub async fn execute_command() -> Result<(), CliError> {
                         Err(e) => {
                             error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
                             Ok(())
+                        }
+                    }
+                }
+                Some((COMMAND_CLEAR_TOKEN, _)) => {
+                    trace!("Executing auth clear-token command");
+
+                    let configuration = Configuration::load_or_create_default()?;
+                    // Use the active environment name for keyring storage, fallback to "default" if no environment is set
+                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+
+                    #[allow(unused_mut)]
+                    let mut keyring = Keyring::default();
+
+                    // Try to get the current token to see if one exists
+                    match keyring.get(&environment_name, "access-token".to_string()) {
+                        Ok(Some(_token)) => {
+                            // Token exists, try to delete it
+                            match keyring.delete(&environment_name, "access-token".to_string()) {
+                                Ok(()) => {
+                                    println!("Access token cleared successfully");
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error_utils::report_error_with_remediation(
+                                        &format!("Error deleting access token: {}", e),
+                                        &[
+                                            "Check that your system's keyring service is running",
+                                            "Try logging in again with 'pcli2 auth login'"
+                                        ]
+                                    );
+                                    Err(CliError::SecurityError(String::from("Failed to delete access token")))
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            // No token exists, which is fine
+                            println!("No access token found to clear");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error_with_remediation(
+                                &format!("Error checking for access token: {}", e),
+                                &[
+                                    "Check that your system's keyring service is running",
+                                    "Try logging in again with 'pcli2 auth login'"
+                                ]
+                            );
+                            Err(CliError::SecurityError(String::from("Failed to check access token")))
                         }
                     }
                 }

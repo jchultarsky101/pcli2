@@ -431,6 +431,16 @@ pcli2 asset get --path /Root/MyFolder/model.stl
 
 # List all assets in a folder
 pcli2 asset list --path "/Root/MyFolder" --format json
+
+# Download a single asset
+pcli2 asset download --path /Root/MyFolder/model.stl
+
+# Download all assets in a folder as a ZIP archive
+pcli2 asset download-folder --folder-path "/Root/MyFolder" --file "my_folder.zip"
+
+# Download all assets in a folder with progress indicator
+pcli2 asset download-folder --folder-path "/Root/MyFolder" --progress
+
 # Create metadata for multiple assets from a CSV file
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
 
@@ -1175,6 +1185,8 @@ pcli2
 │   ├── list                List all assets in a folder (-p/--folder-path)
 │   ├── get                 Get asset details
 │   ├── delete              Delete an asset
+│   ├── download            Download asset file
+│   ├── download-folder     Download all assets in a folder as a ZIP archive
 │   ├── geometric-match     Find geometrically similar assets for a single asset
 │   ├── geometric-match-folder  Find geometrically similar assets for all assets in a folder
 │   └── metadata

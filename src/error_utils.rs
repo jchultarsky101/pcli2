@@ -128,12 +128,21 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
         "Authentication failed: Unauthorized client. Please verify your client credentials and try logging in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("invalid_request") {
         "Authentication failed: Invalid request. Please verify your credentials and try logging in again with 'pcli2 auth login'.".to_string()
+    } else if error_str.contains("No access token") || error_str.contains("Authentication required") {
+        // Handle authentication errors that indicate missing or invalid tokens
+        error_str
     } else if error_str.contains("401") || error_str.to_lowercase().contains("unauthorized") {
         "Authentication failed. Please check your access token and try logging in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("403") || error_str.to_lowercase().contains("forbidden") {
-        "Access forbidden. You don't have permission to perform this operation.".to_string()
+        "Access forbidden. You don't have permission to perform this operation. This may be due to:\n  - Missing access token (try 'pcli2 auth login')\n  - Expired access token (try 'pcli2 auth login')\n  - Insufficient permissions for this operation".to_string()
     } else if error_str.contains("404") || error_str.to_lowercase().contains("not found") {
-        "Resource not found. Please check the resource ID or path and try again.".to_string()
+        // Check if this is actually an authentication issue masquerading as a "not found" error
+        if error_str.to_lowercase().contains("authentication") || error_str.to_lowercase().contains("token") {
+            // This is likely an authentication error, not a resource not found error
+            "Authentication required. Please log in with 'pcli2 auth login'.".to_string()
+        } else {
+            "Resource not found. Please check the resource ID or path and try again.".to_string()
+        }
     } else if error_str.contains("409") || error_str.to_lowercase().contains("conflict") {
         "Operation conflict. The resource may already exist or be in use.".to_string()
     } else if error_str.to_lowercase().contains("timeout") {

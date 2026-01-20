@@ -34,6 +34,7 @@ pub const COMMAND_DOWNLOAD_FOLDER: &str = "download-folder";
 pub const COMMAND_AUTH: &str = "auth";
 pub const COMMAND_LOGIN: &str = "login";
 pub const COMMAND_LOGOUT: &str = "logout";
+pub const COMMAND_CLEAR_TOKEN: &str = "clear-token";
 //
 // Tenant commands
 pub const COMMAND_TENANT: &str = "tenant";

@@ -42,4 +42,7 @@ pub enum CliActionError {
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("ZIP error: {0}")]
+    ZipError(#[from] zip::result::ZipError),
 }

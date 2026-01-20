@@ -127,14 +127,9 @@ pub fn asset_command() -> Command {
             Command::new(COMMAND_DOWNLOAD_FOLDER)
                 .about("Download all assets in a folder as a ZIP archive")
                 .arg(tenant_parameter())
-                .arg(
-                    Arg::new(PARAMETER_FOLDER_PATHS)
-                        .long(PARAMETER_FOLDER_PATHS)
-                        .num_args(1..) // Accept one or more values
-                        .required(true)
-                        .help("Folder path(s) to download (can be provided multiple times or as comma-separated values)")
-                        .action(clap::ArgAction::Append), // Allow multiple --path flags
-                )
+                .arg(folder_uuid_parameter())
+                .arg(folder_path_parameter())
+                .group(folder_identifier_group())
                 .arg(
                     Arg::new(PARAMETER_FILE)
                         .long(PARAMETER_FILE)
@@ -142,6 +137,13 @@ pub fn asset_command() -> Command {
                         .required(false)
                         .help("Output file path (default: <folder_name>.zip in the current directory)")
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
+                )
+                .arg(
+                    Arg::new(PARAMETER_PROGRESS)
+                        .long(PARAMETER_PROGRESS)
+                        .action(ArgAction::SetTrue)
+                        .required(false)
+                        .help("Display progress bar during download"),
                 )
         )
     .subcommand(

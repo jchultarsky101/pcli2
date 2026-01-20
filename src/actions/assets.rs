@@ -61,7 +61,7 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     trace!("Executing file upload...");
-    
+
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
@@ -69,12 +69,18 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let format = get_format_parameter_value(sub_matches).await;
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
-    
+
     // Resolve folder UUID from either UUID parameter or path
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
         uuid.clone()
     } else if let Some(path) = folder_path_param {
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        let normalized_path = crate::model::normalize_path(path);
+        if normalized_path == "/" {
+            // Root path - handle specially if needed, but for asset creation we need the actual folder
+            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        } else {
+            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        }
     } else {
         // This shouldn't happen due to our earlier check, but just in case
         return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
@@ -122,7 +128,7 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
      trace!("Executing \"create asset batch\" command...");
-    
+
     let glob_pattern = sub_matches.get_one::<String>(PARAMETER_FILES)
         .ok_or(CliError::MissingRequiredArgument("files".to_string()))?
         .clone();
@@ -130,7 +136,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         .unwrap_or(&5);
     let concurrent = *concurrent_param;
     let show_progress = sub_matches.get_flag("progress");
-    
+
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
@@ -138,12 +144,18 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     let format = get_format_parameter_value(sub_matches).await;
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
-    
+
     // Resolve folder UUID from either UUID parameter or path
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
         uuid.clone()
     } else if let Some(path) = folder_path_param {
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        let normalized_path = crate::model::normalize_path(path);
+        if normalized_path == "/" {
+            // Root path - handle specially if needed, but for asset creation we need the actual folder
+            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        } else {
+            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        }
     } else {
         // This shouldn't happen due to our earlier check, but just in case
         return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));

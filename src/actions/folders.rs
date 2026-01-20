@@ -79,7 +79,14 @@ pub async fn print_folder_details(sub_matches: &ArgMatches) -> Result<(), CliErr
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
         uuid.clone()
     } else if let Some(path) = folder_path_param {
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        let normalized_path = crate::model::normalize_path(path);
+        if normalized_path == "/" {
+            // Root path doesn't have a specific UUID, so this should be handled differently
+            // For get operations, we might need to list root contents instead
+            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        } else {
+            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        }
     } else {
         // This shouldn't happen due to our earlier check, but just in case
         return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
@@ -116,7 +123,13 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
         uuid.clone()
     } else if let Some(path) = folder_path_param {
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        let normalized_path = crate::model::normalize_path(path);
+        if normalized_path == "/" {
+            // Root path doesn't have a specific UUID, so this operation is not valid
+            return Err(CliError::MissingRequiredArgument("Cannot rename the root folder".to_string()));
+        } else {
+            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        }
     } else {
         return Err(CliError::MissingRequiredArgument(format!("Missing folder identifier")));
     };
@@ -238,7 +251,13 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
         uuid.clone()
     } else if let Some(path) = folder_path_param {
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        let normalized_path = crate::model::normalize_path(path);
+        if normalized_path == "/" {
+            // Root path doesn't have a specific UUID, so this operation is not valid
+            return Err(CliError::MissingRequiredArgument("Cannot delete the root folder".to_string()));
+        } else {
+            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+        }
     } else {
         return Err(CliError::MissingRequiredArgument(format!("Missing folder path")));
     };

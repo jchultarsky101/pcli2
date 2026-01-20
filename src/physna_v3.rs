@@ -345,28 +345,28 @@ impl PhysnaApiClient {
         // A 403 can also indicate an expired token in some cases
         if response.status() == reqwest::StatusCode::UNAUTHORIZED || response.status() == reqwest::StatusCode::FORBIDDEN {
             debug!("Received authentication error ({}), attempting token refresh", response.status());
-            
+
             // Try to refresh the expired or invalid access token
             self.refresh_token().await?;
-            
+
             // Retry the original request with the newly refreshed token
             debug!("Retrying request with refreshed token");
             let mut retry_request = request_builder(&self.http_client);
-            
+
             // Add the refreshed access token to the retry request
             if let Some(token) = &self.access_token {
                 retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
             }
-            
+
             let retry_response = retry_request.send().await?;
-            
+
             // Check if the retry was successful
             if retry_response.status().is_success() {
                 // Try to get the raw response text for debugging deserialization issues
                 let response = retry_response.text().await?;
                 trace!("Raw response for deserialization: {}", response);
                 trace!("Deserializing into: {}", std::any::type_name::<T>());
-                
+
                 // Try to parse and return the JSON response
                 match serde_json::from_str::<T>(&response) {
                     Ok(result) => Ok(result),
@@ -379,10 +379,10 @@ impl PhysnaApiClient {
                 // Retry failed - provide clear error information
                 let status = retry_response.status();
                 let error_text = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}", 
+                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}",
                     response.status(), status, error_text);
                 Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Retry failed with status: {} and body: {}", 
+                    "Original error: {}, Retry failed with status: {} and body: {}",
                     response.status(), status, error_text
                 )))
             }
@@ -391,7 +391,7 @@ impl PhysnaApiClient {
             let response = response.text().await?;
             trace!("Raw response for deserialization: {}", response);
             trace!("Deserializing into: {}", std::any::type_name::<T>());
-            
+
             // Try to parse and return the JSON response
             match serde_json::from_str::<T>(&response) {
                 Ok(result) => Ok(result),
@@ -404,6 +404,103 @@ impl PhysnaApiClient {
             // For all other errors, try to extract the error message from the response body
             let status = response.status();
             let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+
+            // Log the HTTP response code and body for debugging
+            debug!("HTTP request failed with status: {}, body: {}", status, error_body);
+
+            // Special handling for 404 errors that might be due to authentication issues
+            // The API sometimes returns 404 instead of 401/403 when authentication is missing or invalid
+            if status == reqwest::StatusCode::NOT_FOUND {
+                // If we have no access token, this is definitely an authentication issue
+                if self.access_token.is_none() {
+                    debug!("404 error with no access token - treating as authentication error");
+                    return Err(ApiError::AuthError(
+                        "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
+                    ));
+                } else {
+                    // Even if we have a token, it might be invalid/expired and the API returns 404 instead of 401/403
+                    // Try to refresh the token and see if that resolves the issue
+                    debug!("Received 404 error, attempting token refresh as it might be an authentication issue");
+                    if let Err(refresh_err) = self.refresh_token().await {
+                        // If token refresh fails, this confirms it's an authentication issue
+                        debug!("Token refresh failed: {}", refresh_err);
+                        return Err(ApiError::AuthError(
+                            "Authentication required: Access token may be invalid or expired. Please log in with 'pcli2 auth login'.".to_string()
+                        ));
+                    } else {
+                        // If refresh succeeds, retry the request
+                        debug!("Token refreshed successfully, retrying request");
+                        let mut retry_request = request_builder(&self.http_client);
+
+                        if let Some(token) = &self.access_token {
+                            retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
+                        }
+
+                        let retry_response = retry_request.send().await?;
+
+                        if retry_response.status().is_success() {
+                            let response = retry_response.text().await?;
+                            match serde_json::from_str::<T>(&response) {
+                                Ok(result) => return Ok(result),
+                                Err(e) => {
+                                    error!("Failed to deserialize response after token refresh: {}. Raw response: {}", e, response);
+                                    return Err(ApiError::JsonError(e));
+                                }
+                            }
+                        } else {
+                            // Even after refresh, the request failed
+                            let retry_status = retry_response.status();
+                            let retry_error_body = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                            debug!("Request still failed after token refresh: {} - {}", retry_status, retry_error_body);
+                            return Err(ApiError::ConflictError(format!("HTTP {} - {}", retry_status, retry_error_body)));
+                        }
+                    }
+                }
+            } else if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+                // Handle 401/403 errors as authentication issues
+                debug!("Received {} error - treating as authentication error", status);
+                if self.access_token.is_none() {
+                    return Err(ApiError::AuthError(
+                        "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
+                    ));
+                } else {
+                    // Try to refresh the token
+                    debug!("Attempting token refresh for {} error", status);
+                    if let Err(refresh_err) = self.refresh_token().await {
+                        debug!("Token refresh failed for {} error: {}", status, refresh_err);
+                        return Err(ApiError::AuthError(
+                            "Authentication required: Access token may be invalid or expired. Please log in with 'pcli2 auth login'.".to_string()
+                        ));
+                    } else {
+                        // If refresh succeeds, retry the request
+                        debug!("Token refreshed successfully, retrying request after {} error", status);
+                        let mut retry_request = request_builder(&self.http_client);
+
+                        if let Some(token) = &self.access_token {
+                            retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
+                        }
+
+                        let retry_response = retry_request.send().await?;
+
+                        if retry_response.status().is_success() {
+                            let response = retry_response.text().await?;
+                            match serde_json::from_str::<T>(&response) {
+                                Ok(result) => return Ok(result),
+                                Err(e) => {
+                                    error!("Failed to deserialize response after token refresh: {}. Raw response: {}", e, response);
+                                    return Err(ApiError::JsonError(e));
+                                }
+                            }
+                        } else {
+                            // Even after refresh, the request failed
+                            let retry_status = retry_response.status();
+                            let retry_error_body = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                            debug!("Request still failed after token refresh: {} - {}", retry_status, retry_error_body);
+                            return Err(ApiError::ConflictError(format!("HTTP {} - {}", retry_status, retry_error_body)));
+                        }
+                    }
+                }
+            }
 
             // Try to parse the error as JSON to extract a more descriptive message
             if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
@@ -1358,6 +1455,58 @@ impl PhysnaApiClient {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
 
+            // Log the HTTP response code and body for debugging
+            debug!("HTTP request failed with status: {}, body: {}", status, error_body);
+
+            // Handle 401/403 errors as authentication issues
+            if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+                debug!("Received {} error - treating as authentication error", status);
+                if self.access_token.is_none() {
+                    return Err(ApiError::AuthError(
+                        "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
+                    ));
+                } else {
+                    // Try to refresh the token
+                    debug!("Attempting token refresh for {} error", status);
+                    if let Err(refresh_err) = self.refresh_token().await {
+                        debug!("Token refresh failed for {} error: {}", status, refresh_err);
+                        return Err(ApiError::AuthError(
+                            "Authentication required: Access token may be invalid or expired. Please log in with 'pcli2 auth login'.".to_string()
+                        ));
+                    } else {
+                        // If refresh succeeds, retry the request
+                        debug!("Token refreshed successfully, retrying request after {} error", status);
+                        let mut retry_request = request_builder(&self.http_client);
+
+                        if let Some(token) = &self.access_token {
+                            retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
+                        }
+
+                        let retry_response = retry_request.send().await?;
+
+                        if retry_response.status().is_success() {
+                            // Success after retry
+                            return Ok(());
+                        } else {
+                            // Even after refresh, the request failed
+                            let retry_status = retry_response.status();
+                            let retry_error_body = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                            debug!("Request still failed after token refresh: {} - {}", retry_status, retry_error_body);
+                            return Err(ApiError::ConflictError(format!("HTTP {} - {}", retry_status, retry_error_body)));
+                        }
+                    }
+                }
+            } else if status == reqwest::StatusCode::NOT_FOUND {
+                // Handle 404 errors that might be due to authentication issues
+                debug!("Received 404 error, checking if it's an authentication issue");
+                if self.access_token.is_none() {
+                    debug!("404 error with no access token - treating as authentication error");
+                    return Err(ApiError::AuthError(
+                        "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
+                    ));
+                }
+            }
+
             // Try to parse the error as JSON to extract a more descriptive message
             if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
                 if let Some(message) = error_json.get("message").and_then(|m| m.as_str()) {
@@ -2133,20 +2282,37 @@ impl PhysnaApiClient {
         
         // Check status code
         if !response.status().is_success() {
-            debug!("Download request failed with status: {}", response.status());
+            let status = response.status();
+            // Clone the status before consuming the response in text()
+            let status_clone = status;
+            let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            debug!("Download request failed with status: {}, body: {}", status_clone, error_body);
+
             // Create an appropriate error based on the response status
-            match response.status() {
+            match status_clone {
                 reqwest::StatusCode::UNAUTHORIZED => {
-                    return Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid".to_string()));
+                    // Check if we have an access token - if not, this is a general auth error
+                    if self.access_token.is_none() {
+                        return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
+                    } else {
+                        return Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid".to_string()));
+                    }
                 }
                 reqwest::StatusCode::FORBIDDEN => {
-                    return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
+                    // Check if we have an access token - if not, this is a general auth error
+                    if self.access_token.is_none() {
+                        return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
+                    } else {
+                        return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
+                    }
                 }
                 reqwest::StatusCode::NOT_FOUND => {
-                    return Err(ApiError::AuthError("Asset not found - the asset may have been deleted or the path is incorrect".to_string()));
+                    return Err(ApiError::ConflictError("Asset not found - the asset may have been deleted or the path is incorrect".to_string()));
                 }
                 _ => {
-                    return Err(ApiError::HttpError(response.error_for_status().unwrap_err()));
+                    // For other error statuses, we need to create a new response to get the error
+                    // Since we already consumed the response getting the text, we'll return a generic error
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status_clone, error_body)));
                 }
             }
         }

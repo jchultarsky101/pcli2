@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.9] - 2026-01-20
 
-### Changed
-- Bumped version to 0.2.9
+### Fixed
+- Fixed creation of folders under root
+- Fixed folder move operations to properly support moving to root level
+- Improved path normalization for folder operations
 
 ## [0.2.8] - 2026-01-19
 

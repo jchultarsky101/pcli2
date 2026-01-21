@@ -1195,48 +1195,61 @@ The application uses a hierarchy of commands:
 ```
 pcli2
 ├── asset
-│   ├── create              Create a new asset by uploading a file (-p/--folder-path)
-│   ├── create-batch        Create multiple assets by uploading files matching a glob pattern (-p/--folder-path)
-│   ├── dependencies        Get dependencies for an asset (components in assemblies, referenced assets) with --recursive flag for full hierarchy (alias: dep)
-│   ├── list                List all assets in a folder (-p/--folder-path)
-│   ├── get                 Get asset details
-│   ├── delete              Delete an asset
-│   ├── download            Download asset file
-│   ├── download-folder     Download all assets in a folder as a ZIP archive
-│   ├── geometric-match     Find geometrically similar assets for a single asset
-│   ├── geometric-match-folder  Find geometrically similar assets for all assets in a folder
-│   └── metadata
-│       ├── get             Get metadata for an asset
-│       ├── create          Add metadata to an asset
-│       ├── delete          Delete specific metadata fields from an asset
-│       ├── create-batch    Create metadata for multiple assets from a CSV file
-│       └── inference       Apply metadata from a reference asset to geometrically similar assets
+│   ├── create                    Create a new asset by uploading a file
+│   ├── create-batch              Create multiple assets by uploading files matching a glob pattern
+│   ├── delete                    Delete an asset [aliases: rm]
+│   ├── list                      List all assets in a folder [aliases: ls]
+│   ├── get                       Get asset details
+│   ├── metadata                  Manage asset metadata
+│   ├── dependencies              Get dependencies for an asset
+│   ├── download                  Download asset file
+│   ├── download-folder           Download all assets in a folder as a ZIP archive
+│   ├── geometric-match           Find geometrically similar assets
+│   ├── part-match                Find geometrically similar assets using part search algorithm
+│   ├── geometric-match-folder    Find geometrically similar assets for all assets in one or more folders
+│   ├── part-match-folder         Find part matches for all assets in one or more folders
+│   ├── visual-match              Find visually similar assets for a specific reference asset
+│   └── visual-match-folder       Find visually similar assets for all assets in one or more folders
+├── asset metadata
+│   ├── get                       Get metadata for an asset
+│   ├── create                    Add metadata to an asset [aliases: update]
+│   ├── delete                    Delete specific metadata fields from an asset [aliases: rm]
+│   ├── create-batch              Create metadata for multiple assets from a CSV file [aliases: update-batch]
+│   └── inference                 Apply metadata from a reference asset to geometrically similar assets
 ├── folder
-│   ├── create           Create a new folder
-│   ├── list             List all folders in a parent folder
-│   ├── get              Get folder details
-│   ├── delete           Delete a folder
-│   ├── rename           Rename a folder
-│   │   └── -p/--folder-path, --folder-uuid, --name
-│   └── move             Move a folder to a new parent folder (alias: mv)
-│       └── -p/--folder-path, --folder-uuid, -pp/--parent-folder-path, --parent-folder-uuid
+│   ├── create                    Create a new folder
+│   ├── list                      List all folders [aliases: ls]
+│   ├── get                       Get folder details
+│   ├── delete                    Delete a folder [aliases: rm]
+│   ├── rename                    Rename a folder
+│   ├── move                      Move a folder to a new parent folder [aliases: mv]
+│   └── resolve                   Resolve a folder path to its UUID
 ├── tenant
-│   ├── list             List all available tenants
-│   ├── get              Get specific tenant details
-│   ├── use              Set the active tenant
-│   ├── current          Get the active tenant
-│   ├── clear            Clear the active tenant
-│   └── state            Get asset state counts for the current tenant
+│   ├── list                      List all tenants [aliases: ls]
+│   ├── get                       Get tenant details
+│   ├── use                       Set the active tenant
+│   ├── current                   Get the active tenant
+│   ├── clear                     Clear the active tenant
+│   └── state                     Get asset state counts for the current tenant
 ├── auth
-│   ├── login            Authenticate with client credentials
-│   ├── logout           Clear authentication tokens
-│   └── get              Get current authentication status
+│   ├── login                     Login using client credentials
+│   ├── logout                    Logout and clear session
+│   ├── get                       Get current access token
+│   └── clear-token               Clear the cached access token
 ├── config
-│   ├── get              Get configuration details
-│   ├── export           Export configuration to a file
-│   └── import           Import configuration from a file
-├── completions        Generate shell completions for various shells
-└── help                 Show help information
+│   ├── get                       Get configuration details
+│   ├── export                    Export configuration to file
+│   ├── import                    Import configuration from file
+│   └── environment               Manage environment configurations
+├── config environment
+│   ├── add                       Add a new environment configuration
+│   ├── use                       Switch to an environment
+│   ├── remove                    Remove an environment
+│   ├── list                      List all environments
+│   ├── reset                     Reset all environment configurations to blank state
+│   └── get                       Get environment details
+├── completions                   Generate shell completions for various shells
+└── help                          Show help information
 ```
 
 ### Getting Help

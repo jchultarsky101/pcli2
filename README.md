@@ -452,7 +452,7 @@ pcli2 asset list --path "/Root/MyFolder" --format json
 pcli2 asset download --path /Root/MyFolder/model.stl
 
 # Download all assets in a folder as a ZIP archive
-pcli2 folder download --folder-path "/Root/MyFolder" --file "my_folder.zip"
+pcli2 folder download --folder-path "/Root/MyFolder" --output "my_folder.zip"
 
 # Download all assets in a folder with progress indicator
 pcli2 folder download --folder-path "/Root/MyFolder" --progress

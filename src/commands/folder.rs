@@ -7,7 +7,7 @@ use crate::commands::params::{
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
     name_parameter, parent_folder_identifier_group, parent_folder_path_parameter, parent_folder_uuid_parameter, tenant_parameter,
     COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET,
-    COMMAND_LIST, PARAMETER_FILE, PARAMETER_PROGRESS,
+    COMMAND_LIST, PARAMETER_PROGRESS,
 };
 use clap::Command;
 
@@ -101,8 +101,8 @@ pub fn folder_command() -> Command {
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
                 .arg(
-                    clap::Arg::new(PARAMETER_FILE)
-                        .long(PARAMETER_FILE)
+                    clap::Arg::new("output")
+                        .long("output")
                         .num_args(1)
                         .required(false)
                         .help("Output file path (default: <folder_name>.zip in the current directory)")

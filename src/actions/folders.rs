@@ -384,7 +384,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     // Get the output file path
-    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE) {
+    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>("output") {
         output_path.clone()
     } else {
         // Use the folder name as the default output file name

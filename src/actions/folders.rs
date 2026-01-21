@@ -347,10 +347,11 @@ pub async fn resolve_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     }
 }
 
-/// Download all assets in a folder as a ZIP archive.
+/// Download all assets in a folder and its subfolders as a ZIP archive.
 ///
 /// This function handles the "folder download" command, retrieving all assets
-/// in a specified folder from the Physna API and packaging them into a ZIP file.
+/// in a specified folder and all its subfolders from the Physna API and packaging them into a ZIP file,
+/// preserving the folder structure.
 ///
 /// # Arguments
 ///
@@ -415,16 +416,64 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         path
     };
 
-    // Get all assets in the folder
-    let assets_response = api.list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&folder_uuid)).await?;
-    let assets: Vec<_> = assets_response.get_all_assets().iter().cloned().collect();
+    // Create a temporary directory to store downloaded files
+    let temp_dir = std::env::temp_dir().join(format!("pcli2_temp_{}", folder_uuid));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
-    if assets.is_empty() {
+    // Use BFS to collect all folders in the hierarchy and their assets
+    let mut all_assets_with_paths = Vec::new();
+    let mut folder_queue = std::collections::VecDeque::new();
+
+    // Get the root folder details to determine its path
+    let root_folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
+    let root_folder: crate::model::Folder = root_folder.into();
+    let root_folder_path = root_folder.path();
+
+    folder_queue.push_back((folder_uuid, root_folder_path.clone()));
+
+    while let Some((current_folder_uuid, current_folder_path)) = folder_queue.pop_front() {
+        // Get all assets in the current folder
+        let assets_response = api.list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid)).await?;
+        let asset_list: crate::model::AssetList = assets_response.into();
+
+        // Add assets with their relative paths
+        for asset in asset_list.get_all_assets() {
+            // Calculate the relative path from the root folder
+            let relative_path = if current_folder_path == root_folder_path {
+                // If it's the root folder, just use the asset name
+                asset.name().to_string()
+            } else {
+                // Otherwise, create a subfolder path
+                let subfolder_path = current_folder_path.strip_prefix(&root_folder_path)
+                    .unwrap_or(&current_folder_path)
+                    .trim_start_matches('/');
+
+                if subfolder_path.is_empty() {
+                    asset.name().to_string()
+                } else {
+                    format!("{}/{}", subfolder_path, asset.name())
+                }
+            };
+
+            all_assets_with_paths.push((asset.clone(), relative_path));
+        }
+
+        // Get subfolders of current folder to process next
+        let folders_response = api.list_folders_in_parent(&tenant.uuid, Some(&current_folder_uuid.to_string()), None, None).await?;
+        for folder in folders_response.folders {
+            let folder_detail = api.get_folder(&tenant.uuid, &folder.uuid).await?;
+            let folder_detail: crate::model::Folder = folder_detail.into();
+            folder_queue.push_back((folder.uuid, folder_detail.path()));
+        }
+    }
+
+    if all_assets_with_paths.is_empty() {
         crate::error_utils::report_error_with_remediation(
-            &format!("No assets found in folder with UUID: {}", folder_uuid),
+            &format!("No assets found in folder with UUID: {} or its subfolders", folder_uuid),
             &[
                 "Verify the folder UUID or path is correct",
-                "Check that the folder contains assets",
+                "Check that the folder or its subfolders contain assets",
                 "Ensure you have permissions to access the folder"
             ]
         );
@@ -434,14 +483,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Check if progress should be displayed
     let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
 
-    // Create a temporary directory to store downloaded files
-    let temp_dir = std::env::temp_dir().join(format!("pcli2_temp_{}", folder_uuid));
-    std::fs::create_dir_all(&temp_dir)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
     // Create progress bar if requested
     let progress_bar = if show_progress {
-        let pb = ProgressBar::new(assets.len() as u64);
+        let pb = ProgressBar::new(all_assets_with_paths.len() as u64);
         pb.set_style(ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Downloading assets")
             .unwrap()
@@ -451,14 +495,22 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         None
     };
 
-    // Download each asset to the temporary directory
-    for asset in &assets {
+    // Download each asset to the appropriate subdirectory in the temp directory
+    for (asset, relative_path) in &all_assets_with_paths {
         let file_content = api.download_asset(
             &tenant.uuid.to_string(),
             &asset.uuid().to_string()
         ).await?;
 
-        let asset_file_path = temp_dir.join(asset.name());
+        // Create the full path in the temp directory
+        let asset_file_path = temp_dir.join(relative_path);
+
+        // Create parent directories if they don't exist
+        if let Some(parent) = asset_file_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+        }
+
         let mut file = File::create(&asset_file_path).map_err(|e| crate::actions::CliActionError::IoError(e))?;
         file.write_all(&file_content).map_err(|e| crate::actions::CliActionError::IoError(e))?;
 
@@ -473,37 +525,12 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         pb.finish_with_message("Assets downloaded, creating ZIP...");
     }
 
-    // Create ZIP file with all downloaded assets
+    // Create ZIP file with all downloaded assets, preserving folder structure
     let zip_file = File::create(&output_file_path).map_err(|e| crate::actions::CliActionError::IoError(e))?;
     let mut zip_writer = ZipWriter::new(zip_file);
 
-    // Walk through the temp directory and add files to the ZIP
-    for entry in std::fs::read_dir(&temp_dir)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
-        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
-        let path = entry.path();
-
-        if path.is_file() {
-            let file_name = path.file_name()
-                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Could not get file name"
-                ))))?
-                .to_str()
-                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Invalid file name"
-                ))))?;
-
-            let options: FileOptions<()> = FileOptions::default();
-            zip_writer.start_file(file_name, options)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
-            let file_content = std::fs::read(&path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-            zip_writer.write_all(&file_content)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-        }
-    }
+    // Walk through the temp directory recursively and add files to the ZIP
+    add_files_to_zip_recursive(&mut zip_writer, &temp_dir, &temp_dir)?;
 
     zip_writer.finish()
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
@@ -511,6 +538,49 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Clean up temporary directory
     std::fs::remove_dir_all(&temp_dir)
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+    Ok(())
+}
+
+// Helper function to recursively add files to the ZIP archive while preserving folder structure
+fn add_files_to_zip_recursive(
+    zip_writer: &mut ZipWriter<File>,
+    base_path: &std::path::Path,
+    current_path: &std::path::Path,
+) -> Result<(), CliError> {
+    for entry in std::fs::read_dir(current_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
+        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
+        let path = entry.path();
+
+        if path.is_file() {
+            // Calculate the relative path from the base path
+            let relative_path = path.strip_prefix(base_path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to strip prefix: {}", e)
+                ))))?;
+
+            let file_name = relative_path.to_str()
+                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Invalid file path"
+                ))))?;
+
+            let options: FileOptions<()> = FileOptions::default();
+            zip_writer.start_file(file_name, options)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+
+            let file_content = std::fs::read(&path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+            zip_writer.write_all(&file_content)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+        } else if path.is_dir() {
+            // Recursively process subdirectories
+            add_files_to_zip_recursive(zip_writer, base_path, &path)?;
+        }
+    }
 
     Ok(())
 }

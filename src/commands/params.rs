@@ -43,8 +43,7 @@ pub const COMMAND_TENANT: &str = "tenant";
 pub const COMMAND_FOLDER: &str = "folder";
 pub const COMMAND_FILE: &str = "file";
 
-// Context commands
-pub const COMMAND_CONTEXT: &str = "context";
+// Context commands have been moved to tenant command
 pub const COMMAND_SET: &str = "set";
 pub const COMMAND_CLEAR: &str = "clear";
 

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2026-01-21
+
+### Added
+- Enhanced folder download command to recursively download assets from all subfolders
+- Added --output parameter to folder download command for custom output file paths
+- Added preservation of folder structure in ZIP files created by folder download command
+- Added support for downloading entire tenant root folder with tenant name as default filename
+
+### Fixed
+- Fixed folder download command to only process descendant folders instead of all folders in tenant
+- Fixed path calculation to properly maintain folder hierarchy in output ZIP files
+- Fixed error handling in folder download command to use correct error types
+
 ## [0.2.9] - 2026-01-20
 
 ### Fixed

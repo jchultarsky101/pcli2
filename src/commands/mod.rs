@@ -10,7 +10,6 @@ use clap::{ArgMatches, Command};
 pub mod assets;
 pub mod auth;
 pub mod config;
-pub mod context;
 pub mod folder;
 pub mod metadata;
 pub mod params;
@@ -50,7 +49,6 @@ pub fn create_full_command() -> Command {
         .subcommand(folder::folder_command())
         .subcommand(auth::auth_command())
         .subcommand(assets::asset_command())
-        .subcommand(context::context_command())
         .subcommand(config::config_command())
         .subcommand(completions::completions_command())
 }

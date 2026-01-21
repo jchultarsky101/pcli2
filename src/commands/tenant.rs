@@ -5,6 +5,7 @@
 use crate::commands::params::{
     format_parameter, format_pretty_parameter, format_with_headers_parameter,
     tenant_name_parameter, tenant_uuid_parameter, tenant_identifier_group, COMMAND_GET, COMMAND_LIST, COMMAND_TENANT,
+    COMMAND_USE, COMMAND_CLEAR,
 };
 use clap::Command;
 
@@ -38,5 +39,25 @@ pub fn tenant_command() -> Command {
                 .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
+        )
+        .subcommand(
+            Command::new(COMMAND_USE)
+                .about("Set the active tenant")
+                .arg(tenant_name_parameter())    // --name (tenant short name)
+                .arg(crate::commands::params::refresh_parameter()) // --refresh flag to force refresh tenant list
+                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_pretty_parameter())
+                .arg(format_with_headers_parameter()),
+        )
+        .subcommand(
+            Command::new("current")
+                .about("Get the active tenant")
+                .arg(format_parameter().value_parser(["json", "csv", "tree"]))
+                .arg(format_pretty_parameter())
+                .arg(format_with_headers_parameter()),
+        )
+        .subcommand(
+            Command::new(COMMAND_CLEAR)
+                .about("Clear the active tenant"),
         )
 }

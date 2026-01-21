@@ -26,7 +26,7 @@ mod cli_help_tests {
         assert!(help_output.contains("folder"));  // folder commands
         assert!(help_output.contains("asset"));   // asset commands
         assert!(help_output.contains("auth"));    // auth commands
-        assert!(help_output.contains("context")); // context commands
+        // Context command has been moved to tenant command
         assert!(help_output.contains("config"));  // config commands
 
         // Verify that help flags are present
@@ -40,7 +40,7 @@ mod cli_help_tests {
     #[test]
     fn test_cli_subcommand_help_outputs() {
         // Test help output for each major subcommand
-        let subcommands = vec!["tenant", "folder", "asset", "auth", "context", "config"];
+        let subcommands = vec!["tenant", "folder", "asset", "auth", "config"];
 
         for subcommand in subcommands {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
@@ -80,10 +80,6 @@ mod cli_help_tests {
                 assert!(help_output.contains("login"));
                 assert!(help_output.contains("logout"));
                 assert!(help_output.contains("get"));
-            } else if subcommand == "context" {
-                assert!(help_output.contains("get"));
-                assert!(help_output.contains("set"));
-                assert!(help_output.contains("clear"));
             } else if subcommand == "config" {
                 assert!(help_output.contains("get"));
                 assert!(help_output.contains("export"));
@@ -137,9 +133,6 @@ mod cli_help_tests {
             ("auth", "login"),
             ("auth", "logout"),
             ("auth", "get"),
-            ("context", "get"),
-            ("context", "set"),
-            ("context", "clear"),
             ("config", "get"),
             ("config", "export"),
             ("config", "import"),
@@ -170,9 +163,6 @@ mod cli_help_tests {
             ("asset", "metadata", "delete"),
             ("asset", "metadata", "inference"),
             ("asset", "metadata", "create-batch"),
-            ("context", "get", "tenant"),
-            ("context", "set", "tenant"),
-            ("context", "clear", "tenant"),
             ("config", "environment", "add"),
             ("config", "environment", "use"),
             ("config", "environment", "list"),

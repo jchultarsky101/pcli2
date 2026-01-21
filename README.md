@@ -4,7 +4,7 @@
 
 The goal of this project is to create version 2 of the Physna Command Line Interface client (PCLI2).
 
-Current Version: 0.2.9 <!-- Updated: 2026-01-20T10:30:00Z -->
+Current Version: 0.2.10 <!-- Updated: 2026-01-21T10:30:00Z -->
 
 Based on lessons learned from the previous version, we have developed a new and more ergonomic interface. It operates more like Git's excellent CLI, utilizing nested sub-commands, sensible defaults, and configuration.
 
@@ -271,13 +271,29 @@ pcli2 tenant list --format csv
 
 #### Setting an Active Tenant
 
-To avoid specifying a tenant for every command, you can set an active tenant using the context command:
+To avoid specifying a tenant for every command, you can set an active tenant using the tenant command:
 
 ```bash
-pcli2 context set tenant
+pcli2 tenant use
 ```
 
 This command will prompt you to select a tenant from your available options.
+
+#### Getting the Active Tenant
+
+To check which tenant is currently active:
+
+```bash
+pcli2 tenant current
+```
+
+#### Clearing the Active Tenant
+
+To clear the currently active tenant:
+
+```bash
+pcli2 tenant clear
+```
 
 #### Overriding Tenant Selection
 
@@ -401,6 +417,39 @@ pcli2 folder delete --path "/Root/FolderToDelete" --force
 - When using path-based parameters, the paths are automatically normalized (consecutive slashes collapsed, leading "/HOME" removed)
 - The command supports both UUID-based and path-based identification for both the folder to move and the destination parent folder
 
+#### Downloading All Assets in a Folder
+
+The `folder download` command allows you to download all assets from a specified folder and its entire subfolder hierarchy as a single ZIP archive. This is particularly useful for backing up entire folder trees or transferring assets between systems.
+
+```bash
+# Download all assets in a folder as a ZIP archive
+pcli2 folder download --folder-path "/Root/MyFolder" --output "my_folder.zip"
+
+# Download all assets in a folder with progress indicator
+pcli2 folder download --folder-path "/Root/MyFolder" --progress
+
+# Download all assets in a folder with custom output path
+pcli2 folder download --folder-path "/Root/MyFolder" --output "./backups/my_backup.zip"
+
+# Download all assets from the root folder (uses tenant name as default filename)
+pcli2 folder download --folder-path "/"
+```
+
+**Key Features**:
+- **Recursive Download**: Downloads assets from the specified folder AND all its subfolders recursively
+- **Folder Structure Preservation**: The ZIP file maintains the original folder hierarchy with appropriate subdirectories
+- **Progress Indication**: Use `--progress` flag to show download progress
+- **Custom Output**: Use `--output` to specify a custom file path and name
+- **Default Naming**: When no output path is specified, uses the folder name (or tenant name for root folder) as the default filename
+
+**Important Notes about Folder Download**:
+- The command downloads assets from the specified folder and ALL its subfolders recursively
+- The folder structure is preserved in the ZIP file with appropriate subdirectories
+- For the root folder (`/`), if no output filename is specified, the tenant name is used as the default (e.g., `demo-1.zip`)
+- Large folder hierarchies may take considerable time to download depending on the number of assets
+- The command creates a temporary directory during the download process which is cleaned up after the ZIP file is created
+- Assets in subfolders will be placed in corresponding subdirectories within the ZIP file (e.g., an asset in `/Root/Parent/Child/file.stl` will be placed as `Child/file.stl` in the ZIP)
+
 ### Working with Assets
 
 Asset management is a core function of PCLI2. These commands allow you to upload, retrieve, organize, and maintain your 3D models and other assets in Physna.
@@ -431,6 +480,16 @@ pcli2 asset get --path /Root/MyFolder/model.stl
 
 # List all assets in a folder
 pcli2 asset list --path "/Root/MyFolder" --format json
+
+# Download a single asset
+pcli2 asset download --path /Root/MyFolder/model.stl
+
+# Download all assets in a folder as a ZIP archive
+pcli2 folder download --folder-path "/Root/MyFolder" --output "my_folder.zip"
+
+# Download all assets in a folder with progress indicator
+pcli2 folder download --folder-path "/Root/MyFolder" --progress
+
 # Create metadata for multiple assets from a CSV file
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
 
@@ -1169,47 +1228,59 @@ The application uses a hierarchy of commands:
 ```
 pcli2
 ├── asset
-│   ├── create              Create a new asset by uploading a file (-p/--folder-path)
-│   ├── create-batch        Create multiple assets by uploading files matching a glob pattern (-p/--folder-path)
-│   ├── dependencies        Get dependencies for an asset (components in assemblies, referenced assets) with --recursive flag for full hierarchy (alias: dep)
-│   ├── list                List all assets in a folder (-p/--folder-path)
-│   ├── get                 Get asset details
-│   ├── delete              Delete an asset
-│   ├── geometric-match     Find geometrically similar assets for a single asset
-│   ├── geometric-match-folder  Find geometrically similar assets for all assets in a folder
-│   └── metadata
-│       ├── get             Get metadata for an asset
-│       ├── create          Add metadata to an asset
-│       ├── delete          Delete specific metadata fields from an asset
-│       ├── create-batch    Create metadata for multiple assets from a CSV file
-│       └── inference       Apply metadata from a reference asset to geometrically similar assets
+│   ├── create                    Create a new asset by uploading a file
+│   ├── create-batch              Create multiple assets by uploading files matching a glob pattern
+│   ├── delete                    Delete an asset [aliases: rm]
+│   ├── list                      List all assets in a folder [aliases: ls]
+│   ├── get                       Get asset details
+│   ├── metadata                  Manage asset metadata
+│   │   ├── get                   Get metadata for an asset
+│   │   ├── create                Add metadata to an asset [aliases: update]
+│   │   ├── delete                Delete specific metadata fields from an asset [aliases: rm]
+│   │   ├── create-batch          Create metadata for multiple assets from a CSV file [aliases: update-batch]
+│   │   └── inference             Apply metadata from a reference asset to geometrically similar assets
+│   ├── dependencies              Get dependencies for an asset
+│   ├── download                  Download asset file
+│   ├── geometric-match           Find geometrically similar assets
+│   ├── part-match                Find geometrically similar assets using part search algorithm
+│   ├── geometric-match-folder    Find geometrically similar assets for all assets in one or more folders
+│   ├── part-match-folder         Find part matches for all assets in one or more folders
+│   ├── visual-match              Find visually similar assets for a specific reference asset
+│   └── visual-match-folder       Find visually similar assets for all assets in one or more folders
 ├── folder
-│   ├── create           Create a new folder
-│   ├── list             List all folders in a parent folder
-│   ├── get              Get folder details
-│   ├── delete           Delete a folder
-│   ├── rename           Rename a folder
-│   │   └── -p/--folder-path, --folder-uuid, --name
-│   └── move             Move a folder to a new parent folder (alias: mv)
-│       └── -p/--folder-path, --folder-uuid, -pp/--parent-folder-path, --parent-folder-uuid
+│   ├── create                    Create a new folder
+│   ├── list                      List all folders [aliases: ls]
+│   ├── get                       Get folder details
+│   ├── delete                    Delete a folder [aliases: rm]
+│   ├── rename                    Rename a folder
+│   ├── move                      Move a folder to a new parent folder [aliases: mv]
+│   ├── resolve                   Resolve a folder path to its UUID
+│   └── download                  Download all assets in a folder as a ZIP archive
 ├── tenant
-│   ├── list             List all available tenants
-│   ├── get              Get specific tenant details
-│   └── state            Get asset state counts for the current tenant
+│   ├── list                      List all tenants [aliases: ls]
+│   ├── get                       Get tenant details
+│   ├── use                       Set the active tenant
+│   ├── current                   Get the active tenant
+│   ├── clear                     Clear the active tenant
+│   └── state                     Get asset state counts for the current tenant
 ├── auth
-│   ├── login            Authenticate with client credentials
-│   ├── logout           Clear authentication tokens
-│   └── get              Get current authentication status
+│   ├── login                     Login using client credentials
+│   ├── logout                    Logout and clear session
+│   ├── get                       Get current access token
+│   └── clear-token               Clear the cached access token
 ├── config
-│   ├── get              Get configuration details
-│   ├── export           Export configuration to a file
-│   └── import           Import configuration from a file
-├── context
-│   ├── set              Set active context (tenant)
-│   ├── get              Get current context
-│   └── clear            Clear active context
-├── completions        Generate shell completions for various shells
-└── help                 Show help information
+│   ├── get                       Get configuration details
+│   ├── export                    Export configuration to file
+│   ├── import                    Import configuration from file
+│   └── environment               Manage environment configurations
+│       ├── add                   Add a new environment configuration
+│       ├── use                   Switch to an environment
+│       ├── remove                Remove an environment
+│       ├── list                  List all environments
+│       ├── reset                 Reset all environment configurations to blank state
+│       └── get                   Get environment details
+├── completions                   Generate shell completions for various shells
+└── help                          Show help information
 ```
 
 ### Getting Help
@@ -1288,7 +1359,7 @@ If you encounter unexpected behavior:
 
 2. **Verify your current context**:
    ```bash
-   pcli2 context get
+   pcli2 tenant current
    ```
 
 3. **Review the configuration**:

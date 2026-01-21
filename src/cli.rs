@@ -17,14 +17,14 @@ use pcli2::{
             print_folder_details,
             rename_folder,
             move_folder,
-            resolve_folder
+            resolve_folder,
+            download_folder
         },
         tenants::{
             clear_active_tenant,
             get_tenant_details,
             list_all_tenants,
             print_active_tenant_name_with_format,
-            print_current_context,
             set_active_tenant
         }
     },
@@ -33,9 +33,7 @@ use pcli2::{
         params::{
             COMMAND_ASSET,
             COMMAND_AUTH,
-            COMMAND_CLEAR,
             COMMAND_CONFIG,
-            COMMAND_CONTEXT,
             COMMAND_CREATE,
             COMMAND_CREATE_BATCH,
             COMMAND_DELETE,
@@ -56,7 +54,6 @@ use pcli2::{
             COMMAND_VISUAL_MATCH_FOLDER,
             COMMAND_CLEAR_TOKEN,
             COMMAND_INFERENCE,
-            COMMAND_SET,
             COMMAND_TENANT,
             PARAMETER_API_URL,
             PARAMETER_AUTH_URL,
@@ -97,7 +94,7 @@ pub async fn execute_command() -> Result<(), CliError> {
         // Tenant resource commands
         Some((COMMAND_TENANT, sub_matches)) => {
             trace!("Command: {}", COMMAND_TENANT);
-            
+
             match sub_matches.subcommand() {
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_TENANT, COMMAND_LIST);
@@ -109,6 +106,24 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Command: {} {}", COMMAND_TENANT, COMMAND_GET);
 
                     get_tenant_details(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("use", sub_matches)) => {
+                    trace!("Command: {} use", COMMAND_TENANT);
+
+                    set_active_tenant(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("current", sub_matches)) => {
+                    trace!("Command: {} current", COMMAND_TENANT);
+
+                    print_active_tenant_name_with_format(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("clear", _sub_matches)) => {
+                    trace!("Command: {} clear", COMMAND_TENANT);
+
+                    clear_active_tenant().await?;
                     Ok(())
                 }
                 Some(("state", sub_matches)) => {
@@ -167,6 +182,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Command: {} resolve", COMMAND_FOLDER);
 
                     resolve_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("download", sub_matches)) => {
+                    trace!("Command: {} download", COMMAND_FOLDER);
+
+                    download_folder(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
@@ -578,66 +599,6 @@ pub async fn execute_command() -> Result<(), CliError> {
                 ))),
             }
         }
-        // Context commands
-        Some((COMMAND_CONTEXT, sub_matches)) => {
-            trace!("Command: context");
-
-            match sub_matches.subcommand() {
-                Some((COMMAND_SET, sub_matches)) => {
-                    trace!("Command: context set");
-
-                    match sub_matches.subcommand() {
-                        Some((COMMAND_TENANT, sub_matches)) => {
-                            trace!("Command: context set tenant");
-
-                            set_active_tenant(sub_matches).await?;
-
-                            Ok(())
-                        }
-                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                            sub_matches,
-                        ))),
-                    }
-                }
-                Some((COMMAND_GET, sub_matches)) => {
-                    trace!("Command: context get");
-
-                    match sub_matches.subcommand() {
-                        Some((COMMAND_TENANT, sub_matches)) => {
-                            trace!("Command: context get tenant");
-                            print_active_tenant_name_with_format(sub_matches).await?;
-                            Ok(())
-                        }
-                        None => {
-                            // Handle context get without subcommand
-                            trace!("Command: context get (no subcommand)");
-                            print_current_context(sub_matches).await?;
-                            Ok(())
-                        }
-                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                            sub_matches,
-                        ))),
-                    }
-                }
-                Some((COMMAND_CLEAR, sub_matches)) => {
-                    trace!("Command: context clear");
-
-                    match sub_matches.subcommand() {
-                        Some((COMMAND_TENANT, _)) => {
-                            trace!("Command: context clear tenant");
-                            clear_active_tenant().await?;
-                            Ok(())
-                        }
-                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                            sub_matches,
-                        ))),
-                    }
-                }
-                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                    sub_matches,
-                ))),
-            }
-        }
         // Configuration commands
         Some((COMMAND_CONFIG, sub_matches)) => {
             trace!("Executing config command");
@@ -805,7 +766,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                             configuration.clear_active_tenant();
                             configuration.save_to_default()?;
 
-                            println!("Switched to environment '{}'. Select a tenant with 'pcli2 context set tenant' before running commands.", selected_env_name);
+                            println!("Switched to environment '{}'. Select a tenant with 'pcli2 tenant use' before running commands.", selected_env_name);
                             Ok(())
                         }
                         Some(("remove", sub_matches)) => {

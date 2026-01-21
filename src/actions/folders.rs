@@ -391,11 +391,17 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         // Determine the folder name from the provided path or get it from the folder details
         let folder_name = if let Some(path) = folder_path_param {
             // If the folder was specified by path, extract the folder name from the path
-            let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-            if path_segments.is_empty() {
-                "untitled".to_string()
+            // Special handling for root folder "/"
+            if path.trim() == "/" {
+                // Use tenant name for root folder
+                tenant.name.clone()
             } else {
-                path_segments.last().unwrap().to_string()
+                let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+                if path_segments.is_empty() {
+                    "untitled".to_string()
+                } else {
+                    path_segments.last().unwrap().to_string()
+                }
             }
         } else {
             // If the folder was specified by UUID, get the folder details to determine the name
@@ -403,11 +409,17 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             let folder: crate::model::Folder = folder.into();
 
             let folder_path = folder.path();
-            let path_segments: Vec<&str> = folder_path.split('/').filter(|s| !s.is_empty()).collect();
-            if path_segments.is_empty() {
-                "untitled".to_string()
+            // Special handling for root folder
+            if folder_path.trim() == "/" {
+                // Use tenant name for root folder
+                tenant.name.clone()
             } else {
-                path_segments.last().unwrap().to_string()
+                let path_segments: Vec<&str> = folder_path.split('/').filter(|s| !s.is_empty()).collect();
+                if path_segments.is_empty() {
+                    "untitled".to_string()
+                } else {
+                    path_segments.last().unwrap().to_string()
+                }
             }
         };
 

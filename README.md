@@ -417,6 +417,39 @@ pcli2 folder delete --path "/Root/FolderToDelete" --force
 - When using path-based parameters, the paths are automatically normalized (consecutive slashes collapsed, leading "/HOME" removed)
 - The command supports both UUID-based and path-based identification for both the folder to move and the destination parent folder
 
+#### Downloading All Assets in a Folder
+
+The `folder download` command allows you to download all assets from a specified folder and its entire subfolder hierarchy as a single ZIP archive. This is particularly useful for backing up entire folder trees or transferring assets between systems.
+
+```bash
+# Download all assets in a folder as a ZIP archive
+pcli2 folder download --folder-path "/Root/MyFolder" --output "my_folder.zip"
+
+# Download all assets in a folder with progress indicator
+pcli2 folder download --folder-path "/Root/MyFolder" --progress
+
+# Download all assets in a folder with custom output path
+pcli2 folder download --folder-path "/Root/MyFolder" --output "./backups/my_backup.zip"
+
+# Download all assets from the root folder (uses tenant name as default filename)
+pcli2 folder download --folder-path "/"
+```
+
+**Key Features**:
+- **Recursive Download**: Downloads assets from the specified folder AND all its subfolders recursively
+- **Folder Structure Preservation**: The ZIP file maintains the original folder hierarchy with appropriate subdirectories
+- **Progress Indication**: Use `--progress` flag to show download progress
+- **Custom Output**: Use `--output` to specify a custom file path and name
+- **Default Naming**: When no output path is specified, uses the folder name (or tenant name for root folder) as the default filename
+
+**Important Notes about Folder Download**:
+- The command downloads assets from the specified folder and ALL its subfolders recursively
+- The folder structure is preserved in the ZIP file with appropriate subdirectories
+- For the root folder (`/`), if no output filename is specified, the tenant name is used as the default (e.g., `demo-1.zip`)
+- Large folder hierarchies may take considerable time to download depending on the number of assets
+- The command creates a temporary directory during the download process which is cleaned up after the ZIP file is created
+- Assets in subfolders will be placed in corresponding subdirectories within the ZIP file (e.g., an asset in `/Root/Parent/Child/file.stl` will be placed as `Child/file.stl` in the ZIP)
+
 ### Working with Assets
 
 Asset management is a core function of PCLI2. These commands allow you to upload, retrieve, organize, and maintain your 3D models and other assets in Physna.

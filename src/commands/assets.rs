@@ -10,7 +10,7 @@ use crate::commands::params::{
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
     multiple_files_parameter, path_parameter, recursive_parameter,
     tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH,
-    COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_DOWNLOAD_FOLDER, COMMAND_GET,
+    COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_GET,
     COMMAND_LIST, COMMAND_MATCH, COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH_FOLDER, COMMAND_VISUAL_MATCH, COMMAND_VISUAL_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
     PARAMETER_FILE, PARAMETER_FOLDER_PATHS, PARAMETER_PROGRESS,
 };
@@ -122,29 +122,6 @@ pub fn asset_command() -> Command {
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
                 .group(asset_identifier_group()),
-        )
-        .subcommand(
-            Command::new(COMMAND_DOWNLOAD_FOLDER)
-                .about("Download all assets in a folder as a ZIP archive")
-                .arg(tenant_parameter())
-                .arg(folder_uuid_parameter())
-                .arg(folder_path_parameter())
-                .group(folder_identifier_group())
-                .arg(
-                    Arg::new(PARAMETER_FILE)
-                        .long(PARAMETER_FILE)
-                        .num_args(1)
-                        .required(false)
-                        .help("Output file path (default: <folder_name>.zip in the current directory)")
-                        .value_parser(clap::value_parser!(std::path::PathBuf)),
-                )
-                .arg(
-                    Arg::new(PARAMETER_PROGRESS)
-                        .long(PARAMETER_PROGRESS)
-                        .action(ArgAction::SetTrue)
-                        .required(false)
-                        .help("Display progress bar during download"),
-                )
         )
     .subcommand(
         Command::new(COMMAND_MATCH)

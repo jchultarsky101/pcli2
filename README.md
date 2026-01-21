@@ -452,10 +452,10 @@ pcli2 asset list --path "/Root/MyFolder" --format json
 pcli2 asset download --path /Root/MyFolder/model.stl
 
 # Download all assets in a folder as a ZIP archive
-pcli2 asset download-folder --folder-path "/Root/MyFolder" --file "my_folder.zip"
+pcli2 folder download --folder-path "/Root/MyFolder" --file "my_folder.zip"
 
 # Download all assets in a folder with progress indicator
-pcli2 asset download-folder --folder-path "/Root/MyFolder" --progress
+pcli2 folder download --folder-path "/Root/MyFolder" --progress
 
 # Create metadata for multiple assets from a CSV file
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
@@ -1203,7 +1203,6 @@ pcli2
 │   ├── metadata                  Manage asset metadata
 │   ├── dependencies              Get dependencies for an asset
 │   ├── download                  Download asset file
-│   ├── download-folder           Download all assets in a folder as a ZIP archive
 │   ├── geometric-match           Find geometrically similar assets
 │   ├── part-match                Find geometrically similar assets using part search algorithm
 │   ├── geometric-match-folder    Find geometrically similar assets for all assets in one or more folders
@@ -1223,7 +1222,8 @@ pcli2
 │   ├── delete                    Delete a folder [aliases: rm]
 │   ├── rename                    Rename a folder
 │   ├── move                      Move a folder to a new parent folder [aliases: mv]
-│   └── resolve                   Resolve a folder path to its UUID
+│   ├── resolve                   Resolve a folder path to its UUID
+│   └── download                  Download all assets in a folder as a ZIP archive
 ├── tenant
 │   ├── list                      List all tenants [aliases: ls]
 │   ├── get                       Get tenant details

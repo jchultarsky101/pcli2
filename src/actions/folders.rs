@@ -1,6 +1,12 @@
 use clap::ArgMatches;
+use std::path::PathBuf;
+use std::fs::File;
+use std::io::Write;
 use tracing::trace;
 use uuid::Uuid;
+use indicatif::{ProgressBar, ProgressStyle};
+use zip::{ZipWriter, write::FileOptions};
+
 use crate::{commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_NAME, PARAMETER_PARENT_FOLDER_PATH, PARAMETER_PARENT_FOLDER_UUID}, configuration::Configuration, error::CliError, folder_hierarchy::FolderHierarchy, format::{OutputFormat, OutputFormatter}, model::{Folder, Tenant, normalize_path}, param_utils::{get_format_parameter_value, get_tenant}, physna_v3::{PhysnaApiClient, TryDefault}};
 
 
@@ -339,4 +345,172 @@ pub async fn resolve_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             Err(CliError::FolderNotFound(folder_path.clone()))
         }
     }
+}
+
+/// Download all assets in a folder as a ZIP archive.
+///
+/// This function handles the "folder download" command, retrieving all assets
+/// in a specified folder from the Physna API and packaging them into a ZIP file.
+///
+/// # Arguments
+///
+/// * `sub_matches` - The command-line argument matches containing the command parameters
+///
+/// # Returns
+///
+/// * `Ok(())` - If the folder was downloaded successfully
+/// * `Err(CliError)` - If an error occurred during download
+pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing \"folder download\" command...");
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    // Get folder UUID or path from command line
+    let folder_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_FOLDER_UUID);
+    let folder_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
+
+    // Resolve folder UUID from either UUID parameter or path
+    let folder_uuid = if let Some(uuid) = folder_uuid_param {
+        *uuid
+    } else if let Some(path) = folder_path_param {
+        // Resolve folder UUID by path
+        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+    } else {
+        // This shouldn't happen due to our earlier check, but just in case
+        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
+    };
+
+    // Get the output file path
+    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE) {
+        output_path.clone()
+    } else {
+        // Use the folder name as the default output file name
+        // Determine the folder name from the provided path or get it from the folder details
+        let folder_name = if let Some(path) = folder_path_param {
+            // If the folder was specified by path, extract the folder name from the path
+            let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+            if path_segments.is_empty() {
+                "untitled".to_string()
+            } else {
+                path_segments.last().unwrap().to_string()
+            }
+        } else {
+            // If the folder was specified by UUID, get the folder details to determine the name
+            let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
+            let folder: crate::model::Folder = folder.into();
+
+            let folder_path = folder.path();
+            let path_segments: Vec<&str> = folder_path.split('/').filter(|s| !s.is_empty()).collect();
+            if path_segments.is_empty() {
+                "untitled".to_string()
+            } else {
+                path_segments.last().unwrap().to_string()
+            }
+        };
+
+        let mut path = std::path::PathBuf::new();
+        path.push(format!("{}.zip", folder_name));
+        path
+    };
+
+    // Get all assets in the folder
+    let assets_response = api.list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&folder_uuid)).await?;
+    let assets: Vec<_> = assets_response.get_all_assets().iter().cloned().collect();
+
+    if assets.is_empty() {
+        crate::error_utils::report_error_with_remediation(
+            &format!("No assets found in folder with UUID: {}", folder_uuid),
+            &[
+                "Verify the folder UUID or path is correct",
+                "Check that the folder contains assets",
+                "Ensure you have permissions to access the folder"
+            ]
+        );
+        return Ok(());
+    }
+
+    // Check if progress should be displayed
+    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
+
+    // Create a temporary directory to store downloaded files
+    let temp_dir = std::env::temp_dir().join(format!("pcli2_temp_{}", folder_uuid));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+    // Create progress bar if requested
+    let progress_bar = if show_progress {
+        let pb = ProgressBar::new(assets.len() as u64);
+        pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Downloading assets")
+            .unwrap()
+            .progress_chars("#>-"));
+        Some(pb)
+    } else {
+        None
+    };
+
+    // Download each asset to the temporary directory
+    for asset in &assets {
+        let file_content = api.download_asset(
+            &tenant.uuid.to_string(),
+            &asset.uuid().to_string()
+        ).await?;
+
+        let asset_file_path = temp_dir.join(asset.name());
+        let mut file = File::create(&asset_file_path).map_err(|e| crate::actions::CliActionError::IoError(e))?;
+        file.write_all(&file_content).map_err(|e| crate::actions::CliActionError::IoError(e))?;
+
+        // Update progress bar if present
+        if let Some(ref pb) = progress_bar {
+            pb.inc(1);
+        }
+    }
+
+    // Finish progress bar if present
+    if let Some(pb) = progress_bar {
+        pb.finish_with_message("Assets downloaded, creating ZIP...");
+    }
+
+    // Create ZIP file with all downloaded assets
+    let zip_file = File::create(&output_file_path).map_err(|e| crate::actions::CliActionError::IoError(e))?;
+    let mut zip_writer = ZipWriter::new(zip_file);
+
+    // Walk through the temp directory and add files to the ZIP
+    for entry in std::fs::read_dir(&temp_dir)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
+        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
+        let path = entry.path();
+
+        if path.is_file() {
+            let file_name = path.file_name()
+                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Could not get file name"
+                ))))?
+                .to_str()
+                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Invalid file name"
+                ))))?;
+
+            let options: FileOptions<()> = FileOptions::default();
+            zip_writer.start_file(file_name, options)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+            let file_content = std::fs::read(&path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+            zip_writer.write_all(&file_content)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+        }
+    }
+
+    zip_writer.finish()
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+
+    // Clean up temporary directory
+    std::fs::remove_dir_all(&temp_dir)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+    Ok(())
 }

@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, download_folder, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch, part_match_asset, part_match_folder, visual_match_asset, visual_match_folder
+            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch, part_match_asset, part_match_folder, visual_match_asset, visual_match_folder
         },
         folders::{
             create_folder,
@@ -17,7 +17,8 @@ use pcli2::{
             print_folder_details,
             rename_folder,
             move_folder,
-            resolve_folder
+            resolve_folder,
+            download_folder
         },
         tenants::{
             clear_active_tenant,
@@ -183,6 +184,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                     resolve_folder(sub_matches).await?;
                     Ok(())
                 }
+                Some(("download", sub_matches)) => {
+                    trace!("Command: {} download", COMMAND_FOLDER);
+
+                    download_folder(sub_matches).await?;
+                    Ok(())
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
@@ -225,13 +232,6 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Routing to asset download...");
 
                     download_asset(sub_matches).await?;
-                    Ok(())
-                }
-                Some(("download-folder", sub_matches)) => {
-                    trace!("Command: {} download-folder", COMMAND_ASSET);
-                    trace!("Routing to asset download-folder...");
-
-                    download_folder(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_DELETE, sub_matches)) => {

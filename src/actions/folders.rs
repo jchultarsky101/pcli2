@@ -467,11 +467,19 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         // Use get_folder_contents to get only direct children of the current folder
         let subfolders_response = api.get_folder_contents(&tenant.uuid, Some(&current_folder_uuid), "folders", Some(1), Some(1000)).await?;
         for folder in subfolders_response.folders() {
-            // Get the full folder details to get the path
+            // Get the full folder details to get the name
             let folder_detail = api.get_folder(&tenant.uuid, &folder.uuid()).await?;
             let folder_detail: crate::model::Folder = folder_detail.into();
+
+            // Get the folder path by appending the folder name to the current path
+            let folder_path = if current_folder_path.ends_with('/') {
+                format!("{}{}", current_folder_path, folder_detail.name())
+            } else {
+                format!("{}/{}", current_folder_path, folder_detail.name())
+            };
+
             // Add to queue to process this subfolder
-            folder_queue.push_back((*folder.uuid(), folder_detail.path()));
+            folder_queue.push_back((*folder.uuid(), folder_path));
         }
     }
 

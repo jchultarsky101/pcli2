@@ -444,15 +444,18 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 // If it's the root folder, just use the asset name
                 asset.name().to_string()
             } else {
-                // Otherwise, create a subfolder path
-                let subfolder_path = current_folder_path.strip_prefix(&root_folder_path)
-                    .unwrap_or(&current_folder_path)
-                    .trim_start_matches('/');
+                // Otherwise, create a subfolder path by removing the root folder path prefix
+                // For example, if root is "/Julian/sub1" and current is "/Julian/sub1/sub2",
+                // the relative path becomes "sub2/asset_name"
+                let relative_folder_path = current_folder_path.strip_prefix(&root_folder_path)
+                    .unwrap_or(&current_folder_path)  // fallback if strip_prefix fails
+                    .trim_start_matches('/')  // remove leading slash
+                    .trim_end_matches('/');   // remove trailing slash
 
-                if subfolder_path.is_empty() {
+                if relative_folder_path.is_empty() {
                     asset.name().to_string()
                 } else {
-                    format!("{}/{}", subfolder_path, asset.name())
+                    format!("{}/{}", relative_folder_path, asset.name())
                 }
             };
 

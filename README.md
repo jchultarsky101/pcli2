@@ -1201,6 +1201,11 @@ pcli2
 │   ├── list                      List all assets in a folder [aliases: ls]
 │   ├── get                       Get asset details
 │   ├── metadata                  Manage asset metadata
+│   │   ├── get                   Get metadata for an asset
+│   │   ├── create                Add metadata to an asset [aliases: update]
+│   │   ├── delete                Delete specific metadata fields from an asset [aliases: rm]
+│   │   ├── create-batch          Create metadata for multiple assets from a CSV file [aliases: update-batch]
+│   │   └── inference             Apply metadata from a reference asset to geometrically similar assets
 │   ├── dependencies              Get dependencies for an asset
 │   ├── download                  Download asset file
 │   ├── geometric-match           Find geometrically similar assets
@@ -1209,12 +1214,6 @@ pcli2
 │   ├── part-match-folder         Find part matches for all assets in one or more folders
 │   ├── visual-match              Find visually similar assets for a specific reference asset
 │   └── visual-match-folder       Find visually similar assets for all assets in one or more folders
-├── asset metadata
-│   ├── get                       Get metadata for an asset
-│   ├── create                    Add metadata to an asset [aliases: update]
-│   ├── delete                    Delete specific metadata fields from an asset [aliases: rm]
-│   ├── create-batch              Create metadata for multiple assets from a CSV file [aliases: update-batch]
-│   └── inference                 Apply metadata from a reference asset to geometrically similar assets
 ├── folder
 │   ├── create                    Create a new folder
 │   ├── list                      List all folders [aliases: ls]
@@ -1241,13 +1240,12 @@ pcli2
 │   ├── export                    Export configuration to file
 │   ├── import                    Import configuration from file
 │   └── environment               Manage environment configurations
-├── config environment
-│   ├── add                       Add a new environment configuration
-│   ├── use                       Switch to an environment
-│   ├── remove                    Remove an environment
-│   ├── list                      List all environments
-│   ├── reset                     Reset all environment configurations to blank state
-│   └── get                       Get environment details
+│       ├── add                   Add a new environment configuration
+│       ├── use                   Switch to an environment
+│       ├── remove                Remove an environment
+│       ├── list                  List all environments
+│       ├── reset                 Reset all environment configurations to blank state
+│       └── get                   Get environment details
 ├── completions                   Generate shell completions for various shells
 └── help                          Show help information
 ```

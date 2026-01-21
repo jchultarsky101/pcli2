@@ -33,7 +33,6 @@ use pcli2::{
         params::{
             COMMAND_ASSET,
             COMMAND_AUTH,
-            COMMAND_CLEAR,
             COMMAND_CONFIG,
             COMMAND_CONTEXT,
             COMMAND_CREATE,
@@ -56,7 +55,6 @@ use pcli2::{
             COMMAND_VISUAL_MATCH_FOLDER,
             COMMAND_CLEAR_TOKEN,
             COMMAND_INFERENCE,
-            COMMAND_SET,
             COMMAND_TENANT,
             PARAMETER_API_URL,
             PARAMETER_AUTH_URL,
@@ -111,8 +109,8 @@ pub async fn execute_command() -> Result<(), CliError> {
                     get_tenant_details(sub_matches).await?;
                     Ok(())
                 }
-                Some((COMMAND_USE, sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_USE);
+                Some(("use", sub_matches)) => {
+                    trace!("Command: {} use", COMMAND_TENANT);
 
                     set_active_tenant(sub_matches).await?;
                     Ok(())
@@ -123,7 +121,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                     print_active_tenant_name_with_format(sub_matches).await?;
                     Ok(())
                 }
-                Some((COMMAND_CLEAR, sub_matches)) => {
+                Some(("clear", _sub_matches)) => {
                     trace!("Command: {} clear", COMMAND_TENANT);
 
                     clear_active_tenant().await?;

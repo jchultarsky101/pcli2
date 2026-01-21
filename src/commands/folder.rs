@@ -101,8 +101,8 @@ pub fn folder_command() -> Command {
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
                 .arg(
-                    clap::Arg::new("output")
-                        .long("output")
+                    clap::Arg::new(crate::commands::params::PARAMETER_OUTPUT)
+                        .long(crate::commands::params::PARAMETER_OUTPUT)
                         .num_args(1)
                         .required(false)
                         .help("Output file path (default: <folder_name>.zip in the current directory)")

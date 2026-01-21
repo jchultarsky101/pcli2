@@ -271,13 +271,29 @@ pcli2 tenant list --format csv
 
 #### Setting an Active Tenant
 
-To avoid specifying a tenant for every command, you can set an active tenant using the context command:
+To avoid specifying a tenant for every command, you can set an active tenant using the tenant command:
 
 ```bash
-pcli2 context set tenant
+pcli2 tenant use
 ```
 
 This command will prompt you to select a tenant from your available options.
+
+#### Getting the Active Tenant
+
+To check which tenant is currently active:
+
+```bash
+pcli2 tenant current
+```
+
+#### Clearing the Active Tenant
+
+To clear the currently active tenant:
+
+```bash
+pcli2 tenant clear
+```
 
 #### Overriding Tenant Selection
 
@@ -1207,6 +1223,9 @@ pcli2
 ├── tenant
 │   ├── list             List all available tenants
 │   ├── get              Get specific tenant details
+│   ├── use              Set the active tenant
+│   ├── current          Get the active tenant
+│   ├── clear            Clear the active tenant
 │   └── state            Get asset state counts for the current tenant
 ├── auth
 │   ├── login            Authenticate with client credentials

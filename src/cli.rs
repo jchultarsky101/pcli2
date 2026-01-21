@@ -97,7 +97,7 @@ pub async fn execute_command() -> Result<(), CliError> {
         // Tenant resource commands
         Some((COMMAND_TENANT, sub_matches)) => {
             trace!("Command: {}", COMMAND_TENANT);
-            
+
             match sub_matches.subcommand() {
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_TENANT, COMMAND_LIST);
@@ -109,6 +109,24 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Command: {} {}", COMMAND_TENANT, COMMAND_GET);
 
                     get_tenant_details(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_USE, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_USE);
+
+                    set_active_tenant(sub_matches).await?;
+                    Ok(())
+                }
+                Some(("current", sub_matches)) => {
+                    trace!("Command: {} current", COMMAND_TENANT);
+
+                    print_active_tenant_name_with_format(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_CLEAR, sub_matches)) => {
+                    trace!("Command: {} clear", COMMAND_TENANT);
+
+                    clear_active_tenant().await?;
                     Ok(())
                 }
                 Some(("state", sub_matches)) => {
@@ -590,55 +608,13 @@ pub async fn execute_command() -> Result<(), CliError> {
             trace!("Command: context");
 
             match sub_matches.subcommand() {
-                Some((COMMAND_SET, sub_matches)) => {
-                    trace!("Command: context set");
-
-                    match sub_matches.subcommand() {
-                        Some((COMMAND_TENANT, sub_matches)) => {
-                            trace!("Command: context set tenant");
-
-                            set_active_tenant(sub_matches).await?;
-
-                            Ok(())
-                        }
-                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                            sub_matches,
-                        ))),
-                    }
-                }
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Command: context get");
 
-                    match sub_matches.subcommand() {
-                        Some((COMMAND_TENANT, sub_matches)) => {
-                            trace!("Command: context get tenant");
-                            print_active_tenant_name_with_format(sub_matches).await?;
-                            Ok(())
-                        }
-                        None => {
-                            // Handle context get without subcommand
-                            trace!("Command: context get (no subcommand)");
-                            print_current_context(sub_matches).await?;
-                            Ok(())
-                        }
-                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                            sub_matches,
-                        ))),
-                    }
-                }
-                Some((COMMAND_CLEAR, sub_matches)) => {
-                    trace!("Command: context clear");
-
-                    match sub_matches.subcommand() {
-                        Some((COMMAND_TENANT, _)) => {
-                            trace!("Command: context clear tenant");
-                            clear_active_tenant().await?;
-                            Ok(())
-                        }
-                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                            sub_matches,
-                        ))),
-                    }
+                    // Handle context get without subcommand
+                    trace!("Command: context get (no subcommand)");
+                    print_current_context(sub_matches).await?;
+                    Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,

@@ -24,7 +24,7 @@ mod cli_help_snapshot_tests {
         assert!(expected_snapshot.contains("folder"));
         assert!(expected_snapshot.contains("auth"));
         assert!(expected_snapshot.contains("asset"));
-        assert!(expected_snapshot.contains("context"));
+        // Context command has been moved to tenant command
         assert!(expected_snapshot.contains("config"));
         assert!(expected_snapshot.contains("-h, --help"));
         assert!(expected_snapshot.contains("-V, --version"));
@@ -36,7 +36,7 @@ mod cli_help_snapshot_tests {
     #[test]
     fn test_cli_help_subcommands_snapshot() {
         // Capture snapshots of each main subcommand's help
-        let subcommands = vec!["tenant", "folder", "asset", "auth", "context", "config"];
+        let subcommands = vec!["tenant", "folder", "asset", "auth", "config"];
         let mut snapshots: HashMap<String, String> = HashMap::new();
 
         for subcommand in subcommands {
@@ -96,9 +96,6 @@ mod cli_help_snapshot_tests {
             ("auth", "login"),
             ("auth", "logout"),
             ("auth", "get"),
-            ("context", "get"),
-            ("context", "set"),
-            ("context", "clear"),
             ("config", "get"),
             ("config", "export"),
             ("config", "import"),
@@ -127,9 +124,6 @@ mod cli_help_snapshot_tests {
             ("asset", "metadata", "delete"),
             ("asset", "metadata", "inference"),
             ("asset", "metadata", "create-batch"),
-            ("context", "get", "tenant"),
-            ("context", "set", "tenant"),
-            ("context", "clear", "tenant"),
             ("config", "environment", "add"),
             ("config", "environment", "use"),
             ("config", "environment", "list"),

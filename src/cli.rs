@@ -24,7 +24,6 @@ use pcli2::{
             get_tenant_details,
             list_all_tenants,
             print_active_tenant_name_with_format,
-            print_current_context,
             set_active_tenant
         }
     },
@@ -34,7 +33,6 @@ use pcli2::{
             COMMAND_ASSET,
             COMMAND_AUTH,
             COMMAND_CONFIG,
-            COMMAND_CONTEXT,
             COMMAND_CREATE,
             COMMAND_CREATE_BATCH,
             COMMAND_DELETE,
@@ -601,24 +599,6 @@ pub async fn execute_command() -> Result<(), CliError> {
                 ))),
             }
         }
-        // Context commands
-        Some((COMMAND_CONTEXT, sub_matches)) => {
-            trace!("Command: context");
-
-            match sub_matches.subcommand() {
-                Some((COMMAND_GET, sub_matches)) => {
-                    trace!("Command: context get");
-
-                    // Handle context get without subcommand
-                    trace!("Command: context get (no subcommand)");
-                    print_current_context(sub_matches).await?;
-                    Ok(())
-                }
-                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
-                    sub_matches,
-                ))),
-            }
-        }
         // Configuration commands
         Some((COMMAND_CONFIG, sub_matches)) => {
             trace!("Executing config command");
@@ -786,7 +766,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                             configuration.clear_active_tenant();
                             configuration.save_to_default()?;
 
-                            println!("Switched to environment '{}'. Select a tenant with 'pcli2 context set tenant' before running commands.", selected_env_name);
+                            println!("Switched to environment '{}'. Select a tenant with 'pcli2 tenant use' before running commands.", selected_env_name);
                             Ok(())
                         }
                         Some(("remove", sub_matches)) => {

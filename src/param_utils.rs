@@ -96,7 +96,7 @@ pub async fn get_tenant(
                 let tenant = resolve_tenant_by_uuid(client, &active_tenant_uuid).await?;
                 Ok(tenant)
             } else {
-                return Err(CliError::MissingRequiredArgument("No tenant specified and no active tenant selected. Use 'pcli2 context set tenant' to select a tenant, or specify a tenant with --tenant.".to_string()));
+                return Err(CliError::MissingRequiredArgument("No tenant specified and no active tenant selected. Use 'pcli2 tenant use' to select a tenant, or specify a tenant with --tenant.".to_string()));
             }
         }
     }

@@ -1235,10 +1235,6 @@ pcli2
 │   ├── get              Get configuration details
 │   ├── export           Export configuration to a file
 │   └── import           Import configuration from a file
-├── context
-│   ├── set              Set active context (tenant)
-│   ├── get              Get current context
-│   └── clear            Clear active context
 ├── completions        Generate shell completions for various shells
 └── help                 Show help information
 ```
@@ -1319,7 +1315,7 @@ If you encounter unexpected behavior:
 
 2. **Verify your current context**:
    ```bash
-   pcli2 context get
+   pcli2 tenant current
    ```
 
 3. **Review the configuration**:

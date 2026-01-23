@@ -84,41 +84,58 @@ impl AuthClient {
             }
         } else {
             let status = response.status();
-            // Try to get error details - first as text, then try to parse as JSON if needed
-            let error_text = match response.text().await {
+            // Get the full error response body for detailed logging
+            let error_body = match response.text().await {
                 Ok(text) => text,
-                Err(_) => "Unknown error".to_string()
+                Err(e) => {
+                    tracing::error!("Failed to read error response body: {}", e);
+                    "Unable to read error response body".to_string()
+                }
             };
 
-            tracing::debug!("Authentication failed with error text: {}", &error_text);
+            // Log the full error response for debugging
+            tracing::error!("Authentication request failed with status {}: {}", status, &error_body);
 
             // Try to parse as JSON for better formatting
-            let error_details = match serde_json::from_str::<serde_json::Value>(&error_text) {
+            let error_details = match serde_json::from_str::<serde_json::Value>(&error_body) {
                 Ok(error_json) => {
+                    tracing::debug!("Parsed error JSON: {:?}", error_json);
+
                     // Extract specific error information for better user messages
                     if let Some(error_val) = error_json.get("error") {
                         let error_str = error_val.as_str().unwrap_or("unknown");
 
+                        // Also extract error description if available
+                        let error_description = if let Some(desc_val) = error_json.get("error_description") {
+                            format!(" - {}", desc_val.as_str().unwrap_or(""))
+                        } else {
+                            "".to_string()
+                        };
+
                         match error_str {
                             "invalid_client" => {
-                                "Invalid client credentials. Please check your client ID and secret.".to_string()
+                                tracing::error!("Invalid client credentials. Client ID: {}", &self.client_id);
+                                format!("Invalid client credentials{}. Please check your client ID and secret.", error_description)
                             },
                             "invalid_grant" => {
-                                "Invalid grant. The authorization grant or refresh token is invalid.".to_string()
+                                format!("Invalid grant{}. The authorization grant or refresh token is invalid.", error_description)
                             },
                             "unauthorized_client" => {
-                                "Unauthorized client. The client is not authorized to use this authorization grant type.".to_string()
+                                format!("Unauthorized client{}. The client is not authorized to use this authorization grant type.", error_description)
                             },
                             "invalid_request" => {
-                                "Invalid request. The request is missing required parameters or contains invalid parameters.".to_string()
+                                format!("Invalid request{}. The request is missing required parameters or contains invalid parameters.", error_description)
                             },
-                            _ => format!("{:?}", error_json),
+                            _ => format!("{}{}", error_str, error_description),
                         }
                     } else {
-                        format!("{:?}", error_json)
+                        error_body.clone() // Return the raw error body if no specific error field
                     }
                 },
-                Err(_) => error_text
+                Err(json_err) => {
+                    tracing::warn!("Failed to parse error response as JSON: {}. Raw error: {}", json_err, &error_body);
+                    error_body.clone() // Return the raw error body if JSON parsing fails
+                }
             };
 
             Err(AuthError::AuthFailed(format!("HTTP {} {}", status, error_details)))

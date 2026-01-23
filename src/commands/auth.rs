@@ -5,7 +5,7 @@
 use crate::commands::params::{
     client_id_parameter, client_secret_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter,
-    COMMAND_AUTH, COMMAND_CLEAR_TOKEN, COMMAND_GET, COMMAND_LOGIN, COMMAND_LOGOUT
+    COMMAND_AUTH, COMMAND_CLEAR_TOKEN, COMMAND_EXPIRATION, COMMAND_GET, COMMAND_LOGIN, COMMAND_LOGOUT
 };
 use clap::Command;
 
@@ -34,5 +34,9 @@ pub fn auth_command() -> Command {
         .subcommand(
             Command::new(COMMAND_CLEAR_TOKEN)
                 .about("Clear the cached access token"),
+        )
+        .subcommand(
+            Command::new(COMMAND_EXPIRATION)
+                .about("Show the expiration time of the current access token"),
         )
 }

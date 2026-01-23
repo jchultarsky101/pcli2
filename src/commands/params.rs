@@ -35,6 +35,7 @@ pub const COMMAND_AUTH: &str = "auth";
 pub const COMMAND_LOGIN: &str = "login";
 pub const COMMAND_LOGOUT: &str = "logout";
 pub const COMMAND_CLEAR_TOKEN: &str = "clear-token";
+pub const COMMAND_EXPIRATION: &str = "expiration"; // Allow non snake case since it's used as a command name
 //
 // Tenant commands
 pub const COMMAND_TENANT: &str = "tenant";

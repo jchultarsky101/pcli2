@@ -222,9 +222,14 @@ pcli2 auth get
 
 # Logout
 pcli2 auth logout
+
+# Check token expiration
+pcli2 auth expiration
 ```
 
 You'll only need to login once per session, which is valid for several hours. The credentials are securely stored using your system's keychain. PCLI2 will automatically renew your access token if necessary.
+
+The `pcli2 auth expiration` command shows the expiration time and remaining validity period of your current access token. This helps you understand how much time remains before you need to log in again.
 
 ### Security and Authentication
 
@@ -1267,7 +1272,8 @@ pcli2
 │   ├── login                     Login using client credentials
 │   ├── logout                    Logout and clear session
 │   ├── get                       Get current access token
-│   └── clear-token               Clear the cached access token
+│   ├── clear-token               Clear the cached access token
+│   └── expiration                Show the expiration time of the current access token
 ├── config
 │   ├── get                       Get configuration details
 │   ├── export                    Export configuration to file

@@ -35,6 +35,85 @@ use pcli2::keyring::Keyring;
 use pcli2::error::CliError;
 use std::path::PathBuf;
 use tracing::{debug, trace};
+use base64::Engine;
+use std::time::{SystemTime, UNIX_EPOCH};
+use chrono::{DateTime, Utc};
+use pcli2::commands::params::COMMAND_EXPIRATION;
+
+#[derive(Debug)]
+struct TokenExpirationInfo {
+    expiration_datetime: String,
+    time_remaining_formatted: String,
+}
+
+fn decode_jwt_expiration(token: &str) -> Result<TokenExpirationInfo, Box<dyn std::error::Error>> {
+    // Split the JWT token into its three parts: header.payload.signature
+    let parts: Vec<&str> = token.split('.').collect();
+
+    if parts.len() != 3 {
+        return Err("Invalid JWT format: token must have exactly 3 parts separated by dots".into());
+    }
+
+    // Decode the payload (the middle part)
+    let payload = parts[1];
+
+    // Add padding if necessary (JWTs use base64url encoding without padding)
+    let mut padded_payload = payload.to_string();
+    match payload.len() % 4 {
+        2 => padded_payload.push_str("=="),
+        3 => padded_payload.push_str("="),
+        _ => {} // 0 remainder means no padding needed, 1 remainder is invalid
+    }
+
+    // Decode the base64url-encoded payload
+    let decoded_bytes = base64::engine::general_purpose::URL_SAFE.decode(&padded_payload)?;
+    let payload_str = String::from_utf8(decoded_bytes)?;
+
+    // Parse the JSON payload
+    let payload_json: serde_json::Value = serde_json::from_str(&payload_str)?;
+
+    // Extract the 'exp' claim (expiration time)
+    let exp = payload_json.get("exp")
+        .and_then(|v| v.as_i64())
+        .ok_or("Token does not contain an 'exp' (expiration) claim")?;
+
+    // Calculate time remaining
+    let current_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)?
+        .as_secs() as i64;
+
+    let time_remaining = exp - current_time;
+
+    // Format the expiration time as a readable datetime
+    let expiration_datetime = DateTime::<Utc>::from_timestamp(exp, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| "Invalid timestamp".to_string());
+
+    // Format the time remaining in a human-readable format
+    let time_remaining_formatted = if time_remaining > 0 {
+        let days = time_remaining / (24 * 3600);
+        let hours = (time_remaining % (24 * 3600)) / 3600;
+        let minutes = (time_remaining % 3600) / 60;
+        let seconds = time_remaining % 60;
+
+        if days > 0 {
+            format!("{}d {}h {}m {}s", days, hours, minutes, seconds)
+        } else if hours > 0 {
+            format!("{}h {}m {}s", hours, minutes, seconds)
+        } else if minutes > 0 {
+            format!("{}m {}s", minutes, seconds)
+        } else {
+            format!("{}s", seconds)
+        }
+    } else {
+        "Expired".to_string()
+    };
+
+    Ok(TokenExpirationInfo {
+        expiration_datetime,
+        time_remaining_formatted,
+    })
+}
 
 fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
     let message = match sub_matches.subcommand() {
@@ -524,6 +603,55 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 ]
                             );
                             Err(CliError::SecurityError(String::from("Failed to check access token")))
+                        }
+                    }
+                }
+                Some((command_name, sub_matches)) if command_name == COMMAND_EXPIRATION => {
+                    trace!("Executing auth expiration command");
+
+                    let configuration = Configuration::load_or_create_default()?;
+                    // Use the active environment name for keyring storage, fallback to "default" if no environment is set
+                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+
+                    // Try to get access token from keyring
+                    #[allow(unused_mut)]
+                    let mut keyring = Keyring::default();
+                    match keyring.get(&environment_name, "access-token".to_string()) {
+                        Ok(Some(token)) => {
+                            // Decode the JWT token to get expiration information
+                            match decode_jwt_expiration(&token) {
+                                Ok(expiration_info) => {
+                                    // Print plain text output
+                                    println!("Expiration Time: {}", expiration_info.expiration_datetime);
+                                    println!("Time Remaining: {}", expiration_info.time_remaining_formatted);
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error_utils::report_error_with_remediation(
+                                        &format!("Error decoding token expiration: {}", e),
+                                        &[
+                                            "The token might not be a valid JWT",
+                                            "Check that your token is properly formatted",
+                                            "Try logging in again with 'pcli2 auth login'"
+                                        ]
+                                    );
+                                    Err(CliError::SecurityError(String::from("Failed to decode token expiration")))
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            error_utils::report_error_with_remediation(
+                                &"No access token found. Please login first.",
+                                &[
+                                    "Log in with 'pcli2 auth login --client-id <id> --client-secret <secret>'",
+                                    "Verify your credentials are correct"
+                                ]
+                            );
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            Ok(())
                         }
                     }
                 }

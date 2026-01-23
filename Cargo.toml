@@ -34,6 +34,7 @@ strum = { version = "0.26.2", features = ["strum_macros", "derive"] }
 serde_json = "1.0.143"
 keyring = { version = "2.3.3" }
 base64 = "0.22.1"
+chrono = { version = "0.4", features = ["serde"] }
 mime = "0.3.17"
 tokio = { version = "1.37.0", features = ["full"] }
 tracing = "0.1.40"

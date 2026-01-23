@@ -985,22 +985,11 @@ impl PhysnaApiClient {
             // Remove leading slash for hierarchy lookup
             let path_for_hierarchy = normalized_path.strip_prefix('/').unwrap_or(&normalized_path);
 
-            // First, try direct lookup for root-level folders as primary approach
-            // This handles cases where the folder is directly under root
-            let root_folders_response = self.list_folders_in_parent(tenant_uuid, None, Some(1), Some(1000)).await?;
-
-            // Look for a root folder that matches the path (for single-level paths like "test2")
-            for folder in &root_folders_response.folders {
-                if folder.name == path_for_hierarchy {
-                    debug!("Found root folder '{}' with UUID: {}", folder.name, folder.uuid);
-                    return Ok(Some(folder.uuid));
-                }
-            }
-
-            // If direct lookup fails, try the folder hierarchy approach for nested paths
+            // Use the folder hierarchy approach to find the folder by path
+            // This properly handles nested paths like "test/sub1" by traversing the hierarchy
             if let Ok(hierarchy) = FolderHierarchy::build_from_api(self, tenant_uuid).await {
                 if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
-                    debug!("Found folder at path '{}' using hierarchy: {}", folder_path, folder_node.folder.uuid);
+                    debug!("Found folder at path '{}' using hierarchy: {}", path_for_hierarchy, folder_node.folder.uuid);
                     return Ok(Some(folder_node.folder.uuid.clone()));
                 }
             }

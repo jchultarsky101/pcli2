@@ -229,7 +229,7 @@ pcli2 auth expiration
 
 You'll only need to login once per session, which is valid for several hours. The credentials are securely stored using your system's keychain. PCLI2 will automatically renew your access token if necessary.
 
-The `pcli2 auth expiration` command shows the expiration time and remaining validity period of your current access token. This helps you understand how much time remains before you need to log in again.
+The `pcli2 auth expiration` command shows the expiration time (in your local time zone) and remaining validity period of your current access token. This helps you understand how much time remains before you need to log in again.
 
 ### Security and Authentication
 

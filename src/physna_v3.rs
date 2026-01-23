@@ -270,6 +270,8 @@ impl PhysnaApiClient {
         // we'll automatically attempt to re-authenticate using the cached client credentials.
         // If this automatic re-authentication fails, we'll prompt the user to run 'pcli2 auth login'.
 
+        debug!("Attempting to automatically refresh the access token using the cached credentials...");
+        
         if let Some((client_id, client_secret)) = &self.client_credentials {
             debug!("Attempting automatic re-authentication with cached client credentials");
 

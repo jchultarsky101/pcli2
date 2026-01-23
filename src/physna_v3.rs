@@ -1,4 +1,5 @@
 use std::path::Path;
+use crate::auth::AuthClient;
 use crate::folder_hierarchy::FolderHierarchy;
 use crate::http_utils::HttpClient;
 use crate::keyring::{Keyring, KeyringError};
@@ -266,11 +267,37 @@ impl PhysnaApiClient {
     /// * `Err(ApiError::AuthError)` - Failed to refresh token or no credentials available
     async fn refresh_token(&mut self) -> Result<(), ApiError> {
         // Since the token refresh mechanism is not working reliably with this Cognito setup,
-        // we'll skip the refresh attempt and directly prompt the user to log in again.
-        // The pcli2 auth login command works properly, so that's the recommended approach.
-        Err(ApiError::AuthError(
-            "Token refresh not supported or failed. Please log in again with 'pcli2 auth login'.".to_string()
-        ))
+        // we'll automatically attempt to re-authenticate using the cached client credentials.
+        // If this automatic re-authentication fails, we'll prompt the user to run 'pcli2 auth login'.
+
+        if let Some((client_id, client_secret)) = &self.client_credentials {
+            debug!("Attempting automatic re-authentication with cached client credentials");
+
+            // Create a new auth client with the stored credentials
+            let auth_client = AuthClient::new(client_id.clone(), client_secret.clone());
+
+            // Attempt to get a new access token
+            match auth_client.get_access_token().await {
+                Ok(new_token) => {
+                    debug!("Successfully obtained new access token automatically");
+                    // Update the stored access token
+                    self.access_token = Some(new_token);
+                    Ok(())
+                }
+                Err(e) => {
+                    // If automatic re-authentication fails, prompt the user to log in manually
+                    debug!("Automatic re-authentication failed: {}", e);
+                    Err(ApiError::AuthError(
+                        "Automatic authentication failed. Please log in again with 'pcli2 auth login'.".to_string()
+                    ))
+                }
+            }
+        } else {
+            // No client credentials available for automatic re-authentication
+            Err(ApiError::AuthError(
+                "No client credentials available for automatic re-authentication. Please log in again with 'pcli2 auth login'.".to_string()
+            ))
+        }
     }
     
     /// Get the current access token from the client

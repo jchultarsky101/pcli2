@@ -1,5 +1,4 @@
 use std::path::Path;
-use crate::auth::AuthClient;
 use crate::folder_hierarchy::FolderHierarchy;
 use crate::http_utils::HttpClient;
 use crate::keyring::{Keyring, KeyringError};
@@ -266,50 +265,12 @@ impl PhysnaApiClient {
     /// * `Ok(())` - Token successfully refreshed
     /// * `Err(ApiError::AuthError)` - Failed to refresh token or no credentials available
     async fn refresh_token(&mut self) -> Result<(), ApiError> {
-        // Check if we have client credentials available for token refresh
-        if let Some((client_id, client_secret)) = &self.client_credentials {
-            trace!("Refreshing access token");
-            
-            // Create a new auth client with the stored credentials
-            let auth_client = AuthClient::new(client_id.clone(), client_secret.clone());
-            
-            // Attempt to get a new access token
-            match auth_client.get_access_token().await {
-                Ok(new_token) => {
-                    debug!("Successfully refreshed access token");
-                    // Update the stored access token
-                    self.access_token = Some(new_token);
-                    Ok(())
-                }
-                Err(e) => {
-                    // Return an authentication error with details
-                    let error_msg = e.to_string();
-                    let user_friendly_msg = if error_msg.contains("invalid_client") {
-                        "Invalid client credentials. This could be due to:\n  - Incorrect client ID or secret\n  - Expired or revoked client credentials\n  - Disabled service account\n  Please verify your credentials and log in again with 'pcli2 auth login'.".to_string()
-                    } else if error_msg.contains("invalid_grant") {
-                        "Invalid authorization grant. Please log in again with 'pcli2 auth login'.".to_string()
-                    } else if error_msg.contains("unauthorized_client") {
-                        "Unauthorized client. Please verify your client credentials and log in again with 'pcli2 auth login'.".to_string()
-                    } else if error_msg.contains("invalid_request") {
-                        "Invalid request. Please verify your credentials and log in again with 'pcli2 auth login'.".to_string()
-                    } else {
-                        // Check if the error message already contains authentication context to avoid repetition
-                        let error_str = e.to_string();
-                        if error_str.starts_with("Authentication failed:") {
-                            // Extract the actual error details after "Authentication failed:"
-                            let actual_error = error_str.strip_prefix("Authentication failed: ").unwrap_or(&error_str);
-                            format!("{} - Please log in again with 'pcli2 auth login'.", actual_error)
-                        } else {
-                            format!("{} - Please log in again with 'pcli2 auth login'.", error_str)
-                        }
-                    };
-                    Err(ApiError::AuthError(user_friendly_msg))
-                }
-            }
-        } else {
-            // No client credentials available for token refresh
-            Err(ApiError::AuthError("No client credentials available for token refresh".to_string()))
-        }
+        // Since the token refresh mechanism is not working reliably with this Cognito setup,
+        // we'll skip the refresh attempt and directly prompt the user to log in again.
+        // The pcli2 auth login command works properly, so that's the recommended approach.
+        Err(ApiError::AuthError(
+            "Token refresh not supported or failed. Please log in again with 'pcli2 auth login'.".to_string()
+        ))
     }
     
     /// Get the current access token from the client

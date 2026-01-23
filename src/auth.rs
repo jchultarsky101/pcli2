@@ -56,17 +56,19 @@ impl AuthClient {
         tracing::debug!("Authenticating with token URL: {}", &self.token_url);
         tracing::debug!("Client ID: {}", &self.client_id);
 
-        // For AWS Cognito, send client credentials in the request body along with grant_type
+        // For OAuth 2.0 client credentials flow, use basic authentication with client credentials
+        // This is the standard approach for OAuth 2.0 client credentials grant
         let params = [
             ("grant_type", "client_credentials"),
+            // Some OAuth 2.0 implementations expect client_id in the body as well
             ("client_id", &self.client_id),
-            ("client_secret", &self.client_secret),
         ];
 
         let response = client
             .post(&self.token_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&params)
+            .basic_auth(&self.client_id, Some(&self.client_secret))
             .send()
             .await?;
 

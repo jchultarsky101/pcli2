@@ -1,9 +1,22 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use crate::auth::AuthClient;
 use crate::folder_hierarchy::FolderHierarchy;
 use crate::http_utils::HttpClient;
 use crate::keyring::{Keyring, KeyringError};
-use crate::model::{Asset, AssetList, AssetListResponse, CurrentUserResponse, FolderList, FolderListResponse, SingleAssetResponse, SingleFolderResponse};
+use crate::model::{
+    AssemblyTree,
+    AssemblyNode,
+    Asset,
+    AssetDependenciesResponse,
+    AssetList,
+    AssetListResponse,
+    AssetStateCounts,
+    CurrentUserResponse,
+    FolderList,
+    FolderListResponse,
+    SingleAssetResponse,
+    SingleFolderResponse};
+use async_recursion::async_recursion;
 use reqwest;
 use serde_json;
 use serde_urlencoded;
@@ -1124,8 +1137,9 @@ impl PhysnaApiClient {
         Ok((subfolders, assets))
     }
 
-    fn get_parent_folder_path(asset_path: &String) -> Result<String, ApiError> {
-        let path = Path::new(&asset_path);
+    fn get_parent_folder_path<S: AsRef<str>>(asset_path: S) -> Result<String, ApiError> {
+        let asset_path = asset_path.as_ref();
+        let path = Path::new(asset_path);
         let parent = path.parent()
             .ok_or_else(|| ApiError::InvalidAssetPath(asset_path.to_owned()))?;
 
@@ -1145,8 +1159,8 @@ impl PhysnaApiClient {
         Ok(normalized_parent)
     }
 
-    fn asset_name_from_path(path: &String) -> Option<String> {
-    Path::new(&path)
+    fn asset_name_from_path(path: &str) -> Option<String> {
+    Path::new(path)
         .file_name()
         .and_then(|s| s.to_str())
         .map(|s| s.to_string())
@@ -1169,8 +1183,9 @@ impl PhysnaApiClient {
         Ok(response.asset.into())
     }
 
-    pub async fn get_asset_by_path(&mut self, tenant_uuid: &Uuid, asset_path: &String) -> Result<Asset, ApiError> {
+    pub async fn get_asset_by_path<S: AsRef<str>>(&mut self, tenant_uuid: &Uuid, asset_path: S) -> Result<Asset, ApiError> {
 
+        let asset_path = asset_path.as_ref();
         let parent_folder_path = Self::get_parent_folder_path(asset_path)?;
         let assets = self.list_assets_by_parent_folder_path(tenant_uuid, &parent_folder_path).await?;
         match Self::asset_name_from_path(asset_path) {
@@ -2152,38 +2167,88 @@ impl PhysnaApiClient {
         results
     }
 
-    /// Get dependencies for a specific asset by path
-    /// 
-    /// This method retrieves all dependencies for the specified asset from the Physna API.
-    /// The dependencies represent other assets that are related to this asset, such as
-    /// components in an assembly or referenced assets.
-    /// 
-    /// This method uses the path directly in the API endpoint, as the dependencies endpoint
-    /// specifically requires the asset path rather than the asset ID.
-    /// 
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant that owns the asset
-    /// * `asset_path` - The path of the asset to retrieve dependencies for (e.g., "/Root/Folder/assembly.stl")
-    /// 
-    /// # Returns
-    /// * `Ok(AssetDependenciesResponse)` - Successfully fetched asset dependencies
-    /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_asset_dependencies_by_path(&mut self, tenant_uuid: &Uuid, asset_path: &str) -> Result<crate::model::AssetDependenciesResponse, ApiError> {
-        debug!("Getting asset dependencies by path for tenant_id: {}, asset_path: {}", tenant_uuid, asset_path);
+    async fn get_asset_dependencies_by_path_with_pagination<S: AsRef<str>>(&mut self, tenant_uuid: &Uuid, physna_path: S, page: usize, per_page: usize) -> Result<AssetDependenciesResponse, ApiError> {
+        let physna_path = physna_path.as_ref();
+
+        debug!("Getting asset dependencies by path for tenant UUID: {}, physna path: {}", tenant_uuid, physna_path);
         
         // URL encode the asset path to handle special characters properly
-        let encoded_asset_path = urlencoding::encode(asset_path);
+        let encoded_asset_path = urlencoding::encode(physna_path);
         
-        let url = format!("{}/tenants/{}/assets/{}/dependencies", self.base_url, tenant_uuid, encoded_asset_path);
+        let url = format!("{}/tenants/{}/assets/{}/dependencies?page={}&per_page={}", self.base_url, tenant_uuid, encoded_asset_path, page, per_page);
         debug!("Dependencies request URL: {}", url);
         
         // Execute the GET request using the generic method
-        let response: crate::model::AssetDependenciesResponse = self.get(&url).await?;
-        debug!("Successfully retrieved {} dependencies for asset_path: {}", response.dependencies.len(), asset_path);
+        let response: AssetDependenciesResponse = self.get(&url).await?;
+        debug!("Successfully retrieved {} dependencies for asset_path: {}", response.dependencies.len(), physna_path);
         
         Ok(response)
     }
+    
 
+    fn get_asset_path_as_pathbuf(asset: &Asset) -> Result<PathBuf, ApiError> {
+        let path = PathBuf::from(asset.path());
+        let file_name = path.file_name()
+            .ok_or_else(|| ApiError::InvalidAssetPath(format!("Invalid path: {}", asset.path())))?;
+        Ok(PathBuf::from(file_name))
+    }
+    
+    #[async_recursion]
+    async fn populate_asset_dependencies_recursive(
+        &mut self,
+        tenant_uuid: &Uuid,
+        root: &mut AssemblyNode,
+    ) -> Result<(), ApiError> {
+        let mut page: usize = 1;
+        let per_page: usize = 100;
+
+        // IMPORTANT: do not hold a borrow of `root` across `.await`.
+        // Take the path as an owned String up-front.
+        let root_path = root.asset().path().to_string();
+
+        loop {
+            let response = self
+                .get_asset_dependencies_by_path_with_pagination(
+                    tenant_uuid,
+                    root_path.as_str(),
+                    page,
+                    per_page,
+                )
+                .await?;
+
+            for dependency in response.dependencies {
+                // Convert dependency asset once
+                let child_asset: Asset = dependency.asset.into();
+
+                // Insert into tree and get a mutable reference to the stored node
+                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset);
+
+                // Recurse on the stored child node if it has dependencies
+                if dependency.has_dependencies {
+                    self.populate_asset_dependencies_recursive(tenant_uuid, child_node)
+                        .await?;
+                }
+            }
+
+            // Pagination: stop when we've reached the last page
+            if page >= response.page_data.last_page {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(())
+    }
+    
+    pub async fn get_asset_dependencies_by_path<S: AsRef<str>>(&mut self, tenant_uuid: &Uuid, asset_path: S) -> Result<AssemblyTree, ApiError> {
+        let asset_path = asset_path.as_ref();
+        let asset = self.get_asset_by_path(tenant_uuid, asset_path).await?;
+
+        let mut tree = AssemblyTree::new(asset);
+        self.populate_asset_dependencies_recursive(tenant_uuid, tree.root_mut()).await?;
+        Ok(tree)
+    }
+    
     /// Get asset state counts from the Physna API
     ///
     /// This function retrieves the count of assets in each state (processing, ready, failed, deleted) for a specific tenant.
@@ -2196,7 +2261,7 @@ impl PhysnaApiClient {
     ///
     /// * `Ok(AssetStateCounts)` - Successfully fetched asset state counts
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_asset_state_counts(&mut self, tenant_uuid: &Uuid) -> Result<crate::model::AssetStateCounts, ApiError> {
+    pub async fn get_asset_state_counts(&mut self, tenant_uuid: &Uuid) -> Result<AssetStateCounts, ApiError> {
         debug!("Getting asset state counts for tenant_uuid: {}", tenant_uuid);
 
         let url = format!("{}/tenants/{}/assets/state", self.base_url, tenant_uuid);

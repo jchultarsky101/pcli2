@@ -62,7 +62,11 @@ pub fn normalize_path(path: impl AsRef<str>) -> String {
     let result = parts.join("/");
 
     // Handle the case where the original path was just slashes (e.g. "/", "//", "///")
-    let without_leading = if !result.is_empty() { result.as_str() } else { "" };
+    let without_leading = if !result.is_empty() {
+        result.as_str()
+    } else {
+        ""
+    };
 
     // Ensure exactly one leading '/'
     let mut out = String::with_capacity(without_leading.len() + 1);
@@ -80,16 +84,25 @@ mod tests {
     fn test_normalize_path_basic_cases() {
         assert_eq!(normalize_path("/myroot/mysub/more/"), "/myroot/mysub/more");
         assert_eq!(normalize_path("myroot/mysub/more"), "/myroot/mysub/more");
-        assert_eq!(normalize_path("/HOME/myroot/mysub/more/"), "/myroot/mysub/more");
+        assert_eq!(
+            normalize_path("/HOME/myroot/mysub/more/"),
+            "/myroot/mysub/more"
+        );
         assert_eq!(normalize_path("/HOME"), "/");
         assert_eq!(normalize_path("////"), "/");
     }
 
     #[test]
     fn test_normalize_path_consecutive_slashes() {
-        assert_eq!(normalize_path("/myroot//mysub///more/"), "/myroot/mysub/more");
+        assert_eq!(
+            normalize_path("/myroot//mysub///more/"),
+            "/myroot/mysub/more"
+        );
         assert_eq!(normalize_path("Root//Folder"), "/Root/Folder");
-        assert_eq!(normalize_path("//double//slash//test"), "/double/slash/test");
+        assert_eq!(
+            normalize_path("//double//slash//test"),
+            "/double/slash/test"
+        );
         assert_eq!(normalize_path("///"), "/");
         assert_eq!(normalize_path(""), "/");
     }
@@ -196,8 +209,20 @@ impl Folder {
     /// * `path` - Full path of the folder
     /// * `assets_count` - Number of assets in the folder
     /// * `folders_count` - Number of subfolders in the folder
-    pub fn new(uuid: Uuid, name: String, path: String, assets_count: u32, folders_count: u32) -> Folder {
-        Folder { uuid, name, path, assets_count, folders_count }
+    pub fn new(
+        uuid: Uuid,
+        name: String,
+        path: String,
+        assets_count: u32,
+        folders_count: u32,
+    ) -> Folder {
+        Folder {
+            uuid,
+            name,
+            path,
+            assets_count,
+            folders_count,
+        }
     }
 
     /// Create a Folder from a FolderResponse with a specified path
@@ -283,7 +308,13 @@ impl From<SingleFolderResponse> for Folder {
 impl CsvRecordProducer for Folder {
     /// Get the CSV header row for Folder records
     fn csv_header() -> Vec<String> {
-        vec!["NAME".to_string(), "PATH".to_string(), "ASSETS_COUNT".to_string(), "FOLDERS_COUNT".to_string(), "UUID".to_string()]
+        vec![
+            "NAME".to_string(),
+            "PATH".to_string(),
+            "ASSETS_COUNT".to_string(),
+            "FOLDERS_COUNT".to_string(),
+            "UUID".to_string(),
+        ]
     }
 
     /// Convert the Folder to CSV records
@@ -293,7 +324,7 @@ impl CsvRecordProducer for Folder {
             self.path(),
             self.assets_count().to_string(),
             self.folders_count().to_string(),
-            self.uuid().to_string()
+            self.uuid().to_string(),
         ]]
     }
 
@@ -654,7 +685,10 @@ impl TryFrom<&TenantSetting> for Tenant {
 }
 
 impl crate::format::Formattable for Tenant {
-    fn format(&self, f: &crate::format::OutputFormat) -> Result<String, crate::format::FormattingError> {
+    fn format(
+        &self,
+        f: &crate::format::OutputFormat,
+    ) -> Result<String, crate::format::FormattingError> {
         match f {
             crate::format::OutputFormat::Json(options) => {
                 let json = if options.pretty {
@@ -664,7 +698,9 @@ impl crate::format::Formattable for Tenant {
                 };
                 match json {
                     Ok(json) => Ok(json),
-                    Err(e) => Err(crate::format::FormattingError::FormatFailure { cause: Box::new(e) }),
+                    Err(e) => {
+                        Err(crate::format::FormattingError::FormatFailure { cause: Box::new(e) })
+                    }
                 }
             }
             crate::format::OutputFormat::Csv(options) => {
@@ -681,7 +717,10 @@ impl crate::format::Formattable for Tenant {
             }
             crate::format::OutputFormat::Tree(_) => {
                 // For tree format, include name, UUID, and description
-                Ok(format!("{} ({}) - {}", self.name, self.uuid, self.description))
+                Ok(format!(
+                    "{} ({}) - {}",
+                    self.name, self.uuid, self.description
+                ))
             }
         }
     }
@@ -803,14 +842,24 @@ impl From<Vec<TenantSetting>> for TenantList {
 impl CsvRecordProducer for TenantList {
     /// Get the CSV header row for TenantList records
     fn csv_header() -> Vec<String> {
-        vec!["TENANT_NAME".to_string(), "TENANT_UUID".to_string(), "TENANT_DESCRIPTION".to_string()]
+        vec![
+            "TENANT_NAME".to_string(),
+            "TENANT_UUID".to_string(),
+            "TENANT_DESCRIPTION".to_string(),
+        ]
     }
 
     /// Convert the TenantList to CSV records
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         self.tenants
             .iter()
-            .map(|tenant| vec![tenant.name.clone(), tenant.uuid.to_string(), tenant.description.clone()])
+            .map(|tenant| {
+                vec![
+                    tenant.name.clone(),
+                    tenant.uuid.to_string(),
+                    tenant.description.clone(),
+                ]
+            })
             .collect()
     }
 }
@@ -869,7 +918,10 @@ impl OutputFormatter for TenantList {
                 // For tree format, include name, UUID, and description
                 let mut output = String::new();
                 for tenant in &self.tenants {
-                    output.push_str(&format!("{} ({}) - {}\n", tenant.name, tenant.uuid, tenant.description));
+                    output.push_str(&format!(
+                        "{} ({}) - {}\n",
+                        tenant.name, tenant.uuid, tenant.description
+                    ));
                 }
                 Ok(output)
             }
@@ -1180,7 +1232,7 @@ impl From<HashMap<String, serde_json::Value>> for AssetMetadata {
                 let value_string = if let Some(str_val) = v.as_str() {
                     str_val.to_string()
                 } else {
-                    v.to_string()  // fallback to generic string representation for non-string values
+                    v.to_string() // fallback to generic string representation for non-string values
                 };
                 (k.to_owned(), value_string)
             })
@@ -1982,7 +2034,11 @@ impl OutputFormatter for EnhancedPartSearchResponse {
 
 impl EnhancedPartSearchResponse {
     /// Format the EnhancedPartSearchResponse with consideration for metadata flag
-    pub fn format_with_metadata_flag(&self, f: OutputFormat, include_metadata: bool) -> Result<String, FormattingError> {
+    pub fn format_with_metadata_flag(
+        &self,
+        f: OutputFormat,
+        include_metadata: bool,
+    ) -> Result<String, FormattingError> {
         match f {
             OutputFormat::Json(options) => {
                 if options.pretty {
@@ -2051,14 +2107,20 @@ impl EnhancedPartSearchResponse {
                         // Add metadata values for each key that was included in the header
                         for key in &header_metadata_keys {
                             // Add reference asset metadata value (same for all records)
-                            let ref_value = self.reference_asset.metadata.get(key)
+                            let ref_value = self
+                                .reference_asset
+                                .metadata
+                                .get(key)
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_default();
                             base_values.push(ref_value);
 
                             // Add candidate asset metadata value (specific to this match)
-                            let cand_value = match_result.asset.metadata.get(key)
+                            let cand_value = match_result
+                                .asset
+                                .metadata
+                                .get(key)
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_default();
@@ -2132,7 +2194,10 @@ pub struct VisualMatchPair {
 
 impl PartMatchPair {
     /// Create a new PartMatchPair from a reference asset and a part match
-    pub fn from_reference_and_match(reference_asset: AssetResponse, match_result: PartMatch) -> Self {
+    pub fn from_reference_and_match(
+        reference_asset: AssetResponse,
+        match_result: PartMatch,
+    ) -> Self {
         PartMatchPair {
             reference_asset,
             candidate_asset: match_result.asset,
@@ -2380,7 +2445,10 @@ pub struct GeometricMatchPair {
 
 impl GeometricMatchPair {
     /// Create a new GeometricMatchPair from a reference asset and a geometric match
-    pub fn from_reference_and_match(reference_asset: AssetResponse, match_result: GeometricMatch) -> Self {
+    pub fn from_reference_and_match(
+        reference_asset: AssetResponse,
+        match_result: GeometricMatch,
+    ) -> Self {
         GeometricMatchPair {
             reference_asset,
             candidate_asset: match_result.asset,
@@ -2505,14 +2573,20 @@ impl OutputFormatter for GeometricMatchPair {
                     // Add metadata values for each key
                     for key in &sorted_keys {
                         // Add reference asset metadata value
-                        let ref_value = self.reference_asset.metadata.get(key)
+                        let ref_value = self
+                            .reference_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
                         // Add candidate asset metadata value
-                        let cand_value = self.candidate_asset.metadata.get(key)
+                        let cand_value = self
+                            .candidate_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
@@ -2570,11 +2644,11 @@ impl CsvRecordProducer for EnhancedGeometricSearchResponse {
             .iter()
             .map(|m| {
                 vec![
-                    self.reference_asset.path.clone(),  // Reference asset path
-                    m.path().to_string(),               // Candidate asset path
-                    format!("{}", m.score()),           // Full precision match percentage
+                    self.reference_asset.path.clone(),     // Reference asset path
+                    m.path().to_string(),                  // Candidate asset path
+                    format!("{}", m.score()),              // Full precision match percentage
                     self.reference_asset.uuid.to_string(), // Reference asset UUID
-                    m.asset_uuid().to_string(),         // Candidate asset UUID
+                    m.asset_uuid().to_string(),            // Candidate asset UUID
                     m.comparison_url.clone().unwrap_or_default(), // Comparison URL
                 ]
             })
@@ -2675,14 +2749,20 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                         // Add metadata values for each key that was included in the header
                         for key in &sorted_keys {
                             // Add reference asset metadata value (same for all records)
-                            let ref_value = self.reference_asset.metadata.get(key)
+                            let ref_value = self
+                                .reference_asset
+                                .metadata
+                                .get(key)
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_default();
                             base_values.push(ref_value);
 
                             // Add candidate asset metadata value (specific to this match)
-                            let cand_value = match_result.asset.metadata.get(key)
+                            let cand_value = match_result
+                                .asset
+                                .metadata
+                                .get(key)
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_default();
@@ -2801,14 +2881,20 @@ impl EnhancedGeometricSearchResponse {
                         // Add metadata values for each key that was included in the header
                         for key in &sorted_keys {
                             // Add reference asset metadata value (same for all records)
-                            let ref_value = self.reference_asset.metadata.get(key)
+                            let ref_value = self
+                                .reference_asset
+                                .metadata
+                                .get(key)
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_default();
                             base_values.push(ref_value);
 
                             // Add candidate asset metadata value (specific to this match)
-                            let cand_value = match_result.asset.metadata.get(key)
+                            let cand_value = match_result
+                                .asset
+                                .metadata
+                                .get(key)
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_default();
@@ -2836,7 +2922,6 @@ impl EnhancedGeometricSearchResponse {
     }
 }
 
-
 // Metadata field models for Physna V3 API
 
 /// Represents a metadata field definition
@@ -2860,7 +2945,7 @@ pub struct MetadataFieldListResponse {
 /// Represents a dependency relationship for an asset
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetDependency {
-    /// The path of the dependent asset
+    /// The Physna path of the dependent asset
     pub path: String,
     /// The asset details
     pub asset: AssetResponse,
@@ -2884,10 +2969,26 @@ pub struct AssetDependenciesResponse {
     pub original_asset_path: String,
 }
 
-impl CsvRecordProducer for AssetDependenciesResponse {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetDependencyList {
+    pub path: String,
+    pub dependencies: Vec<AssetDependency>,
+}
+
+impl From<AssetDependenciesResponse> for AssetDependencyList {
+    fn from(response: AssetDependenciesResponse) -> Self {
+        Self {
+            path: response.original_asset_path,
+            dependencies: response.dependencies,
+        }
+    }
+}
+
+impl CsvRecordProducer for AssetDependencyList {
     fn csv_header() -> Vec<String> {
         vec![
             "PATH".to_string(),
+            "ASSEMBLY_PATH".to_string(),
             "ASSET_ID".to_string(),
             "ASSET_NAME".to_string(),
             "OCCURRENCES".to_string(),
@@ -2916,8 +3017,8 @@ impl CsvRecordProducer for AssetDependenciesResponse {
     }
 }
 
-impl OutputFormatter for AssetDependenciesResponse {
-    type Item = AssetDependenciesResponse;
+impl OutputFormatter for AssetDependencyList {
+    type Item = AssetDependencyList;
 
     fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
         match f {
@@ -2963,11 +3064,7 @@ impl OutputFormatter for AssetDependenciesResponse {
                 let mut output = String::new();
 
                 // Extract the original asset name from the path (last part after the last slash)
-                let original_asset_name = self
-                    .original_asset_path
-                    .split('/')
-                    .next_back()
-                    .unwrap_or(&self.original_asset_path);
+                let original_asset_name = self.path.split('/').next_back().unwrap_or(&self.path);
 
                 output.push_str(&format!("{}\n", original_asset_name));
 
@@ -2990,7 +3087,69 @@ impl OutputFormatter for AssetDependenciesResponse {
     }
 }
 
+pub struct AssemblyNode {
+    asset: Asset,
+    children: Option<Box<Vec<AssemblyNode>>>,
+}
 
+impl AssemblyNode {
+    pub fn new(asset: Asset) -> Self {
+        Self {
+            asset,
+            children: None,
+        }
+    }
+
+    pub fn asset(&self) -> &Asset {
+        &self.asset
+    }
+
+    pub fn add_child_mut(&mut self, asset: Asset) -> &mut AssemblyNode {
+        let children = self.children.get_or_insert_with(|| Box::new(Vec::new()));
+        children.push(AssemblyNode::new(asset));
+        children.last_mut().expect("just pushed")
+    }
+
+    pub fn has_children(&self) -> bool {
+        self.children.is_some()
+    }
+
+    pub fn children(&self) -> std::slice::Iter<'_, AssemblyNode> {
+        self.children
+            .as_deref() // Option<&Vec<AssemblyNode>>
+            .map(|v| v.iter()) // Option<Iter<AssemblyNode>>
+            .unwrap_or_else(|| [].iter())
+    }
+
+    pub fn children_len(&self) -> usize {
+        self.children.as_deref().map_or(0, |v| v.len())
+    }
+}
+
+impl From<Asset> for AssemblyNode {
+    fn from(asset: Asset) -> Self {
+        Self::new(asset)
+    }
+}
+
+pub struct AssemblyTree {
+    root: AssemblyNode,
+}
+
+impl AssemblyTree {
+    pub fn new(asset: Asset) -> Self {
+        let root = AssemblyNode::new(asset);
+        Self { root }
+    }
+
+    pub fn root(&self) -> &AssemblyNode {
+        &self.root
+    }
+
+    pub fn root_mut(&mut self) -> &mut AssemblyNode {
+        &mut self.root
+    }
+}
 
 /// Represents asset state counts for a tenant
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -3014,7 +3173,13 @@ pub struct AssetStateCounts {
 
 impl AssetStateCounts {
     /// Create a new AssetStateCounts instance
-    pub fn new(processing: Option<u32>, ready: Option<u32>, failed: Option<u32>, unsupported: Option<u32>, no_3d_data: Option<u32>) -> AssetStateCounts {
+    pub fn new(
+        processing: Option<u32>,
+        ready: Option<u32>,
+        failed: Option<u32>,
+        unsupported: Option<u32>,
+        no_3d_data: Option<u32>,
+    ) -> AssetStateCounts {
         AssetStateCounts {
             processing,
             ready,
@@ -3031,7 +3196,10 @@ impl AssetStateCounts {
 }
 
 impl crate::format::Formattable for AssetStateCounts {
-    fn format(&self, f: &crate::format::OutputFormat) -> Result<String, crate::format::FormattingError> {
+    fn format(
+        &self,
+        f: &crate::format::OutputFormat,
+    ) -> Result<String, crate::format::FormattingError> {
         match f {
             crate::format::OutputFormat::Json(options) => {
                 let json = if options.pretty {
@@ -3048,7 +3216,13 @@ impl crate::format::Formattable for AssetStateCounts {
                 let mut wtr = csv::Writer::from_writer(vec![]);
 
                 if options.with_headers {
-                    wtr.serialize(("INDEXING", "FINISHED", "FAILED", "UNSUPPORTED", "NO-3D-DATA"))?;
+                    wtr.serialize((
+                        "INDEXING",
+                        "FINISHED",
+                        "FAILED",
+                        "UNSUPPORTED",
+                        "NO-3D-DATA",
+                    ))?;
                 }
 
                 wtr.serialize((

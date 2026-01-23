@@ -47,6 +47,14 @@ impl AuthClient {
         }
     }
 
+    pub fn new_with_auth_url(client_id: String, client_secret: String, auth_url: &str) -> Self {
+        Self {
+            token_url: auth_url.to_string(),
+            client_id,
+            client_secret,
+        }
+    }
+
     pub async fn get_access_token(&self) -> Result<String, AuthError> {
         let client = reqwest::Client::builder()
             .user_agent("PCLI2")

@@ -127,6 +127,9 @@ pub struct PhysnaApiClient {
     /// Client credentials (client_id, client_secret) for token refresh
     client_credentials: Option<(String, String)>, // (client_id, client_secret)
 
+    /// Auth URL for token refresh operations
+    auth_url: String,
+
     /// HTTP client for making requests
     http_client: HttpClient,
 }
@@ -197,6 +200,7 @@ impl PhysnaApiClient {
             base_url: "https://app-api.physna.com/v3".to_string(),
             access_token: None,
             client_credentials: None,
+            auth_url: "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token".to_string(),
             http_client,
         }
     }
@@ -216,6 +220,7 @@ impl PhysnaApiClient {
             base_url: configuration.get_api_base_url(),
             access_token: None,
             client_credentials: None,
+            auth_url: configuration.get_auth_base_url(),
             http_client,
         }
     }
@@ -275,8 +280,8 @@ impl PhysnaApiClient {
         if let Some((client_id, client_secret)) = &self.client_credentials {
             debug!("Attempting automatic re-authentication with cached client credentials");
 
-            // Create a new auth client with the stored credentials
-            let auth_client = AuthClient::new(client_id.clone(), client_secret.clone());
+            // Create a new auth client with the stored credentials and the correct auth URL
+            let auth_client = AuthClient::new_with_auth_url(client_id.clone(), client_secret.clone(), &self.auth_url);
 
             // Attempt to get a new access token
             match auth_client.get_access_token().await {

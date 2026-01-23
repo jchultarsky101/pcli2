@@ -58,6 +58,8 @@ pub const COMMAND_REMOVE: &str = "remove";
 pub const COMMAND_ENVIRONMENT_LIST: &str = "list";
 pub const COMMAND_ENVIRONMENT_GET: &str = "get";
 pub const COMMAND_RESET: &str = "reset";
+pub const COMMAND_CURRENT: &str = "current";
+pub const COMMAND_STATE: &str = "state";
 
 // Environment parameter names
 pub const PARAMETER_API_URL: &str = "api-url";
@@ -319,7 +321,7 @@ pub fn parent_folder_identifier_group() -> ArgGroup {
 /// Create tenant identifier group: it must be either --tenant-uuid or --tenant-name
 pub fn tenant_identifier_group() -> ArgGroup {
     ArgGroup::new("tenant-identifier")
-        .args([PARAMETER_TENANT_UUID, PARAMETER_TENANT_NAME])  // Using PARAMETER_TENANT_UUID for UUID and PARAMETER_TENANT_NAME for name
+        .args([PARAMETER_TENANT_UUID, PARAMETER_TENANT_NAME]) // Using PARAMETER_TENANT_UUID for UUID and PARAMETER_TENANT_NAME for name
         .multiple(false)
         .required(true)
 }

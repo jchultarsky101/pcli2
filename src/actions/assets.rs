@@ -58,6 +58,36 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 	Ok(())
 }
 
+pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing \"asset dependencies\" command...");
+    
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let format = get_format_parameter_value(sub_matches).await;
+    
+    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+    
+    // Resolve asset ID from either UUID parameter or path
+    let asset = if let Some(uuid) = asset_uuid_param {
+        let uuid = Uuid::from_str(uuid).unwrap(); 
+        api.get_asset_by_uuid(&tenant.uuid, &uuid).await?
+    } else if let Some(asset_path) = asset_path_param {
+        // Get asset cache or fetch assets from API
+        api.get_asset_by_path(&tenant.uuid, asset_path).await?
+    } else {
+        // This shouldn't happen due to our earlier check, but just in case
+        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+    };
+
+    let dependencies = api.get_asset_dependencies_by_path(&tenant.uuid, asset.path().as_str()).await?;
+
+    println!("{}", dependencies.format(format)?);        
+
+	Ok(())
+}
+
 pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     trace!("Executing file upload...");

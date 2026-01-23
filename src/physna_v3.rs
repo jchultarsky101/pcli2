@@ -897,7 +897,7 @@ impl PhysnaApiClient {
             let partial_asset_list: Vec<Asset> = response.assets.iter().map(|a| a.into()).collect();
             assets.extend(partial_asset_list);
             
-            page = response.page_data.current_page;
+            page = response.page_data.current_page + 1;
             if response.page_data.current_page >= response.page_data.last_page {
                 break;
             }
@@ -2167,36 +2167,6 @@ impl PhysnaApiClient {
     /// The dependencies represent other assets that are related to this asset, such as
     /// components in an assembly or referenced assets.
     /// 
-    /// IMPORTANT: Despite the parameter name, this endpoint expects the asset path,
-    /// not the asset ID/UUID. The Physna API uses the path in the URL for this endpoint.
-    /// 
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant that owns the asset
-    /// * `asset_path` - The path of the asset to retrieve dependencies for (e.g., "/Root/Folder/assembly.stl")
-    /// 
-    /// # Returns
-    /// * `Ok(AssetDependenciesResponse)` - Successfully fetched asset dependencies
-    /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_asset_dependencies(&mut self, tenant_id: &str, asset_path: &str) -> Result<crate::model::AssetDependenciesResponse, ApiError> {
-        debug!("Getting asset dependencies for tenant_id: {}, asset_path: {}", tenant_id, asset_path);
-        
-        let encoded_asset_path = urlencoding::encode(asset_path);
-        let url = format!("{}/tenants/{}/assets/{}/dependencies", self.base_url, tenant_id, encoded_asset_path);
-        debug!("Dependencies request URL: {}", url);
-        
-        // Execute the GET request using the generic method
-        let response: crate::model::AssetDependenciesResponse = self.get(&url).await?;
-        debug!("Successfully retrieved {} dependencies for asset_path: {}", response.dependencies.len(), asset_path);
-        
-        Ok(response)
-    }
-    
-    /// Get dependencies for a specific asset by path
-    /// 
-    /// This method retrieves all dependencies for the specified asset from the Physna API.
-    /// The dependencies represent other assets that are related to this asset, such as
-    /// components in an assembly or referenced assets.
-    /// 
     /// This method uses the path directly in the API endpoint, as the dependencies endpoint
     /// specifically requires the asset path rather than the asset ID.
     /// 
@@ -2207,13 +2177,13 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(AssetDependenciesResponse)` - Successfully fetched asset dependencies
     /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_asset_dependencies_by_path(&mut self, tenant_id: &str, asset_path: &str) -> Result<crate::model::AssetDependenciesResponse, ApiError> {
-        debug!("Getting asset dependencies by path for tenant_id: {}, asset_path: {}", tenant_id, asset_path);
+    pub async fn get_asset_dependencies_by_path(&mut self, tenant_uuid: &Uuid, asset_path: &str) -> Result<crate::model::AssetDependenciesResponse, ApiError> {
+        debug!("Getting asset dependencies by path for tenant_id: {}, asset_path: {}", tenant_uuid, asset_path);
         
         // URL encode the asset path to handle special characters properly
         let encoded_asset_path = urlencoding::encode(asset_path);
         
-        let url = format!("{}/tenants/{}/assets/{}/dependencies", self.base_url, tenant_id, encoded_asset_path);
+        let url = format!("{}/tenants/{}/assets/{}/dependencies", self.base_url, tenant_uuid, encoded_asset_path);
         debug!("Dependencies request URL: {}", url);
         
         // Execute the GET request using the generic method

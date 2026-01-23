@@ -8,17 +8,10 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, delete_asset, geometric_match_asset, geometric_match_folder, list_assets, print_asset, print_asset_metadata, download_asset, update_asset_metadata, delete_asset_metadata, metadata_inference, create_asset_metadata_batch, part_match_asset, part_match_folder, visual_match_asset, visual_match_folder
+            create_asset, create_asset_batch, create_asset_metadata_batch, delete_asset, delete_asset_metadata, download_asset, geometric_match_asset, geometric_match_folder, list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset, print_asset_dependencies, print_asset_metadata, update_asset_metadata, visual_match_asset, visual_match_folder
         },
         folders::{
-            create_folder,
-            delete_folder,
-            list_folders,
-            print_folder_details,
-            rename_folder,
-            move_folder,
-            resolve_folder,
-            download_folder
+            create_folder, delete_folder, download_folder, list_folders, move_folder, print_folder_details, rename_folder, resolve_folder
         },
         tenants::{
             clear_active_tenant,
@@ -31,43 +24,10 @@ use pcli2::{
     commands::{
         create_cli_commands,
         params::{
-            COMMAND_ASSET,
-            COMMAND_AUTH,
-            COMMAND_CONFIG,
-            COMMAND_CREATE,
-            COMMAND_CREATE_BATCH,
-            COMMAND_DELETE,
-            COMMAND_DOWNLOAD,
-            COMMAND_EXPORT,
-            COMMAND_FOLDER,
-            COMMAND_GET,
-            COMMAND_IMPORT,
-            COMMAND_LIST,
-            COMMAND_LOGIN,
-            COMMAND_LOGOUT,
-            COMMAND_MATCH,
-            COMMAND_MATCH_FOLDER,
-            COMMAND_METADATA,
-            COMMAND_PART_MATCH,
-            COMMAND_PART_MATCH_FOLDER,
-            COMMAND_VISUAL_MATCH,
-            COMMAND_VISUAL_MATCH_FOLDER,
-            COMMAND_CLEAR_TOKEN,
-            COMMAND_INFERENCE,
-            COMMAND_TENANT,
-            PARAMETER_API_URL,
-            PARAMETER_AUTH_URL,
-            PARAMETER_CLIENT_ID,
-            PARAMETER_CLIENT_SECRET,
-            PARAMETER_FILE,
-            PARAMETER_FORMAT,
-            PARAMETER_HEADERS,
-            PARAMETER_OUTPUT,
-            PARAMETER_PRETTY,
-            PARAMETER_UI_URL
+            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_MATCH_FOLDER, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_PART_MATCH_FOLDER, COMMAND_STATE, COMMAND_TENANT, COMMAND_USE, COMMAND_VISUAL_MATCH, COMMAND_VISUAL_MATCH_FOLDER, PARAMETER_API_URL, PARAMETER_AUTH_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY, PARAMETER_UI_URL
         }
     },
-    format::{Formattable, OutputFormat, OutputFormatOptions, FormattingError}};
+    format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions}};
 use pcli2::error_utils;
 use pcli2::auth::AuthClient;
 use pcli2::configuration::Configuration;
@@ -108,26 +68,26 @@ pub async fn execute_command() -> Result<(), CliError> {
                     get_tenant_details(sub_matches).await?;
                     Ok(())
                 }
-                Some(("use", sub_matches)) => {
-                    trace!("Command: {} use", COMMAND_TENANT);
+                Some((COMMAND_USE, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_USE);
 
                     set_active_tenant(sub_matches).await?;
                     Ok(())
                 }
-                Some(("current", sub_matches)) => {
-                    trace!("Command: {} current", COMMAND_TENANT);
+                Some((COMMAND_CURRENT, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_CURRENT);
 
                     print_active_tenant_name_with_format(sub_matches).await?;
                     Ok(())
                 }
-                Some(("clear", _sub_matches)) => {
-                    trace!("Command: {} clear", COMMAND_TENANT);
+                Some((COMMAND_CLEAR, _sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_CLEAR);
 
                     clear_active_tenant().await?;
                     Ok(())
                 }
-                Some(("state", sub_matches)) => {
-                    trace!("Command: {} state", COMMAND_TENANT);
+                Some((COMMAND_STATE, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_STATE);
 
                     pcli2::actions::tenants::get_tenant_state_counts(sub_matches).await?;
                     Ok(())
@@ -202,84 +162,67 @@ pub async fn execute_command() -> Result<(), CliError> {
             match sub_matches.subcommand() {
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_GET);
-
                     print_asset(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_DEPENDENCIES, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_DEPENDENCIES);
+
+                    print_asset_dependencies(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_CREATE, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_CREATE);
-                    trace!("Routing to asset create...");
-
                     create_asset(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_LIST);
-                    trace!("Routing to asset list...");
-
                     list_assets(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_CREATE_BATCH, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_CREATE_BATCH);
-                    trace!("Routing to asset batch create...");
-
                     create_asset_batch(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_DOWNLOAD, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_DOWNLOAD);
-                    trace!("Routing to asset download...");
-
                     download_asset(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_DELETE, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_DELETE);
-                    trace!("Routing to asset delete...");
-
                     delete_asset(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_MATCH, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MATCH);
-                    trace!("Routing to asset geometric match...");
-
                     geometric_match_asset(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_PART_MATCH, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_PART_MATCH);
-                    trace!("Routing to asset part match...");
-
                     part_match_asset(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_MATCH_FOLDER, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MATCH_FOLDER);
-                    trace!("Routing to asset geometric match folder...");
-
                     geometric_match_folder(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_PART_MATCH_FOLDER, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_PART_MATCH_FOLDER);
-                    trace!("Routing to asset part match folder...");
-
                     part_match_folder(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_VISUAL_MATCH, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_VISUAL_MATCH);
-                    trace!("Routing to asset visual match...");
-
                     visual_match_asset(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_VISUAL_MATCH_FOLDER, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_VISUAL_MATCH_FOLDER);
-                    trace!("Routing to asset visual match folder...");
-
                     visual_match_folder(sub_matches).await?;
                     Ok(())
                 }
@@ -289,36 +232,26 @@ pub async fn execute_command() -> Result<(), CliError> {
                     match sub_matches.subcommand() {
                         Some((COMMAND_CREATE, sub_matches)) => {
                             trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_CREATE);
-                            trace!("Routing to asset metadata create...");
-
                             update_asset_metadata(sub_matches).await?;
                             Ok(())
                         }
                         Some((COMMAND_GET, sub_matches)) => {
                             trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_GET);
-                            trace!("Routing to asset metadata get...");
-
                             print_asset_metadata(sub_matches).await?;
                             Ok(())
                         }
                         Some((COMMAND_DELETE, sub_matches)) => {
                             trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_DELETE);
-                            trace!("Routing to asset metadata delete...");
-
                             delete_asset_metadata(sub_matches).await?;
                             Ok(())
                         }
                         Some((COMMAND_INFERENCE, sub_matches)) => {
                             trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_INFERENCE);
-                            trace!("Routing to asset metadata inference...");
-
                             metadata_inference(sub_matches).await?;
                             Ok(())
                         }
                         Some(("create-batch", sub_matches)) => {
                             trace!("Command: {} {} create-batch", COMMAND_ASSET, COMMAND_METADATA);
-                            trace!("Routing to asset metadata create-batch...");
-
                             create_asset_metadata_batch(sub_matches).await?;
                             Ok(())
                         }

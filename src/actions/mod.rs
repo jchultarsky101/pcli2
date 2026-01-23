@@ -45,4 +45,7 @@ pub enum CliActionError {
 
     #[error("ZIP error: {0}")]
     ZipError(#[from] zip::result::ZipError),
+
+    #[error("{0}")]
+    BusinessLogicError(String),
 }

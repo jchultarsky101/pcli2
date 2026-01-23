@@ -273,9 +273,19 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         delete_folder_contents(&mut api, &tenant, &folder_uuid).await?;
     }
 
-    api.delete_folder(&tenant.uuid, &folder_uuid).await?;
-
-    Ok(())
+    match api.delete_folder(&tenant.uuid, &folder_uuid).await {
+        Ok(()) => Ok(()),
+        Err(api_error) => {
+            // Check if this is a 404 error on a folder deletion, which likely means the folder is not empty
+            if api_error.to_string().contains("404 Not Found") && !force_flag {
+                // The folder exists (we resolved the UUID successfully) but can't be deleted because it's not empty
+                return Err(CliError::ActionError(crate::actions::CliActionError::BusinessLogicError(
+                    format!("Folder is not empty. Use --force flag to delete the folder and all its contents recursively.")
+                )));
+            }
+            Err(CliError::PhysnaExtendedApiError(api_error))
+        }
+    }
 }
 
 use std::collections::VecDeque;

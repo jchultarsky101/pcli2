@@ -618,6 +618,14 @@ impl PhysnaApiClient {
                             retry_err
                         ))),
                     }
+                } else if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                    // Check if this is a folder deletion attempt on a non-empty folder
+                    // The API returns 404 for non-empty folders instead of a more appropriate error code
+                    if url.contains("/folders/") {
+                        debug!("Folder deletion failed with 404 - likely due to non-empty folder. Suggest using --force flag.");
+                        return Err(ApiError::HttpError(reqwest_err));
+                    }
+                    Err(ApiError::HttpError(reqwest_err))
                 } else {
                     Err(ApiError::HttpError(reqwest_err))
                 }
@@ -882,6 +890,7 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - HTTP error or other error
     pub async fn delete_folder(&mut self, tenant_uuid: &Uuid, folder_uuid: &Uuid) -> Result<(), ApiError> {
         let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_uuid, folder_uuid);
+        debug!("Attempting to delete folder with URL: {}", url);
         self.delete(&url).await
     }
     

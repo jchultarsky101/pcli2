@@ -889,9 +889,9 @@ impl PhysnaApiClient {
     /// * `Ok(())` - Successfully deleted folder
     /// * `Err(ApiError)` - HTTP error or other error
     pub async fn delete_folder(&mut self, tenant_uuid: &Uuid, folder_uuid: &Uuid) -> Result<(), ApiError> {
-        let url = format!("{}/tenants/{}/folders/{}", self.base_url, tenant_uuid, folder_uuid);
-        debug!("Attempting to delete folder with URL: {}", url);
-        self.delete(&url).await
+        let path = format!("/tenants/{}/folders/{}", tenant_uuid, folder_uuid);
+        debug!("Attempting to delete folder with path: {}", path);
+        self.delete(&path).await
     }
     
     // Asset operations
@@ -1217,8 +1217,8 @@ impl PhysnaApiClient {
     /// * `Ok(())` - Successfully deleted asset
     /// * `Err(ApiError)` - HTTP error or other error
     pub async fn delete_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<(), ApiError> {
-        let url = format!("{}/tenants/{}/assets/{}", self.base_url, tenant_id, asset_id);
-        self.delete(&url).await
+        let path = format!("/tenants/{}/assets/{}", tenant_id, asset_id);
+        self.delete(&path).await
     }
     
     /// Update an asset's metadata

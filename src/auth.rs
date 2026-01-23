@@ -56,17 +56,17 @@ impl AuthClient {
         tracing::debug!("Authenticating with token URL: {}", &self.token_url);
         tracing::debug!("Client ID: {}", &self.client_id);
 
-        // For client credentials flow, we don't need to specify a scope
-        // Only send grant_type in form data, client credentials go in Authorization header
+        // For AWS Cognito, send client credentials in the request body along with grant_type
         let params = [
             ("grant_type", "client_credentials"),
+            ("client_id", &self.client_id),
+            ("client_secret", &self.client_secret),
         ];
 
         let response = client
             .post(&self.token_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&params)
-            .basic_auth(&self.client_id, Some(&self.client_secret))
             .send()
             .await?;
 

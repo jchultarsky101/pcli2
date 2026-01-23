@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.11] - 2026-01-23
 
+### Added
+- Added 'pcli2 auth expiration' command to check access token validity and show expiration time in local time zone
+- Implemented JWT decoding functionality to extract expiration claims from access tokens
+- Added human-readable time remaining display (e.g., "59m 14s") for token expiration
+
 ### Fixed
 - Fixed asset dependencies command to properly handle assets with no dependencies (was showing authentication error)
 - Fixed token refresh mechanism to skip failing refresh attempts and guide users to re-authenticate properly
@@ -31,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated HTTP error handling to distinguish between authentication issues and missing resources
 - Enhanced AssemblyTree and AssemblyNode formatting with proper tree characters for better visualization
 - Improved tree format output using proper Unicode box-drawing characters (├──, └──, │)
+- Modified 'pcli2 auth expiration' command to display expiration time in user's local time zone instead of UTC
 
 ## [0.2.9] - 2026-01-20
 

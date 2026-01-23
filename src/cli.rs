@@ -37,7 +37,7 @@ use std::path::PathBuf;
 use tracing::{debug, trace};
 use base64::Engine;
 use std::time::{SystemTime, UNIX_EPOCH};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use pcli2::commands::params::COMMAND_EXPIRATION;
 
 #[derive(Debug)]
@@ -84,9 +84,12 @@ fn decode_jwt_expiration(token: &str) -> Result<TokenExpirationInfo, Box<dyn std
 
     let time_remaining = exp - current_time;
 
-    // Format the expiration time as a readable datetime
+    // Format the expiration time as a readable datetime in local timezone
     let expiration_datetime = DateTime::<Utc>::from_timestamp(exp, 0)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .map(|utc_dt| {
+            let local_dt = utc_dt.with_timezone(&Local);
+            local_dt.format("%Y-%m-%d %H:%M:%S %Z").to_string()
+        })
         .unwrap_or_else(|| "Invalid timestamp".to_string());
 
     // Format the time remaining in a human-readable format

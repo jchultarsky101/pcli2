@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed path calculation to properly maintain folder hierarchy in output ZIP files
 - Fixed error handling in folder download command to use correct error types
 
+## [0.2.11] - 2026-01-23
+
+### Fixed
+- Fixed asset dependencies command to properly handle assets with no dependencies (was showing authentication error)
+- Fixed token refresh mechanism to skip failing refresh attempts and guide users to re-authenticate properly
+- Improved error handling for 404 responses when assets have no dependencies
+- Added proper handling of NotFoundError in API response processing
+
+### Changed
+- Modified refresh_token method to attempt automatic re-authentication using cached credentials
+- Updated HTTP error handling to distinguish between authentication issues and missing resources
+- Enhanced AssemblyTree and AssemblyNode formatting with proper tree characters for better visualization
+- Improved tree format output using proper Unicode box-drawing characters (├──, └──, │)
+
 ## [0.2.9] - 2026-01-20
 
 ### Fixed

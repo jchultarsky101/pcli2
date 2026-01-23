@@ -3087,6 +3087,7 @@ impl OutputFormatter for AssetDependencyList {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssemblyNode {
     asset: Asset,
     children: Option<Box<Vec<AssemblyNode>>>,
@@ -3132,6 +3133,133 @@ impl From<Asset> for AssemblyNode {
     }
 }
 
+impl OutputFormatter for AssemblyNode {
+    type Item = AssemblyNode;
+
+    fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                // For JSON, serialize the node and its children recursively
+                let json = if options.pretty {
+                    serde_json::to_string_pretty(&self)
+                } else {
+                    serde_json::to_string(&self)
+                };
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv(options) => {
+                // For CSV, we'll create a flat representation of the node and its children
+                let mut records = Vec::new();
+
+                // Add the current node
+                records.push(vec![
+                    self.asset().path(),
+                    self.asset().name(),
+                    self.asset().uuid().to_string(),
+                    self.asset().processing_status().cloned().unwrap_or_default(),
+                    self.children_len().to_string(),
+                ]);
+
+                // Add children recursively
+                for child in self.children() {
+                    let child_records = child.as_csv_records_recursive()?;
+                    records.extend(child_records);
+                }
+
+                let mut wtr = Writer::from_writer(vec![]);
+
+                if options.with_headers {
+                    wtr.serialize(("ASSET_PATH", "ASSET_NAME", "ASSET_UUID", "ASSET_STATE", "CHILDREN_COUNT"))?;
+                }
+
+                for record in records {
+                    wtr.serialize(&record)?;
+                }
+
+                let data = wtr.into_inner()?;
+                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+            }
+            OutputFormat::Tree(_) => {
+                // For tree format, use ptree for better formatting
+                Ok(self.build_ptree_string())
+            }
+        }
+    }
+}
+
+impl AssemblyNode {
+    /// Helper method to create CSV records recursively for all nodes in the tree
+    fn as_csv_records_recursive(&self) -> Result<Vec<Vec<String>>, FormattingError> {
+        let mut records = Vec::new();
+
+        // Add current node
+        records.push(vec![
+            self.asset().path(),
+            self.asset().name(),
+            self.asset().uuid().to_string(),
+            self.asset().processing_status().cloned().unwrap_or_default(),
+            self.children_len().to_string(),
+        ]);
+
+        // Add children recursively
+        for child in self.children() {
+            let child_records = child.as_csv_records_recursive()?;
+            records.extend(child_records);
+        }
+
+        Ok(records)
+    }
+
+
+    /// Format the tree structure with proper indentation and tree characters
+    fn build_ptree_string(&self) -> String {
+        self.format_tree_with_chars("", true, true)
+    }
+
+    /// Helper method to format the tree recursively with proper tree characters
+    fn format_tree_with_chars(&self, prefix: &str, is_last: bool, is_root: bool) -> String {
+        let connector = if is_root {
+            String::new()  // No connector for root
+        } else if is_last {
+            "└── ".to_string()
+        } else {
+            "├── ".to_string()
+        };
+
+        let current_line = format!("{}{}{} ({})\n",
+                                  prefix,
+                                  connector,
+                                  self.asset().name(),
+                                  self.asset().uuid());
+
+        if !self.has_children() {
+            return current_line;
+        }
+
+        let child_prefix = if is_root {
+            String::new()
+        } else {
+            format!("{}{}",
+                   prefix,
+                   if is_last { "    " } else { "│   " })
+        };
+
+        let mut result = current_line;
+        let children: Vec<_> = self.children().collect();
+
+        for (i, child) in children.iter().enumerate() {
+            let is_child_last = i == children.len() - 1;
+            result.push_str(&child.format_tree_with_chars(&child_prefix, is_child_last, false));
+        }
+
+        result
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssemblyTree {
     root: AssemblyNode,
 }
@@ -3148,6 +3276,48 @@ impl AssemblyTree {
 
     pub fn root_mut(&mut self) -> &mut AssemblyNode {
         &mut self.root
+    }
+}
+
+impl OutputFormatter for AssemblyTree {
+    type Item = AssemblyTree;
+
+    fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                // For JSON, serialize the entire tree
+                let json = if options.pretty {
+                    serde_json::to_string_pretty(&self)
+                } else {
+                    serde_json::to_string(&self)
+                };
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv(options) => {
+                // For CSV, use the root node's recursive CSV functionality
+                let records = self.root().as_csv_records_recursive()?;
+
+                let mut wtr = Writer::from_writer(vec![]);
+
+                if options.with_headers {
+                    wtr.serialize(("ASSET_PATH", "ASSET_NAME", "ASSET_UUID", "ASSET_STATE", "CHILDREN_COUNT"))?;
+                }
+
+                for record in records {
+                    wtr.serialize(&record)?;
+                }
+
+                let data = wtr.into_inner()?;
+                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+            }
+            OutputFormat::Tree(_) => {
+                // For tree format, use ptree for better formatting
+                Ok(self.root().build_ptree_string())
+            }
+        }
     }
 }
 

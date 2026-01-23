@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use crate::auth::AuthClient;
 use crate::folder_hierarchy::FolderHierarchy;
 use crate::http_utils::HttpClient;
@@ -78,6 +78,10 @@ pub enum ApiError {
     
     #[error("Invalid path for asset. Check asset name: {0}")]
     InvalidAssetPath(String),
+
+    /// Not found error with a descriptive message
+    #[error("Not found error: {0}")]
+    NotFoundError(String),
 }
 
 pub trait TryDefault: Sized {
@@ -427,6 +431,20 @@ impl PhysnaApiClient {
             // Special handling for 404 errors that might be due to authentication issues
             // The API sometimes returns 404 instead of 401/403 when authentication is missing or invalid
             if status == reqwest::StatusCode::NOT_FOUND {
+                // Check if this is a "no dependencies found" error which is a valid response, not an auth issue
+                // Use the error_body that was already read from the response
+                let error_text = error_body.clone();
+
+                // If the error message indicates no dependencies found, return an appropriate response
+                if error_text.contains("No dependencies found for asset") {
+                    debug!("Asset has no dependencies (404 with 'No dependencies found' message), returning empty response");
+
+                    // For dependency requests, return an empty dependencies response instead of an error
+                    // We need to determine the type T and handle it appropriately
+                    // For now, let's let this bubble up as a specific error that can be handled by the caller
+                    return Err(ApiError::NotFoundError(error_text));
+                }
+
                 // If we have no access token, this is definitely an authentication issue
                 if self.access_token.is_none() {
                     debug!("404 error with no access token - treating as authentication error");
@@ -2171,27 +2189,88 @@ impl PhysnaApiClient {
         let physna_path = physna_path.as_ref();
 
         debug!("Getting asset dependencies by path for tenant UUID: {}, physna path: {}", tenant_uuid, physna_path);
-        
+
         // URL encode the asset path to handle special characters properly
         let encoded_asset_path = urlencoding::encode(physna_path);
-        
+
         let url = format!("{}/tenants/{}/assets/{}/dependencies?page={}&per_page={}", self.base_url, tenant_uuid, encoded_asset_path, page, per_page);
         debug!("Dependencies request URL: {}", url);
-        
+
         // Execute the GET request using the generic method
-        let response: AssetDependenciesResponse = self.get(&url).await?;
-        debug!("Successfully retrieved {} dependencies for asset_path: {}", response.dependencies.len(), physna_path);
-        
-        Ok(response)
+        // Handle the case where an asset has no dependencies (which may return 404)
+        // The API returns 404 when no dependencies exist, which we now handle as a NotFoundError
+        match self.get(&url).await {
+            Ok(response) => Ok(response),
+            Err(ApiError::NotFoundError(error_msg)) => {
+                // Check if this is a "no dependencies found" error which is a valid response
+                if error_msg.contains("No dependencies found for asset") {
+                    debug!("Asset has no dependencies (404 with 'No dependencies found' message), returning empty response");
+                    Ok(AssetDependenciesResponse {
+                        dependencies: vec![],
+                        page_data: crate::model::PageData {
+                            current_page: page,
+                            per_page,
+                            total: 0,
+                            last_page: 1,
+                            start_index: 0,
+                            end_index: 0,
+                        },
+                        original_asset_path: physna_path.to_string(),
+                    })
+                } else {
+                    // Re-raise the original error if it's not related to missing dependencies
+                    Err(ApiError::NotFoundError(error_msg))
+                }
+            }
+            Err(ApiError::HttpError(reqwest_err)) => {
+                // Check if this is a 404 error which might indicate no dependencies
+                if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                    // Return an empty response instead of an error
+                    debug!("Asset has no dependencies (404 received), returning empty response");
+                    Ok(AssetDependenciesResponse {
+                        dependencies: vec![],
+                        page_data: crate::model::PageData {
+                            current_page: page,
+                            per_page,
+                            total: 0,
+                            last_page: 1,
+                            start_index: 0,
+                            end_index: 0,
+                        },
+                        original_asset_path: physna_path.to_string(),
+                    })
+                } else {
+                    // Re-raise the original error if it's not a 404
+                    Err(ApiError::HttpError(reqwest_err))
+                }
+            }
+            Err(ApiError::AuthError(msg)) => {
+                // Check if the auth error message contains indication of "no dependencies"
+                // This happens when the 404 gets converted to auth error during token refresh
+                if msg.contains("No dependencies found for asset") || msg.contains("404") {
+                    debug!("Asset has no dependencies (converted auth error), returning empty response");
+                    Ok(AssetDependenciesResponse {
+                        dependencies: vec![],
+                        page_data: crate::model::PageData {
+                            current_page: page,
+                            per_page,
+                            total: 0,
+                            last_page: 1,
+                            start_index: 0,
+                            end_index: 0,
+                        },
+                        original_asset_path: physna_path.to_string(),
+                    })
+                } else {
+                    // Re-raise the auth error if it's not related to missing dependencies
+                    Err(ApiError::AuthError(msg))
+                }
+            }
+            Err(e) => Err(e), // Re-raise any other error
+        }
     }
     
 
-    fn get_asset_path_as_pathbuf(asset: &Asset) -> Result<PathBuf, ApiError> {
-        let path = PathBuf::from(asset.path());
-        let file_name = path.file_name()
-            .ok_or_else(|| ApiError::InvalidAssetPath(format!("Invalid path: {}", asset.path())))?;
-        Ok(PathBuf::from(file_name))
-    }
     
     #[async_recursion]
     async fn populate_asset_dependencies_recursive(

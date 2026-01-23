@@ -48,7 +48,9 @@ impl AuthClient {
     }
 
     pub async fn get_access_token(&self) -> Result<String, AuthError> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .user_agent("PCLI2")
+            .build()?;
 
         // Add tracing to see which URL is being used
         tracing::debug!("Authenticating with token URL: {}", &self.token_url);

@@ -1,6 +1,7 @@
 use std::path::Path;
 use crate::auth::AuthClient;
 use crate::folder_hierarchy::FolderHierarchy;
+use crate::http_utils::HttpClient;
 use crate::keyring::{Keyring, KeyringError};
 use crate::model::{Asset, AssetList, AssetListResponse, CurrentUserResponse, FolderList, FolderListResponse, SingleAssetResponse, SingleFolderResponse};
 use reqwest;
@@ -102,15 +103,15 @@ pub trait TryDefault: Sized {
 pub struct PhysnaApiClient {
     /// Base URL for the Physna V3 API (e.g., "https://app-api.physna.com/v3")
     base_url: String,
-    
+
     /// Current access token for API authentication
     access_token: Option<String>,
-    
+
     /// Client credentials (client_id, client_secret) for token refresh
     client_credentials: Option<(String, String)>, // (client_id, client_secret)
-    
+
     /// HTTP client for making requests
-    http_client: reqwest::Client,
+    http_client: HttpClient,
 }
 
 
@@ -172,14 +173,14 @@ impl PhysnaApiClient {
     ///     .with_client_credentials("client_id".to_string(), "client_secret".to_string());
     /// ```
     pub fn new() -> Self {
+        let config = crate::http_utils::HttpRequestConfig::default();
+        let http_client = HttpClient::new(config).expect("Failed to build HTTP client with timeout");
+
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
             access_token: None,
             client_credentials: None,
-            http_client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60)) // 60-second timeout for all requests
-                .build()
-                .expect("Failed to build HTTP client with timeout"),
+            http_client,
         }
     }
 
@@ -191,14 +192,14 @@ impl PhysnaApiClient {
     /// # Returns
     /// A new `PhysnaApiClient` instance with the configured base URL
     pub fn new_with_configuration(configuration: &crate::configuration::Configuration) -> Self {
+        let config = crate::http_utils::HttpRequestConfig::from_configuration(configuration);
+        let http_client = HttpClient::new(config).expect("Failed to build HTTP client with timeout");
+
         Self {
             base_url: configuration.get_api_base_url(),
             access_token: None,
             client_credentials: None,
-            http_client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60)) // 60-second timeout for all requests
-                .build()
-                .expect("Failed to build HTTP client with timeout"),
+            http_client,
         }
     }
     
@@ -306,21 +307,21 @@ impl PhysnaApiClient {
     }
     
     /// Generic method to build and execute HTTP requests with automatic token refresh on 401/403 errors
-    /// 
+    ///
     /// This method provides a unified interface for making HTTP requests to the Physna V3 API.
     /// It automatically handles:
     /// - Adding access tokens to authenticated requests
     /// - Detecting authentication failures (401/403)
     /// - Refreshing expired tokens using client credentials
     /// - Retrying failed requests with refreshed tokens
-    /// 
+    ///
     /// # Type Parameters
     /// * `T` - The type to deserialize the response into (must implement `DeserializeOwned`)
     /// * `F` - A closure that builds the HTTP request
-    /// 
+    ///
     /// # Arguments
     /// * `request_builder` - A closure that takes a `reqwest::Client` and returns a `RequestBuilder`
-    /// 
+    ///
     /// # Returns
     /// * `Ok(T)` - Successfully executed request with parsed response
     /// * `Err(ApiError)` - HTTP error, JSON parsing error, or authentication failure
@@ -329,14 +330,16 @@ impl PhysnaApiClient {
         T: serde::de::DeserializeOwned,
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
-        // Build and execute the initial request
-        let mut request = request_builder(&self.http_client);
-        
+        // Build the request using the original builder
+        let mut request = request_builder(&self.http_client.client); // Access the underlying reqwest client
+
         // Add access token header if available for authentication
         if let Some(token) = &self.access_token {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
-        
+
+        // Execute the request using the HttpClient's execute_request method
+        // We need to manually handle the authentication here since we're bypassing HttpClient's built-in auth
         let response = request.send().await?;
 
         // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
@@ -351,7 +354,7 @@ impl PhysnaApiClient {
 
             // Retry the original request with the newly refreshed token
             debug!("Retrying request with refreshed token");
-            let mut retry_request = request_builder(&self.http_client);
+            let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
             // Add the refreshed access token to the retry request
             if let Some(token) = &self.access_token {
@@ -430,7 +433,7 @@ impl PhysnaApiClient {
                     } else {
                         // If refresh succeeds, retry the request
                         debug!("Token refreshed successfully, retrying request");
-                        let mut retry_request = request_builder(&self.http_client);
+                        let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
                         if let Some(token) = &self.access_token {
                             retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
@@ -474,7 +477,7 @@ impl PhysnaApiClient {
                     } else {
                         // If refresh succeeds, retry the request
                         debug!("Token refreshed successfully, retrying request after {} error", status);
-                        let mut retry_request = request_builder(&self.http_client);
+                        let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
                         if let Some(token) = &self.access_token {
                             retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
@@ -566,48 +569,34 @@ impl PhysnaApiClient {
     
     /// Generic method to build and execute DELETE requests with automatic token refresh
     async fn delete(&mut self, url: &str) -> Result<(), ApiError> {
-        // For DELETE requests, we build and execute the request directly
-        // without trying to parse JSON from the response
-        let mut request = self.http_client.delete(url);
-        
-        // Add access token if available
-        if let Some(token) = &self.access_token {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-        
-        let response = request.send().await?;
-        
-        // Check if we need to retry due to authentication issues
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED || 
-           response.status() == reqwest::StatusCode::FORBIDDEN {
-            debug!("Received authentication error ({}), attempting token refresh", response.status());
-            
-            // Try to refresh the token
-            self.refresh_token().await?;
-            
-            // Retry the request with the new token
-            debug!("Retrying DELETE request with refreshed token");
-            let mut retry_request = self.http_client.delete(url);
-            
-            if let Some(token) = &self.access_token {
-                retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
+        // Use the HttpClient's delete method which includes the user agent
+        match self.http_client.delete(url, self.access_token.as_deref()).await {
+            Ok(()) => Ok(()),
+            Err(ApiError::HttpError(reqwest_err)) => {
+                // Check if the error is due to authentication
+                if reqwest_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED) ||
+                   reqwest_err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+                    debug!("Received authentication error ({}), attempting token refresh",
+                           reqwest_err.status().unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR));
+
+                    // Try to refresh the token
+                    self.refresh_token().await?;
+
+                    // Retry the request with the new token
+                    debug!("Retrying DELETE request with refreshed token");
+                    match self.http_client.delete(url, self.access_token.as_deref()).await {
+                        Ok(()) => Ok(()),
+                        Err(retry_err) => Err(ApiError::RetryFailed(format!(
+                            "Original error: {}, Retry failed with error: {}",
+                            reqwest_err,
+                            retry_err
+                        ))),
+                    }
+                } else {
+                    Err(ApiError::HttpError(reqwest_err))
+                }
             }
-            
-            let retry_response = retry_request.send().await?;
-            
-            if retry_response.status().is_success() {
-                Ok(())
-            } else {
-                Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Retry failed with status: {}", 
-                    response.status(), 
-                    retry_response.status()
-                )))
-            }
-        } else if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+            Err(other_err) => Err(other_err),
         }
     }
 
@@ -897,10 +886,12 @@ impl PhysnaApiClient {
             let partial_asset_list: Vec<Asset> = response.assets.iter().map(|a| a.into()).collect();
             assets.extend(partial_asset_list);
             
-            page = response.page_data.current_page + 1;
             if response.page_data.current_page >= response.page_data.last_page {
                 break;
             }
+
+            // Increment the current page
+            page = response.page_data.current_page + 1;
         }
 
         Ok(assets.into())
@@ -1384,16 +1375,16 @@ impl PhysnaApiClient {
     }
     
     /// Generic method to execute requests that may return empty responses
-    /// 
+    ///
     /// This method is similar to execute_request but handles empty responses gracefully.
     /// It's useful for API endpoints that return 204 No Content or empty bodies on success.
-    /// 
+    ///
     /// # Type Parameters
     /// * `F` - A closure that builds the HTTP request
-    /// 
+    ///
     /// # Arguments
     /// * `request_builder` - A closure that takes a `reqwest::Client` and returns a `RequestBuilder`
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - Successfully executed request (empty response is considered success)
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
@@ -1401,14 +1392,14 @@ impl PhysnaApiClient {
     where
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
-        // Build and execute the initial request
-        let mut request = request_builder(&self.http_client);
-        
+        // Build the request using the original builder
+        let mut request = request_builder(&self.http_client.client); // Access the underlying reqwest client
+
         // Add access token header if available for authentication
         if let Some(token) = &self.access_token {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
-        
+
         let response = request.send().await?;
 
         // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
@@ -1417,21 +1408,21 @@ impl PhysnaApiClient {
         // A 403 can also indicate an expired token in some cases
         if response.status() == reqwest::StatusCode::UNAUTHORIZED || response.status() == reqwest::StatusCode::FORBIDDEN {
             debug!("Received authentication error ({}), attempting token refresh", response.status());
-            
+
             // Try to refresh the expired or invalid access token
             self.refresh_token().await?;
-            
+
             // Retry the original request with the newly refreshed token
             debug!("Retrying request with refreshed token");
-            let mut retry_request = request_builder(&self.http_client);
-            
+            let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
+
             // Add the refreshed access token to the retry request
             if let Some(token) = &self.access_token {
                 retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
             }
-            
+
             let retry_response = retry_request.send().await?;
-            
+
             // Check if the retry was successful
             if retry_response.status().is_success() {
                 // For empty responses, we consider success as a successful update
@@ -1440,10 +1431,10 @@ impl PhysnaApiClient {
                 // Retry failed - provide clear error information
                 let status = retry_response.status();
                 let error_text = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}", 
+                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}",
                     response.status(), status, error_text);
                 Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Retry failed with status: {} and body: {}", 
+                    "Original error: {}, Retry failed with status: {} and body: {}",
                     response.status(), status, error_text
                 )))
             }
@@ -1476,7 +1467,7 @@ impl PhysnaApiClient {
                     } else {
                         // If refresh succeeds, retry the request
                         debug!("Token refreshed successfully, retrying request after {} error", status);
-                        let mut retry_request = request_builder(&self.http_client);
+                        let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
                         if let Some(token) = &self.access_token {
                             retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
@@ -1606,59 +1597,59 @@ impl PhysnaApiClient {
         form = form.text("folderId", folder_uuid.to_string());
         
         debug!("Creating asset with path: {}", asset_path);
-        
-        // Build and execute the request with multipart form data
-        let mut request = self.http_client.post(&url)
+
+        // Build and execute the request with multipart form data using the underlying client to ensure user agent is included
+        let mut request = self.http_client.client.post(&url)
             .multipart(form);
-        
+
         // Add access token if available
         if let Some(token) = &self.access_token {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
-        
+
         let response = request.send().await?;
-        
+
         // Check if we need to retry due to authentication issues
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED || 
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED ||
            response.status() == reqwest::StatusCode::FORBIDDEN {
             debug!("Received authentication error ({}), attempting token refresh", response.status());
-            
+
             // Try to refresh the token
             self.refresh_token().await?;
-            
+
             // Create a new form for the retry
             let file_data = tokio::fs::read(file_path).await?;
             let file_part = reqwest::multipart::Part::bytes(file_data)
                 .file_name(file_name.clone());
-            
+
             // Build the multipart form with file part and required parameters
             let mut retry_form = reqwest::multipart::Form::new()
                 .part("file", file_part)
                 .text("path", asset_path.clone())  // Use the full asset path including folder
                 .text("metadata", "")  // Empty metadata as in the working example
                 .text("createMissingFolders", "");  // Empty createMissingFolders as in the working example
-            
+
             // Add folder ID if provided
             retry_form = retry_form.text("folderId", folder_uuid.to_string());
-            
+
             debug!("Retrying asset creation with path: {}", asset_path);
-            
-            // Retry the request with the new token
+
+            // Retry the request with the new token using the underlying client to ensure user agent is included
             debug!("Retrying asset creation request with refreshed token");
-            let mut retry_request = self.http_client.post(&url)
+            let mut retry_request = self.http_client.client.post(&url)
                 .multipart(retry_form);
-            
+
             if let Some(token) = &self.access_token {
                 retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
             }
-            
+
             let retry_response = retry_request.send().await?;
             
             if retry_response.status().is_success() {
                 // Try to get the raw response text for debugging
-                let text = retry_response.text().await?;
+                let text: String = retry_response.text().await?;
                 debug!("Raw asset creation retry response: {}", text);
-                
+
                 // Try to parse as SingleAssetResponse
                 match serde_json::from_str::<crate::model::SingleAssetResponse>(&text) {
                     Ok(result) => Ok(Asset::from(&result.asset)),
@@ -1688,8 +1679,8 @@ impl PhysnaApiClient {
                     }
                     _ => {
                         Err(ApiError::RetryFailed(format!(
-                            "Original error: {}, Retry failed with status: {}", 
-                            response.status(), 
+                            "Original error: {}, Retry failed with status: {}",
+                            response.status(),
                             retry_response.status()
                         )))
                     }
@@ -1697,9 +1688,9 @@ impl PhysnaApiClient {
             }
         } else if response.status().is_success() {
             // Try to get the raw response text for debugging
-            let text = response.text().await?;
+            let text: String = response.text().await?;
             debug!("Raw asset creation response: {}", text);
-            
+
             // Try to parse as SingleAssetResponse
             match serde_json::from_str::<crate::model::SingleAssetResponse>(&text) {
                 Ok(result) => Ok(Asset::from(&result.asset)),
@@ -2222,34 +2213,36 @@ impl PhysnaApiClient {
     ///
     /// This method downloads the raw file content of the specified asset from the Physna API.
     /// The file content is returned as a vector of bytes that can be saved to disk.
-    /// 
+    ///
     /// The API endpoint follows the pattern: GET /tenants/{tenantId}/assets/{assetId}/file
-    /// 
+    ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the asset
     /// * `asset_id` - The UUID of the asset to download
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Vec<u8>)` - Successfully downloaded file content as bytes
     /// * `Err(ApiError)` - If there was an error during API calls
     pub async fn download_asset(&mut self, tenant_id: &str, asset_id: &str) -> Result<Vec<u8>, ApiError> {
         debug!("Downloading asset file for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
-        
+
         let url = format!("{}/tenants/{}/assets/{}/file", self.base_url, tenant_id, asset_id);
         debug!("Download asset file request URL: {}", url);
-        
-        // Execute GET request for file content
+
+        // Execute GET request for file content using HttpClient
+        // Since HttpClient doesn't handle binary responses directly, we'll use the underlying client
         let response = self
             .http_client
+            .client
             .get(&url)
-            .bearer_auth(&self.access_token.as_ref().ok_or_else(|| ApiError::AuthError("No access token available for download".to_string()))?)
+            .header("Authorization", format!("Bearer {}", self.access_token.as_ref().ok_or_else(|| ApiError::AuthError("No access token available for download".to_string()))?))
             .send()
             .await
             .map_err(|e| {
                 debug!("Failed to send download request: {}", e);
                 ApiError::from(e)
             })?;
-        
+
         // Check status code
         if !response.status().is_success() {
             let status = response.status();
@@ -2286,7 +2279,7 @@ impl PhysnaApiClient {
                 }
             }
         }
-        
+
         // Get the file content as bytes
         let bytes = response
             .bytes()
@@ -2295,7 +2288,7 @@ impl PhysnaApiClient {
                 debug!("Failed to read response bytes: {}", e);
                 ApiError::HttpError(e)
             })?;
-        
+
         debug!("Successfully downloaded {} bytes for asset_id: {}", bytes.len(), asset_id);
         Ok(bytes.to_vec())
     }

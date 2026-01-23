@@ -23,9 +23,12 @@ pub struct HttpRequestConfig {
 
 impl Default for HttpRequestConfig {
     fn default() -> Self {
+        let mut default_headers = HashMap::new();
+        default_headers.insert("User-Agent".to_string(), "PCLI2".to_string());
+
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
-            default_headers: HashMap::new(),
+            default_headers,
             timeout: 60, // 60 seconds
             retry_on_auth_error: true,
         }
@@ -34,9 +37,12 @@ impl Default for HttpRequestConfig {
 
 impl HttpRequestConfig {
     pub fn from_configuration(configuration: &crate::configuration::Configuration) -> Self {
+        let mut default_headers = HashMap::new();
+        default_headers.insert("User-Agent".to_string(), "PCLI2".to_string());
+
         Self {
             base_url: configuration.get_api_base_url(),
-            default_headers: HashMap::new(),
+            default_headers,
             timeout: 60, // 60 seconds
             retry_on_auth_error: true,
         }
@@ -44,9 +50,10 @@ impl HttpRequestConfig {
 }
 
 /// HTTP client wrapper with common request handling logic
+#[derive(Clone)]
 pub struct HttpClient {
     /// The reqwest client instance
-    client: Client,
+    pub client: Client,
     /// Configuration for the HTTP client
     config: HttpRequestConfig,
 }

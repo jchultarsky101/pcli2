@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.12] - 2026-01-24
+## [0.2.11] - 2026-01-24
 
 ### Fixed
 - Fixed token refresh mechanism to save refreshed tokens to keyring immediately after refresh
@@ -17,8 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved token saving logic to refresh_token method for immediate persistence of new tokens
 - Added token saving calls to all API request methods after successful refresh
 - Improved error handling for token refresh operations
-
-## [0.2.11] - 2026-01-23
 
 ### Added
 - Added 'pcli2 auth expiration' command to check access token validity and show expiration time in local time zone
@@ -328,7 +326,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.12...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.11...HEAD
 [0.2.7]: https://github.com/physna/pcli2/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/physna/pcli2/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/physna/pcli2/compare/v0.2.4...v0.2.5

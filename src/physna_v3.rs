@@ -310,7 +310,14 @@ impl PhysnaApiClient {
                 Ok(new_token) => {
                     debug!("Successfully obtained new access token automatically");
                     // Update the stored access token
-                    self.access_token = Some(new_token);
+                    self.access_token = Some(new_token.clone());
+
+                    // Save the new token to the keyring immediately to ensure subsequent commands use the fresh token
+                    if let Err(e) = self.save_current_token_to_keyring(&self.environment_name) {
+                        debug!("Failed to save refreshed token to keyring: {}", e);
+                        // Continue anyway - the in-memory token is still valid for this session
+                    }
+
                     Ok(())
                 }
                 Err(e) => {

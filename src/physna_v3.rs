@@ -82,6 +82,9 @@ pub enum ApiError {
     /// Not found error with a descriptive message
     #[error("Not found error: {0}")]
     NotFoundError(String),
+
+    #[error("Attempting to delete folder that is not empty. If you are sure, use the --force flag")]
+    FolderNotEmptyError,
 }
 
 pub trait TryDefault: Sized {
@@ -888,9 +891,14 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(())` - Successfully deleted folder
     /// * `Err(ApiError)` - HTTP error or other error
-    pub async fn delete_folder(&mut self, tenant_uuid: &Uuid, folder_uuid: &Uuid) -> Result<(), ApiError> {
+    pub async fn delete_folder(&mut self, tenant_uuid: &Uuid, folder_uuid: &Uuid, force: bool) -> Result<(), ApiError> {
         let path = format!("/tenants/{}/folders/{}", tenant_uuid, folder_uuid);
         debug!("Attempting to delete folder with path: {}", path);
+
+        let folder = self.get_folder(tenant_uuid, folder_uuid).await?;
+        if (folder.folders_count() > 0 || folder.assets_count() > 0) && !force {
+            return Err(ApiError::FolderNotEmptyError);
+        }
         self.delete(&path).await
     }
     

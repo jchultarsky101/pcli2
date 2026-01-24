@@ -135,6 +135,9 @@ pub struct PhysnaApiClient {
 
     /// HTTP client for making requests
     http_client: HttpClient,
+
+    /// Environment name for keyring storage
+    environment_name: String,
 }
 
 
@@ -156,7 +159,7 @@ impl TryDefault for PhysnaApiClient {
 
         match access_token {
             Some(token) => {
-                let mut client = PhysnaApiClient::new_with_configuration(&configuration).with_access_token(token);
+                let mut client = PhysnaApiClient::new_with_configuration_and_environment(&configuration, environment_name).with_access_token(token);
 
                 // Try to get client credentials for automatic token refresh
                 if let (Some(id), Some(secret)) = (client_id, client_secret) {
@@ -205,6 +208,7 @@ impl PhysnaApiClient {
             client_credentials: None,
             auth_url: "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token".to_string(),
             http_client,
+            environment_name: "default".to_string(),
         }
     }
 
@@ -225,9 +229,24 @@ impl PhysnaApiClient {
             client_credentials: None,
             auth_url: configuration.get_auth_base_url(),
             http_client,
+            environment_name: "default".to_string(), // Default environment name for backward compatibility
         }
     }
-    
+
+    pub fn new_with_configuration_and_environment(configuration: &crate::configuration::Configuration, environment_name: String) -> Self {
+        let config = crate::http_utils::HttpRequestConfig::from_configuration(configuration);
+        let http_client = HttpClient::new(config).expect("Failed to build HTTP client with timeout");
+
+        Self {
+            base_url: configuration.get_api_base_url(),
+            access_token: None,
+            client_credentials: None,
+            auth_url: configuration.get_auth_base_url(),
+            http_client,
+            environment_name,
+        }
+    }
+
     /// Set the base URL for the API client
     /// 
     /// # Arguments
@@ -269,7 +288,7 @@ impl PhysnaApiClient {
     /// 
     /// This method tries to obtain a new access token using the stored client credentials.
     /// It's called automatically when API requests fail with authentication errors (401/403).
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - Token successfully refreshed
     /// * `Err(ApiError::AuthError)` - Failed to refresh token or no credentials available
@@ -279,7 +298,7 @@ impl PhysnaApiClient {
         // If this automatic re-authentication fails, we'll prompt the user to run 'pcli2 auth login'.
 
         debug!("Attempting to automatically refresh the access token using the cached credentials...");
-        
+
         if let Some((client_id, client_secret)) = &self.client_credentials {
             debug!("Attempting automatic re-authentication with cached client credentials");
 
@@ -460,8 +479,15 @@ impl PhysnaApiClient {
                             "Authentication required: Access token may be invalid or expired. Please log in with 'pcli2 auth login'.".to_string()
                         ));
                     } else {
-                        // If refresh succeeds, retry the request
-                        debug!("Token refreshed successfully, retrying request");
+                        // If refresh succeeds, save the token and retry the request
+                        debug!("Token refreshed successfully, saving to keyring and retrying request");
+
+                        // Save the refreshed token to the keyring so subsequent requests use the fresh token
+                        if let Err(e) = self.save_current_token_to_keyring_internal() {
+                            debug!("Failed to save refreshed token to keyring: {}", e);
+                            // Continue anyway - the in-memory token is still valid for this session
+                        }
+
                         let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
                         if let Some(token) = &self.access_token {
@@ -610,6 +636,12 @@ impl PhysnaApiClient {
 
                     // Try to refresh the token
                     self.refresh_token().await?;
+
+                    // Save the refreshed token to the keyring so subsequent requests use the fresh token
+                    if let Err(e) = self.save_current_token_to_keyring_internal() {
+                        debug!("Failed to save refreshed token to keyring: {}", e);
+                        // Continue anyway - the in-memory token is still valid for this session
+                    }
 
                     // Retry the request with the new token
                     debug!("Retrying DELETE request with refreshed token");
@@ -1651,6 +1683,12 @@ impl PhysnaApiClient {
             // Try to refresh the token
             self.refresh_token().await?;
 
+            // Save the refreshed token to the keyring so subsequent requests use the fresh token
+            if let Err(e) = self.save_current_token_to_keyring_internal() {
+                debug!("Failed to save refreshed token to keyring: {}", e);
+                // Continue anyway - the in-memory token is still valid for this session
+            }
+
             // Create a new form for the retry
             let file_data = tokio::fs::read(file_path).await?;
             let file_part = reqwest::multipart::Part::bytes(file_data)
@@ -2481,5 +2519,40 @@ mod tests {
         // This test documents that for non-root paths, the function
         // calls get_folder_uuid_by_path and returns its result
         // Implementation would require mocking which is complex for this case
+    }
+}
+
+impl PhysnaApiClient {
+    /// Save the current access token to the keyring
+    ///
+    /// This method allows the current access token to be persisted to the keyring
+    /// after it has been refreshed automatically. This ensures that subsequent
+    /// requests will use the fresh token instead of the expired one.
+    ///
+    /// # Arguments
+    /// * `environment_name` - The environment name to use as the keyring service name
+    ///
+    /// # Returns
+    /// * `Ok(())` - Token successfully saved to keyring
+    /// * `Err(ApiError)` - Failed to save token to keyring
+    pub fn save_current_token_to_keyring(&self, environment_name: &str) -> Result<(), ApiError> {
+        if let Some(token) = &self.access_token {
+            let mut keyring = crate::keyring::Keyring::default();
+            keyring.put(environment_name, "access-token".to_string(), token.clone())
+                .map_err(|e| ApiError::AuthError(format!("Failed to save token to keyring: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    /// Save the current access token to the keyring using the stored environment name
+    ///
+    /// This method is a convenience wrapper that uses the environment name stored in the client
+    /// to save the current access token to the keyring.
+    ///
+    /// # Returns
+    /// * `Ok(())` - Token successfully saved to keyring
+    /// * `Err(ApiError)` - Failed to save token to keyring
+    fn save_current_token_to_keyring_internal(&self) -> Result<(), ApiError> {
+        self.save_current_token_to_keyring(&self.environment_name)
     }
 }

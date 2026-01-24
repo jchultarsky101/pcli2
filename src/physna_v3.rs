@@ -2289,16 +2289,18 @@ impl PhysnaApiClient {
                 .await?;
 
             for dependency in response.dependencies {
-                // Convert dependency asset once
-                let child_asset: Asset = dependency.asset.into();
+                // Convert dependency asset once, but only if it exists
+                if let Some(asset_response) = dependency.asset {
+                    let child_asset: Asset = asset_response.into();
 
-                // Insert into tree and get a mutable reference to the stored node
-                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset);
+                    // Insert into tree and get a mutable reference to the stored node
+                    let child_node: &mut AssemblyNode = root.add_child_mut(child_asset);
 
-                // Recurse on the stored child node if it has dependencies
-                if dependency.has_dependencies {
-                    self.populate_asset_dependencies_recursive(tenant_uuid, child_node)
-                        .await?;
+                    // Recurse on the stored child node if it has dependencies
+                    if dependency.has_dependencies {
+                        self.populate_asset_dependencies_recursive(tenant_uuid, child_node)
+                            .await?;
+                    }
                 }
             }
 

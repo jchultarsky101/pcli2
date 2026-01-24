@@ -2947,8 +2947,9 @@ pub struct MetadataFieldListResponse {
 pub struct AssetDependency {
     /// The Physna path of the dependent asset
     pub path: String,
-    /// The asset details
-    pub asset: AssetResponse,
+    /// The asset details (optional because some dependencies may not have full asset details)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset: Option<AssetResponse>,
     /// Number of occurrences
     pub occurrences: u32,
     /// Whether the dependency has its own dependencies
@@ -3000,15 +3001,23 @@ impl CsvRecordProducer for AssetDependencyList {
         self.dependencies
             .iter()
             .map(|dep| {
+                let (asset_uuid, asset_filename) = match &dep.asset {
+                    Some(asset) => {
+                        let filename = asset
+                            .path
+                            .split('/')
+                            .next_back()
+                            .unwrap_or(&asset.path)
+                            .to_string();
+                        (asset.uuid.to_string(), filename)
+                    }
+                    None => ("N/A".to_string(), "N/A".to_string()),
+                };
+
                 vec![
                     dep.path.clone(),
-                    dep.asset.uuid.to_string(),
-                    dep.asset
-                        .path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&dep.asset.path)
-                        .to_string(), // Just the filename
+                    asset_uuid,
+                    asset_filename,
                     dep.occurrences.to_string(),
                     dep.has_dependencies.to_string(),
                 ]
@@ -3069,12 +3078,23 @@ impl OutputFormatter for AssetDependencyList {
                 output.push_str(&format!("{}\n", original_asset_name));
 
                 for dep in &self.dependencies {
-                    let asset_name = dep
-                        .asset
-                        .path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&dep.asset.path);
+                    let asset_name = match &dep.asset {
+                        Some(asset) => asset
+                            .path
+                            .split('/')
+                            .next_back()
+                            .unwrap_or(&asset.path)
+                            .to_string(),
+                        None => {
+                            // If asset details are not available, use the path directly
+                            dep.path
+                                .split('/')
+                                .next_back()
+                                .unwrap_or(&dep.path)
+                                .to_string()
+                        }
+                    };
+
                     output.push_str(&format!(
                         "├── {} ({} occurrences)\n",
                         asset_name, dep.occurrences
@@ -3159,7 +3179,10 @@ impl OutputFormatter for AssemblyNode {
                     self.asset().path(),
                     self.asset().name(),
                     self.asset().uuid().to_string(),
-                    self.asset().processing_status().cloned().unwrap_or_default(),
+                    self.asset()
+                        .processing_status()
+                        .cloned()
+                        .unwrap_or_default(),
                     self.children_len().to_string(),
                 ]);
 
@@ -3172,7 +3195,13 @@ impl OutputFormatter for AssemblyNode {
                 let mut wtr = Writer::from_writer(vec![]);
 
                 if options.with_headers {
-                    wtr.serialize(("ASSET_PATH", "ASSET_NAME", "ASSET_UUID", "ASSET_STATE", "CHILDREN_COUNT"))?;
+                    wtr.serialize((
+                        "ASSET_PATH",
+                        "ASSET_NAME",
+                        "ASSET_UUID",
+                        "ASSET_STATE",
+                        "CHILDREN_COUNT",
+                    ))?;
                 }
 
                 for record in records {
@@ -3200,7 +3229,10 @@ impl AssemblyNode {
             self.asset().path(),
             self.asset().name(),
             self.asset().uuid().to_string(),
-            self.asset().processing_status().cloned().unwrap_or_default(),
+            self.asset()
+                .processing_status()
+                .cloned()
+                .unwrap_or_default(),
             self.children_len().to_string(),
         ]);
 
@@ -3213,49 +3245,32 @@ impl AssemblyNode {
         Ok(records)
     }
 
-
-    /// Format the tree structure with proper indentation and tree characters
+    /// Format the tree structure using ptree crate
     fn build_ptree_string(&self) -> String {
-        self.format_tree_with_chars("", true, true)
-    }
+        use ptree::TreeBuilder;
 
-    /// Helper method to format the tree recursively with proper tree characters
-    fn format_tree_with_chars(&self, prefix: &str, is_last: bool, is_root: bool) -> String {
-        let connector = if is_root {
-            String::new()  // No connector for root
-        } else if is_last {
-            "└── ".to_string()
-        } else {
-            "├── ".to_string()
-        };
+        fn build_ptree_recursive(builder: &mut TreeBuilder, node: &AssemblyNode) {
+            for child in node.children() {
+                let child_label = format!("{} ({})", child.asset().name(), child.asset().uuid());
+                builder.begin_child(child_label);
 
-        let current_line = format!("{}{}{} ({})\n",
-                                  prefix,
-                                  connector,
-                                  self.asset().name(),
-                                  self.asset().uuid());
+                // Recursively add grandchildren
+                build_ptree_recursive(builder, child);
 
-        if !self.has_children() {
-            return current_line;
+                builder.end_child();
+            }
         }
 
-        let child_prefix = if is_root {
-            String::new()
-        } else {
-            format!("{}{}",
-                   prefix,
-                   if is_last { "    " } else { "│   " })
-        };
+        let mut builder = TreeBuilder::new(format!("{} ({})", self.asset().name(), self.asset().uuid()));
 
-        let mut result = current_line;
-        let children: Vec<_> = self.children().collect();
+        // Add all direct children of the root node
+        build_ptree_recursive(&mut builder, self);
 
-        for (i, child) in children.iter().enumerate() {
-            let is_child_last = i == children.len() - 1;
-            result.push_str(&child.format_tree_with_chars(&child_prefix, is_child_last, false));
-        }
+        let tree = builder.build();
 
-        result
+        let mut buffer = Vec::new();
+        ptree::write_tree(&tree, &mut buffer).unwrap();
+        String::from_utf8(buffer).unwrap_or_default()
     }
 }
 
@@ -3303,7 +3318,13 @@ impl OutputFormatter for AssemblyTree {
                 let mut wtr = Writer::from_writer(vec![]);
 
                 if options.with_headers {
-                    wtr.serialize(("ASSET_PATH", "ASSET_NAME", "ASSET_UUID", "ASSET_STATE", "CHILDREN_COUNT"))?;
+                    wtr.serialize((
+                        "ASSET_PATH",
+                        "ASSET_NAME",
+                        "ASSET_UUID",
+                        "ASSET_STATE",
+                        "CHILDREN_COUNT",
+                    ))?;
                 }
 
                 for record in records {

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.12] - 2026-01-24
+
+### Fixed
+- Fixed token refresh mechanism to save refreshed tokens to keyring immediately after refresh in all API request methods
+- Ensured subsequent commands use fresh tokens instead of expired ones after automatic refresh
+- Resolved compilation warnings related to unused functions and imports
+- Fixed AssemblyTree OutputFormatter implementation to properly handle all output formats (JSON, CSV, Tree)
+
+### Changed
+- Added token saving calls to all API request execution methods after successful refresh
+- Improved error handling for token refresh operations across all API methods
+- Consolidated token refresh and save logic for better reliability
+
 ## [0.2.11] - 2026-01-24
 
 ### Fixed

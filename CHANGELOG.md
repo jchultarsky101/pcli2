@@ -5,18 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.10] - 2026-01-21
-
-### Added
-- Enhanced folder download command to recursively download assets from all subfolders
-- Added --output parameter to folder download command for custom output file paths
-- Added preservation of folder structure in ZIP files created by folder download command
-- Added support for downloading entire tenant root folder with tenant name as default filename
+## [0.2.12] - 2026-01-24
 
 ### Fixed
-- Fixed folder download command to only process descendant folders instead of all folders in tenant
-- Fixed path calculation to properly maintain folder hierarchy in output ZIP files
-- Fixed error handling in folder download command to use correct error types
+- Fixed token refresh mechanism to save refreshed tokens to keyring immediately after refresh
+- Ensured subsequent commands use fresh tokens instead of expired ones after automatic refresh
+- Resolved compilation warnings related to unused functions and imports
+- Fixed AssemblyTree OutputFormatter implementation to properly handle tree format output
+
+### Changed
+- Moved token saving logic to refresh_token method for immediate persistence of new tokens
+- Added token saving calls to all API request methods after successful refresh
+- Improved error handling for token refresh operations
 
 ## [0.2.11] - 2026-01-23
 

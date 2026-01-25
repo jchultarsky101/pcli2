@@ -13,7 +13,7 @@ use crate::commands::params::{
     COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH,
     COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH_FOLDER, COMMAND_TEXT_MATCH, COMMAND_VISUAL_MATCH,
     COMMAND_VISUAL_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
-    PARAMETER_FILE, PARAMETER_FOLDER_PATHS, PARAMETER_PROGRESS,
+    PARAMETER_FILE, PARAMETER_FOLDER_PATHS, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
 
@@ -339,8 +339,8 @@ pub fn asset_command() -> Command {
                     .value_parser(clap::value_parser!(String)),
             )
             .arg(
-                Arg::new("fuzzy")
-                    .long("fuzzy")
+                Arg::new(PARAMETER_FUZZY)
+                    .long(PARAMETER_FUZZY)
                     .action(clap::ArgAction::SetTrue)
                     .help("Perform fuzzy search instead of exact search (default: false, which means exact search with quoted text)"),
             )

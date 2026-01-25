@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::actions::CliActionError;
 use crate::{
     actions::folders::resolve_folder_uuid_by_path,
-    commands::params::{PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID},
+    commands::params::{PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID, PARAMETER_FUZZY},
     configuration::Configuration,
     error::CliError,
     error_utils,
@@ -2791,7 +2791,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .ok_or(CliError::MissingRequiredArgument("text query is required".to_string()))?;
 
     // Get the fuzzy flag - if not specified, default to false (meaning exact search with quoted text)
-    let fuzzy = sub_matches.get_flag("fuzzy");
+    let fuzzy = sub_matches.get_flag(PARAMETER_FUZZY);
 
     // If fuzzy is false (default), wrap the text query in quotes for exact search
     let search_query = if fuzzy {

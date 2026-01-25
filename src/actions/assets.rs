@@ -2790,6 +2790,16 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let text_query = sub_matches.get_one::<String>("text")
         .ok_or(CliError::MissingRequiredArgument("text query is required".to_string()))?;
 
+    // Get the fuzzy flag - if not specified, default to false (meaning exact search with quoted text)
+    let fuzzy = sub_matches.get_flag("fuzzy");
+
+    // If fuzzy is false (default), wrap the text query in quotes for exact search
+    let search_query = if fuzzy {
+        text_query.clone()
+    } else {
+        format!("\"{}\"", text_query)
+    };
+
     // Get format parameters directly from sub_matches since text match commands have format flags
     let format_str = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
         format_val.clone()
@@ -2820,7 +2830,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let tenant_name = ctx.tenant().name.clone();
 
     // Perform text search
-    let mut search_results = ctx.api().text_search(&tenant_uuid, text_query).await?;
+    let mut search_results = ctx.api().text_search(&tenant_uuid, &search_query).await?;
 
     // Load configuration to get the UI base URL
     let configuration = crate::configuration::Configuration::load_or_create_default()
@@ -2863,7 +2873,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Create enhanced response that includes the search query information
     let enhanced_response = crate::model::EnhancedTextSearchResponse {
-        search_query: text_query.clone(),
+        search_query: text_query.clone(), // Use the original user input for display
         matches: search_results.matches,
     };
 

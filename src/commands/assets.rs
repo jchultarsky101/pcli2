@@ -338,6 +338,12 @@ pub fn asset_command() -> Command {
                     .help("Text query to search for in assets")
                     .value_parser(clap::value_parser!(String)),
             )
+            .arg(
+                Arg::new("fuzzy")
+                    .long("fuzzy")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Perform fuzzy search instead of exact search (default: false, which means exact search with quoted text)"),
+            )
             .arg(format_with_headers_parameter())
             .arg(format_pretty_parameter())
             .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])) // Only support JSON and CSV as requested

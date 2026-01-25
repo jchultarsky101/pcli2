@@ -2442,7 +2442,7 @@ impl PhysnaApiClient {
                         dependency.path.clone(),
                         None, // file_size
                         None, // file_type
-                        Some("unknown".to_string()), // processing_status
+                        Some("missing".to_string()), // processing_status
                         None, // created_at
                         None, // updated_at
                         None, // metadata

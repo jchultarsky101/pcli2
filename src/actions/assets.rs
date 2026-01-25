@@ -140,7 +140,7 @@ fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencie
             asset_type: child.asset().file_type().cloned().unwrap_or_else(|| "unknown".to_string()),
             created_at: child.asset().created_at().cloned().unwrap_or_default(),
             updated_at: child.asset().updated_at().cloned().unwrap_or_default(),
-            state: child.asset().processing_status().cloned().unwrap_or_else(|| "unknown".to_string()),
+            state: child.asset().processing_status().cloned().unwrap_or_else(|| "missing".to_string()),
             is_assembly: child.has_children(),
             metadata: std::collections::HashMap::new(), // Empty metadata
             parent_folder_id: None,

@@ -1416,6 +1416,21 @@ impl Asset {
         self.processing_status.as_ref()
     }
 
+    /// Get the normalized processing status of the asset
+    /// Converts "missing-dependencies" to "missing" for consistency
+    pub fn normalized_processing_status(&self) -> String {
+        match &self.processing_status {
+            Some(status) => {
+                if status == "missing-dependencies" {
+                    "missing".to_string()
+                } else {
+                    status.clone()
+                }
+            }
+            None => "missing".to_string(),
+        }
+    }
+
     /// Get the creation timestamp of the asset
     pub fn created_at(&self) -> Option<&String> {
         self.created_at.as_ref()
@@ -1442,13 +1457,20 @@ impl From<&AssetResponse> for Asset {
             .unwrap_or(&asset_response.path)
             .to_string();
 
+        // Normalize the state: convert "missing-dependencies" to "missing"
+        let normalized_state = if asset_response.state == "missing-dependencies" {
+            "missing".to_string()
+        } else {
+            asset_response.state.clone()
+        };
+
         Asset::new(
             asset_response.uuid.to_owned(),
             name,
             asset_response.path.clone(),
             None, // file_size not in current API response
             Some(asset_response.asset_type.clone()),
-            Some(asset_response.state.clone()),
+            Some(normalized_state),
             Some(asset_response.created_at.clone()),
             Some(asset_response.updated_at.clone()),
             Some(asset_response.metadata.clone().into()),

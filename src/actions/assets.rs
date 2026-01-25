@@ -2841,34 +2841,16 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ))?;
     let ui_base_url = configuration.get_ui_base_url();
 
-    // Populate comparison URLs for each match
+    // Populate asset URLs for each match (not comparison URLs since text search doesn't compare two assets)
     for match_result in &mut search_results.matches {
         let base_url = ui_base_url.trim_end_matches('/');
-        let relevance_score = match_result.relevance_score.unwrap_or(0.0);
-        let comparison_url = if base_url.ends_with("/tenants") {
-            format!(
-                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=text&relevanceScore={:.2}",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                "", // For text search, we don't have a reference asset, so leave empty
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-                relevance_score
-            )
-        } else {
-            format!(
-                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=text&relevanceScore={:.2}",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                "", // For text search, we don't have a reference asset, so leave empty
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-                relevance_score
-            )
-        };
-        match_result.comparison_url = Some(comparison_url);
+        let asset_url = format!(
+            "{}/tenants/{}/asset/{}",
+            base_url, // Use configurable UI base URL without trailing slash
+            tenant_name, // Use tenant short name in path
+            match_result.asset.uuid
+        );
+        match_result.comparison_url = Some(asset_url); // Store asset URL in comparison_url field for text search
     }
 
     // Create enhanced response that includes the search query information

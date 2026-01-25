@@ -1416,6 +1416,21 @@ impl Asset {
         self.processing_status.as_ref()
     }
 
+    /// Get the normalized processing status of the asset
+    /// Converts "missing-dependencies" to "missing" for consistency
+    pub fn normalized_processing_status(&self) -> String {
+        match &self.processing_status {
+            Some(status) => {
+                if status == "missing-dependencies" {
+                    "missing".to_string()
+                } else {
+                    status.clone()
+                }
+            }
+            None => "missing".to_string(),
+        }
+    }
+
     /// Get the creation timestamp of the asset
     pub fn created_at(&self) -> Option<&String> {
         self.created_at.as_ref()
@@ -1442,13 +1457,20 @@ impl From<&AssetResponse> for Asset {
             .unwrap_or(&asset_response.path)
             .to_string();
 
+        // Normalize the state: convert "missing-dependencies" to "missing"
+        let normalized_state = if asset_response.state == "missing-dependencies" {
+            "missing".to_string()
+        } else {
+            asset_response.state.clone()
+        };
+
         Asset::new(
             asset_response.uuid.to_owned(),
             name,
             asset_response.path.clone(),
             None, // file_size not in current API response
             Some(asset_response.asset_type.clone()),
-            Some(asset_response.state.clone()),
+            Some(normalized_state),
             Some(asset_response.created_at.clone()),
             Some(asset_response.updated_at.clone()),
             Some(asset_response.metadata.clone().into()),
@@ -2942,9 +2964,9 @@ pub struct MetadataFieldListResponse {
     pub metadata_fields: Vec<MetadataField>,
 }
 
-/// Represents a dependency relationship for an asset
+/// Represents a dependency relationship for an asset from the API
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AssetDependency {
+pub struct AssetDependencyApiResponse {
     /// The Physna path of the dependent asset
     pub path: String,
     /// The asset details (optional because some dependencies may not have full asset details)
@@ -2957,11 +2979,41 @@ pub struct AssetDependency {
     pub has_dependencies: bool,
 }
 
+/// Represents a dependency relationship for an asset with assembly path information
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetDependency {
+    /// The Physna path of the dependent asset
+    pub path: String,
+    /// The asset details (optional because some dependencies may not have full asset details)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset: Option<AssetResponse>,
+    /// Number of occurrences
+    pub occurrences: u32,
+    /// Whether the dependency has its own dependencies
+    #[serde(rename = "hasDependencies")]
+    pub has_dependencies: bool,
+    /// The assembly path showing the location of this dependency within the assembly hierarchy
+    #[serde(rename = "assemblyPath")]
+    pub assembly_path: String,
+}
+
+impl From<AssetDependencyApiResponse> for AssetDependency {
+    fn from(api_dep: AssetDependencyApiResponse) -> Self {
+        AssetDependency {
+            path: api_dep.path,
+            asset: api_dep.asset,
+            occurrences: api_dep.occurrences,
+            has_dependencies: api_dep.has_dependencies,
+            assembly_path: String::new(), // Will be filled in by the tree building logic
+        }
+    }
+}
+
 /// Represents the response from the asset dependencies API endpoint
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetDependenciesResponse {
     /// List of assets that depend on this asset
-    pub dependencies: Vec<AssetDependency>,
+    pub dependencies: Vec<AssetDependencyApiResponse>,
     /// Pagination data for the response
     #[serde(rename = "pageData")]
     pub page_data: PageData,
@@ -2978,9 +3030,15 @@ pub struct AssetDependencyList {
 
 impl From<AssetDependenciesResponse> for AssetDependencyList {
     fn from(response: AssetDependenciesResponse) -> Self {
+        // Convert from API response to our internal representation
+        let dependencies = response.dependencies
+            .into_iter()
+            .map(|api_dep| AssetDependency::from(api_dep))
+            .collect();
+
         Self {
             path: response.original_asset_path,
-            dependencies: response.dependencies,
+            dependencies,
         }
     }
 }
@@ -2988,10 +3046,12 @@ impl From<AssetDependenciesResponse> for AssetDependencyList {
 impl CsvRecordProducer for AssetDependencyList {
     fn csv_header() -> Vec<String> {
         vec![
-            "PATH".to_string(),
+            "ASSET_PATH".to_string(),
             "ASSEMBLY_PATH".to_string(),
-            "ASSET_ID".to_string(),
+            "DEPENDENCY_PATH".to_string(),
+            "ASSET_UUID".to_string(),
             "ASSET_NAME".to_string(),
+            "ASSET_STATE".to_string(),
             "OCCURRENCES".to_string(),
             "HAS_DEPENDENCIES".to_string(),
         ]
@@ -3001,7 +3061,7 @@ impl CsvRecordProducer for AssetDependencyList {
         self.dependencies
             .iter()
             .map(|dep| {
-                let (asset_uuid, asset_filename) = match &dep.asset {
+                let (asset_uuid, asset_filename, asset_state) = match &dep.asset {
                     Some(asset) => {
                         let filename = asset
                             .path
@@ -3009,17 +3069,42 @@ impl CsvRecordProducer for AssetDependencyList {
                             .next_back()
                             .unwrap_or(&asset.path)
                             .to_string();
-                        (asset.uuid.to_string(), filename)
+                        // Normalize state values - convert "missing-dependencies" to "missing" for consistency
+                        let normalized_state = if asset.state == "missing-dependencies" {
+                            "missing".to_string()
+                        } else {
+                            asset.state.clone()
+                        };
+                        (
+                            if asset.uuid.is_nil() {
+                                "None".to_string()
+                            } else {
+                                asset.uuid.to_string()
+                            },
+                            filename,
+                            normalized_state
+                        )
                     }
-                    None => ("N/A".to_string(), "N/A".to_string()),
+                    None => {
+                        // For missing dependencies, use the path as the name and mark as missing
+                        let filename = dep.path
+                            .split('/')
+                            .next_back()
+                            .unwrap_or(&dep.path)
+                            .to_string();
+                        ("N/A".to_string(), filename, "missing".to_string()) // For missing dependencies
+                    }
                 };
 
                 vec![
-                    dep.path.clone(),
-                    asset_uuid,
-                    asset_filename,
-                    dep.occurrences.to_string(),
-                    dep.has_dependencies.to_string(),
+                    self.path.clone(), // ASSET_PATH (the original asset)
+                    dep.assembly_path.clone(), // ASSEMBLY_PATH (the relative path within assembly hierarchy)
+                    dep.path.clone(), // DEPENDENCY_PATH (the dependency path)
+                    asset_uuid, // ASSET_UUID
+                    asset_filename, // ASSET_NAME
+                    asset_state, // ASSET_STATE (added as requested)
+                    dep.occurrences.to_string(), // OCCURRENCES
+                    dep.has_dependencies.to_string(), // HAS_DEPENDENCIES
                 ]
             })
             .collect()
@@ -3031,9 +3116,87 @@ impl OutputFormatter for AssetDependencyList {
 
     fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
         match f {
-            OutputFormat::Json(_) => {
-                let json = serde_json::to_string_pretty(self);
-                match json {
+            OutputFormat::Json(options) => {
+                // Create a simplified representation for JSON output that includes state information
+                #[derive(Serialize)]
+                struct SimplifiedAssetDependency {
+                    path: String,
+                    assembly_path: String,
+                    asset_id: Option<String>,
+                    asset_name: Option<String>,
+                    asset_state: Option<String>,
+                    occurrences: u32,
+                    has_dependencies: bool,
+                }
+
+                #[derive(Serialize)]
+                struct SimplifiedAssetDependencyList {
+                    asset_path: String,
+                    dependencies: Vec<SimplifiedAssetDependency>,
+                }
+
+                let simplified_deps: Vec<SimplifiedAssetDependency> = self.dependencies
+                    .iter()
+                    .map(|dep| {
+                        let (asset_id, asset_name, asset_state) = match &dep.asset {
+                            Some(asset) => {
+                                let name = asset
+                                    .path
+                                    .split('/')
+                                    .next_back()
+                                    .unwrap_or(&asset.path)
+                                    .to_string();
+                                // Normalize state values - convert "missing-dependencies" to "missing" for consistency
+                                let normalized_state = if asset.state == "missing-dependencies" {
+                                    "missing".to_string()
+                                } else {
+                                    asset.state.clone()
+                                };
+                                (
+                                    Some(if asset.uuid.is_nil() {
+                                        "None".to_string()
+                                    } else {
+                                        asset.uuid.to_string()
+                                    }),
+                                    Some(name),
+                                    Some(normalized_state)
+                                )
+                            }
+                            None => {
+                                // For missing dependencies, use the path as the name and mark as missing
+                                let name = dep.path
+                                    .split('/')
+                                    .next_back()
+                                    .unwrap_or(&dep.path)
+                                    .to_string();
+                                (None, Some(name), Some("missing".to_string())) // Mark missing dependencies with "missing" state
+                            }
+                        };
+
+                        SimplifiedAssetDependency {
+                            path: dep.path.clone(),
+                            assembly_path: dep.assembly_path.clone(),
+                            asset_id,
+                            asset_name,
+                            asset_state,
+                            occurrences: dep.occurrences,
+                            has_dependencies: dep.has_dependencies,
+                        }
+                    })
+                    .collect();
+
+                let simplified_list = SimplifiedAssetDependencyList {
+                    asset_path: self.path.clone(),
+                    dependencies: simplified_deps,
+                };
+
+                let result = if options.pretty {
+                    serde_json::to_string_pretty(&simplified_list)
+                } else {
+                    serde_json::to_string(&simplified_list)
+                };
+
+                match result {
                     Ok(json) => Ok(json),
                     Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
@@ -3069,39 +3232,57 @@ impl OutputFormatter for AssetDependencyList {
                 })
             }
             OutputFormat::Tree(_) => {
-                // Create a tree representation of the dependencies with original asset as root
-                let mut output = String::new();
+                // Create a tree representation using the ptree crate
+                use ptree::TreeBuilder;
 
-                // Extract the original asset name from the path (last part after the last slash)
-                let original_asset_name = self.path.split('/').next_back().unwrap_or(&self.path);
-
-                output.push_str(&format!("{}\n", original_asset_name));
+                let mut tree = TreeBuilder::new(
+                    self.path
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(&self.path)
+                        .to_string()
+                );
 
                 for dep in &self.dependencies {
-                    let asset_name = match &dep.asset {
-                        Some(asset) => asset
-                            .path
-                            .split('/')
-                            .next_back()
-                            .unwrap_or(&asset.path)
-                            .to_string(),
+                    let (asset_name, asset_state) = match &dep.asset {
+                        Some(asset) => {
+                            let name = asset
+                                .path
+                                .split('/')
+                                .next_back()
+                                .unwrap_or(&asset.path)
+                                .to_string();
+                            // Normalize state values - convert "missing-dependencies" to "missing" for consistency
+                            let normalized_state = if asset.state == "missing-dependencies" {
+                                "missing".to_string()
+                            } else {
+                                asset.state.clone()
+                            };
+                            (name, normalized_state)
+                        },
                         None => {
-                            // If asset details are not available, use the path directly
-                            dep.path
+                            // If asset details are not available, use the path directly and mark as missing
+                            let name = dep.path
                                 .split('/')
                                 .next_back()
                                 .unwrap_or(&dep.path)
-                                .to_string()
+                                .to_string();
+                            (name, "missing".to_string())
                         }
                     };
 
-                    output.push_str(&format!(
-                        "├── {} ({} occurrences)\n",
-                        asset_name, dep.occurrences
-                    ));
+                    let node_label = format!("{} [{}] ({} occurrences)", asset_name, asset_state, dep.occurrences);
+                    tree.add_empty_child(node_label);
                 }
 
-                Ok(output)
+                let tree = tree.build();
+
+                let mut output = Vec::new();
+                ptree::write_tree(&tree, &mut output)
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+
+                String::from_utf8(output)
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })
             }
         }
     }
@@ -3251,7 +3432,13 @@ impl AssemblyNode {
 
         fn build_ptree_recursive(builder: &mut TreeBuilder, node: &AssemblyNode) {
             for child in node.children() {
-                let child_label = format!("{} ({})", child.asset().name(), child.asset().uuid());
+                let state = child.asset().processing_status().as_ref().map(|s| s.as_str()).unwrap_or("missing");
+                let uuid_str = if child.asset().uuid().is_nil() {
+                    "None".to_string()
+                } else {
+                    child.asset().uuid().to_string()
+                };
+                let child_label = format!("{} [{}] ({})", child.asset().name(), state, uuid_str);
                 builder.begin_child(child_label);
 
                 // Recursively add grandchildren
@@ -3261,7 +3448,13 @@ impl AssemblyNode {
             }
         }
 
-        let mut builder = TreeBuilder::new(format!("{} ({})", self.asset().name(), self.asset().uuid()));
+        let state = self.asset().processing_status().as_ref().map(|s| s.as_str()).unwrap_or("missing");
+        let uuid_str = if self.asset().uuid().is_nil() {
+            "None".to_string()
+        } else {
+            self.asset().uuid().to_string()
+        };
+        let mut builder = TreeBuilder::new(format!("{} [{}] ({})", self.asset().name(), state, uuid_str));
 
         // Add all direct children of the root node
         build_ptree_recursive(&mut builder, self);
@@ -3708,17 +3901,101 @@ impl OutputFormatter for TextMatchPair {
                 let mut wtr = csv::Writer::from_writer(vec![]);
 
                 if options.with_headers {
-                    wtr.serialize(Self::csv_header())?;
+                    if options.with_metadata {
+                        // Include metadata columns in the header
+                        let mut base_headers = TextMatchPair::csv_header();
+
+                        // Get unique metadata keys from both reference and candidate assets
+                        let mut all_metadata_keys = std::collections::HashSet::new();
+
+                        // Collect metadata keys from reference asset
+                        for key in self.reference_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Collect metadata keys from candidate asset
+                        for key in self.candidate_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Sort metadata keys for consistent column ordering
+                        let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                        sorted_keys.sort();
+
+                        // Extend headers with metadata columns
+                        for key in &sorted_keys {
+                            base_headers.push(format!("REF_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        }
+
+                        wtr.serialize(base_headers.as_slice())?;
+                    } else {
+                        wtr.serialize(TextMatchPair::csv_header())?;
+                    }
                 }
 
-                wtr.serialize(vec![
-                    self.reference_asset.path.clone(),
-                    self.candidate_asset.path.clone(),
-                    format!("{}", self.relevance_score),
-                    self.reference_asset.uuid.to_string(),
-                    self.candidate_asset.uuid.to_string(),
-                    self.comparison_url.clone().unwrap_or_default(),
-                ])?;
+                if options.with_metadata {
+                    // Include metadata values in the output
+                    let mut base_values = vec![
+                        self.reference_asset.path.clone(),
+                        self.candidate_asset.path.clone(),
+                        format!("{}", self.relevance_score),
+                        self.reference_asset.uuid.to_string(),
+                        self.candidate_asset.uuid.to_string(),
+                        self.comparison_url.clone().unwrap_or_default(),
+                    ];
+
+                    // Get unique metadata keys from both reference and candidate assets
+                    let mut all_metadata_keys = std::collections::HashSet::new();
+
+                    // Collect metadata keys from reference asset
+                    for key in self.reference_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+
+                    // Collect metadata keys from candidate asset
+                    for key in self.candidate_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+
+                    // Sort metadata keys for consistent column ordering
+                    let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                    sorted_keys.sort();
+
+                    // Add metadata values for each key
+                    for key in &sorted_keys {
+                        // Add reference asset metadata value
+                        let ref_value = self
+                            .reference_asset
+                            .metadata
+                            .get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(ref_value);
+
+                        // Add candidate asset metadata value
+                        let cand_value = self
+                            .candidate_asset
+                            .metadata
+                            .get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(cand_value);
+                    }
+
+                    wtr.serialize(base_values.as_slice())?;
+                } else {
+                    wtr.serialize(vec![
+                        self.reference_asset.path.clone(),
+                        self.candidate_asset.path.clone(),
+                        format!("{}", self.relevance_score),
+                        self.reference_asset.uuid.to_string(),
+                        self.candidate_asset.uuid.to_string(),
+                        self.comparison_url.clone().unwrap_or_default(),
+                    ])?;
+                }
 
                 let data = wtr.into_inner()?;
                 String::from_utf8(data).map_err(FormattingError::Utf8Error)

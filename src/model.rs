@@ -3498,12 +3498,21 @@ impl CsvRecordProducer for TextMatch {
             // Extract base URL from the comparison URL and build the asset URL
             let url_parts: Vec<&str> = comparison_url.split("/compare?").collect();
             if let Some(base_url) = url_parts.first() {
-                // Replace compare URL with asset URL
-                format!("{}/tenants/{}/asset/{}",
-                    base_url,
-                    self.asset.tenant_id,
-                    self.asset.uuid
-                )
+                // Check if the base URL already contains the tenant path to avoid duplication
+                if base_url.contains("/tenants/") {
+                    // If the base URL already has tenant info, just replace compare with asset
+                    format!("{}/asset/{}",
+                        base_url,
+                        self.asset.uuid
+                    )
+                } else {
+                    // If the base URL doesn't have tenant info, add it
+                    format!("{}/tenants/{}/asset/{}",
+                        base_url,
+                        self.asset.tenant_id,
+                        self.asset.uuid
+                    )
+                }
             } else {
                 comparison_url.replace("compare?", "asset/").replace("&", "")
             }
@@ -3628,12 +3637,21 @@ impl CsvRecordProducer for TextMatchPair {
             // Extract base URL from the comparison URL and build the asset URL
             let url_parts: Vec<&str> = comparison_url.split("/compare?").collect();
             if let Some(base_url) = url_parts.first() {
-                // Replace compare URL with asset URL
-                format!("{}/tenants/{}/asset/{}",
-                    base_url,
-                    self.reference_asset.tenant_id,
-                    self.reference_asset.uuid
-                )
+                // Check if the base URL already contains the tenant path to avoid duplication
+                if base_url.contains("/tenants/") {
+                    // If the base URL already has tenant info, just replace compare with asset
+                    format!("{}/asset/{}",
+                        base_url,
+                        self.reference_asset.uuid
+                    )
+                } else {
+                    // If the base URL doesn't have tenant info, add it
+                    format!("{}/tenants/{}/asset/{}",
+                        base_url,
+                        self.reference_asset.tenant_id,
+                        self.reference_asset.uuid
+                    )
+                }
             } else {
                 comparison_url.replace("compare?", "asset/").replace("&", "")
             }

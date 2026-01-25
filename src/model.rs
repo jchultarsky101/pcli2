@@ -3708,17 +3708,101 @@ impl OutputFormatter for TextMatchPair {
                 let mut wtr = csv::Writer::from_writer(vec![]);
 
                 if options.with_headers {
-                    wtr.serialize(Self::csv_header())?;
+                    if options.with_metadata {
+                        // Include metadata columns in the header
+                        let mut base_headers = TextMatchPair::csv_header();
+
+                        // Get unique metadata keys from both reference and candidate assets
+                        let mut all_metadata_keys = std::collections::HashSet::new();
+
+                        // Collect metadata keys from reference asset
+                        for key in self.reference_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Collect metadata keys from candidate asset
+                        for key in self.candidate_asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+
+                        // Sort metadata keys for consistent column ordering
+                        let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                        sorted_keys.sort();
+
+                        // Extend headers with metadata columns
+                        for key in &sorted_keys {
+                            base_headers.push(format!("REF_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        }
+
+                        wtr.serialize(base_headers.as_slice())?;
+                    } else {
+                        wtr.serialize(TextMatchPair::csv_header())?;
+                    }
                 }
 
-                wtr.serialize(vec![
-                    self.reference_asset.path.clone(),
-                    self.candidate_asset.path.clone(),
-                    format!("{}", self.relevance_score),
-                    self.reference_asset.uuid.to_string(),
-                    self.candidate_asset.uuid.to_string(),
-                    self.comparison_url.clone().unwrap_or_default(),
-                ])?;
+                if options.with_metadata {
+                    // Include metadata values in the output
+                    let mut base_values = vec![
+                        self.reference_asset.path.clone(),
+                        self.candidate_asset.path.clone(),
+                        format!("{}", self.relevance_score),
+                        self.reference_asset.uuid.to_string(),
+                        self.candidate_asset.uuid.to_string(),
+                        self.comparison_url.clone().unwrap_or_default(),
+                    ];
+
+                    // Get unique metadata keys from both reference and candidate assets
+                    let mut all_metadata_keys = std::collections::HashSet::new();
+
+                    // Collect metadata keys from reference asset
+                    for key in self.reference_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+
+                    // Collect metadata keys from candidate asset
+                    for key in self.candidate_asset.metadata.keys() {
+                        all_metadata_keys.insert(key.clone());
+                    }
+
+                    // Sort metadata keys for consistent column ordering
+                    let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                    sorted_keys.sort();
+
+                    // Add metadata values for each key
+                    for key in &sorted_keys {
+                        // Add reference asset metadata value
+                        let ref_value = self
+                            .reference_asset
+                            .metadata
+                            .get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(ref_value);
+
+                        // Add candidate asset metadata value
+                        let cand_value = self
+                            .candidate_asset
+                            .metadata
+                            .get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        base_values.push(cand_value);
+                    }
+
+                    wtr.serialize(base_values.as_slice())?;
+                } else {
+                    wtr.serialize(vec![
+                        self.reference_asset.path.clone(),
+                        self.candidate_asset.path.clone(),
+                        format!("{}", self.relevance_score),
+                        self.reference_asset.uuid.to_string(),
+                        self.candidate_asset.uuid.to_string(),
+                        self.comparison_url.clone().unwrap_or_default(),
+                    ])?;
+                }
 
                 let data = wtr.into_inner()?;
                 String::from_utf8(data).map_err(FormattingError::Utf8Error)

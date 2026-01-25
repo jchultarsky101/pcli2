@@ -3442,3 +3442,215 @@ impl crate::format::Formattable for AssetStateCounts {
         }
     }
 }
+
+/// Represents a match result from the text search
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextMatch {
+    /// The matching asset details
+    pub asset: AssetResponse,
+    /// The relevance score of the match (may not be present in all API responses)
+    #[serde(rename = "relevanceScore", default, skip_serializing_if = "Option::is_none")]
+    pub relevance_score: Option<f64>,
+    /// The comparison URL for viewing the match in the UI
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: Option<String>,
+}
+
+impl TextMatch {
+    /// Get the asset path
+    pub fn path(&self) -> String {
+        self.asset.path.clone()
+    }
+
+    /// Get the asset UUID
+    pub fn asset_uuid(&self) -> Uuid {
+        self.asset.uuid
+    }
+
+    /// Get the relevance score
+    pub fn score(&self) -> f64 {
+        self.relevance_score.unwrap_or(0.0)
+    }
+}
+
+impl CsvRecordProducer for TextMatch {
+    /// Get the CSV header row for TextMatch records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "ASSET_PATH".to_string(),
+            "MATCHED_ASSET_PATH".to_string(),
+            "RELEVANCE_SCORE".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
+        ]
+    }
+
+    /// Convert the TextMatch to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.asset.path.clone(), // ASSET_PATH
+            self.asset.path.clone(), // MATCHED_ASSET_PATH (same as asset path for text search)
+            format!("{}", self.relevance_score.unwrap_or(0.0)), // RELEVANCE_SCORE
+            self.asset.uuid.to_string(), // REFERENCE_ASSET_UUID (same as candidate for text search)
+            self.asset.uuid.to_string(), // CANDIDATE_ASSET_UUID
+            self.comparison_url.clone().unwrap_or_default(), // COMPARISON_URL
+        ]]
+    }
+}
+
+/// Response structure for text search operations
+///
+/// This structure holds the results of a text search operation, including
+/// the list of matching assets and pagination/filter information.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextSearchResponse {
+    /// The list of matching assets
+    pub matches: Vec<TextMatch>,
+    /// Pagination information
+    #[serde(rename = "pageData")]
+    pub page_data: Option<PageData>,
+    /// Filter information
+    #[serde(rename = "filterData")]
+    pub filter_data: Option<FilterData>,
+}
+
+/// Enhanced response structure for text search that includes search query information
+///
+/// This structure extends the basic TextSearchResponse by including information about
+/// the search query that was performed, making it easier to understand
+/// the context of the matches.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancedTextSearchResponse {
+    /// The search query that was performed
+    #[serde(rename = "searchQuery")]
+    pub search_query: String,
+    /// The list of matching assets
+    pub matches: Vec<TextMatch>,
+}
+
+impl CsvRecordProducer for EnhancedTextSearchResponse {
+    /// Get the CSV header row for EnhancedTextSearchResponse records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "SEARCH_QUERY".to_string(),
+            "ASSET_PATH".to_string(),
+            "MATCHED_ASSET_PATH".to_string(),
+            "RELEVANCE_SCORE".to_string(),
+            "ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
+        ]
+    }
+
+    /// Convert the EnhancedTextSearchResponse to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        self.matches
+            .iter()
+            .flat_map(|m| {
+                m.as_csv_records()
+                    .into_iter()
+                    .map(|mut record| {
+                        // Insert the search query at the beginning of each record
+                        record.insert(0, self.search_query.clone());
+                        record
+                    })
+                    .collect::<Vec<Vec<String>>>()
+            })
+            .collect()
+    }
+}
+
+/// Represents a pair of assets that matched in a text search
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextMatchPair {
+    /// The reference asset (the one being searched against)
+    #[serde(rename = "referenceAsset")]
+    pub reference_asset: AssetResponse,
+    /// The candidate asset (the one that matched)
+    #[serde(rename = "candidateAsset")]
+    pub candidate_asset: AssetResponse,
+    /// The relevance score
+    #[serde(rename = "relevanceScore")]
+    pub relevance_score: f64,
+    /// The comparison URL for viewing the match in the UI
+    #[serde(rename = "comparisonUrl")]
+    pub comparison_url: Option<String>,
+}
+
+impl CsvRecordProducer for TextMatchPair {
+    /// Get the CSV header row for TextMatchPair records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "RELEVANCE_SCORE".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
+        ]
+    }
+
+    /// Convert the TextMatchPair to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.reference_asset.path.clone(),
+            self.candidate_asset.path.clone(),
+            format!("{}", self.relevance_score),
+            self.reference_asset.uuid.to_string(),
+            self.candidate_asset.uuid.to_string(),
+            self.comparison_url.clone().unwrap_or_default(),
+        ]]
+    }
+}
+
+impl From<&TextMatch> for TextMatchPair {
+    fn from(text_match: &TextMatch) -> Self {
+        TextMatchPair {
+            reference_asset: text_match.asset.clone(), // For text search, we'll treat the matched asset as both ref and candidate
+            candidate_asset: text_match.asset.clone(),
+            relevance_score: text_match.relevance_score.unwrap_or(0.0),
+            comparison_url: text_match.comparison_url.clone(),
+        }
+    }
+}
+
+impl OutputFormatter for TextMatchPair {
+    type Item = TextMatchPair;
+
+    /// Format the TextMatchPair according to the specified output format
+    fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                let json = if options.pretty {
+                    serde_json::to_string_pretty(self)
+                } else {
+                    serde_json::to_string(self)
+                };
+                match json {
+                    Ok(json) => Ok(json),
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
+                }
+            }
+            OutputFormat::Csv(options) => {
+                let mut wtr = csv::Writer::from_writer(vec![]);
+
+                if options.with_headers {
+                    wtr.serialize(Self::csv_header())?;
+                }
+
+                wtr.serialize(vec![
+                    self.reference_asset.path.clone(),
+                    self.candidate_asset.path.clone(),
+                    format!("{}", self.relevance_score),
+                    self.reference_asset.uuid.to_string(),
+                    self.candidate_asset.uuid.to_string(),
+                    self.comparison_url.clone().unwrap_or_default(),
+                ])?;
+
+                let data = wtr.into_inner()?;
+                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+            }
+            _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
+        }
+    }
+}

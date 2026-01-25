@@ -2110,11 +2110,82 @@ impl PhysnaApiClient {
         }
     }
 
+    /// Performs a text search for assets matching the provided text query
+    ///
+    /// This method performs a text search to find assets that match the provided text query.
+    /// The search looks through asset names, paths, and associated metadata to find relevant matches.
+    /// The search results are ordered by relevance as determined by the text search algorithm.
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The UUID of the tenant to search within
+    /// * `text_query` - The text query to search for in assets
+    ///
+    /// # Returns
+    /// * `Ok(TextSearchResponse)` - The search results with text-matched assets
+    ///
+    /// # Example
+    /// ```no_run
+    /// use pcli2::physna_v3::PhysnaApiClient;
+    /// use uuid::Uuid;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let mut client = PhysnaApiClient::try_default()?;
+    ///     let tenant_uuid = Uuid::nil(); // Use actual tenant UUID
+    ///     let matches = client.text_search(&tenant_uuid, "gear").await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn text_search(&mut self, tenant_uuid: &Uuid, text_query: &str) -> Result<crate::model::TextSearchResponse, ApiError> {
+        debug!("Starting text search for tenant_uuid: {}, query: {}", tenant_uuid, text_query);
+        let url = format!("{}/tenants/{}/assets/text-search", self.base_url, tenant_uuid);
+
+        // Text search - get first page with 50 results (top matches)
+        let page = 1;
+        let per_page = 50; // Reasonable page size for text search
+
+        // Build request body with the correct structure
+        let body = serde_json::json!({
+            "page": page,
+            "perPage": per_page,
+            "searchQuery": text_query,
+            "filters": {
+                "folders": [],
+                "metadata": {},
+                "extensions": []  // Empty array as requested
+            }
+        });
+
+        debug!("Sending text search request to: {}", url);
+        // Execute POST request
+        let result: Result<crate::model::TextSearchResponse, ApiError> = self.post(&url, &body).await;
+
+        match result {
+            Ok(mut response) => {
+                // Limit results to 50 to ensure we don't exceed expected page size
+                if response.matches.len() > 50 {
+                    response.matches.truncate(50);
+                }
+
+                // Clear pagination data since we're only getting the first page
+                response.page_data = None;
+
+                debug!("Text search completed for query: '{}' with {} total matches", text_query, response.matches.len());
+                Ok(response)
+            }
+            Err(e) => {
+                // Return error immediately
+                debug!("Text search failed: {}", e);
+                Err(e)
+            }
+        }
+    }
+
     /// Create multiple assets by uploading files matching a glob pattern
-    /// 
+    ///
     /// This method uploads multiple files as assets in the specified tenant.
     /// Files are matched using a glob pattern and uploaded concurrently.
-    /// 
+    ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant where to create the assets
     /// * `glob_pattern` - The glob pattern to match files to upload (e.g., "data/puzzle/*.STL")

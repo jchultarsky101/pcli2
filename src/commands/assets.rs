@@ -11,7 +11,7 @@ use crate::commands::params::{
     multiple_files_parameter, path_parameter, recursive_parameter, tenant_parameter,
     uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE,
     COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH,
-    COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH_FOLDER, COMMAND_VISUAL_MATCH,
+    COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH_FOLDER, COMMAND_TEXT_MATCH, COMMAND_VISUAL_MATCH,
     COMMAND_VISUAL_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
     PARAMETER_FILE, PARAMETER_FOLDER_PATHS, PARAMETER_PROGRESS,
 };
@@ -323,5 +323,23 @@ pub fn asset_command() -> Command {
                     .required(false)
                     .help("Display progress bar during processing"),
             )
+    )
+    .subcommand(
+        Command::new(COMMAND_TEXT_MATCH)
+            .visible_alias("text-search") // Add alias for text-search
+            .about("Find assets using text search")
+            .arg(tenant_parameter())
+            .arg(
+                Arg::new("text")
+                    .short('q')  // Changed from 't' to 'q' to avoid conflict with tenant parameter
+                    .long("text")
+                    .num_args(1)
+                    .required(true)
+                    .help("Text query to search for in assets")
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(format_with_headers_parameter())
+            .arg(format_pretty_parameter())
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])) // Only support JSON and CSV as requested
     )
 }

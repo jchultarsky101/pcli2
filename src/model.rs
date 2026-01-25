@@ -2964,7 +2964,22 @@ pub struct MetadataFieldListResponse {
     pub metadata_fields: Vec<MetadataField>,
 }
 
-/// Represents a dependency relationship for an asset
+/// Represents a dependency relationship for an asset from the API
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetDependencyApiResponse {
+    /// The Physna path of the dependent asset
+    pub path: String,
+    /// The asset details (optional because some dependencies may not have full asset details)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset: Option<AssetResponse>,
+    /// Number of occurrences
+    pub occurrences: u32,
+    /// Whether the dependency has its own dependencies
+    #[serde(rename = "hasDependencies")]
+    pub has_dependencies: bool,
+}
+
+/// Represents a dependency relationship for an asset with assembly path information
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetDependency {
     /// The Physna path of the dependent asset
@@ -2982,11 +2997,23 @@ pub struct AssetDependency {
     pub assembly_path: String,
 }
 
+impl From<AssetDependencyApiResponse> for AssetDependency {
+    fn from(api_dep: AssetDependencyApiResponse) -> Self {
+        AssetDependency {
+            path: api_dep.path,
+            asset: api_dep.asset,
+            occurrences: api_dep.occurrences,
+            has_dependencies: api_dep.has_dependencies,
+            assembly_path: String::new(), // Will be filled in by the tree building logic
+        }
+    }
+}
+
 /// Represents the response from the asset dependencies API endpoint
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetDependenciesResponse {
     /// List of assets that depend on this asset
-    pub dependencies: Vec<AssetDependency>,
+    pub dependencies: Vec<AssetDependencyApiResponse>,
     /// Pagination data for the response
     #[serde(rename = "pageData")]
     pub page_data: PageData,
@@ -3003,9 +3030,15 @@ pub struct AssetDependencyList {
 
 impl From<AssetDependenciesResponse> for AssetDependencyList {
     fn from(response: AssetDependenciesResponse) -> Self {
+        // Convert from API response to our internal representation
+        let dependencies = response.dependencies
+            .into_iter()
+            .map(|api_dep| AssetDependency::from(api_dep))
+            .collect();
+
         Self {
             path: response.original_asset_path,
-            dependencies: response.dependencies,
+            dependencies,
         }
     }
 }

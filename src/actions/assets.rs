@@ -2872,11 +2872,11 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    // Note: text match doesn't have metadata flag in this implementation
 
     let format_options = crate::format::OutputFormatOptions {
-        with_metadata: false, // No metadata for text match
+        with_metadata,
         with_headers,
         pretty,
     };
@@ -2900,34 +2900,16 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ))?;
     let ui_base_url = configuration.get_ui_base_url();
 
-    // Populate comparison URLs for each match
+    // Populate asset URLs for each match (not comparison URLs since text search doesn't compare two assets)
     for match_result in &mut search_results.matches {
         let base_url = ui_base_url.trim_end_matches('/');
-        let relevance_score = match_result.relevance_score.unwrap_or(0.0);
-        let comparison_url = if base_url.ends_with("/tenants") {
-            format!(
-                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=text&relevanceScore={:.2}",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                "", // For text search, we don't have a reference asset, so leave empty
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-                relevance_score
-            )
-        } else {
-            format!(
-                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=text&relevanceScore={:.2}",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                "", // For text search, we don't have a reference asset, so leave empty
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-                relevance_score
-            )
-        };
-        match_result.comparison_url = Some(comparison_url);
+        let asset_url = format!(
+            "{}/tenants/{}/asset/{}",
+            base_url, // Use configurable UI base URL without trailing slash
+            tenant_name, // Use tenant short name in path
+            match_result.asset.uuid
+        );
+        match_result.comparison_url = Some(asset_url); // Store asset URL in comparison_url field for text search
     }
 
     // Create enhanced response that includes the search query information
@@ -2949,17 +2931,84 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
             let mut wtr = csv::Writer::from_writer(vec![]);
 
             if options.with_headers {
-                let headers = crate::model::EnhancedTextSearchResponse::csv_header();
-                if let Err(e) = wtr.serialize(headers.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                if options.with_metadata {
+                    // Include metadata columns in the header
+                    let mut base_headers = crate::model::EnhancedTextSearchResponse::csv_header();
+
+                    // Get unique metadata keys from all assets in the response
+                    let mut all_metadata_keys = std::collections::HashSet::new();
+                    for match_result in &enhanced_response.matches {
+                        for key in match_result.asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+                    }
+
+                    // Sort metadata keys for consistent column ordering
+                    let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                    sorted_keys.sort();
+
+                    // Extend headers with metadata columns
+                    for key in &sorted_keys {
+                        base_headers.push(format!("ASSET_{}", key.to_uppercase()));
+                    }
+
+                    if let Err(e) = wtr.serialize(base_headers.as_slice()) {
+                        return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    }
+                } else {
+                    let headers = crate::model::EnhancedTextSearchResponse::csv_header();
+                    if let Err(e) = wtr.serialize(headers.as_slice()) {
+                        return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    }
                 }
             }
 
             for match_result in &enhanced_response.matches {
-                let records = match_result.as_csv_records();
-                for record in records {
-                    if let Err(e) = wtr.serialize(record.as_slice()) {
+                if options.with_metadata {
+                    // Include metadata values in the output
+                    let base_values = vec![
+                        match_result.asset.path.split('/').last().unwrap_or(&match_result.asset.path).to_string(), // ASSET_NAME
+                        match_result.asset.path.clone(), // ASSET_PATH
+                        match_result.asset.asset_type.clone(), // TYPE
+                        match_result.asset.state.clone(), // STATE
+                        match_result.asset.is_assembly.to_string(), // IS_ASSEMBLY
+                        format!("{}", match_result.relevance_score.unwrap_or(0.0)), // RELEVANCE_SCORE
+                        match_result.asset.uuid.to_string(), // ASSET_UUID
+                        match_result.comparison_url.clone().unwrap_or_default(), // ASSET_URL
+                    ];
+
+                    // Get unique metadata keys from all assets in the response
+                    let mut all_metadata_keys = std::collections::HashSet::new();
+                    for mr in &enhanced_response.matches {
+                        for key in mr.asset.metadata.keys() {
+                            all_metadata_keys.insert(key.clone());
+                        }
+                    }
+
+                    // Sort metadata keys for consistent column ordering
+                    let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
+                    sorted_keys.sort();
+
+                    // Add metadata values for each key
+                    let mut extended_values = base_values.clone();
+                    for key in &sorted_keys {
+                        let value = match_result.asset.metadata
+                            .get(key)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        extended_values.push(value);
+                    }
+
+                    if let Err(e) = wtr.serialize(extended_values.as_slice()) {
                         return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    }
+                } else {
+                    let records = match_result.as_csv_records();
+                    for record in records {
+                        if let Err(e) = wtr.serialize(record.as_slice()) {
+                            return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                        }
                     }
                 }
             }

@@ -351,6 +351,7 @@ pub fn asset_command() -> Command {
                     .help("Perform fuzzy search instead of exact search (default: false, which means exact search with quoted text)"),
             )
             .arg(format_with_headers_parameter())
+            .arg(format_with_metadata_parameter())  // Add metadata flag to be consistent with other match commands
             .arg(format_pretty_parameter())
             .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])) // Only support JSON and CSV as requested
     )

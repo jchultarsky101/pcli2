@@ -232,6 +232,21 @@ pub async fn execute_command() -> Result<(), CliError> {
                     download_folder(sub_matches).await?;
                     Ok(())
                 }
+                Some((COMMAND_MATCH_FOLDER, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_MATCH_FOLDER);
+                    geometric_match_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_PART_MATCH_FOLDER, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_PART_MATCH_FOLDER);
+                    part_match_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_VISUAL_MATCH_FOLDER, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_VISUAL_MATCH_FOLDER);
+                    visual_match_folder(sub_matches).await?;
+                    Ok(())
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
@@ -288,24 +303,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                     part_match_asset(sub_matches).await?;
                     Ok(())
                 }
-                Some((COMMAND_MATCH_FOLDER, sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MATCH_FOLDER);
-                    geometric_match_folder(sub_matches).await?;
-                    Ok(())
-                }
-                Some((COMMAND_PART_MATCH_FOLDER, sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_PART_MATCH_FOLDER);
-                    part_match_folder(sub_matches).await?;
-                    Ok(())
-                }
                 Some((COMMAND_VISUAL_MATCH, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_VISUAL_MATCH);
                     visual_match_asset(sub_matches).await?;
-                    Ok(())
-                }
-                Some((COMMAND_VISUAL_MATCH_FOLDER, sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_VISUAL_MATCH_FOLDER);
-                    visual_match_folder(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_TEXT_MATCH, sub_matches)) => {

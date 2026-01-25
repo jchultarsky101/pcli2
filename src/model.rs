@@ -3355,7 +3355,12 @@ impl AssemblyNode {
         fn build_ptree_recursive(builder: &mut TreeBuilder, node: &AssemblyNode) {
             for child in node.children() {
                 let state = child.asset().processing_status().as_ref().map(|s| s.as_str()).unwrap_or("missing");
-                let child_label = format!("{} [{}] ({})", child.asset().name(), state, child.asset().uuid());
+                let uuid_str = if child.asset().uuid().is_nil() {
+                    "None".to_string()
+                } else {
+                    child.asset().uuid().to_string()
+                };
+                let child_label = format!("{} [{}] ({})", child.asset().name(), state, uuid_str);
                 builder.begin_child(child_label);
 
                 // Recursively add grandchildren
@@ -3366,7 +3371,12 @@ impl AssemblyNode {
         }
 
         let state = self.asset().processing_status().as_ref().map(|s| s.as_str()).unwrap_or("missing");
-        let mut builder = TreeBuilder::new(format!("{} [{}] ({})", self.asset().name(), state, self.asset().uuid()));
+        let uuid_str = if self.asset().uuid().is_nil() {
+            "None".to_string()
+        } else {
+            self.asset().uuid().to_string()
+        };
+        let mut builder = TreeBuilder::new(format!("{} [{}] ({})", self.asset().name(), state, uuid_str));
 
         // Add all direct children of the root node
         build_ptree_recursive(&mut builder, self);

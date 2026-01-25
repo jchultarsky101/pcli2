@@ -3012,7 +3012,15 @@ impl CsvRecordProducer for AssetDependencyList {
                             .to_string();
                         (asset.uuid.to_string(), filename, asset.state.clone())
                     }
-                    None => ("N/A".to_string(), "MISSING".to_string(), "missing".to_string()), // For missing dependencies
+                    None => {
+                        // For missing dependencies, use the path as the name and mark as missing
+                        let filename = dep.path
+                            .split('/')
+                            .next_back()
+                            .unwrap_or(&dep.path)
+                            .to_string();
+                        ("N/A".to_string(), filename, "missing".to_string()) // For missing dependencies
+                    }
                 };
 
                 vec![
@@ -3065,7 +3073,15 @@ impl OutputFormatter for AssetDependencyList {
                                     .to_string();
                                 (Some(asset.uuid.to_string()), Some(name), Some(asset.state.clone()))
                             }
-                            None => (None, None, Some("missing".to_string())), // Mark missing dependencies with "missing" state
+                            None => {
+                                // For missing dependencies, use the path as the name and mark as missing
+                                let name = dep.path
+                                    .split('/')
+                                    .next_back()
+                                    .unwrap_or(&dep.path)
+                                    .to_string();
+                                (None, Some(name), Some("missing".to_string())) // Mark missing dependencies with "missing" state
+                            }
                         };
 
                         SimplifiedAssetDependency {

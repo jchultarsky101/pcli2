@@ -99,11 +99,11 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
     // Get the full assembly tree with all recursive dependencies
     let assembly_tree = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
 
-    // For tree format, output the assembly tree directly to preserve hierarchy
-    if matches!(format, crate::format::OutputFormat::Tree(_)) {
+    // For tree and JSON formats, output the assembly tree directly to preserve hierarchy
+    if matches!(format, crate::format::OutputFormat::Tree(_)) || matches!(format, crate::format::OutputFormat::Json(_)) {
         println!("{}", assembly_tree.format(format)?);
     } else {
-        // For other formats (JSON, CSV), extract all dependencies from the full tree structure
+        // For other formats (CSV), extract all dependencies from the full tree structure
         let all_dependencies = extract_all_dependencies_from_tree(&assembly_tree);
 
         // Create an AssetDependencyList from the response to format properly

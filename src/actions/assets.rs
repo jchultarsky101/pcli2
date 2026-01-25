@@ -96,9 +96,16 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
         asset_path_param
     ).await?;
 
-    let dependencies = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
+    // Use the new API method that returns raw dependencies response to include missing dependencies
+    let dependencies_response = ctx.api().get_asset_dependencies_list_by_path(&tenant_uuid, asset.path().as_str()).await?;
 
-    println!("{}", dependencies.format(format)?);
+    // Create an AssetDependencyList from the response to format properly
+    let dependency_list = crate::model::AssetDependencyList {
+        path: asset.path().to_string(),
+        dependencies: dependencies_response.dependencies,
+    };
+
+    println!("{}", dependency_list.format(format)?);
 
 	Ok(())
 }

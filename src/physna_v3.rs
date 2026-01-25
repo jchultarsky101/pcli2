@@ -2446,6 +2446,24 @@ impl PhysnaApiClient {
         self.populate_asset_dependencies_recursive(tenant_uuid, tree.root_mut()).await?;
         Ok(tree)
     }
+
+    /// Get asset dependencies by path without building a tree structure
+    ///
+    /// This method returns the raw dependencies response from the API, which includes
+    /// both existing assets and missing dependencies (assets that are referenced but not present in Physna)
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The UUID of the tenant
+    /// * `asset_path` - The path of the asset to get dependencies for
+    ///
+    /// # Returns
+    /// * `Ok(AssetDependenciesResponse)` - The raw dependencies response from the API
+    /// * `Err(ApiError)` - If there was an error during the API call
+    pub async fn get_asset_dependencies_list_by_path<S: AsRef<str>>(&mut self, tenant_uuid: &Uuid, asset_path: S) -> Result<AssetDependenciesResponse, ApiError> {
+        let asset_path = asset_path.as_ref();
+        // Call the pagination function with default page/per_page values to get all dependencies
+        self.get_asset_dependencies_by_path_with_pagination(tenant_uuid, asset_path, 1, 100).await
+    }
     
     /// Get asset state counts from the Physna API
     ///

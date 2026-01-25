@@ -3027,7 +3027,6 @@ impl CsvRecordProducer for AssetDependencyList {
                             .to_string();
                         ("N/A".to_string(), filename, "missing".to_string()) // For missing dependencies
                     }
-                    }
                 };
 
                 vec![
@@ -3123,7 +3122,6 @@ impl OutputFormatter for AssetDependencyList {
                     Ok(json) => Ok(json),
                     Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
-            }
             }
             OutputFormat::Csv(options) => {
                 use csv::Writer;

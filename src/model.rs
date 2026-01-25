@@ -3479,6 +3479,9 @@ impl CsvRecordProducer for TextMatch {
         vec![
             "ASSET_NAME".to_string(),
             "ASSET_PATH".to_string(),
+            "TYPE".to_string(),
+            "STATE".to_string(),
+            "IS_ASSEMBLY".to_string(),
             "RELEVANCE_SCORE".to_string(),
             "ASSET_UUID".to_string(),
             "ASSET_URL".to_string(),
@@ -3515,6 +3518,9 @@ impl CsvRecordProducer for TextMatch {
         vec![vec![
             asset_name.to_string(), // ASSET_NAME
             self.asset.path.clone(), // ASSET_PATH
+            self.asset.asset_type.clone(), // TYPE
+            self.asset.state.clone(), // STATE
+            self.asset.is_assembly.to_string(), // IS_ASSEMBLY
             format!("{}", self.relevance_score.unwrap_or(0.0)), // RELEVANCE_SCORE
             self.asset.uuid.to_string(), // ASSET_UUID
             asset_url, // ASSET_URL
@@ -3558,6 +3564,9 @@ impl CsvRecordProducer for EnhancedTextSearchResponse {
         vec![
             "ASSET_NAME".to_string(),
             "ASSET_PATH".to_string(),
+            "TYPE".to_string(),
+            "STATE".to_string(),
+            "IS_ASSEMBLY".to_string(),
             "RELEVANCE_SCORE".to_string(),
             "ASSET_UUID".to_string(),
             "ASSET_URL".to_string(),
@@ -3600,6 +3609,9 @@ impl CsvRecordProducer for TextMatchPair {
         vec![
             "ASSET_NAME".to_string(),
             "ASSET_PATH".to_string(),
+            "TYPE".to_string(),
+            "STATE".to_string(),
+            "IS_ASSEMBLY".to_string(),
             "RELEVANCE_SCORE".to_string(),
             "ASSET_UUID".to_string(),
             "ASSET_URL".to_string(),
@@ -3636,6 +3648,9 @@ impl CsvRecordProducer for TextMatchPair {
         vec![vec![
             asset_name.to_string(), // ASSET_NAME
             self.reference_asset.path.clone(), // ASSET_PATH
+            self.reference_asset.asset_type.clone(), // TYPE
+            self.reference_asset.state.clone(), // STATE
+            self.reference_asset.is_assembly.to_string(), // IS_ASSEMBLY
             format!("{}", self.relevance_score), // RELEVANCE_SCORE
             self.reference_asset.uuid.to_string(), // ASSET_UUID
             asset_url, // ASSET_URL

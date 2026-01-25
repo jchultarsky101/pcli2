@@ -7,8 +7,8 @@ use crate::commands::params::{
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
     name_parameter, parent_folder_identifier_group, parent_folder_path_parameter, parent_folder_uuid_parameter, tenant_parameter,
     COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET,
-    COMMAND_LIST, PARAMETER_PROGRESS, COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH_FOLDER,
-    COMMAND_VISUAL_MATCH_FOLDER, PARAMETER_FOLDER_PATHS,
+    COMMAND_LIST, PARAMETER_PROGRESS, COMMAND_MATCH, COMMAND_PART_MATCH,
+    COMMAND_VISUAL_MATCH,
 };
 use clap::Command;
 
@@ -118,8 +118,8 @@ pub fn folder_command() -> Command {
                 )
         )
         .subcommand(
-            Command::new(COMMAND_MATCH_FOLDER)
-                .visible_alias("geometric-search-folder") // Add alias for geometric-search-folder
+            Command::new(COMMAND_MATCH)
+                .visible_alias("geometric-search") // Add alias for geometric-search
                 .about("Find geometrically similar assets for all assets in one or more folders")
                 .arg(tenant_parameter())
                 .arg(
@@ -170,8 +170,8 @@ pub fn folder_command() -> Command {
                 )
         )
         .subcommand(
-            Command::new(COMMAND_PART_MATCH_FOLDER)
-                .visible_alias("part-search-folder") // Add alias for part-search-folder
+            Command::new(COMMAND_PART_MATCH)
+                .visible_alias("part-search") // Add alias for part-search
                 .about("Find part matches for all assets in one or more folders")
                 .arg(tenant_parameter())
                 .arg(
@@ -222,8 +222,8 @@ pub fn folder_command() -> Command {
                 )
         )
         .subcommand(
-            Command::new(COMMAND_VISUAL_MATCH_FOLDER)
-                .visible_alias("visual-search-folder") // Add alias for visual-search-folder
+            Command::new(COMMAND_VISUAL_MATCH)
+                .visible_alias("visual-search") // Add alias for visual-search
                 .about("Find visually similar assets for all assets in one or more folders")
                 .arg(tenant_parameter())
                 .arg(

@@ -123,9 +123,9 @@ pub fn folder_command() -> Command {
                 .about("Find geometrically similar assets for all assets in one or more folders")
                 .arg(tenant_parameter())
                 .arg(
-                    clap::Arg::new("folder-path")
+                    clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .short('p')
-                        .long("folder-path")
+                        .long(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .num_args(1..) // Accept one or more values
                         .required(true)
                         .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
@@ -175,9 +175,9 @@ pub fn folder_command() -> Command {
                 .about("Find part matches for all assets in one or more folders")
                 .arg(tenant_parameter())
                 .arg(
-                    clap::Arg::new("folder-path")
+                    clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .short('p')
-                        .long("folder-path")
+                        .long(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .num_args(1..) // Accept one or more values
                         .required(true)
                         .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
@@ -227,9 +227,9 @@ pub fn folder_command() -> Command {
                 .about("Find visually similar assets for all assets in one or more folders")
                 .arg(tenant_parameter())
                 .arg(
-                    clap::Arg::new("folder-path")
+                    clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .short('p')
-                        .long("folder-path")
+                        .long(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .num_args(1..) // Accept one or more values
                         .required(true)
                         .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")

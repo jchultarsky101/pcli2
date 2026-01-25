@@ -3016,7 +3016,15 @@ impl CsvRecordProducer for AssetDependencyList {
                         } else {
                             asset.state.clone()
                         };
-                        (asset.uuid.to_string(), filename, normalized_state)
+                        (
+                            if asset.uuid.is_nil() {
+                                "None".to_string()
+                            } else {
+                                asset.uuid.to_string()
+                            },
+                            filename,
+                            normalized_state
+                        )
                     }
                     None => {
                         // For missing dependencies, use the path as the name and mark as missing
@@ -3083,7 +3091,15 @@ impl OutputFormatter for AssetDependencyList {
                                 } else {
                                     asset.state.clone()
                                 };
-                                (Some(asset.uuid.to_string()), Some(name), Some(normalized_state))
+                                (
+                                    Some(if asset.uuid.is_nil() {
+                                        "None".to_string()
+                                    } else {
+                                        asset.uuid.to_string()
+                                    }),
+                                    Some(name),
+                                    Some(normalized_state)
+                                )
                             }
                             None => {
                                 // For missing dependencies, use the path as the name and mark as missing

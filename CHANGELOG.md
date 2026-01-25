@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.13] - 2026-01-24
+
+### Added
+- Added text-match command with text-search alias to perform text-based asset searches
+- Added --fuzzy flag to control search behavior (default: false for exact search with quoted text)
+- Added TextMatch, TextSearchResponse, EnhancedTextSearchResponse, and TextMatchPair data models
+- Added text_search API method to PhysnaApiClient for calling the text-search endpoint
+- Added ASSET_NAME, TYPE, STATE, IS_ASSEMBLY, RELEVANCE_SCORE, ASSET_UUID, and ASSET_URL columns to CSV output
+- Added aliases for existing match commands: geometric-search, part-search, visual-search
+- Added folder variants for new aliases: geometric-search-folder, part-search-folder, visual-search-folder
+
+### Changed
+- Updated README.md with comprehensive documentation for text-match command and new aliases
+- Modified text search to wrap queries in quotes by default for exact matching
+- Improved asset URL construction to avoid duplicate tenant paths in URLs
+- Enhanced CSV output format with additional asset metadata fields
+
 ## [0.2.12] - 2026-01-24
 
 ### Fixed

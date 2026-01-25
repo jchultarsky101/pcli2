@@ -8,7 +8,7 @@ use crate::commands::params::{
     asset_identifier_group, asset_identifier_multiple_group, file_parameter,
     folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    multiple_files_parameter, path_parameter, recursive_parameter, tenant_parameter,
+    multiple_files_parameter, path_parameter, tenant_parameter,
     uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE,
     COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH,
     COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH, COMMAND_PART_MATCH_FOLDER, COMMAND_TEXT_MATCH, COMMAND_VISUAL_MATCH,
@@ -107,7 +107,6 @@ pub fn asset_command() -> Command {
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
-                .arg(recursive_parameter())
                 .group(asset_identifier_group()),
         )
         .subcommand(

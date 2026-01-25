@@ -3477,24 +3477,47 @@ impl CsvRecordProducer for TextMatch {
     /// Get the CSV header row for TextMatch records
     fn csv_header() -> Vec<String> {
         vec![
+            "ASSET_NAME".to_string(),
             "ASSET_PATH".to_string(),
-            "MATCHED_ASSET_PATH".to_string(),
             "RELEVANCE_SCORE".to_string(),
-            "REFERENCE_ASSET_UUID".to_string(),
-            "CANDIDATE_ASSET_UUID".to_string(),
-            "COMPARISON_URL".to_string(),
+            "ASSET_UUID".to_string(),
+            "ASSET_URL".to_string(),
         ]
     }
 
     /// Convert the TextMatch to CSV records
     fn as_csv_records(&self) -> Vec<Vec<String>> {
+        // Extract the asset name from the path (last segment after the final '/')
+        let asset_name = self.asset.path.split('/').last().unwrap_or(&self.asset.path);
+
+        // Build the asset URL using the template: {baseUrl}/tenants/{tenantId}/asset/{assetUuid}
+        let asset_url = if let Some(ref comparison_url) = self.comparison_url {
+            // Extract base URL from the comparison URL and build the asset URL
+            let url_parts: Vec<&str> = comparison_url.split("/compare?").collect();
+            if let Some(base_url) = url_parts.first() {
+                // Replace compare URL with asset URL
+                format!("{}/tenants/{}/asset/{}",
+                    base_url,
+                    self.asset.tenant_id,
+                    self.asset.uuid
+                )
+            } else {
+                comparison_url.replace("compare?", "asset/").replace("&", "")
+            }
+        } else {
+            // If no comparison URL is available, construct a basic URL
+            format!("https://app.physna.com/tenants/{}/asset/{}",
+                self.asset.tenant_id,
+                self.asset.uuid
+            )
+        };
+
         vec![vec![
+            asset_name.to_string(), // ASSET_NAME
             self.asset.path.clone(), // ASSET_PATH
-            self.asset.path.clone(), // MATCHED_ASSET_PATH (same as asset path for text search)
             format!("{}", self.relevance_score.unwrap_or(0.0)), // RELEVANCE_SCORE
-            self.asset.uuid.to_string(), // REFERENCE_ASSET_UUID (same as candidate for text search)
-            self.asset.uuid.to_string(), // CANDIDATE_ASSET_UUID
-            self.comparison_url.clone().unwrap_or_default(), // COMPARISON_URL
+            self.asset.uuid.to_string(), // ASSET_UUID
+            asset_url, // ASSET_URL
         ]]
     }
 }
@@ -3533,12 +3556,11 @@ impl CsvRecordProducer for EnhancedTextSearchResponse {
     /// Get the CSV header row for EnhancedTextSearchResponse records
     fn csv_header() -> Vec<String> {
         vec![
-            "SEARCH_QUERY".to_string(),
+            "ASSET_NAME".to_string(),
             "ASSET_PATH".to_string(),
-            "MATCHED_ASSET_PATH".to_string(),
             "RELEVANCE_SCORE".to_string(),
             "ASSET_UUID".to_string(),
-            "COMPARISON_URL".to_string(),
+            "ASSET_URL".to_string(),
         ]
     }
 
@@ -3549,11 +3571,6 @@ impl CsvRecordProducer for EnhancedTextSearchResponse {
             .flat_map(|m| {
                 m.as_csv_records()
                     .into_iter()
-                    .map(|mut record| {
-                        // Insert the search query at the beginning of each record
-                        record.insert(0, self.search_query.clone());
-                        record
-                    })
                     .collect::<Vec<Vec<String>>>()
             })
             .collect()
@@ -3581,24 +3598,47 @@ impl CsvRecordProducer for TextMatchPair {
     /// Get the CSV header row for TextMatchPair records
     fn csv_header() -> Vec<String> {
         vec![
-            "REFERENCE_ASSET_PATH".to_string(),
-            "CANDIDATE_ASSET_PATH".to_string(),
+            "ASSET_NAME".to_string(),
+            "ASSET_PATH".to_string(),
             "RELEVANCE_SCORE".to_string(),
-            "REFERENCE_ASSET_UUID".to_string(),
-            "CANDIDATE_ASSET_UUID".to_string(),
-            "COMPARISON_URL".to_string(),
+            "ASSET_UUID".to_string(),
+            "ASSET_URL".to_string(),
         ]
     }
 
     /// Convert the TextMatchPair to CSV records
     fn as_csv_records(&self) -> Vec<Vec<String>> {
+        // Extract the asset name from the path (last segment after the final '/')
+        let asset_name = self.reference_asset.path.split('/').last().unwrap_or(&self.reference_asset.path);
+
+        // Build the asset URL using the template: {baseUrl}/tenants/{tenantId}/asset/{assetUuid}
+        let asset_url = if let Some(ref comparison_url) = self.comparison_url {
+            // Extract base URL from the comparison URL and build the asset URL
+            let url_parts: Vec<&str> = comparison_url.split("/compare?").collect();
+            if let Some(base_url) = url_parts.first() {
+                // Replace compare URL with asset URL
+                format!("{}/tenants/{}/asset/{}",
+                    base_url,
+                    self.reference_asset.tenant_id,
+                    self.reference_asset.uuid
+                )
+            } else {
+                comparison_url.replace("compare?", "asset/").replace("&", "")
+            }
+        } else {
+            // If no comparison URL is available, construct a basic URL
+            format!("https://app.physna.com/tenants/{}/asset/{}",
+                self.reference_asset.tenant_id,
+                self.reference_asset.uuid
+            )
+        };
+
         vec![vec![
-            self.reference_asset.path.clone(),
-            self.candidate_asset.path.clone(),
-            format!("{}", self.relevance_score),
-            self.reference_asset.uuid.to_string(),
-            self.candidate_asset.uuid.to_string(),
-            self.comparison_url.clone().unwrap_or_default(),
+            asset_name.to_string(), // ASSET_NAME
+            self.reference_asset.path.clone(), // ASSET_PATH
+            format!("{}", self.relevance_score), // RELEVANCE_SCORE
+            self.reference_asset.uuid.to_string(), // ASSET_UUID
+            asset_url, // ASSET_URL
         ]]
     }
 }

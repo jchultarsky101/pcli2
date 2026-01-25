@@ -11,7 +11,7 @@ use crate::commands::params::{
     multiple_files_parameter, path_parameter, recursive_parameter, tenant_parameter,
     uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE,
     COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH,
-    COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH_FOLDER, COMMAND_TEXT_MATCH, COMMAND_VISUAL_MATCH,
+    COMMAND_MATCH_FOLDER, COMMAND_PART_MATCH, COMMAND_PART_MATCH_FOLDER, COMMAND_TEXT_MATCH, COMMAND_VISUAL_MATCH,
     COMMAND_VISUAL_MATCH_FOLDER, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
     PARAMETER_FILE, PARAMETER_FOLDER_PATHS, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
@@ -127,6 +127,7 @@ pub fn asset_command() -> Command {
         )
     .subcommand(
         Command::new(COMMAND_MATCH)
+            .visible_alias("geometric-search") // Add alias for geometric-search
             .about("Find geometrically similar assets")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
@@ -148,7 +149,8 @@ pub fn asset_command() -> Command {
             .group(asset_identifier_group()),
     )
     .subcommand(
-        Command::new("part-match")
+        Command::new(COMMAND_PART_MATCH)
+            .visible_alias("part-search") // Add alias for part-search
             .about("Find geometrically similar assets using part search algorithm")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
@@ -171,6 +173,7 @@ pub fn asset_command() -> Command {
     )
     .subcommand(
         Command::new(COMMAND_MATCH_FOLDER)
+            .visible_alias("geometric-search-folder") // Add alias for geometric-search-folder
             .about("Find geometrically similar assets for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(
@@ -222,6 +225,7 @@ pub fn asset_command() -> Command {
     )
     .subcommand(
         Command::new(COMMAND_PART_MATCH_FOLDER)
+            .visible_alias("part-search-folder") // Add alias for part-search-folder
             .about("Find part matches for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(
@@ -273,6 +277,7 @@ pub fn asset_command() -> Command {
     )
     .subcommand(
         Command::new(COMMAND_VISUAL_MATCH)
+            .visible_alias("visual-search") // Add alias for visual-search
             .about("Find visually similar assets for a specific reference asset")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
@@ -285,6 +290,7 @@ pub fn asset_command() -> Command {
     )
     .subcommand(
         Command::new(COMMAND_VISUAL_MATCH_FOLDER)
+            .visible_alias("visual-search-folder") // Add alias for visual-search-folder
             .about("Find visually similar assets for all assets in one or more folders")
             .arg(tenant_parameter())
             .arg(

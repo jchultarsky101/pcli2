@@ -122,15 +122,23 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
 fn extract_all_dependencies_from_tree(assembly_tree: &crate::model::AssemblyTree) -> Vec<crate::model::AssetDependency> {
     let mut all_dependencies = Vec::new();
 
-    // Process all nodes in the tree recursively
-    collect_dependencies_recursive(assembly_tree.root(), &mut all_dependencies);
+    // Process all nodes in the tree recursively, starting with empty path
+    collect_dependencies_recursive(assembly_tree.root(), &mut all_dependencies, String::new());
 
     all_dependencies
 }
 
-// Recursive helper to collect all dependencies
-fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencies: &mut Vec<crate::model::AssetDependency>) {
+// Recursive helper to collect all dependencies with assembly path tracking
+fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencies: &mut Vec<crate::model::AssetDependency>, parent_assembly_path: String) {
     for child in node.children() {
+        // Calculate the assembly path for this child
+        let child_name = child.asset().name();
+        let current_assembly_path = if parent_assembly_path.is_empty() {
+            child_name.clone()
+        } else {
+            format!("{}/{}", parent_assembly_path, child_name)
+        };
+
         // Create an AssetResponse from the child asset
         let asset_response = crate::model::AssetResponse {
             uuid: child.asset().uuid(),
@@ -153,12 +161,18 @@ fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencie
             asset: Some(asset_response),
             occurrences: 1, // Default occurrence count
             has_dependencies: child.has_children(),
+            assembly_path: current_assembly_path.clone(), // Clone to use in both places
         };
+
+        // Store the assembly path in a way that can be accessed later
+        // We'll store it in the AssetResponse's path field or use a custom field
+        // Actually, let's extend the AssetDependency to include assembly path info
+        // For now, we'll need to modify how we handle this in the CSV formatter
 
         dependencies.push(asset_dependency);
 
-        // Recursively process children of this child
-        collect_dependencies_recursive(child, dependencies);
+        // Recursively process children of this child with updated assembly path
+        collect_dependencies_recursive(child, dependencies, current_assembly_path);
     }
 }
 

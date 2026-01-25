@@ -2977,6 +2977,9 @@ pub struct AssetDependency {
     /// Whether the dependency has its own dependencies
     #[serde(rename = "hasDependencies")]
     pub has_dependencies: bool,
+    /// The assembly path showing the location of this dependency within the assembly hierarchy
+    #[serde(rename = "assemblyPath")]
+    pub assembly_path: String,
 }
 
 /// Represents the response from the asset dependencies API endpoint
@@ -3011,6 +3014,7 @@ impl CsvRecordProducer for AssetDependencyList {
     fn csv_header() -> Vec<String> {
         vec![
             "ASSET_PATH".to_string(),
+            "ASSEMBLY_PATH".to_string(),
             "DEPENDENCY_PATH".to_string(),
             "ASSET_UUID".to_string(),
             "ASSET_NAME".to_string(),
@@ -3061,6 +3065,7 @@ impl CsvRecordProducer for AssetDependencyList {
 
                 vec![
                     self.path.clone(), // ASSET_PATH (the original asset)
+                    dep.assembly_path.clone(), // ASSEMBLY_PATH (the relative path within assembly hierarchy)
                     dep.path.clone(), // DEPENDENCY_PATH (the dependency path)
                     asset_uuid, // ASSET_UUID
                     asset_filename, // ASSET_NAME
@@ -3083,6 +3088,7 @@ impl OutputFormatter for AssetDependencyList {
                 #[derive(Serialize)]
                 struct SimplifiedAssetDependency {
                     path: String,
+                    assembly_path: String,
                     asset_id: Option<String>,
                     asset_name: Option<String>,
                     asset_state: Option<String>,
@@ -3136,6 +3142,7 @@ impl OutputFormatter for AssetDependencyList {
 
                         SimplifiedAssetDependency {
                             path: dep.path.clone(),
+                            assembly_path: dep.assembly_path.clone(),
                             asset_id,
                             asset_name,
                             asset_state,

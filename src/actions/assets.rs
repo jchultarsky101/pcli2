@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::actions::CliActionError;
 use crate::{
     actions::folders::resolve_folder_uuid_by_path,
-    commands::params::{PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID},
+    commands::params::{PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID, PARAMETER_FUZZY},
     configuration::Configuration,
     error::CliError,
     error_utils,
@@ -2775,6 +2775,153 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
             } else {
                 println!("{}", serde_json::to_string(&response)?);
             }
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing text match command...");
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+
+    // Get the text query parameter
+    let text_query = sub_matches.get_one::<String>("text")
+        .ok_or(CliError::MissingRequiredArgument("text query is required".to_string()))?;
+
+    // Get the fuzzy flag - if not specified, default to false (meaning exact search with quoted text)
+    let fuzzy = sub_matches.get_flag(PARAMETER_FUZZY);
+
+    // If fuzzy is false (default), wrap the text query in quotes for exact search
+    let search_query = if fuzzy {
+        text_query.clone()
+    } else {
+        format!("\"{}\"", text_query)
+    };
+
+    // Get format parameters directly from sub_matches since text match commands have format flags
+    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
+        format_val.clone()
+    } else {
+        // Check environment variable first, then use default
+        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
+            env_format
+        } else {
+            "json".to_string()
+        }
+    };
+
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    // Note: text match doesn't have metadata flag in this implementation
+
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata: false, // No metadata for text match
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(|e| CliActionError::FormattingError(e))?;
+
+    // Extract tenant info before calling text search
+    let tenant_uuid = *ctx.tenant_uuid();
+    let tenant_name = ctx.tenant().name.clone();
+
+    // Perform text search
+    let mut search_results = ctx.api().text_search(&tenant_uuid, &search_query).await?;
+
+    // Load configuration to get the UI base URL
+    let configuration = crate::configuration::Configuration::load_or_create_default()
+        .map_err(|e| CliError::ConfigurationError(
+            crate::configuration::ConfigurationError::FailedToLoadData {
+                cause: Box::new(e),
+            }
+        ))?;
+    let ui_base_url = configuration.get_ui_base_url();
+
+    // Populate comparison URLs for each match
+    for match_result in &mut search_results.matches {
+        let base_url = ui_base_url.trim_end_matches('/');
+        let relevance_score = match_result.relevance_score.unwrap_or(0.0);
+        let comparison_url = if base_url.ends_with("/tenants") {
+            format!(
+                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=text&relevanceScore={:.2}",
+                base_url, // Use configurable UI base URL without trailing slash
+                tenant_name, // Use tenant short name in path
+                "", // For text search, we don't have a reference asset, so leave empty
+                match_result.asset.uuid,
+                tenant_uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
+                relevance_score
+            )
+        } else {
+            format!(
+                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=text&relevanceScore={:.2}",
+                base_url, // Use configurable UI base URL without trailing slash
+                tenant_name, // Use tenant short name in path
+                "", // For text search, we don't have a reference asset, so leave empty
+                match_result.asset.uuid,
+                tenant_uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
+                relevance_score
+            )
+        };
+        match_result.comparison_url = Some(comparison_url);
+    }
+
+    // Create enhanced response that includes the search query information
+    let enhanced_response = crate::model::EnhancedTextSearchResponse {
+        search_query: text_query.clone(), // Use the original user input for display
+        matches: search_results.matches,
+    };
+
+    // Format the response based on the output format
+    match format {
+        crate::format::OutputFormat::Json(options) => {
+            if options.pretty {
+                println!("{}", serde_json::to_string_pretty(&enhanced_response)?);
+            } else {
+                println!("{}", serde_json::to_string(&enhanced_response)?);
+            }
+        }
+        crate::format::OutputFormat::Csv(options) => {
+            let mut wtr = csv::Writer::from_writer(vec![]);
+
+            if options.with_headers {
+                let headers = crate::model::EnhancedTextSearchResponse::csv_header();
+                if let Err(e) = wtr.serialize(headers.as_slice()) {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                }
+            }
+
+            for match_result in &enhanced_response.matches {
+                let records = match_result.as_csv_records();
+                for record in records {
+                    if let Err(e) = wtr.serialize(record.as_slice()) {
+                        return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    }
+                }
+            }
+
+            let data = match wtr.into_inner() {
+                Ok(data) => data,
+                Err(e) => {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                }
+            };
+            let output = match String::from_utf8(data) {
+                Ok(s) => s,
+                Err(e) => {
+                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                }
+            };
+            print!("{}", output);
+        }
+        _ => {
+            // Default to JSON
+            println!("{}", serde_json::to_string_pretty(&enhanced_response)?);
         }
     }
 

@@ -516,34 +516,38 @@ Asset dependencies represent the relationships between assemblies and their comp
 #### Basic Dependency Queries
 
 ```bash
-# Get direct dependencies for an asset
+# Get dependencies for an asset (always recursive by default)
 pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --format json
 
 # Get dependencies by UUID (path-based lookup is preferred)
 pcli2 asset dependencies --uuid ASSET_UUID --format json
 ```
 
+**Note**: The command now always retrieves the full dependency hierarchy recursively by default, showing all nested dependencies rather than just direct dependencies.
+
 #### Recursive Dependency Queries
 
-For complex assemblies with nested subassemblies, you can use the `--recursive` flag to traverse the entire dependency tree:
+For complex assemblies with nested subassemblies, the command now always traverses the entire dependency tree recursively by default:
 
 ```bash
 # Get all dependencies recursively, showing the full hierarchy
-pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format tree
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --format tree
 
 # Get all dependencies recursively in machine-readable JSON format with parent-child relationships
-pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format json
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --format json
 
 # Get all dependencies recursively in CSV format with parent-child relationships
-pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format csv
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --format csv
 ```
 
 The recursive mode preserves parent-child relationships in the output:
 - **Tree format**: Shows proper hierarchical indentation structure
 - **JSON format**: Includes `parentPath` field to show which asset is the parent of each dependency
-- **CSV format**: Includes `PARENT_PATH` column to show parent-child relationships
+- **CSV format**: Includes `PARENT_PATH` and `ASSEMBLY_PATH` columns to show parent-child relationships and the relative path of each asset within the assembly hierarchy
 
 This allows you to understand the complete assembly structure and perform bill-of-materials analysis.
+
+**Note**: The `--recursive` flag has been removed as the command now always operates recursively by default.
 
 ### Geometric Matching
 

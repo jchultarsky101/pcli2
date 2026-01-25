@@ -614,6 +614,48 @@ The CSV output includes columns for both similarity scores:
 
 This bidirectional matching approach is ideal for discovering hierarchical relationships between components and assemblies in your design database.
 
+### Text Matching
+
+Text matching is a feature that finds assets based on text search queries. This allows you to search for assets by name, path, or associated metadata using text-based queries. The search can be performed as either exact matches (default) or fuzzy matches.
+
+#### Single Asset Text Matching
+
+Use the text-match command to find assets that match a text query:
+
+```bash
+# Find assets matching a text query with exact search (default behavior - wraps query in quotes)
+pcli2 asset text-match --text "bearing" --format json
+
+# Find assets matching a text query with fuzzy search (does not wrap query in quotes)
+pcli2 asset text-match --text "bearing" --fuzzy --format json
+
+# View results in CSV format with headers
+pcli2 asset text-match --text "0000_TAHU-P2-COM_1104.iam" --format csv --headers
+```
+
+By default, text matching performs an exact search by wrapping the query in quotes. To perform a fuzzy search instead, use the `--fuzzy` flag.
+
+#### Text Matching Output
+
+Text matching results include the following information:
+
+```bash
+# View text matching results in CSV format with headers
+pcli2 asset text-match --text "bearing" --format csv --headers
+```
+
+The CSV output includes columns for:
+- `ASSET_NAME`: Name of the matching asset
+- `ASSET_PATH`: Full path to the matching asset
+- `TYPE`: Asset type (model, assembly, etc.)
+- `STATE`: Asset state (finished, processing, etc.)
+- `IS_ASSEMBLY`: Whether the asset is an assembly (true/false)
+- `RELEVANCE_SCORE`: Relevance score of the match
+- `ASSET_UUID`: UUID of the matching asset
+- `ASSET_URL`: Direct URL to view the asset in the Physna UI
+
+Text matching is particularly useful for finding assets based on their names, paths, or metadata without needing to know their exact location in the folder hierarchy.
+
 ### Visual Matching
 
 Visual matching is a specialized feature that finds assets with similar visual appearance using advanced computer vision algorithms. Unlike geometric matching which focuses on 3D shape similarity, or part matching which identifies hierarchical relationships, visual matching identifies assets that look similar from a visual standpoint.
@@ -1246,12 +1288,13 @@ pcli2
 │   │   └── inference             Apply metadata from a reference asset to geometrically similar assets
 │   ├── dependencies              Get dependencies for an asset
 │   ├── download                  Download asset file
-│   ├── geometric-match           Find geometrically similar assets
-│   ├── part-match                Find geometrically similar assets using part search algorithm
-│   ├── geometric-match-folder    Find geometrically similar assets for all assets in one or more folders
-│   ├── part-match-folder         Find part matches for all assets in one or more folders
-│   ├── visual-match              Find visually similar assets for a specific reference asset
-│   └── visual-match-folder       Find visually similar assets for all assets in one or more folders
+│   ├── geometric-match           Find geometrically similar assets [aliases: geometric-search]
+│   ├── part-match                Find geometrically similar assets using part search algorithm [aliases: part-search]
+│   ├── geometric-match-folder    Find geometrically similar assets for all assets in one or more folders [aliases: geometric-search-folder]
+│   ├── part-match-folder         Find part matches for all assets in one or more folders [aliases: part-search-folder]
+│   ├── visual-match              Find visually similar assets for a specific reference asset [aliases: visual-search]
+│   ├── visual-match-folder       Find visually similar assets for all assets in one or more folders [aliases: visual-search-folder]
+│   └── text-match                Find assets using text search [aliases: text-search]
 ├── folder
 │   ├── create                    Create a new folder
 │   ├── list                      List all folders [aliases: ls]

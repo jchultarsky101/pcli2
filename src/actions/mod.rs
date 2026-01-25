@@ -4,6 +4,7 @@ pub mod assets;
 pub mod folders;
 pub mod tenants;
 pub mod completions;
+pub mod utils;
 
 #[derive(Debug, Error)]
 pub enum CliActionError {

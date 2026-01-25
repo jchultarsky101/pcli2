@@ -53,58 +53,52 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
 pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing \"asset get\" command...");
-    
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-    let format = get_format_parameter_value(sub_matches).await;
-    
-    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
-    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
-    
-    // Resolve asset ID from either UUID parameter or path
-    let asset = if let Some(uuid) = asset_uuid_param {
-        let uuid = Uuid::from_str(uuid).unwrap(); 
-        api.get_asset_by_uuid(&tenant.uuid, &uuid).await?
-    } else if let Some(asset_path) = asset_path_param {
-        // Get asset cache or fetch assets from API
-        api.get_asset_by_path(&tenant.uuid, asset_path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
-    };
 
-    println!("{}", asset.format(format)?);        
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let format = get_format_parameter_value(sub_matches).await;
+
+    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID).map(|s| Uuid::from_str(s).unwrap());
+    let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+
+    // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
+
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param.as_ref(),
+        asset_path_param
+    ).await?;
+
+    println!("{}", asset.format(format)?);
 
 	Ok(())
 }
 
 pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing \"asset dependencies\" command...");
-    
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
     let format = get_format_parameter_value(sub_matches).await;
-    
-    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+
+    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID).map(|s| Uuid::from_str(s).unwrap());
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
-    
-    // Resolve asset ID from either UUID parameter or path
-    let asset = if let Some(uuid) = asset_uuid_param {
-        let uuid = Uuid::from_str(uuid).unwrap(); 
-        api.get_asset_by_uuid(&tenant.uuid, &uuid).await?
-    } else if let Some(asset_path) = asset_path_param {
-        // Get asset cache or fetch assets from API
-        api.get_asset_by_path(&tenant.uuid, asset_path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
-    };
 
-    let dependencies = api.get_asset_dependencies_by_path(&tenant.uuid, asset.path().as_str()).await?;
+    // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
 
-    println!("{}", dependencies.format(format)?);        
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param.as_ref(),
+        asset_path_param
+    ).await?;
+
+    let dependencies = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
+
+    println!("{}", dependencies.format(format)?);
 
 	Ok(())
 }
@@ -391,32 +385,29 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
 }
 
 pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliError> {
-    
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
     let format = get_format_parameter_value(sub_matches).await;
-    
-    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID);
+
+    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID).map(|s| Uuid::from_str(s).unwrap());
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
-    
-    // Resolve asset ID from either UUID parameter or path
-    let asset = if let Some(uuid) = asset_uuid_param {
-        let uuid = Uuid::from_str(uuid).unwrap(); 
-        api.get_asset_by_uuid(&tenant.uuid, &uuid).await?
-    } else if let Some(asset_path) = asset_path_param {
-        // Get asset cache or fetch assets from API
-        api.get_asset_by_path(&tenant.uuid, asset_path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
-    };
-    
+
+    // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
+
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param.as_ref(),
+        asset_path_param
+    ).await?;
+
     match asset.metadata() {
         Some(metadata) => println!("{}", metadata.format(format)?),
         None => ()
     };
-            
+
     Ok(())
 
 }
@@ -437,26 +428,24 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
 pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing \"asset delete\" command...");
 
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
 
-    // Resolve asset ID from either UUID parameter or path
-    let asset = if let Some(uuid) = asset_uuid_param {
-        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
-    } else if let Some(asset_path) = asset_path_param {
-        // Get asset by path
-        api.get_asset_by_path(&tenant.uuid, asset_path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
-    };
+    // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
+
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param,
+        asset_path_param
+    ).await?;
 
     // Delete the asset
-    api.delete_asset(&tenant.uuid.to_string(), &asset.uuid().to_string()).await?;
+    ctx.api().delete_asset(&tenant_uuid.to_string(), &asset.uuid().to_string()).await?;
 
     Ok(())
 }
@@ -477,23 +466,21 @@ pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing \"asset download\" command...");
 
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
 
-    // Resolve asset ID from either UUID parameter or path
-    let asset = if let Some(uuid) = asset_uuid_param {
-        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
-    } else if let Some(asset_path) = asset_path_param {
-        // Get asset by path
-        api.get_asset_by_path(&tenant.uuid, asset_path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
-    };
+    // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
+
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param,
+        asset_path_param
+    ).await?;
 
     // Get the output file path
     let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE) {
@@ -507,8 +494,8 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     // Download the asset file
-    let file_content = api.download_asset(
-        &tenant.uuid.to_string(),
+    let file_content = ctx.api().download_asset(
+        &tenant_uuid.to_string(),
         &asset.uuid().to_string()
     ).await?;
 
@@ -521,9 +508,7 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing geometric match command...");
 
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
@@ -549,25 +534,26 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(|e| CliActionError::FormattingError(e))?;
 
-    // Resolve asset ID from either UUID parameter or path
-    let asset = if let Some(uuid) = asset_uuid_param {
-        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
-    } else if let Some(asset_path) = asset_path_param {
-        // Get asset by path
-        api.get_asset_by_path(&tenant.uuid, asset_path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
-    };
+    // Extract tenant info before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
+    let tenant_name = ctx.tenant().name.clone();
+
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param,
+        asset_path_param
+    ).await?;
 
     // Perform geometric search
-    let mut search_results = api.geometric_search(&tenant.uuid, &asset.uuid(), threshold).await?;
+    let mut search_results = ctx.api().geometric_search(&tenant_uuid, &asset.uuid(), threshold).await?;
 
     // Load configuration to get the UI base URL
     let configuration = crate::configuration::Configuration::load_or_create_default()
         .map_err(|e| CliError::ConfigurationError(
             crate::configuration::ConfigurationError::FailedToLoadData {
-                cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+                cause: Box::new(e),
             }
         ))?;
     let ui_base_url = configuration.get_ui_base_url();
@@ -579,22 +565,22 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
             format!(
                 "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
                 base_url, // Use configurable UI base URL without trailing slash
-                tenant.name, // Use tenant short name in path
+                tenant_name, // Use tenant short name in path
                 asset.uuid(),
                 match_result.asset.uuid,
-                tenant.uuid, // Use tenant UUID in query params
-                tenant.uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
                 match_result.match_percentage
             )
         } else {
             format!(
                 "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
                 base_url, // Use configurable UI base URL without trailing slash
-                tenant.name, // Use tenant short name in path
+                tenant_name, // Use tenant short name in path
                 asset.uuid(),
                 match_result.asset.uuid,
-                tenant.uuid, // Use tenant UUID in query params
-                tenant.uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
                 match_result.match_percentage
             )
         };
@@ -617,7 +603,7 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
 
     let reference_asset_response = crate::model::AssetResponse {
         uuid: asset.uuid(),
-        tenant_id: tenant.uuid, // Use the tenant UUID
+        tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
         folder_id: None, // We don't have folder ID in the Asset struct
         asset_type: "asset".to_string(), // Default asset type
@@ -644,9 +630,7 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
 pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing part match command...");
 
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
@@ -681,25 +665,26 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(|e| CliActionError::FormattingError(e))?;
 
-    // Resolve asset ID from either UUID parameter or path
-    let asset = if let Some(uuid) = asset_uuid_param {
-        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
-    } else if let Some(asset_path) = asset_path_param {
-        // Get asset by path
-        api.get_asset_by_path(&tenant.uuid, asset_path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
-    };
+    // Extract tenant info before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
+    let tenant_name = ctx.tenant().name.clone();
+
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param,
+        asset_path_param
+    ).await?;
 
     // Perform part search
-    let mut search_results = api.part_search(&tenant.uuid, &asset.uuid(), threshold).await?;
+    let mut search_results = ctx.api().part_search(&tenant_uuid, &asset.uuid(), threshold).await?;
 
     // Load configuration to get the UI base URL
     let configuration = crate::configuration::Configuration::load_or_create_default()
         .map_err(|e| CliError::ConfigurationError(
             crate::configuration::ConfigurationError::FailedToLoadData {
-                cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+                cause: Box::new(e),
             }
         ))?;
     let ui_base_url = configuration.get_ui_base_url();
@@ -711,11 +696,11 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
             format!(
                 "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
                 base_url, // Use configurable UI base URL without trailing slash
-                tenant.name, // Use tenant short name in path
+                tenant_name, // Use tenant short name in path
                 asset.uuid(),
                 match_result.asset.uuid,
-                tenant.uuid, // Use tenant UUID in query params
-                tenant.uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
                 match_result.forward_match_percentage.unwrap_or(0.0),
                 match_result.reverse_match_percentage.unwrap_or(0.0)
             )
@@ -723,11 +708,11 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
             format!(
                 "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
                 base_url, // Use configurable UI base URL without trailing slash
-                tenant.name, // Use tenant short name in path
+                tenant_name, // Use tenant short name in path
                 asset.uuid(),
                 match_result.asset.uuid,
-                tenant.uuid, // Use tenant UUID in query params
-                tenant.uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
                 match_result.forward_match_percentage.unwrap_or(0.0),
                 match_result.reverse_match_percentage.unwrap_or(0.0)
             )
@@ -751,7 +736,7 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
 
     let reference_asset_response = crate::model::AssetResponse {
         uuid: asset.uuid(),
-        tenant_id: tenant.uuid, // Use the tenant UUID
+        tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
         folder_id: None, // We don't have folder ID in the Asset struct
         asset_type: "asset".to_string(), // Default asset type
@@ -933,7 +918,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                         let configuration = crate::configuration::Configuration::load_or_create_default()
                             .map_err(|e| CliError::ConfigurationError(
                                 crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+                                    cause: Box::new(e),
                                 }
                             ))?;
                         let ui_base_url = configuration.get_ui_base_url();
@@ -1394,7 +1379,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                         let configuration = crate::configuration::Configuration::load_or_create_default()
                             .map_err(|e| CliError::ConfigurationError(
                                 crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+                                    cause: Box::new(e),
                                 }
                             ))?;
                         let ui_base_url = configuration.get_ui_base_url();
@@ -1695,9 +1680,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing visual match command...");
 
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
@@ -1727,25 +1710,26 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(|e| CliActionError::FormattingError(e))?;
 
-    // Resolve asset ID from either UUID parameter or path
-    let asset = if let Some(uuid) = asset_uuid_param {
-        api.get_asset_by_uuid(&tenant.uuid, uuid).await?
-    } else if let Some(asset_path) = asset_path_param {
-        // Get asset by path
-        api.get_asset_by_path(&tenant.uuid, asset_path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
-    };
+    // Extract tenant info before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
+    let tenant_name = ctx.tenant().name.clone();
+
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param,
+        asset_path_param
+    ).await?;
 
     // Perform visual search
-    let mut search_results = api.visual_search(&tenant.uuid, &asset.uuid()).await?;
+    let mut search_results = ctx.api().visual_search(&tenant_uuid, &asset.uuid()).await?;
 
     // Load configuration to get the UI base URL
     let configuration = crate::configuration::Configuration::load_or_create_default()
         .map_err(|e| CliError::ConfigurationError(
             crate::configuration::ConfigurationError::FailedToLoadData {
-                cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+                cause: Box::new(e),
             }
         ))?;
     let ui_base_url = configuration.get_ui_base_url();
@@ -1757,21 +1741,21 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
             format!(
                 "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
                 base_url, // Use configurable UI base URL without trailing slash
-                tenant.name, // Use tenant short name in path
+                tenant_name, // Use tenant short name in path
                 asset.uuid(),
                 match_result.asset.uuid,
-                tenant.uuid, // Use tenant UUID in query params
-                tenant.uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
             )
         } else {
             format!(
                 "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
                 base_url, // Use configurable UI base URL without trailing slash
-                tenant.name, // Use tenant short name in path
+                tenant_name, // Use tenant short name in path
                 asset.uuid(),
                 match_result.asset.uuid,
-                tenant.uuid, // Use tenant UUID in query params
-                tenant.uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
+                tenant_uuid, // Use tenant UUID in query params
             )
         };
         match_result.comparison_url = Some(comparison_url);
@@ -1793,7 +1777,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
 
     let reference_asset_response = crate::model::AssetResponse {
         uuid: asset.uuid(),
-        tenant_id: tenant.uuid, // Use the tenant UUID
+        tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
         folder_id: None, // We don't have folder ID in the Asset struct
         asset_type: "asset".to_string(), // Default asset type
@@ -2080,7 +2064,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                         let configuration = crate::configuration::Configuration::load_or_create_default()
                             .map_err(|e| CliError::ConfigurationError(
                                 crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e) as Box<dyn std::error::Error + Send + Sync>,
+                                    cause: Box::new(e),
                                 }
                             ))?;
                         let ui_base_url = configuration.get_ui_base_url();

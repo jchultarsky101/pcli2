@@ -1,6 +1,6 @@
 use clap::ArgMatches;
 use uuid::Uuid;
-use crate::{commands::params::{PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_METADATA, PARAMETER_PRETTY, PARAMETER_TENANT}, configuration::Configuration, error::CliError, format::{OutputFormat, OutputFormatOptions}, model::Tenant, physna_v3::PhysnaApiClient};
+use crate::{commands::params::PARAMETER_TENANT, configuration::Configuration, error::CliError, format::OutputFormat, model::Tenant, physna_v3::PhysnaApiClient};
 use tracing::{debug, trace};
 
 
@@ -37,31 +37,15 @@ pub async fn get_format_parameter_value(sub_matches: &ArgMatches) -> OutputForma
 
     trace!("Resolving output format options...");
 
-    // Get format parameter - Clap handles environment variable precedence automatically
-    // 1. User specified --format (explicit command line)
-    // 2. Environment variable PCLI2_FORMAT (when no explicit format provided)
-    // 3. Default value of "json" (set in the argument definition)
-    let format_string = sub_matches.get_one::<String>(PARAMETER_FORMAT).unwrap().clone();
+    // Use the new format utilities for consistent handling
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
 
-    let with_metadata = sub_matches.get_flag(PARAMETER_METADATA);
+    trace!("Format: {}", format_params.format_str);
+    trace!("With headers: {}", format_params.format_options.with_headers);
+    trace!("With metadata: {}", format_params.format_options.with_metadata);
+    trace!("Pretty: {}", format_params.format_options.pretty);
 
-    // Get headers flag - Clap handles environment variable precedence automatically
-    // 1. User specified --headers (explicit command line)
-    // 2. Environment variable PCLI2_HEADERS (when no explicit headers flag provided)
-    // 3. Default value of false (implicit for boolean flags)
-    let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
-
-    let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
-
-    trace!("Format: {}", format_string);
-    trace!("With headers: {}", with_headers);
-    trace!("With metadata: {}", with_metadata);
-    trace!("Pretty: {}", pretty);
-
-    let options = OutputFormatOptions { with_metadata, with_headers, pretty };
-
-    // Using clap, we allow only valid values for the --format parameter. Because of that it is safe to unwrap.
-    OutputFormat::from_string_with_options(&format_string, options).unwrap().to_owned()
+    format_params.format
 }
 
 pub async fn resolve_tenant_by_uuid(

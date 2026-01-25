@@ -88,6 +88,46 @@ impl OutputFormat {
             )),
         }
     }
+
+    /// Enhanced format validation with better error handling and recovery
+    pub fn from_string_with_options_safe(
+        format_str: &str,
+        options: OutputFormatOptions,
+    ) -> Result<OutputFormat, FormattingError> {
+        let normalized_format = format_str.trim().to_lowercase();
+
+        // Validate format string before processing
+        if !Self::is_valid_format(&normalized_format) {
+            return Err(FormattingError::UnsupportedOutputFormat(
+                format_str.to_string(),
+            ));
+        }
+
+        match normalized_format.as_str() {
+            JSON => Ok(OutputFormat::Json(options)),
+            CSV => Ok(OutputFormat::Csv(options)),
+            TREE => Ok(OutputFormat::Tree(options)),
+            _ => Err(FormattingError::UnsupportedOutputFormat(
+                format_str.to_string(),
+            )),
+        }
+    }
+
+    fn is_valid_format(format: &str) -> bool {
+        matches!(format, "json" | "csv" | "tree")
+    }
+
+    /// Get all supported format names
+    pub fn supported_formats() -> &'static [&'static str] {
+        &[JSON, CSV, TREE]
+    }
+
+    /// Check if a format string is supported (case-insensitive)
+    pub fn supports_format(format_str: &str) -> bool {
+        Self::supported_formats()
+            .iter()
+            .any(|&supported| supported.eq_ignore_ascii_case(format_str))
+    }
 }
 
 impl Default for OutputFormat {

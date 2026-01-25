@@ -67,43 +67,28 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
 }
 
 pub async fn print_folder_details(sub_matches: &ArgMatches) -> Result<(), CliError> {
-    
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
     let format = get_format_parameter_value(sub_matches).await;
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
-    
-    // Must provide either UUID or path
-    if folder_uuid_param.is_none() && folder_path_param.is_none() {
-        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
+
+    // Extract tenant before calling resolve_folder to avoid borrowing conflicts
+    let tenant = ctx.tenant().clone();
+
+    // Resolve folder using the helper function
+    let mut folder: Folder = crate::actions::utils::resolve_folder(
+        ctx.api(),
+        &tenant,
+        folder_uuid_param,
+        folder_path_param
+    ).await?;
+
+    // Set path if provided in parameters
+    if let Some(path) = folder_path_param {
+        folder.set_path(path.to_owned());
     }
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        uuid.clone()
-    } else if let Some(path) = folder_path_param {
-        let normalized_path = crate::model::normalize_path(path);
-        if normalized_path == "/" {
-            // Root path doesn't have a specific UUID, so this should be handled differently
-            // For get operations, we might need to list root contents instead
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        } else {
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        }
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
-    };
-            
-    let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let mut folder: Folder = folder.into();
-    match folder_path_param {
-        Some(path) => folder.set_path(path.to_owned()),
-        None => (),
-    }
     println!("{}", folder.format(format)?);
 
     Ok(())
@@ -116,35 +101,32 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .ok_or(CliError::MissingRequiredArgument(PARAMETER_NAME.to_string()))?
         .clone();
 
-    // Validate that only one folder parameter is provided (mutual exclusivity handled by clap group)
-    if folder_uuid_param.is_some() && folder_path_param.is_some() {
-        return Err(CliError::MissingRequiredArgument("Only one of --folder-uuid or --folder-path can be specified, not both".to_string()));
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+
+    // Extract tenant before calling resolve_folder to avoid borrowing conflicts
+    let tenant = ctx.tenant().clone();
+
+    // Resolve folder using the helper function
+    let folder: Folder = crate::actions::utils::resolve_folder(
+        ctx.api(),
+        &tenant,
+        folder_uuid_param,
+        folder_path_param
+    ).await?;
+
+    // Check if trying to rename the root folder
+    if folder_path_param.map_or(false, |p| crate::model::normalize_path(p) == "/") {
+        return Err(CliError::MissingRequiredArgument("Cannot rename the root folder".to_string()));
     }
 
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-
-    // Resolve folder ID from either ID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        uuid.clone()
-    } else if let Some(path) = folder_path_param {
-        let normalized_path = crate::model::normalize_path(path);
-        if normalized_path == "/" {
-            // Root path doesn't have a specific UUID, so this operation is not valid
-            return Err(CliError::MissingRequiredArgument("Cannot rename the root folder".to_string()));
-        } else {
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        }
-    } else {
-        return Err(CliError::MissingRequiredArgument(format!("Missing folder identifier")));
-    };
+    // Extract tenant UUID before calling rename_folder to avoid borrowing conflicts
+    let tenant_uuid = tenant.uuid;
 
     // Attempt to rename the folder
-    if let Err(e) = api.rename_folder(&tenant.uuid.to_string(), &folder_uuid.to_string(), &new_name).await {
+    if let Err(e) = ctx.api().rename_folder(&tenant_uuid.to_string(), &folder.uuid().to_string(), &new_name).await {
         // If we got here, the folder was successfully found/resolved, but the rename operation failed
         // This could be due to permissions, API endpoint issues, etc.
-        return Err(CliError::FolderRenameFailed(folder_uuid.to_string(), e.to_string()));
+        return Err(CliError::FolderRenameFailed(folder.uuid().to_string(), e.to_string()));
     }
 
     Ok(())

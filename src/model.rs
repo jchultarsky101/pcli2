@@ -2988,10 +2988,11 @@ impl From<AssetDependenciesResponse> for AssetDependencyList {
 impl CsvRecordProducer for AssetDependencyList {
     fn csv_header() -> Vec<String> {
         vec![
-            "PATH".to_string(),
-            "ASSEMBLY_PATH".to_string(),
-            "ASSET_ID".to_string(),
+            "ASSET_PATH".to_string(),
+            "DEPENDENCY_PATH".to_string(),
+            "ASSET_UUID".to_string(),
             "ASSET_NAME".to_string(),
+            "ASSET_STATE".to_string(),
             "OCCURRENCES".to_string(),
             "HAS_DEPENDENCIES".to_string(),
         ]
@@ -3001,7 +3002,7 @@ impl CsvRecordProducer for AssetDependencyList {
         self.dependencies
             .iter()
             .map(|dep| {
-                let (asset_uuid, asset_filename) = match &dep.asset {
+                let (asset_uuid, asset_filename, asset_state) = match &dep.asset {
                     Some(asset) => {
                         let filename = asset
                             .path
@@ -3009,17 +3010,19 @@ impl CsvRecordProducer for AssetDependencyList {
                             .next_back()
                             .unwrap_or(&asset.path)
                             .to_string();
-                        (asset.uuid.to_string(), filename)
+                        (asset.uuid.to_string(), filename, asset.state.clone())
                     }
-                    None => ("N/A".to_string(), "N/A".to_string()),
+                    None => ("N/A".to_string(), "MISSING".to_string(), "missing".to_string()), // For missing dependencies
                 };
 
                 vec![
-                    dep.path.clone(),
-                    asset_uuid,
-                    asset_filename,
-                    dep.occurrences.to_string(),
-                    dep.has_dependencies.to_string(),
+                    self.path.clone(), // ASSET_PATH (the original asset)
+                    dep.path.clone(), // DEPENDENCY_PATH (the dependency path)
+                    asset_uuid, // ASSET_UUID
+                    asset_filename, // ASSET_NAME
+                    asset_state, // ASSET_STATE (added as requested)
+                    dep.occurrences.to_string(), // OCCURRENCES
+                    dep.has_dependencies.to_string(), // HAS_DEPENDENCIES
                 ]
             })
             .collect()
@@ -3031,9 +3034,63 @@ impl OutputFormatter for AssetDependencyList {
 
     fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
         match f {
-            OutputFormat::Json(_) => {
-                let json = serde_json::to_string_pretty(self);
-                match json {
+            OutputFormat::Json(options) => {
+                // Create a simplified representation for JSON output that includes state information
+                #[derive(Serialize)]
+                struct SimplifiedAssetDependency {
+                    path: String,
+                    asset_id: Option<String>,
+                    asset_name: Option<String>,
+                    asset_state: Option<String>,
+                    occurrences: u32,
+                    has_dependencies: bool,
+                }
+
+                #[derive(Serialize)]
+                struct SimplifiedAssetDependencyList {
+                    asset_path: String,
+                    dependencies: Vec<SimplifiedAssetDependency>,
+                }
+
+                let simplified_deps: Vec<SimplifiedAssetDependency> = self.dependencies
+                    .iter()
+                    .map(|dep| {
+                        let (asset_id, asset_name, asset_state) = match &dep.asset {
+                            Some(asset) => {
+                                let name = asset
+                                    .path
+                                    .split('/')
+                                    .next_back()
+                                    .unwrap_or(&asset.path)
+                                    .to_string();
+                                (Some(asset.uuid.to_string()), Some(name), Some(asset.state.clone()))
+                            }
+                            None => (None, None, Some("missing".to_string())), // Mark missing dependencies with "missing" state
+                        };
+
+                        SimplifiedAssetDependency {
+                            path: dep.path.clone(),
+                            asset_id,
+                            asset_name,
+                            asset_state,
+                            occurrences: dep.occurrences,
+                            has_dependencies: dep.has_dependencies,
+                        }
+                    })
+                    .collect();
+
+                let simplified_list = SimplifiedAssetDependencyList {
+                    asset_path: self.path.clone(),
+                    dependencies: simplified_deps,
+                };
+
+                let result = if options.pretty {
+                    serde_json::to_string_pretty(&simplified_list)
+                } else {
+                    serde_json::to_string(&simplified_list)
+                };
+
+                match result {
                     Ok(json) => Ok(json),
                     Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
@@ -3069,39 +3126,45 @@ impl OutputFormatter for AssetDependencyList {
                 })
             }
             OutputFormat::Tree(_) => {
-                // Create a tree representation of the dependencies with original asset as root
-                let mut output = String::new();
+                // Create a tree representation using the ptree crate
+                use ptree::TreeBuilder;
 
-                // Extract the original asset name from the path (last part after the last slash)
-                let original_asset_name = self.path.split('/').next_back().unwrap_or(&self.path);
-
-                output.push_str(&format!("{}\n", original_asset_name));
+                let mut tree = TreeBuilder::new(self.path.split('/').next_back().unwrap_or(&self.path).to_string());
 
                 for dep in &self.dependencies {
-                    let asset_name = match &dep.asset {
-                        Some(asset) => asset
-                            .path
-                            .split('/')
-                            .next_back()
-                            .unwrap_or(&asset.path)
-                            .to_string(),
+                    let (asset_name, asset_state) = match &dep.asset {
+                        Some(asset) => {
+                            let name = asset
+                                .path
+                                .split('/')
+                                .next_back()
+                                .unwrap_or(&asset.path)
+                                .to_string();
+                            (name, asset.state.clone())
+                        },
                         None => {
-                            // If asset details are not available, use the path directly
-                            dep.path
+                            // If asset details are not available, use the path directly and mark as missing
+                            let name = dep.path
                                 .split('/')
                                 .next_back()
                                 .unwrap_or(&dep.path)
-                                .to_string()
+                                .to_string();
+                            (name, "missing".to_string())
                         }
                     };
 
-                    output.push_str(&format!(
-                        "├── {} ({} occurrences)\n",
-                        asset_name, dep.occurrences
-                    ));
+                    let node_label = format!("{} [{}] ({} occurrences)", asset_name, asset_state, dep.occurrences);
+                    tree.add_empty_child(node_label);
                 }
 
-                Ok(output)
+                let tree = tree.build();
+
+                let mut output = Vec::new();
+                ptree::write_tree(&tree, &mut output)
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
+
+                String::from_utf8(output)
+                    .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })
             }
         }
     }

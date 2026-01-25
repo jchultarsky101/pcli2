@@ -2389,6 +2389,22 @@ impl PhysnaApiClient {
     
 
     
+    /// Public method to get asset dependencies list by path
+    /// This method returns the raw dependencies response instead of building an assembly tree
+    pub async fn get_asset_dependencies_list_by_path<S: AsRef<str>>(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_path: S,
+    ) -> Result<AssetDependenciesResponse, ApiError> {
+        // Use the existing pagination method with default page values
+        self.get_asset_dependencies_by_path_with_pagination(
+            tenant_uuid,
+            asset_path,
+            1,  // page 1
+            100 // 100 per page
+        ).await
+    }
+
     #[async_recursion]
     async fn populate_asset_dependencies_recursive(
         &mut self,
@@ -2414,17 +2430,32 @@ impl PhysnaApiClient {
 
             for dependency in response.dependencies {
                 // Convert dependency asset once, but only if it exists
-                if let Some(asset_response) = dependency.asset {
-                    let child_asset: Asset = asset_response.into();
+                let child_asset: Asset = if let Some(asset_response) = dependency.asset {
+                    asset_response.into()
+                } else {
+                    // Create a minimal Asset when full details are not available
+                    // Use the path to extract a name
+                    let name = dependency.path.split('/').next_back().unwrap_or(&dependency.path).to_string();
+                    Asset::new(
+                        Uuid::nil(), // Use nil UUID when not available
+                        name,
+                        dependency.path.clone(),
+                        None, // file_size
+                        None, // file_type
+                        Some("unknown".to_string()), // processing_status
+                        None, // created_at
+                        None, // updated_at
+                        None, // metadata
+                    )
+                };
 
-                    // Insert into tree and get a mutable reference to the stored node
-                    let child_node: &mut AssemblyNode = root.add_child_mut(child_asset);
+                // Insert into tree and get a mutable reference to the stored node
+                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset);
 
-                    // Recurse on the stored child node if it has dependencies
-                    if dependency.has_dependencies {
-                        self.populate_asset_dependencies_recursive(tenant_uuid, child_node)
-                            .await?;
-                    }
+                // Recurse on the stored child node if it has dependencies
+                if dependency.has_dependencies {
+                    self.populate_asset_dependencies_recursive(tenant_uuid, child_node)
+                        .await?;
                 }
             }
 

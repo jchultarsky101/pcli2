@@ -96,11 +96,70 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
         asset_path_param
     ).await?;
 
-    let dependencies = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
+    // Get the full assembly tree with all recursive dependencies
+    let assembly_tree = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
 
-    println!("{}", dependencies.format(format)?);
+    // For tree format, output the assembly tree directly to preserve hierarchy
+    if matches!(format, crate::format::OutputFormat::Tree(_)) {
+        println!("{}", assembly_tree.format(format)?);
+    } else {
+        // For other formats (JSON, CSV), extract all dependencies from the full tree structure
+        let all_dependencies = extract_all_dependencies_from_tree(&assembly_tree);
+
+        // Create an AssetDependencyList from the response to format properly
+        let dependency_list = crate::model::AssetDependencyList {
+            path: asset.path().to_string(),
+            dependencies: all_dependencies,
+        };
+
+        println!("{}", dependency_list.format(format)?);
+    }
 
 	Ok(())
+}
+
+// Helper function to extract all dependencies from AssemblyTree recursively
+fn extract_all_dependencies_from_tree(assembly_tree: &crate::model::AssemblyTree) -> Vec<crate::model::AssetDependency> {
+    let mut all_dependencies = Vec::new();
+
+    // Process all nodes in the tree recursively
+    collect_dependencies_recursive(assembly_tree.root(), &mut all_dependencies);
+
+    all_dependencies
+}
+
+// Recursive helper to collect all dependencies
+fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencies: &mut Vec<crate::model::AssetDependency>) {
+    for child in node.children() {
+        // Create an AssetResponse from the child asset
+        let asset_response = crate::model::AssetResponse {
+            uuid: child.asset().uuid(),
+            tenant_id: Uuid::nil(), // Placeholder - would need actual tenant ID if available
+            path: child.asset().path(),
+            folder_id: None,
+            asset_type: child.asset().file_type().cloned().unwrap_or_else(|| "unknown".to_string()),
+            created_at: child.asset().created_at().cloned().unwrap_or_default(),
+            updated_at: child.asset().updated_at().cloned().unwrap_or_default(),
+            state: child.asset().processing_status().cloned().unwrap_or_else(|| "unknown".to_string()),
+            is_assembly: child.has_children(),
+            metadata: std::collections::HashMap::new(), // Empty metadata
+            parent_folder_id: None,
+            owner_id: None,
+        };
+
+        // Create AssetDependency from the child
+        let asset_dependency = crate::model::AssetDependency {
+            path: child.asset().path(),
+            asset: Some(asset_response),
+            occurrences: 1, // Default occurrence count
+            has_dependencies: child.has_children(),
+        };
+
+        dependencies.push(asset_dependency);
+
+        // Recursively process children of this child
+        collect_dependencies_recursive(child, dependencies);
+    }
 }
 
 pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {

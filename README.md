@@ -566,14 +566,17 @@ The threshold parameter controls the similarity requirement, where higher values
 
 #### Folder-Based Matching
 
-For bulk operations, use geometric-match-folder to find similar assets for all models in a folder:
+For bulk operations, use geometric-match to find similar assets for all models in one or more folders:
 
 ```bash
 # Find matches for all assets in a folder (parallel processing)
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+pcli2 folder geometric-match --folder-path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+
+# Find matches for all assets in multiple folders
+pcli2 folder geometric-match --folder-path /Root/Folder1/ --folder-path /Root/Folder2/ --threshold 90.0 --format csv --progress
 ```
 
-This command processes all assets in the specified folder simultaneously, making it efficient for large-scale similarity searches. The progress flag provides visual feedback during long-running operations.
+This command processes all assets in the specified folder(s) simultaneously, making it efficient for large-scale similarity searches. The progress flag provides visual feedback during long-running operations.
 
 #### Best Practices
 
@@ -617,6 +620,20 @@ The CSV output includes columns for both similarity scores:
 - `REVERSE_MATCH_PERCENTAGE`: Similarity when candidate is considered a part of reference
 
 This bidirectional matching approach is ideal for discovering hierarchical relationships between components and assemblies in your design database.
+
+#### Folder-Based Part Matching
+
+For bulk operations, use part-match to find part matches for all models in one or more folders:
+
+```bash
+# Find part matches for all assets in a folder (parallel processing)
+pcli2 folder part-match --folder-path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+
+# Find part matches for all assets in multiple folders
+pcli2 folder part-match --folder-path /Root/Folder1/ --folder-path /Root/Folder2/ --threshold 90.0 --format csv --progress
+```
+
+This command processes all assets in the specified folder(s) simultaneously, making it efficient for large-scale part matching searches. The progress flag provides visual feedback during long-running operations.
 
 ### Text Matching
 
@@ -677,17 +694,17 @@ Visual matching results are ordered by relevance as determined by the visual sea
 
 #### Folder-Based Visual Matching
 
-For bulk operations, use visual-match-folder to find visually similar assets for all models in one or more folders:
+For bulk operations, use visual-match to find visually similar assets for all models in one or more folders:
 
 ```bash
 # Find visually similar assets for all assets in a folder (parallel processing)
-pcli2 asset visual-match-folder --path /Root/SearchFolder/ --format csv --progress
+pcli2 folder visual-match --folder-path /Root/SearchFolder/ --format csv --progress
 
 # Find visually similar assets across multiple folders
-pcli2 asset visual-match-folder --path /Root/Folder1/ --path /Root/Folder2/ --format json --progress
+pcli2 folder visual-match --folder-path /Root/Folder1/ --folder-path /Root/Folder2/ --format json --progress
 
 # Use exclusive flag to limit results to matches within specified folders only
-pcli2 asset visual-match-folder --path /Root/SearchFolder/ --exclusive --format csv --progress
+pcli2 folder visual-match --folder-path /Root/SearchFolder/ --exclusive --format csv --progress
 ```
 
 This command processes all assets in the specified folder(s) simultaneously, making it efficient for large-scale visual similarity searches. The progress flag provides visual feedback during long-running operations.
@@ -1294,10 +1311,7 @@ pcli2
 │   ├── download                  Download asset file
 │   ├── geometric-match           Find geometrically similar assets [aliases: geometric-search]
 │   ├── part-match                Find geometrically similar assets using part search algorithm [aliases: part-search]
-│   ├── geometric-match-folder    Find geometrically similar assets for all assets in one or more folders [aliases: geometric-search-folder]
-│   ├── part-match-folder         Find part matches for all assets in one or more folders [aliases: part-search-folder]
 │   ├── visual-match              Find visually similar assets for a specific reference asset [aliases: visual-search]
-│   ├── visual-match-folder       Find visually similar assets for all assets in one or more folders [aliases: visual-search-folder]
 │   └── text-match                Find assets using text search [aliases: text-search]
 ├── folder
 │   ├── create                    Create a new folder
@@ -1307,7 +1321,10 @@ pcli2
 │   ├── rename                    Rename a folder
 │   ├── move                      Move a folder to a new parent folder [aliases: mv]
 │   ├── resolve                   Resolve a folder path to its UUID
-│   └── download                  Download all assets in a folder as a ZIP archive
+│   ├── download                  Download all assets in a folder as a ZIP archive
+│   ├── geometric-match           Find geometrically similar assets for all assets in one or more folders [aliases: geometric-search]
+│   ├── part-match                Find part matches for all assets in one or more folders [aliases: part-search]
+│   └── visual-match              Find visually similar assets for all assets in one or more folders [aliases: visual-search]
 ├── tenant
 │   ├── list                      List all tenants [aliases: ls]
 │   ├── get                       Get tenant details

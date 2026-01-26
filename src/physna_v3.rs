@@ -2123,19 +2123,6 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(TextSearchResponse)` - The search results with text-matched assets
     ///
-    /// # Example
-    /// ```no_run
-    /// use pcli2::physna_v3::PhysnaApiClient;
-    /// use uuid::Uuid;
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let mut client = PhysnaApiClient::try_default()?;
-    ///     let tenant_uuid = Uuid::nil(); // Use actual tenant UUID
-    ///     let matches = client.text_search(&tenant_uuid, "gear").await?;
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn text_search(&mut self, tenant_uuid: &Uuid, text_query: &str) -> Result<crate::model::TextSearchResponse, ApiError> {
         debug!("Starting text search for tenant_uuid: {}, query: {}", tenant_uuid, text_query);
         let url = format!("{}/tenants/{}/assets/text-search", self.base_url, tenant_uuid);

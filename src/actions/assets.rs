@@ -3072,48 +3072,114 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
 
     let tenant_uuid = *ctx.tenant_uuid();
 
+    // Check if progress should be displayed
+    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
+
+    // Create progress bars if requested
+    let multi_progress = if show_progress {
+        let mp = indicatif::MultiProgress::new();
+
+        // Add an overall progress bar
+        let overall_pb = mp.add(indicatif::ProgressBar::new(folder_paths.len() as u64));
+        overall_pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Processing folders")
+                .unwrap()
+                .progress_chars("#>-")
+        );
+        Some((mp, overall_pb))
+    } else {
+        None
+    };
+
     // Collect all dependencies from all specified folders
     let mut all_dependencies = Vec::new();
     let mut all_assembly_trees = Vec::new();
 
-    for folder_path in &folder_paths {
+    for (_idx, folder_path) in folder_paths.iter().enumerate() {
+        // Update overall progress if enabled
+        if let Some((_, ref overall_pb)) = multi_progress {
+            overall_pb.set_message(format!("Processing folder: {}", folder_path));
+        }
+
         // List all assets in the folder
         let assets_response = ctx.api().list_assets_by_parent_folder_path(&tenant_uuid, folder_path).await?;
 
+        // Count total assemblies in this folder for progress tracking
+        let assemblies: Vec<_> = assets_response.get_all_assets()
+            .into_iter()
+            .filter(|asset| asset.is_assembly())
+            .collect();
+
+        // Create individual progress bar for this folder if progress is enabled
+        let folder_progress = if let Some((ref mp, _)) = multi_progress {
+            let pb = mp.add(indicatif::ProgressBar::new(assemblies.len() as u64));
+            pb.set_style(
+                indicatif::ProgressStyle::default_bar()
+                    .template(&format!("{{spinner:.yellow}} Processing assets in {}: {{pos}}/{{len}} {{msg}}", folder_path))
+                    .unwrap()
+                    .progress_chars("#>-")
+            );
+            Some(pb)
+        } else {
+            None
+        };
+
         // Process each asset in the folder that is an assembly (has dependencies)
-        for asset in assets_response.get_all_assets() {
-            // Only process assemblies (assets that have dependencies)
-            if asset.is_assembly() {
-                trace!("Processing assembly: {} (path: {})", asset.name(), asset.path());
+        for asset in assemblies {
+            if let Some(ref pb) = folder_progress {
+                pb.set_message(format!("Getting dependencies for: {}", asset.name()));
+            }
 
-                // Get the full assembly tree with all recursive dependencies for this asset
-                let assembly_tree = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
+            trace!("Processing assembly: {} (path: {})", asset.name(), asset.path());
 
-                // For tree and JSON formats, we'll collect the assembly trees to preserve hierarchy
-                let format_is_tree = matches!(format, crate::format::OutputFormat::Tree(_));
-                let format_is_json = matches!(format, crate::format::OutputFormat::Json(_));
-                if format_is_tree || format_is_json {
-                    all_assembly_trees.push(assembly_tree);
-                } else {
-                    // For other formats (CSV), extract all dependencies from the tree structure
-                    let mut asset_dependencies = extract_all_dependencies_from_tree(&assembly_tree);
+            // Get the full assembly tree with all recursive dependencies for this asset
+            let assembly_tree = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
 
-                    // Update each dependency to include the original asset path information (for ASSET_PATH column)
-                    // The assembly_path should remain as the relative path within the assembly hierarchy
-                    for dep in &mut asset_dependencies {
-                        // The assembly_path should already contain the relative path within the assembly hierarchy
-                        // from the extract_all_dependencies_from_tree function, so we don't modify it here
-                        // It represents the path from the root of this assembly to the dependency
+            // For tree and JSON formats, we'll collect the assembly trees to preserve hierarchy
+            let format_is_tree = matches!(format, crate::format::OutputFormat::Tree(_));
+            let format_is_json = matches!(format, crate::format::OutputFormat::Json(_));
+            if format_is_tree || format_is_json {
+                all_assembly_trees.push(assembly_tree);
+            } else {
+                // For other formats (CSV), extract all dependencies from the tree structure
+                let mut asset_dependencies = extract_all_dependencies_from_tree(&assembly_tree);
 
-                        // Set the original asset path for proper CSV output
-                        dep.original_asset_path = Some(asset.path().to_string());
-                    }
+                // Update each dependency to include the original asset path information (for ASSET_PATH column)
+                // The assembly_path should remain as the relative path within the assembly hierarchy
+                for dep in &mut asset_dependencies {
+                    // The assembly_path should already contain the relative path within the assembly hierarchy
+                    // from the extract_all_dependencies_from_tree function, so we don't modify it here
+                    // It represents the path from the root of this assembly to the dependency
 
-                    // Add all dependencies from this asset's tree to the combined list
-                    all_dependencies.extend(asset_dependencies);
+                    // Set the original asset path for proper CSV output
+                    dep.original_asset_path = Some(asset.path().to_string());
                 }
+
+                // Add all dependencies from this asset's tree to the combined list
+                all_dependencies.extend(asset_dependencies);
+            }
+
+            // Update folder progress if enabled
+            if let Some(ref pb) = folder_progress {
+                pb.inc(1);
             }
         }
+
+        // Finish folder progress bar if enabled
+        if let Some(pb) = folder_progress {
+            pb.finish_and_clear();
+        }
+
+        // Update overall progress if enabled
+        if let Some((_, ref overall_pb)) = multi_progress {
+            overall_pb.inc(1);
+        }
+    }
+
+    // Finish overall progress bar if enabled
+    if let Some((_, ref overall_pb)) = multi_progress {
+        overall_pb.finish_with_message(format!("Processed {} folders", folder_paths.len()));
     }
 
     // Output the results based on the requested format

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.14] - 2026-01-25
+
+### Added
+- Added folder dependencies command to get dependencies for all assembly assets in one or more folders
+- Added --progress flag to folder dependencies command for visual feedback during processing
+- Added ASSEMBLY_PATH column to CSV output showing relative path within assembly hierarchy
+- Added original_asset_path field to AssetDependency struct to track which original asset each dependency belongs to
+- Added consistent state normalization converting "missing-dependencies" to "missing" for all formats
+
+### Changed
+- Moved match-folder commands from asset namespace to folder namespace: folder geometric-match, folder part-match, folder visual-match
+- Renamed folder-based commands from geometric-match-folder to geometric-match (and similar for part-match, visual-match)
+- Updated asset dependencies command to always operate recursively by default (removed --recursive flag)
+- Improved CSV output sorting by ASSET_PATH then ASSEMBLY_PATH for consistent ordering
+- Changed command structure to be more intuitive: folder dependencies instead of asset dependencies with folder paths
+- Updated tree format to show state information alongside asset names
+- Modified CSV output to show "None" instead of nil UUID when UUID is not available
+- Improved assembly path handling to show proper hierarchy in all output formats
+
+### Fixed
+- Fixed issue where only first level of dependencies was shown instead of full hierarchy
+- Fixed CSV output to properly show assembly hierarchy paths
+- Fixed state display consistency across all output formats (tree, JSON, CSV)
+
 ## [0.2.13] - 2026-01-24
 
 ### Added

@@ -138,6 +138,13 @@ pub fn folder_command() -> Command {
                     crate::commands::params::FORMAT_CSV,
                     crate::commands::params::FORMAT_TREE,
                 ]))
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_PROGRESS)
+                        .long(crate::commands::params::PARAMETER_PROGRESS)
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Display progress bar during processing"),
+                )
         )
         .subcommand(
             Command::new(COMMAND_MATCH)

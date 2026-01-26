@@ -1315,6 +1315,7 @@ pub struct Asset {
     created_at: Option<String>,
     updated_at: Option<String>,
     metadata: Option<AssetMetadata>,
+    is_assembly: bool,
 }
 
 // Equality is determined solely by name
@@ -1362,6 +1363,7 @@ impl Asset {
         created_at: Option<String>,
         updated_at: Option<String>,
         metadata: Option<AssetMetadata>,
+        is_assembly: bool,
     ) -> Asset {
         Asset {
             uuid,
@@ -1373,6 +1375,7 @@ impl Asset {
             created_at,
             updated_at,
             metadata,
+            is_assembly,
         }
     }
 
@@ -1445,6 +1448,11 @@ impl Asset {
     pub fn metadata(&self) -> Option<&AssetMetadata> {
         self.metadata.as_ref()
     }
+
+    /// Check if the asset is an assembly (has dependencies)
+    pub fn is_assembly(&self) -> bool {
+        self.is_assembly
+    }
 }
 
 impl From<&AssetResponse> for Asset {
@@ -1474,10 +1482,10 @@ impl From<&AssetResponse> for Asset {
             Some(asset_response.created_at.clone()),
             Some(asset_response.updated_at.clone()),
             Some(asset_response.metadata.clone().into()),
+            asset_response.is_assembly, // Pass the is_assembly field
         )
     }
 }
-
 impl From<AssetResponse> for Asset {
     fn from(asset_response: AssetResponse) -> Self {
         <Asset as From<&AssetResponse>>::from(&asset_response)

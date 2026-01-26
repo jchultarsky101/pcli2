@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, create_asset_metadata_batch, delete_asset, delete_asset_metadata, download_asset, geometric_match_asset, geometric_match_folder, list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset, print_asset_dependencies, print_asset_metadata, text_match, update_asset_metadata, visual_match_asset, visual_match_folder
+            create_asset, create_asset_batch, create_asset_metadata_batch, delete_asset, delete_asset_metadata, download_asset, geometric_match_asset, geometric_match_folder, list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset, print_asset_dependencies, print_asset_metadata, print_folder_dependencies, text_match, update_asset_metadata, visual_match_asset, visual_match_folder
         },
         folders::{
             create_folder, delete_folder, download_folder, list_folders, move_folder, print_folder_details, rename_folder, resolve_folder
@@ -245,6 +245,11 @@ pub async fn execute_command() -> Result<(), CliError> {
                 Some((COMMAND_VISUAL_MATCH, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_VISUAL_MATCH);
                     visual_match_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_DEPENDENCIES, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_DEPENDENCIES);
+                    print_folder_dependencies(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

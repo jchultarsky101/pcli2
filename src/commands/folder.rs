@@ -6,7 +6,7 @@ use crate::commands::params::{
     folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
     name_parameter, parent_folder_identifier_group, parent_folder_path_parameter, parent_folder_uuid_parameter, tenant_parameter,
-    COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET,
+    COMMAND_CREATE, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_FOLDER, COMMAND_GET,
     COMMAND_LIST, PARAMETER_PROGRESS, COMMAND_MATCH, COMMAND_PART_MATCH,
     COMMAND_VISUAL_MATCH,
 };
@@ -116,6 +116,28 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Display progress bar during download"),
                 )
+        )
+        .subcommand(
+            Command::new(crate::commands::params::COMMAND_DEPENDENCIES)
+                .about("Get dependencies for all assembly assets in one or more folders")
+                .arg(tenant_parameter())
+                .arg(
+                    clap::Arg::new("folder-path")
+                        .short('p')
+                        .long("folder-path")
+                        .num_args(1..) // Accept one or more values
+                        .required(true)
+                        .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
+                        .action(clap::ArgAction::Append), // Allow multiple --path flags
+                )
+                .arg(format_with_headers_parameter())
+                .arg(format_with_metadata_parameter())
+                .arg(format_pretty_parameter())
+                .arg(format_parameter().value_parser([
+                    crate::commands::params::FORMAT_JSON,
+                    crate::commands::params::FORMAT_CSV,
+                    crate::commands::params::FORMAT_TREE,
+                ]))
         )
         .subcommand(
             Command::new(COMMAND_MATCH)

@@ -3005,6 +3005,9 @@ pub struct AssetDependency {
     /// The assembly path showing the location of this dependency within the assembly hierarchy
     #[serde(rename = "assemblyPath")]
     pub assembly_path: String,
+    /// The path of the original asset that has this dependency (for folder dependencies)
+    #[serde(rename = "originalAssetPath", skip_serializing_if = "Option::is_none")]
+    pub original_asset_path: Option<String>,
 }
 
 impl From<AssetDependencyApiResponse> for AssetDependency {
@@ -3015,6 +3018,7 @@ impl From<AssetDependencyApiResponse> for AssetDependency {
             occurrences: api_dep.occurrences,
             has_dependencies: api_dep.has_dependencies,
             assembly_path: String::new(), // Will be filled in by the tree building logic
+            original_asset_path: None, // Default to None for API responses
         }
     }
 }
@@ -3108,13 +3112,23 @@ impl CsvRecordProducer for AssetDependencyList {
 
                 vec![
                     if self.path == "MULTIPLE_ASSETS" {
-                        // For folder dependencies, use the assembly_path (original asset path) as the ASSET_PATH
-                        dep.assembly_path.clone()
+                        // For folder dependencies, use the original asset path from the dependency if available
+                        dep.original_asset_path.clone().unwrap_or_else(|| {
+                            // Fallback to extracting from the dependency's path if original asset path is not set
+                            dep.path.split('/').take(dep.path.matches('/').count()).collect::<Vec<&str>>().join("/")
+                        })
                     } else {
                         // For single asset dependencies, use the list's path as the original asset path
                         self.path.clone()
                     }, // ASSET_PATH (the original asset)
-                    dep.assembly_path.clone(), // ASSEMBLY_PATH (the relative path within assembly hierarchy)
+                    if self.path == "MULTIPLE_ASSETS" {
+                        // For folder dependencies, ASSEMBLY_PATH should be the relative path within assembly hierarchy
+                        // This should be just the assembly path part, not the full path
+                        dep.assembly_path.clone()
+                    } else {
+                        // For single asset dependencies, use the assembly_path as is
+                        dep.assembly_path.clone()
+                    }, // ASSEMBLY_PATH (the relative path within assembly hierarchy)
                     dep.path.clone(), // DEPENDENCY_PATH (the dependency path)
                     asset_uuid, // ASSET_UUID
                     asset_filename, // ASSET_NAME

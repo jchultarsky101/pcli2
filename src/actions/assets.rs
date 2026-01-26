@@ -163,6 +163,7 @@ fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencie
             occurrences: 1, // Default occurrence count
             has_dependencies: child.has_children(),
             assembly_path: current_assembly_path.clone(), // Clone to use in both places
+            original_asset_path: None, // This will be set when processing folder dependencies
         };
 
         // Store the assembly path in a way that can be accessed later
@@ -3097,17 +3098,15 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
                     // For other formats (CSV), extract all dependencies from the tree structure
                     let mut asset_dependencies = extract_all_dependencies_from_tree(&assembly_tree);
 
-                    // Update each dependency to include the original asset path in the assembly_path field
-                    // This preserves the relationship between the original asset and its dependencies
+                    // Update each dependency to include the original asset path information (for ASSET_PATH column)
+                    // The assembly_path should remain as the relative path within the assembly hierarchy
                     for dep in &mut asset_dependencies {
-                        // If the assembly_path is empty or doesn't already contain the original asset path,
-                        // set it to the original asset path to maintain the relationship
-                        if dep.assembly_path.is_empty() {
-                            dep.assembly_path = asset.path().to_string();
-                        } else {
-                            // Prepend the original asset path to maintain full hierarchy context
-                            dep.assembly_path = format!("{}/{}", asset.path(), dep.assembly_path);
-                        }
+                        // The assembly_path should already contain the relative path within the assembly hierarchy
+                        // from the extract_all_dependencies_from_tree function, so we don't modify it here
+                        // It represents the path from the root of this assembly to the dependency
+
+                        // Set the original asset path for proper CSV output
+                        dep.original_asset_path = Some(asset.path().to_string());
                     }
 
                     // Add all dependencies from this asset's tree to the combined list

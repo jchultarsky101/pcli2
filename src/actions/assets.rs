@@ -122,8 +122,9 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
 fn extract_all_dependencies_from_tree(assembly_tree: &crate::model::AssemblyTree) -> Vec<crate::model::AssetDependency> {
     let mut all_dependencies = Vec::new();
 
-    // Process all nodes in the tree recursively, starting with empty path
-    collect_dependencies_recursive(assembly_tree.root(), &mut all_dependencies, String::new());
+    // Process all nodes in the tree recursively, starting with the root assembly name as the parent path
+    let root_name = assembly_tree.root().asset().name();
+    collect_dependencies_recursive(assembly_tree.root(), &mut all_dependencies, root_name);
 
     all_dependencies
 }

@@ -3243,7 +3243,20 @@ impl OutputFormatter for AssetDependencyList {
                         .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
                 }
 
-                for record in self.as_csv_records() {
+                // Sort records by ASSET_PATH (index 0), then by ASSEMBLY_PATH (index 1)
+                let mut records = self.as_csv_records();
+                records.sort_by(|a, b| {
+                    // First sort by ASSET_PATH (index 0)
+                    match a[0].cmp(&b[0]) {
+                        std::cmp::Ordering::Equal => {
+                            // If ASSET_PATH is equal, sort by ASSEMBLY_PATH (index 1)
+                            a[1].cmp(&b[1])
+                        }
+                        other => other,
+                    }
+                });
+
+                for record in records {
                     wtr.write_record(&record)
                         .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
                 }

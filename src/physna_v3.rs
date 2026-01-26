@@ -2446,6 +2446,7 @@ impl PhysnaApiClient {
                         None, // created_at
                         None, // updated_at
                         None, // metadata
+                        false, // is_assembly - default to false for missing dependencies
                     )
                 };
 

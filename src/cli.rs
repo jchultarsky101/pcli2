@@ -8,7 +8,7 @@ use clap::ArgMatches;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, create_asset_metadata_batch, delete_asset, delete_asset_metadata, download_asset, geometric_match_asset, geometric_match_folder, list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset, print_asset_dependencies, print_asset_metadata, text_match, update_asset_metadata, visual_match_asset, visual_match_folder
+            create_asset, create_asset_batch, create_asset_metadata_batch, delete_asset, delete_asset_metadata, download_asset, geometric_match_asset, geometric_match_folder, list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset, print_asset_dependencies, print_asset_metadata, print_folder_dependencies, text_match, update_asset_metadata, visual_match_asset, visual_match_folder
         },
         folders::{
             create_folder, delete_folder, download_folder, list_folders, move_folder, print_folder_details, rename_folder, resolve_folder
@@ -24,7 +24,7 @@ use pcli2::{
     commands::{
         create_cli_commands,
         params::{
-            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_MATCH_FOLDER, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_PART_MATCH_FOLDER, COMMAND_STATE, COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_USE, COMMAND_VISUAL_MATCH, COMMAND_VISUAL_MATCH_FOLDER, PARAMETER_API_URL, PARAMETER_AUTH_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY, PARAMETER_UI_URL
+            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_STATE, COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_USE, COMMAND_VISUAL_MATCH, PARAMETER_API_URL, PARAMETER_AUTH_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY, PARAMETER_UI_URL
         }
     },
     format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions}};
@@ -232,6 +232,26 @@ pub async fn execute_command() -> Result<(), CliError> {
                     download_folder(sub_matches).await?;
                     Ok(())
                 }
+                Some((COMMAND_MATCH, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_MATCH);
+                    geometric_match_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_PART_MATCH, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_PART_MATCH);
+                    part_match_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_VISUAL_MATCH, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_VISUAL_MATCH);
+                    visual_match_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_DEPENDENCIES, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_DEPENDENCIES);
+                    print_folder_dependencies(sub_matches).await?;
+                    Ok(())
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),
@@ -288,24 +308,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                     part_match_asset(sub_matches).await?;
                     Ok(())
                 }
-                Some((COMMAND_MATCH_FOLDER, sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MATCH_FOLDER);
-                    geometric_match_folder(sub_matches).await?;
-                    Ok(())
-                }
-                Some((COMMAND_PART_MATCH_FOLDER, sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_PART_MATCH_FOLDER);
-                    part_match_folder(sub_matches).await?;
-                    Ok(())
-                }
                 Some((COMMAND_VISUAL_MATCH, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_VISUAL_MATCH);
                     visual_match_asset(sub_matches).await?;
-                    Ok(())
-                }
-                Some((COMMAND_VISUAL_MATCH_FOLDER, sub_matches)) => {
-                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_VISUAL_MATCH_FOLDER);
-                    visual_match_folder(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_TEXT_MATCH, sub_matches)) => {

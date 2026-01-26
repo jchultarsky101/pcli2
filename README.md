@@ -516,34 +516,65 @@ Asset dependencies represent the relationships between assemblies and their comp
 #### Basic Dependency Queries
 
 ```bash
-# Get direct dependencies for an asset
+# Get dependencies for an asset (always recursive by default)
 pcli2 asset dependencies --path "/Root/MyFolder/assembly.stl" --format json
 
 # Get dependencies by UUID (path-based lookup is preferred)
 pcli2 asset dependencies --uuid ASSET_UUID --format json
 ```
 
+**Note**: The command now always retrieves the full dependency hierarchy recursively by default, showing all nested dependencies rather than just direct dependencies.
+
 #### Recursive Dependency Queries
 
-For complex assemblies with nested subassemblies, you can use the `--recursive` flag to traverse the entire dependency tree:
+For complex assemblies with nested subassemblies, the command now always traverses the entire dependency tree recursively by default:
 
 ```bash
 # Get all dependencies recursively, showing the full hierarchy
-pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format tree
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --format tree
 
 # Get all dependencies recursively in machine-readable JSON format with parent-child relationships
-pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format json
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --format json
 
 # Get all dependencies recursively in CSV format with parent-child relationships
-pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --recursive --format csv
+pcli2 asset dependencies --path "/Root/MyFolder/complex_assembly.asm" --format csv
 ```
 
 The recursive mode preserves parent-child relationships in the output:
 - **Tree format**: Shows proper hierarchical indentation structure
 - **JSON format**: Includes `parentPath` field to show which asset is the parent of each dependency
-- **CSV format**: Includes `PARENT_PATH` column to show parent-child relationships
+- **CSV format**: Includes `PARENT_PATH` and `ASSEMBLY_PATH` columns to show parent-child relationships and the relative path of each asset within the assembly hierarchy
 
 This allows you to understand the complete assembly structure and perform bill-of-materials analysis.
+
+**Note**: The `--recursive` flag has been removed as the command now always operates recursively by default.
+
+### Folder-Based Dependencies
+
+For bulk operations across multiple folders, use the folder dependencies command to get dependencies for all assembly assets in one or more folders:
+
+```bash
+# Get dependencies for all assembly assets in a folder
+pcli2 folder dependencies --folder-path "/Root/MyFolder" --format tree
+
+# Get dependencies for all assembly assets in multiple folders
+pcli2 folder dependencies --folder-path "/Root/Folder1" --folder-path "/Root/Folder2" --format json
+
+# Get dependencies with progress indicator (useful for large folders)
+pcli2 folder dependencies --folder-path "/Root/LargeFolder" --format csv --progress
+
+# Get dependencies for multiple folders with progress indicator
+pcli2 folder dependencies --folder-path "/Root/Folder1" --folder-path "/Root/Folder2" --format tree --progress
+```
+
+The folder dependencies command processes all assembly assets in the specified folder(s) and returns their complete dependency hierarchies. It only processes assets that are assemblies (have dependencies), skipping regular parts that don't have dependencies.
+
+The command supports all the same output formats as the single asset dependencies command:
+- **Tree format**: Shows the hierarchical structure with proper indentation
+- **JSON format**: Shows the complete assembly tree structure with parent-child relationships
+- **CSV format**: Shows a flat list of all dependencies with assembly path information
+
+The `--progress` flag provides visual feedback during processing, showing overall progress across folders and individual progress for each folder's assets.
 
 ### Geometric Matching
 
@@ -562,14 +593,17 @@ The threshold parameter controls the similarity requirement, where higher values
 
 #### Folder-Based Matching
 
-For bulk operations, use geometric-match-folder to find similar assets for all models in a folder:
+For bulk operations, use geometric-match to find similar assets for all models in one or more folders:
 
 ```bash
 # Find matches for all assets in a folder (parallel processing)
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+pcli2 folder geometric-match --folder-path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+
+# Find matches for all assets in multiple folders
+pcli2 folder geometric-match --folder-path /Root/Folder1/ --folder-path /Root/Folder2/ --threshold 90.0 --format csv --progress
 ```
 
-This command processes all assets in the specified folder simultaneously, making it efficient for large-scale similarity searches. The progress flag provides visual feedback during long-running operations.
+This command processes all assets in the specified folder(s) simultaneously, making it efficient for large-scale similarity searches. The progress flag provides visual feedback during long-running operations.
 
 #### Best Practices
 
@@ -613,6 +647,20 @@ The CSV output includes columns for both similarity scores:
 - `REVERSE_MATCH_PERCENTAGE`: Similarity when candidate is considered a part of reference
 
 This bidirectional matching approach is ideal for discovering hierarchical relationships between components and assemblies in your design database.
+
+#### Folder-Based Part Matching
+
+For bulk operations, use part-match to find part matches for all models in one or more folders:
+
+```bash
+# Find part matches for all assets in a folder (parallel processing)
+pcli2 folder part-match --folder-path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+
+# Find part matches for all assets in multiple folders
+pcli2 folder part-match --folder-path /Root/Folder1/ --folder-path /Root/Folder2/ --threshold 90.0 --format csv --progress
+```
+
+This command processes all assets in the specified folder(s) simultaneously, making it efficient for large-scale part matching searches. The progress flag provides visual feedback during long-running operations.
 
 ### Text Matching
 
@@ -673,17 +721,17 @@ Visual matching results are ordered by relevance as determined by the visual sea
 
 #### Folder-Based Visual Matching
 
-For bulk operations, use visual-match-folder to find visually similar assets for all models in one or more folders:
+For bulk operations, use visual-match to find visually similar assets for all models in one or more folders:
 
 ```bash
 # Find visually similar assets for all assets in a folder (parallel processing)
-pcli2 asset visual-match-folder --path /Root/SearchFolder/ --format csv --progress
+pcli2 folder visual-match --folder-path /Root/SearchFolder/ --format csv --progress
 
 # Find visually similar assets across multiple folders
-pcli2 asset visual-match-folder --path /Root/Folder1/ --path /Root/Folder2/ --format json --progress
+pcli2 folder visual-match --folder-path /Root/Folder1/ --folder-path /Root/Folder2/ --format json --progress
 
 # Use exclusive flag to limit results to matches within specified folders only
-pcli2 asset visual-match-folder --path /Root/SearchFolder/ --exclusive --format csv --progress
+pcli2 folder visual-match --folder-path /Root/SearchFolder/ --exclusive --format csv --progress
 ```
 
 This command processes all assets in the specified folder(s) simultaneously, making it efficient for large-scale visual similarity searches. The progress flag provides visual feedback during long-running operations.
@@ -1290,10 +1338,7 @@ pcli2
 │   ├── download                  Download asset file
 │   ├── geometric-match           Find geometrically similar assets [aliases: geometric-search]
 │   ├── part-match                Find geometrically similar assets using part search algorithm [aliases: part-search]
-│   ├── geometric-match-folder    Find geometrically similar assets for all assets in one or more folders [aliases: geometric-search-folder]
-│   ├── part-match-folder         Find part matches for all assets in one or more folders [aliases: part-search-folder]
 │   ├── visual-match              Find visually similar assets for a specific reference asset [aliases: visual-search]
-│   ├── visual-match-folder       Find visually similar assets for all assets in one or more folders [aliases: visual-search-folder]
 │   └── text-match                Find assets using text search [aliases: text-search]
 ├── folder
 │   ├── create                    Create a new folder
@@ -1303,7 +1348,10 @@ pcli2
 │   ├── rename                    Rename a folder
 │   ├── move                      Move a folder to a new parent folder [aliases: mv]
 │   ├── resolve                   Resolve a folder path to its UUID
-│   └── download                  Download all assets in a folder as a ZIP archive
+│   ├── download                  Download all assets in a folder as a ZIP archive
+│   ├── geometric-match           Find geometrically similar assets for all assets in one or more folders [aliases: geometric-search]
+│   ├── part-match                Find part matches for all assets in one or more folders [aliases: part-search]
+│   └── visual-match              Find visually similar assets for all assets in one or more folders [aliases: visual-search]
 ├── tenant
 │   ├── list                      List all tenants [aliases: ls]
 │   ├── get                       Get tenant details

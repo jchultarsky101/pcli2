@@ -1315,6 +1315,7 @@ pub struct Asset {
     created_at: Option<String>,
     updated_at: Option<String>,
     metadata: Option<AssetMetadata>,
+    is_assembly: bool,
 }
 
 // Equality is determined solely by name
@@ -1362,6 +1363,7 @@ impl Asset {
         created_at: Option<String>,
         updated_at: Option<String>,
         metadata: Option<AssetMetadata>,
+        is_assembly: bool,
     ) -> Asset {
         Asset {
             uuid,
@@ -1373,6 +1375,7 @@ impl Asset {
             created_at,
             updated_at,
             metadata,
+            is_assembly,
         }
     }
 
@@ -1445,6 +1448,11 @@ impl Asset {
     pub fn metadata(&self) -> Option<&AssetMetadata> {
         self.metadata.as_ref()
     }
+
+    /// Check if the asset is an assembly (has dependencies)
+    pub fn is_assembly(&self) -> bool {
+        self.is_assembly
+    }
 }
 
 impl From<&AssetResponse> for Asset {
@@ -1474,10 +1482,10 @@ impl From<&AssetResponse> for Asset {
             Some(asset_response.created_at.clone()),
             Some(asset_response.updated_at.clone()),
             Some(asset_response.metadata.clone().into()),
+            asset_response.is_assembly, // Pass the is_assembly field
         )
     }
 }
-
 impl From<AssetResponse> for Asset {
     fn from(asset_response: AssetResponse) -> Self {
         <Asset as From<&AssetResponse>>::from(&asset_response)
@@ -1492,6 +1500,7 @@ impl CsvRecordProducer for Asset {
             "PATH".to_string(),
             "TYPE".to_string(),
             "STATE".to_string(),
+            "IS_ASSEMBLY".to_string(),
             "UUID".to_string(),
         ]
     }
@@ -1503,6 +1512,7 @@ impl CsvRecordProducer for Asset {
             self.path(),
             self.file_type().cloned().unwrap_or_default(),
             self.processing_status().cloned().unwrap_or_default(),
+            self.is_assembly().to_string(),
             self.uuid().to_string(),
         ]]
     }
@@ -2995,6 +3005,9 @@ pub struct AssetDependency {
     /// The assembly path showing the location of this dependency within the assembly hierarchy
     #[serde(rename = "assemblyPath")]
     pub assembly_path: String,
+    /// The path of the original asset that has this dependency (for folder dependencies)
+    #[serde(rename = "originalAssetPath", skip_serializing_if = "Option::is_none")]
+    pub original_asset_path: Option<String>,
 }
 
 impl From<AssetDependencyApiResponse> for AssetDependency {
@@ -3005,6 +3018,7 @@ impl From<AssetDependencyApiResponse> for AssetDependency {
             occurrences: api_dep.occurrences,
             has_dependencies: api_dep.has_dependencies,
             assembly_path: String::new(), // Will be filled in by the tree building logic
+            original_asset_path: None, // Default to None for API responses
         }
     }
 }
@@ -3097,8 +3111,24 @@ impl CsvRecordProducer for AssetDependencyList {
                 };
 
                 vec![
-                    self.path.clone(), // ASSET_PATH (the original asset)
-                    dep.assembly_path.clone(), // ASSEMBLY_PATH (the relative path within assembly hierarchy)
+                    if self.path == "MULTIPLE_ASSETS" {
+                        // For folder dependencies, use the original asset path from the dependency if available
+                        dep.original_asset_path.clone().unwrap_or_else(|| {
+                            // Fallback to extracting from the dependency's path if original asset path is not set
+                            dep.path.split('/').take(dep.path.matches('/').count()).collect::<Vec<&str>>().join("/")
+                        })
+                    } else {
+                        // For single asset dependencies, use the list's path as the original asset path
+                        self.path.clone()
+                    }, // ASSET_PATH (the original asset)
+                    if self.path == "MULTIPLE_ASSETS" {
+                        // For folder dependencies, ASSEMBLY_PATH should be the relative path within assembly hierarchy
+                        // This should be just the assembly path part, not the full path
+                        dep.assembly_path.clone()
+                    } else {
+                        // For single asset dependencies, use the assembly_path as is
+                        dep.assembly_path.clone()
+                    }, // ASSEMBLY_PATH (the relative path within assembly hierarchy)
                     dep.path.clone(), // DEPENDENCY_PATH (the dependency path)
                     asset_uuid, // ASSET_UUID
                     asset_filename, // ASSET_NAME
@@ -3213,7 +3243,20 @@ impl OutputFormatter for AssetDependencyList {
                         .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
                 }
 
-                for record in self.as_csv_records() {
+                // Sort records by ASSET_PATH (index 0), then by ASSEMBLY_PATH (index 1)
+                let mut records = self.as_csv_records();
+                records.sort_by(|a, b| {
+                    // First sort by ASSET_PATH (index 0)
+                    match a[0].cmp(&b[0]) {
+                        std::cmp::Ordering::Equal => {
+                            // If ASSET_PATH is equal, sort by ASSEMBLY_PATH (index 1)
+                            a[1].cmp(&b[1])
+                        }
+                        other => other,
+                    }
+                });
+
+                for record in records {
                     wtr.write_record(&record)
                         .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
                 }

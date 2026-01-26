@@ -1500,6 +1500,7 @@ impl CsvRecordProducer for Asset {
             "PATH".to_string(),
             "TYPE".to_string(),
             "STATE".to_string(),
+            "IS_ASSEMBLY".to_string(),
             "UUID".to_string(),
         ]
     }
@@ -1511,6 +1512,7 @@ impl CsvRecordProducer for Asset {
             self.path(),
             self.file_type().cloned().unwrap_or_default(),
             self.processing_status().cloned().unwrap_or_default(),
+            self.is_assembly().to_string(),
             self.uuid().to_string(),
         ]]
     }

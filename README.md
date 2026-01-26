@@ -549,6 +549,33 @@ This allows you to understand the complete assembly structure and perform bill-o
 
 **Note**: The `--recursive` flag has been removed as the command now always operates recursively by default.
 
+### Folder-Based Dependencies
+
+For bulk operations across multiple folders, use the folder dependencies command to get dependencies for all assembly assets in one or more folders:
+
+```bash
+# Get dependencies for all assembly assets in a folder
+pcli2 folder dependencies --folder-path "/Root/MyFolder" --format tree
+
+# Get dependencies for all assembly assets in multiple folders
+pcli2 folder dependencies --folder-path "/Root/Folder1" --folder-path "/Root/Folder2" --format json
+
+# Get dependencies with progress indicator (useful for large folders)
+pcli2 folder dependencies --folder-path "/Root/LargeFolder" --format csv --progress
+
+# Get dependencies for multiple folders with progress indicator
+pcli2 folder dependencies --folder-path "/Root/Folder1" --folder-path "/Root/Folder2" --format tree --progress
+```
+
+The folder dependencies command processes all assembly assets in the specified folder(s) and returns their complete dependency hierarchies. It only processes assets that are assemblies (have dependencies), skipping regular parts that don't have dependencies.
+
+The command supports all the same output formats as the single asset dependencies command:
+- **Tree format**: Shows the hierarchical structure with proper indentation
+- **JSON format**: Shows the complete assembly tree structure with parent-child relationships
+- **CSV format**: Shows a flat list of all dependencies with assembly path information
+
+The `--progress` flag provides visual feedback during processing, showing overall progress across folders and individual progress for each folder's assets.
+
 ### Geometric Matching
 
 Geometric matching is a powerful feature that allows you to find assets with similar 3D geometry in your Physna tenant. This is particularly useful for identifying duplicate parts, finding design variations, or discovering similar components across different projects.

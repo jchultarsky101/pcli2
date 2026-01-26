@@ -3094,7 +3094,20 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
                     all_assembly_trees.push(assembly_tree);
                 } else {
                     // For other formats (CSV), extract all dependencies from the tree structure
-                    let asset_dependencies = extract_all_dependencies_from_tree(&assembly_tree);
+                    let mut asset_dependencies = extract_all_dependencies_from_tree(&assembly_tree);
+
+                    // Update each dependency to include the original asset path in the assembly_path field
+                    // This preserves the relationship between the original asset and its dependencies
+                    for dep in &mut asset_dependencies {
+                        // If the assembly_path is empty or doesn't already contain the original asset path,
+                        // set it to the original asset path to maintain the relationship
+                        if dep.assembly_path.is_empty() {
+                            dep.assembly_path = asset.path().to_string();
+                        } else {
+                            // Prepend the original asset path to maintain full hierarchy context
+                            dep.assembly_path = format!("{}/{}", asset.path(), dep.assembly_path);
+                        }
+                    }
 
                     // Add all dependencies from this asset's tree to the combined list
                     all_dependencies.extend(asset_dependencies);
@@ -3129,8 +3142,9 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
         }
     } else {
         // For CSV format, create an AssetDependencyList with all collected dependencies
+        // Use a more appropriate path that indicates this is from multiple assets in the specified folders
         let dependency_list = crate::model::AssetDependencyList {
-            path: format!("Combined dependencies from folders: {}", folder_paths.join(", ")),
+            path: "MULTIPLE_ASSETS".to_string(), // Indicate this represents multiple assets
             dependencies: all_dependencies,
         };
 

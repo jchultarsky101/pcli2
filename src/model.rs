@@ -3107,7 +3107,13 @@ impl CsvRecordProducer for AssetDependencyList {
                 };
 
                 vec![
-                    self.path.clone(), // ASSET_PATH (the original asset)
+                    if self.path == "MULTIPLE_ASSETS" {
+                        // For folder dependencies, use the assembly_path (original asset path) as the ASSET_PATH
+                        dep.assembly_path.clone()
+                    } else {
+                        // For single asset dependencies, use the list's path as the original asset path
+                        self.path.clone()
+                    }, // ASSET_PATH (the original asset)
                     dep.assembly_path.clone(), // ASSEMBLY_PATH (the relative path within assembly hierarchy)
                     dep.path.clone(), // DEPENDENCY_PATH (the dependency path)
                     asset_uuid, // ASSET_UUID

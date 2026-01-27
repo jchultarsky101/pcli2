@@ -502,6 +502,15 @@ Use these commands to inspect and manage your assets:
 # View asset details
 pcli2 asset get --path /Root/MyFolder/model.stl
 
+# View asset details with metadata
+pcli2 asset get --path /Root/MyFolder/model.stl --metadata
+
+# View asset details in CSV format with metadata
+pcli2 asset get --path /Root/MyFolder/model.stl --metadata --format csv
+
+# View asset details in tree format with metadata
+pcli2 asset get --path /Root/MyFolder/model.stl --metadata --format tree
+
 # List all assets in a folder
 pcli2 asset list --path "/Root/MyFolder" --format json
 

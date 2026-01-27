@@ -95,6 +95,8 @@ pub const PARAMETER_RECURSIVE: &str = "recursive";
 pub const PARAMETER_CONCURRENT: &str = "concurrent";
 pub const PARAMETER_PROGRESS: &str = "progress";
 pub const PARAMETER_FOLDER_PATHS: &str = "folder-paths";
+pub const PARAMETER_CONTINUE_ON_ERROR: &str = "continue-on-error";
+pub const PARAMETER_DELAY: &str = "delay";
 
 // Format options
 pub const FORMAT_CSV: &str = "csv";
@@ -384,4 +386,30 @@ pub fn auth_url_parameter() -> Arg {
         .num_args(1)
         .required(false)
         .help("Authentication URL (e.g., https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token)")
+}
+
+/// Create the continue-on-error parameter.
+pub fn continue_on_error_parameter() -> Arg {
+    Arg::new(PARAMETER_CONTINUE_ON_ERROR)
+        .long(PARAMETER_CONTINUE_ON_ERROR)
+        .action(ArgAction::SetTrue)
+        .required(false)
+        .help("Continue downloading other assets if one fails")
+}
+
+/// Create the delay parameter.
+pub fn delay_parameter() -> Arg {
+    Arg::new(PARAMETER_DELAY)
+        .long(PARAMETER_DELAY)
+        .num_args(1)
+        .required(false)
+        .default_value("0")
+        .value_parser(|s: &str| -> Result<usize, String> {
+            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
+            if val > 180 {
+                Err("Value must be between 0 and 180".to_string())
+            } else {
+                Ok(val)
+            }
+        })
 }

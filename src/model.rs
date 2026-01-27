@@ -1545,6 +1545,102 @@ impl CsvRecordProducer for Asset {
     }
 }
 
+impl Asset {
+    /// Generate CSV output with metadata columns
+    pub fn to_csv_with_metadata(&self, with_headers: bool) -> Result<String, FormattingError> {
+        let mut wtr = Writer::from_writer(vec![]);
+
+        // Get all unique metadata keys to create headers
+        let mut metadata_keys = std::collections::HashSet::new();
+        if let Some(metadata) = &self.metadata {
+            for key in metadata.meta.keys() {
+                metadata_keys.insert(key.clone());
+            }
+        }
+
+        // Sort metadata keys for consistent column ordering
+        let mut sorted_keys: Vec<String> = metadata_keys.into_iter().collect();
+        sorted_keys.sort();
+
+        if with_headers {
+            let mut header_row = vec![
+                "NAME".to_string(),
+                "PATH".to_string(),
+                "TYPE".to_string(),
+                "STATE".to_string(),
+                "IS_ASSEMBLY".to_string(),
+                "UUID".to_string(),
+            ];
+
+            // Add metadata column headers
+            for key in &sorted_keys {
+                header_row.push(format!("META_{}", key.to_uppercase()));
+            }
+
+            wtr.write_record(&header_row).map_err(|e| {
+                FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e))
+            })?;
+        }
+
+        // Create the data row
+        let mut data_row = vec![
+            self.name(),
+            self.path(),
+            self.file_type().cloned().unwrap_or_default(),
+            self.processing_status().cloned().unwrap_or_default(),
+            self.is_assembly().to_string(),
+            self.uuid().to_string(),
+        ];
+
+        // Add metadata values in the same order as headers
+        if let Some(metadata) = &self.metadata {
+            for key in &sorted_keys {
+                if let Some(value) = metadata.meta.get(key) {
+                    data_row.push(value.clone());
+                } else {
+                    data_row.push("".to_string());
+                }
+            }
+        } else {
+            // If no metadata, fill with empty strings
+            for _ in 0..sorted_keys.len() {
+                data_row.push("".to_string());
+            }
+        }
+
+        wtr.write_record(&data_row).map_err(|e| {
+            FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e))
+        })?;
+
+        let data = wtr.into_inner().map_err(|e| {
+            FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e))
+        })?;
+        String::from_utf8(data).map_err(FormattingError::Utf8Error)
+    }
+
+    /// Generate tree output with metadata
+    pub fn to_tree_with_metadata(&self, _options: crate::format::OutputFormatOptions) -> Result<String, FormattingError> {
+        // For tree format, we'll show the asset with its metadata
+        let mut result = format!("Asset: {} [{}]", self.name(), self.uuid());
+
+        if let Some(metadata) = &self.metadata {
+            if !metadata.meta.is_empty() {
+                result.push_str("\n  Metadata:");
+                for (key, value) in &metadata.meta {
+                    result.push_str(&format!("\n    {}: {}", key, value));
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Generate tree output without metadata
+    pub fn to_tree(&self, _options: crate::format::OutputFormatOptions) -> Result<String, FormattingError> {
+        Ok(format!("Asset: {} [{}]", self.name(), self.uuid()))
+    }
+}
+
 impl OutputFormatter for Asset {
     type Item = Asset;
 
@@ -1567,6 +1663,41 @@ impl OutputFormatter for Asset {
             }
             OutputFormat::Csv(options) => Ok(self.to_csv(options.with_headers)?),
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
+        }
+    }
+}
+
+impl Asset {
+    /// Format the Asset with consideration for metadata flag
+    pub fn format_with_metadata_flag(
+        &self,
+        f: OutputFormat,
+        include_metadata: bool,
+    ) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    Ok(serde_json::to_string_pretty(self)?)
+                } else {
+                    Ok(serde_json::to_string(self)?)
+                }
+            }
+            OutputFormat::Csv(options) => {
+                // For CSV format with metadata, we need to include metadata fields as columns
+                if include_metadata {
+                    self.to_csv_with_metadata(options.with_headers)
+                } else {
+                    Ok(self.to_csv(options.with_headers)?)
+                }
+            }
+            OutputFormat::Tree(options) => {
+                // For tree format with metadata, we can include metadata information
+                if include_metadata {
+                    self.to_tree_with_metadata(options)
+                } else {
+                    self.to_tree(options)
+                }
+            }
         }
     }
 }

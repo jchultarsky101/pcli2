@@ -2558,27 +2558,39 @@ impl PhysnaApiClient {
                     }
                 }
                 reqwest::StatusCode::NOT_FOUND => {
-                    return Err(ApiError::ConflictError("Asset not found - the asset may have been deleted or the path is incorrect".to_string()));
+                    return Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", error_body)));
                 }
                 _ => {
-                    // For other error statuses, we need to create a new response to get the error
-                    // Since we already consumed the response getting the text, we'll return a generic error
+                    // For other error statuses, we return the error body that we captured earlier
                     return Err(ApiError::ConflictError(format!("HTTP {} - {}", status_clone, error_body)));
                 }
             }
         }
 
         // Get the file content as bytes
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| {
-                debug!("Failed to read response bytes: {}", e);
-                ApiError::HttpError(e)
-            })?;
+        let bytes_result = response.bytes().await;
+        match bytes_result {
+            Ok(bytes) => {
+                debug!("Successfully downloaded {} bytes for asset_id: {}", bytes.len(), asset_id);
+                Ok(bytes.to_vec())
+            },
+            Err(e) => {
+                // Enhanced error logging for debugging
+                error!("Failed to read response bytes for asset_id: {}: {}", asset_id, e);
 
-        debug!("Successfully downloaded {} bytes for asset_id: {}", bytes.len(), asset_id);
-        Ok(bytes.to_vec())
+                // Provide more context about the error
+                let _error_context = format!(
+                    "Error decoding response body for asset_id: {}. This may be due to network interruption, server-side error, or response corruption. Error details: {}",
+                    asset_id,
+                    e
+                );
+
+                debug!("Detailed error context for asset_id {}: {:?}", asset_id, e);
+
+                // Return a more descriptive error
+                Err(ApiError::HttpError(e))
+            }
+        }
     }
 }
 

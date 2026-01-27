@@ -1,0 +1,14 @@
+Take your time. Accuracy matters more than speed.
+
+If anything is unclear, ask questions before proceeding.
+
+Before making changes, evaluate multiple possible approaches and choose the best one.
+
+Identify all impacted code, tests, documentation, and tooling, and account for required updates.
+
+Create a clear plan.
+
+Execute in small, verifiable steps, validating results as you go.
+
+If making code changes, compile and run tests (and add or update tests as needed) before declaring success.
+

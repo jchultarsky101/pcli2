@@ -55,7 +55,21 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing \"asset get\" command...");
 
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
-    let format = get_format_parameter_value(sub_matches).await;
+
+    // Get format parameters directly from sub_matches since asset get command has all format flags
+    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap_or(&"json".to_string()).clone();
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
+
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata,
+        with_headers,
+        pretty,
+    };
+
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(|e| crate::actions::CliActionError::FormattingError(e))?;
 
     let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID).map(|s| Uuid::from_str(s).unwrap());
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
@@ -71,7 +85,8 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         asset_path_param
     ).await?;
 
-    println!("{}", asset.format(format)?);
+    // Format the asset considering the metadata flag
+    println!("{}", asset.format_with_metadata_flag(format, with_metadata)?);
 
 	Ok(())
 }

@@ -4,8 +4,13 @@ use std::fs::File;
 use std::io::Write;
 use tracing::trace;
 use uuid::Uuid;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
 use zip::{ZipWriter, write::FileOptions};
+use tokio::sync::Semaphore;
+use std::sync::Arc;
+use tokio::time::sleep;
+use std::time::Duration;
+use crate::physna_v3::ApiError;
 
 use crate::{commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_NAME, PARAMETER_PARENT_FOLDER_PATH, PARAMETER_PARENT_FOLDER_UUID}, configuration::Configuration, error::CliError, folder_hierarchy::FolderHierarchy, format::{OutputFormat, OutputFormatter}, model::{Folder, Tenant, normalize_path}, param_utils::{get_format_parameter_value, get_tenant}, physna_v3::{PhysnaApiClient, TryDefault}};
 
@@ -422,7 +427,16 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 }
             };
 
-            all_assets_with_paths.push((asset.clone(), relative_path));
+            // Calculate the full Physna path for the asset
+            let physna_path = if current_folder_path == root_folder_path {
+                // If it's the root folder, just use the asset name under the root
+                format!("{}/{}", root_folder_path.trim_end_matches('/'), asset.name())
+            } else {
+                // Otherwise, create the full path by combining folder path and asset name
+                format!("{}/{}", current_folder_path.trim_end_matches('/'), asset.name())
+            };
+
+            all_assets_with_paths.push((asset.clone(), relative_path, physna_path));
         }
 
         // Get subfolders of current folder to process next
@@ -457,49 +471,226 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         return Ok(());
     }
 
-    // Check if progress should be displayed
+    // Get the new parameters
     let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
+    let concurrent_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT).copied().unwrap_or(1);
+    let continue_on_error = sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
+    let delay_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_DELAY).copied().unwrap_or(0);
 
-    // Create progress bar if requested
-    let progress_bar = if show_progress {
-        let pb = ProgressBar::new(all_assets_with_paths.len() as u64);
+    // Validate concurrent parameter
+    if concurrent_param < 1 || concurrent_param > 10 {
+        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", concurrent_param)));
+    }
+
+    // Validate delay parameter
+    if delay_param > 180 {
+        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--delay': must be between 0 and 180, got {}", delay_param)));
+    }
+
+    // Use a semaphore to limit concurrent operations
+    let semaphore = Arc::new(Semaphore::new(concurrent_param));
+
+    // Create progress bars if requested
+    let (progress_bar, multi_progress) = if show_progress {
+        let mp = MultiProgress::new();
+        let pb = mp.add(ProgressBar::new(all_assets_with_paths.len() as u64));
         pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Downloading assets")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall progress")
             .unwrap()
             .progress_chars("#>-"));
-        Some(pb)
+        (Some(pb), Some(mp))
     } else {
-        None
+        (None, None)
     };
 
+    // Track errors if continue-on-error is enabled
+    let mut error_count = 0;
+    let mut success_count = 0;
+
     // Download each asset to the appropriate subdirectory in the temp directory
-    for (asset, relative_path) in &all_assets_with_paths {
-        let file_content = api.download_asset(
-            &tenant.uuid.to_string(),
-            &asset.uuid().to_string()
-        ).await?;
+    let mut tasks = Vec::new();
 
-        // Create the full path in the temp directory
-        let asset_file_path = temp_dir.join(relative_path);
+    for (asset, relative_path, physna_path) in all_assets_with_paths {
+        let tenant_id = tenant.uuid.to_string();
+        let asset_id = asset.uuid().to_string();
+        let asset_name = asset.name().to_string();
+        let asset_file_path = temp_dir.join(&relative_path);
+        let semaphore = semaphore.clone();
+        let progress_bar_clone = progress_bar.clone();
+        let multi_progress_clone = multi_progress.clone();
+        let delay_duration = Duration::from_secs(delay_param as u64);
+        let continue_on_error_clone = continue_on_error;
+        let concurrent_param_clone = concurrent_param;
 
-        // Create parent directories if they don't exist
-        if let Some(parent) = asset_file_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-        }
+        // Spawn a task for each download
+        let task = tokio::spawn(async move {
+            // Acquire a permit from the semaphore to limit concurrency
+            let _permit = semaphore.acquire().await.unwrap();
 
-        let mut file = File::create(&asset_file_path).map_err(|e| crate::actions::CliActionError::IoError(e))?;
-        file.write_all(&file_content).map_err(|e| crate::actions::CliActionError::IoError(e))?;
+            // Create individual progress bar for this download if concurrent > 1 and progress is enabled
+            let individual_pb = if concurrent_param_clone > 1 && progress_bar_clone.is_some() {
+                if let Some(ref mp) = multi_progress_clone {
+                    let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
+                    individual_pb.set_style(ProgressStyle::default_bar()
+                        .template(&format!("{{spinner:.yellow}} {{msg}}"))
+                        .unwrap());
+                    individual_pb.set_message(format!("Starting download: {}", asset_name));
+                    Some(individual_pb)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
-        // Update progress bar if present
-        if let Some(ref pb) = progress_bar {
-            pb.inc(1);
+            // Add delay if specified
+            if delay_param > 0 {
+                sleep(delay_duration).await;
+            }
+
+            // Create a new API client for this task
+            let mut api_task = match PhysnaApiClient::try_default() {
+                Ok(client) => client,
+                Err(e) => {
+                    if continue_on_error_clone {
+                        return Ok(Err((asset_name, physna_path, ApiError::from(e), true))); // true indicates it's a recoverable error
+                    } else {
+                        return Err(CliError::PhysnaExtendedApiError(ApiError::from(e)));
+                    }
+                }
+            };
+
+            // Attempt to download the asset
+            let result = api_task.download_asset(&tenant_id, &asset_id).await;
+
+            match result {
+                Ok(file_content) => {
+                    // Update individual progress bar
+                    if let Some(ref ipb) = individual_pb {
+                        ipb.set_message(format!("Downloaded: {}", asset_name));
+                        ipb.finish_and_clear(); // Clear the spinner for this individual download
+                    }
+
+                    // Create parent directories if they don't exist
+                    if let Some(parent) = asset_file_path.parent() {
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            if continue_on_error_clone {
+                                return Ok(Err((asset_name, physna_path, ApiError::IoError(e), true)));
+                            } else {
+                                return Err(CliError::ActionError(crate::actions::CliActionError::IoError(e)));
+                            }
+                        }
+                    }
+
+                    let file_result = File::create(&asset_file_path);
+                    match file_result {
+                        Ok(mut file) => {
+                            match file.write_all(&file_content) {
+                                Ok(_) => {},
+                                Err(e) => {
+                                    if continue_on_error_clone {
+                                        return Ok(Err((asset_name, physna_path, ApiError::IoError(e), true)));
+                                    } else {
+                                        return Err(CliError::ActionError(crate::actions::CliActionError::IoError(e)));
+                                    }
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            if continue_on_error_clone {
+                                return Ok(Err((asset_name, physna_path, ApiError::IoError(e), true)));
+                            } else {
+                                return Err(CliError::ActionError(crate::actions::CliActionError::IoError(e)));
+                            }
+                        }
+                    }
+
+                    // Update overall progress bar if present
+                    if let Some(ref pb) = progress_bar_clone {
+                        pb.inc(1);
+                    }
+
+                    Ok(Ok(asset_name))
+                },
+                Err(e) => {
+                    // Update individual progress bar for error
+                    if let Some(ref ipb) = individual_pb {
+                        ipb.set_message(format!("Failed: {} - {}", asset_name, e));
+                        ipb.finish_and_clear(); // Clear the spinner for this individual download
+                    }
+
+                    // Log the detailed error for debugging with asset UUID and Physna path
+                    tracing::error!("Failed to download asset '{}' (Asset UUID: {}, Physna path: {}): {}", asset_name, asset_id, physna_path, e);
+                    tracing::debug!("Error details for asset '{}': error type = {:?}", asset_name, e);
+
+                    // If continue-on-error is enabled, return the error as a warning instead of failing
+                    if continue_on_error_clone {
+                        Ok(Err((asset_name, physna_path, e, true))) // true indicates it's a recoverable error
+                    } else {
+                        Err(CliError::PhysnaExtendedApiError(e))
+                    }
+                }
+            }
+        });
+
+        tasks.push(task);
+    }
+
+
+    // Wait for all tasks to complete
+    for task in tasks {
+        match task.await {
+            Ok(task_result) => {
+                match task_result {
+                    Ok(asset_result) => {
+                        match asset_result {
+                            Ok(_asset_name) => {
+                                success_count += 1;
+                            },
+                            Err((asset_name, physna_path, error, is_recoverable)) => {
+                                if is_recoverable {
+                                    error_count += 1;
+                                    eprintln!("⚠️  Warning: Failed to download asset '{}' (Physna path: {}): {}", asset_name, physna_path, error);
+                                } else {
+                                    return Err(CliError::PhysnaExtendedApiError(error));
+                                }
+                            }
+                        }
+                    },
+                    Err(cli_error) => {
+                        if continue_on_error {
+                            error_count += 1;
+                            eprintln!("⚠️  Warning: Failed to download asset due to CLI error: {}", cli_error);
+                        } else {
+                            return Err(cli_error);
+                        }
+                    }
+                }
+            },
+            Err(join_error) => {
+                if continue_on_error {
+                    error_count += 1;
+                    eprintln!("⚠️  Warning: Task failed to execute: {}", join_error);
+                } else {
+                    return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
+                        std::io::Error::new(std::io::ErrorKind::Other, join_error.to_string())
+                    )));
+                }
+            }
         }
     }
 
     // Finish progress bar if present
     if let Some(pb) = progress_bar {
         pb.finish_with_message("Assets downloaded, creating ZIP...");
+    }
+
+    // Report summary if continue-on-error was used
+    if continue_on_error && (error_count > 0 || success_count > 0) {
+        println!("✅ Successfully downloaded: {} assets", success_count);
+        if error_count > 0 {
+            eprintln!("❌ Failed to download: {} assets", error_count);
+        }
     }
 
     // Create ZIP file with all downloaded assets, preserving folder structure

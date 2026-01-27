@@ -116,6 +116,45 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Display progress bar during download"),
                 )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_CONCURRENT)
+                        .long(crate::commands::params::PARAMETER_CONCURRENT)
+                        .num_args(1)
+                        .required(false)
+                        .default_value("1")
+                        .help("Maximum number of concurrent downloads (range: 1-10)")
+                        .value_parser(|s: &str| -> Result<usize, String> {
+                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
+                            if val < 1 || val > 10 {
+                                Err("Value must be between 1 and 10".to_string())
+                            } else {
+                                Ok(val)
+                            }
+                        }),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
+                        .long(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Continue downloading other assets if one fails"),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
+                        .long(crate::commands::params::PARAMETER_DELAY)
+                        .num_args(1)
+                        .required(false)
+                        .default_value("0")
+                        .help("Delay in seconds between downloads (range: 0-180)")
+                        .value_parser(|s: &str| -> Result<usize, String> {
+                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
+                            if val > 180 {
+                                Err("Value must be between 0 and 180".to_string())
+                            } else {
+                                Ok(val)
+                            }
+                        }),
+                )
         )
         .subcommand(
             Command::new(crate::commands::params::COMMAND_DEPENDENCIES)

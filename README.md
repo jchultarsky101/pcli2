@@ -438,6 +438,18 @@ pcli2 folder download --folder-path "/Root/MyFolder" --output "./backups/my_back
 
 # Download all assets from the root folder (uses tenant name as default filename)
 pcli2 folder download --folder-path "/"
+
+# Download with concurrent downloads (up to 5 at a time)
+pcli2 folder download --folder-path "/Root/MyFolder" --concurrent 5
+
+# Download with error tolerance (continue on failure)
+pcli2 folder download --folder-path "/Root/MyFolder" --continue-on-error
+
+# Download with delay between requests (2 seconds)
+pcli2 folder download --folder-path "/Root/MyFolder" --delay 2
+
+# Download with all options combined
+pcli2 folder download --folder-path "/Root/MyFolder" --concurrent 3 --continue-on-error --delay 1 --progress
 ```
 
 **Key Features**:
@@ -446,6 +458,9 @@ pcli2 folder download --folder-path "/"
 - **Progress Indication**: Use `--progress` flag to show download progress
 - **Custom Output**: Use `--output` to specify a custom file path and name
 - **Default Naming**: When no output path is specified, uses the folder name (or tenant name for root folder) as the default filename
+- **Concurrent Downloads**: Use `--concurrent N` flag to download up to N assets simultaneously (range: 1-10)
+- **Error Tolerance**: Use `--continue-on-error` flag to continue downloading other assets if one fails
+- **Rate Limiting**: Use `--delay N` flag to add N seconds delay between downloads (range: 0-180)
 
 **Important Notes about Folder Download**:
 - The command downloads assets from the specified folder and ALL its subfolders recursively
@@ -453,6 +468,10 @@ pcli2 folder download --folder-path "/"
 - For the root folder (`/`), if no output filename is specified, the tenant name is used as the default (e.g., `demo-1.zip`)
 - Large folder hierarchies may take considerable time to download depending on the number of assets
 - The command creates a temporary directory during the download process which is cleaned up after the ZIP file is created
+- Concurrent downloads can significantly speed up large download operations but may increase server load
+- When using `--concurrent N` with `--progress`, you'll see an overall progress bar plus individual indicators for each concurrent download
+- Use `--continue-on-error` to handle intermittent network issues or problematic assets gracefully
+- Use `--delay` to prevent overwhelming the server with too many requests
 - Assets in subfolders will be placed in corresponding subdirectories within the ZIP file (e.g., an asset in `/Root/Parent/Child/file.stl` will be placed as `Child/file.stl` in the ZIP)
 
 ### Working with Assets

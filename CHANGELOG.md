@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.15] - 2026-01-27
+
+### Added
+- Added --metadata flag to asset get command to include metadata in output for both CSV and tree formats
+- Added --continue-on-error flag to folder download command to continue downloading other assets if one fails
+- Added --concurrent flag to folder download command to allow multiple concurrent downloads (range: 1-10)
+- Added --delay flag to folder download command to add delays between downloads (range: 0-180 seconds)
+- Added enhanced error logging with asset UUID and Physna path information to folder download command
+- Added improved progress indicators for concurrent downloads using MultiProgress
+
+### Changed
+- Improved folder download command to show separate progress bars for each concurrent download when using --progress
+- Enhanced error messages to include more specific information about which asset failed during download
+- Updated documentation in README.md with examples of new flags and features
+
 ## [0.2.14] - 2026-01-25
 
 ### Added

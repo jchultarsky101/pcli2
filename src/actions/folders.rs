@@ -407,6 +407,11 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
         // Add assets with their relative paths
         for asset in asset_list.get_all_assets() {
+            // Only include assets with "finished" state in the download queue
+            if asset.normalized_processing_status() != "finished" {
+                continue;
+            }
+
             // Calculate the relative path from the root folder
             let relative_path = if current_folder_path == root_folder_path {
                 // If it's the root folder, just use the asset name
@@ -427,14 +432,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 }
             };
 
-            // Calculate the full Physna path for the asset
-            let physna_path = if current_folder_path == root_folder_path {
-                // If it's the root folder, just use the asset name under the root
-                format!("{}/{}", root_folder_path.trim_end_matches('/'), asset.name())
-            } else {
-                // Otherwise, create the full path by combining folder path and asset name
-                format!("{}/{}", current_folder_path.trim_end_matches('/'), asset.name())
-            };
+            // Use the asset's original path as the physna_path
+            let physna_path = asset.path().clone();
 
             all_assets_with_paths.push((asset.clone(), relative_path, physna_path));
         }

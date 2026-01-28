@@ -544,7 +544,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     individual_pb.set_style(ProgressStyle::default_bar()
                         .template(&format!("{{spinner:.yellow}} {{msg}}"))
                         .unwrap());
-                    individual_pb.set_message(format!("Starting download: {}", asset_name));
+                    individual_pb.set_message(format!("Downloading: {}", asset_name));
                     Some(individual_pb)
                 } else {
                     None

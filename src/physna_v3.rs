@@ -1,6 +1,5 @@
 use std::path::Path;
 use crate::auth::AuthClient;
-use crate::folder_hierarchy::FolderHierarchy;
 use crate::http_utils::HttpClient;
 use crate::keyring::{Keyring, KeyringError};
 use crate::model::{
@@ -23,7 +22,6 @@ use serde_json;
 use serde_urlencoded;
 use tracing::{debug, trace, error};
 use glob::glob;
-use futures::stream;
 use indicatif::{ProgressBar, ProgressStyle};
 use uuid::Uuid;
 

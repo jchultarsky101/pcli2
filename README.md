@@ -4,7 +4,7 @@
 
 The goal of this project is to create version 2 of the Physna Command Line Interface client (PCLI2).
 
-Current Version: 0.2.15 <!-- Updated: 2026-01-27T16:07:00Z -->
+Current Version: 0.2.16 <!-- Updated: 2026-01-27T16:07:00Z -->
 
 Based on lessons learned from the previous version, we have developed a new and more ergonomic interface. It operates more like Git's excellent CLI, utilizing nested sub-commands, sensible defaults, and configuration.
 
@@ -424,19 +424,19 @@ pcli2 folder delete --path "/Root/FolderToDelete" --force
 
 #### Downloading All Assets in a Folder
 
-The `folder download` command allows you to download all assets from a specified folder and its entire subfolder hierarchy as a single ZIP archive. This is particularly useful for backing up entire folder trees or transferring assets between systems.
+The `folder download` command allows you to download all assets from a specified folder and its entire subfolder hierarchy to a local directory. This is particularly useful for backing up entire folder trees or transferring assets between systems. The downloaded assets are saved in their native formats rather than being archived in a ZIP file.
 
 ```bash
-# Download all assets in a folder as a ZIP archive
-pcli2 folder download --folder-path "/Root/MyFolder" --output "my_folder.zip"
+# Download all assets in a folder to a local directory
+pcli2 folder download --folder-path "/Root/MyFolder" --output "my_folder"
 
 # Download all assets in a folder with progress indicator
 pcli2 folder download --folder-path "/Root/MyFolder" --progress
 
-# Download all assets in a folder with custom output path
-pcli2 folder download --folder-path "/Root/MyFolder" --output "./backups/my_backup.zip"
+# Download all assets in a folder with custom output directory
+pcli2 folder download --folder-path "/Root/MyFolder" --output "./backups/my_backup"
 
-# Download all assets from the root folder (uses tenant name as default filename)
+# Download all assets from the root folder (uses folder name as default directory name)
 pcli2 folder download --folder-path "/"
 
 # Download with concurrent downloads (up to 5 at a time)
@@ -454,25 +454,26 @@ pcli2 folder download --folder-path "/Root/MyFolder" --concurrent 3 --continue-o
 
 **Key Features**:
 - **Recursive Download**: Downloads assets from the specified folder AND all its subfolders recursively
-- **Folder Structure Preservation**: The ZIP file maintains the original folder hierarchy with appropriate subdirectories
+- **Native Format**: Assets are saved in their native formats rather than being archived
+- **Folder Structure Preservation**: The local directory maintains the original folder hierarchy with appropriate subdirectories
 - **Progress Indication**: Use `--progress` flag to show download progress
-- **Custom Output**: Use `--output` to specify a custom file path and name
-- **Default Naming**: When no output path is specified, uses the folder name (or tenant name for root folder) as the default filename
+- **Custom Output**: Use `--output` to specify a custom directory path and name
+- **Default Naming**: When no output path is specified, uses the folder name (or tenant name for root folder) as the default directory name
 - **Concurrent Downloads**: Use `--concurrent N` flag to download up to N assets simultaneously (range: 1-10)
 - **Error Tolerance**: Use `--continue-on-error` flag to continue downloading other assets if one fails
 - **Rate Limiting**: Use `--delay N` flag to add N seconds delay between downloads (range: 0-180)
 
 **Important Notes about Folder Download**:
 - The command downloads assets from the specified folder and ALL its subfolders recursively
-- The folder structure is preserved in the ZIP file with appropriate subdirectories
-- For the root folder (`/`), if no output filename is specified, the tenant name is used as the default (e.g., `demo-1.zip`)
+- The folder structure is preserved in the local directory with appropriate subdirectories
+- For the root folder (`/`), if no output directory is specified, the tenant name is used as the default (e.g., `demo-1/`)
 - Large folder hierarchies may take considerable time to download depending on the number of assets
-- The command creates a temporary directory during the download process which is cleaned up after the ZIP file is created
+- The command creates a temporary directory during the download process which is cleaned up after the download is complete
 - Concurrent downloads can significantly speed up large download operations but may increase server load
 - When using `--concurrent N` with `--progress`, you'll see an overall progress bar plus individual indicators for each concurrent download
 - Use `--continue-on-error` to handle intermittent network issues or problematic assets gracefully
 - Use `--delay` to prevent overwhelming the server with too many requests
-- Assets in subfolders will be placed in corresponding subdirectories within the ZIP file (e.g., an asset in `/Root/Parent/Child/file.stl` will be placed as `Child/file.stl` in the ZIP)
+- Assets in subfolders will be placed in corresponding subdirectories within the output directory (e.g., an asset in `/Root/Parent/Child/file.stl` will be placed as `Child/file.stl` in the output directory)
 
 ### Working with Assets
 
@@ -1426,6 +1427,7 @@ You can also use the `-h` or `--help` flag with any command to get detailed usag
 
 PCLI2 supports shell completions for various shells. To generate completions:
 
+#### Zsh
 ```bash
 # Generate ZSH completions
 pcli2 completions zsh > ~/.zsh/completion/_pcli2
@@ -1434,14 +1436,56 @@ pcli2 completions zsh > ~/.zsh/completion/_pcli2
 fpath=(~/.zsh/completion $fpath)
 autoload -U compinit && compinit
 
-# Generate Bash completions
-pcli2 completions bash > /etc/bash_completion.d/pcli2
+# Alternative method: place the completion file in one of these directories:
+# /usr/local/share/zsh/site-functions/
+# ~/.zfunc/
+# Then add to ~/.zshrc:
+# fpath+=~/.zfunc
+# autoload -Uz compinit && compinit
+# compinit
+```
 
+#### Bash
+```bash
+# Generate Bash completions to a system-wide location
+sudo pcli2 completions bash > /etc/bash_completion.d/pcli2
+
+# Or generate to a user-specific location
+mkdir -p ~/.local/share/bash-completion/completions
+pcli2 completions bash > ~/.local/share/bash-completion/completions/pcli2
+
+# Make sure the following is in your ~/.bashrc:
+# if [ -f /usr/share/bash-completion/bash_completion ]; then
+#   . /usr/share/bash-completion/bash_completion
+# fi
+```
+
+#### Fish
+```bash
 # Generate Fish completions
+mkdir -p ~/.config/fish/completions
 pcli2 completions fish > ~/.config/fish/completions/pcli2.fish
+```
 
+#### PowerShell
+```powershell
 # Generate PowerShell completions
 pcli2 completions powershell > pcli2.ps1
+
+# To use the completions, add the generated file to your PowerShell profile:
+# 1. Find your profile location: $PROFILE
+# 2. Add this line to your profile: . "path/to/pcli2.ps1"
+# 3. Reload your profile: . $PROFILE
+```
+
+#### Elvish
+```bash
+# Generate Elvish completions
+mkdir -p ~/.elvish/lib
+pcli2 completions elvish > ~/.elvish/lib/pcli2.elv
+
+# Add to your ~/.elvish/rc.elv to load the module:
+# use pcli2
 ```
 
 After installing the completions, restart your shell or source your configuration file to enable tab completion for PCLI2 commands.

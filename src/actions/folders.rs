@@ -5,7 +5,6 @@ use std::io::Write;
 use tracing::trace;
 use uuid::Uuid;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
-use zip::{ZipWriter, write::FileOptions};
 use tokio::sync::Semaphore;
 use std::sync::Arc;
 use tokio::time::sleep;
@@ -413,9 +412,20 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             }
 
             // Calculate the relative path from the root folder
+            let mut asset_name_for_path = asset.name().to_string();
+
+            // If the asset is an assembly, change the extension to .zip since assemblies download as ZIP files
+            if asset.is_assembly() {
+                let path = std::path::Path::new(&asset_name_for_path);
+                let stem = path.file_stem().unwrap_or(std::ffi::OsStr::new(&asset_name_for_path));
+                if let Some(stem_str) = stem.to_str() {
+                    asset_name_for_path = format!("{}.zip", stem_str);
+                }
+            }
+
             let relative_path = if current_folder_path == root_folder_path {
-                // If it's the root folder, just use the asset name
-                asset.name().to_string()
+                // If it's the root folder, just use the asset name (with .zip extension if assembly)
+                asset_name_for_path
             } else {
                 // Otherwise, create a subfolder path by removing the root folder path prefix
                 // For example, if root is "/Julian/sub1" and current is "/Julian/sub1/sub2",
@@ -426,9 +436,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     .trim_end_matches('/');   // remove trailing slash
 
                 if relative_folder_path.is_empty() {
-                    asset.name().to_string()
+                    asset_name_for_path
                 } else {
-                    format!("{}/{}", relative_folder_path, asset.name())
+                    format!("{}/{}", relative_folder_path, asset_name_for_path)
                 }
             };
 
@@ -533,7 +543,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     individual_pb.set_style(ProgressStyle::default_bar()
                         .template(&format!("{{spinner:.yellow}} {{msg}}"))
                         .unwrap());
-                    individual_pb.set_message(format!("Starting download: {}", asset_name));
+                    individual_pb.set_message(format!("Downloading: {}", asset_name));
                     Some(individual_pb)
                 } else {
                     None
@@ -559,10 +569,10 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 }
             };
 
-            // Attempt to download the asset
-            let result = api_task.download_asset(&tenant_id, &asset_id).await;
+            // Download the asset file with retry logic (similar to asset download)
+            let file_content = download_asset_with_retry(&mut api_task, &tenant_id, &asset_id).await;
 
-            match result {
+            match file_content {
                 Ok(file_content) => {
                     // Update individual progress bar
                     if let Some(ref ipb) = individual_pb {
@@ -600,6 +610,29 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                                 return Ok(Err((asset_name, physna_path, ApiError::IoError(e), true)));
                             } else {
                                 return Err(CliError::ActionError(crate::actions::CliActionError::IoError(e)));
+                            }
+                        }
+                    }
+
+                    // If the asset is an assembly, extract the ZIP file contents and delete the original ZIP
+                    if asset.is_assembly() {
+                        match extract_zip_and_cleanup(&asset_file_path) {
+                            Ok(_) => {
+                                tracing::debug!("Successfully extracted assembly ZIP file: {}", asset_file_path.display());
+                            },
+                            Err(e) => {
+                                tracing::error!("Failed to extract assembly ZIP file: {}: {}", asset_file_path.display(), e);
+                                if continue_on_error_clone {
+                                    return Ok(Err((asset_name, physna_path, ApiError::IoError(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        format!("Failed to extract ZIP file: {}", e)
+                                    )), true)));
+                                } else {
+                                    return Err(CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        format!("Failed to extract ZIP file: {}", e)
+                                    ))));
+                                }
                             }
                         }
                     }
@@ -692,15 +725,48 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         }
     }
 
-    // Create ZIP file with all downloaded assets, preserving folder structure
-    let zip_file = File::create(&output_file_path).map_err(|e| crate::actions::CliActionError::IoError(e))?;
-    let mut zip_writer = ZipWriter::new(zip_file);
+    // If an output file path was specified, move the entire temp directory contents to that location
+    // Otherwise, leave the files in the temp directory for the user to handle
+    if output_file_path.exists() && output_file_path.is_file() {
+        // If output file exists and is a file, we would normally create a ZIP, but now we just notify the user
+        println!("Files downloaded to temporary directory: {:?}", temp_dir);
+        println!("Skipping ZIP creation as per new requirements. Files are available in native format.");
+    } else {
+        // If output is a directory or doesn't exist as a file, move the contents there
+        let dest_path = if output_file_path.is_dir() {
+            &output_file_path
+        } else {
+            // If the output path is not a directory, use parent directory
+            output_file_path.parent().unwrap_or(&temp_dir)
+        };
 
-    // Walk through the temp directory recursively and add files to the ZIP
-    add_files_to_zip_recursive(&mut zip_writer, &temp_dir, &temp_dir)?;
+        // Move all files from temp directory to destination
+        for entry in std::fs::read_dir(&temp_dir)
+            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
+            let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
+            let file_path = entry.path();
+            let dest_file_path = dest_path.join(entry.file_name());
 
-    zip_writer.finish()
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+            if file_path.is_file() {
+                std::fs::rename(&file_path, &dest_file_path)
+                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+            } else if file_path.is_dir() {
+                // For directories, we need to move the contents
+                for sub_entry in std::fs::read_dir(&file_path)
+                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
+                    let sub_entry = sub_entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
+                    let sub_file_path = sub_entry.path();
+                    let dest_sub_file_path = dest_path.join(sub_entry.file_name());
+
+                    std::fs::rename(&sub_file_path, &dest_sub_file_path)
+                        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+                }
+                // Remove the now-empty source directory
+                std::fs::remove_dir(&file_path)
+                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+            }
+        }
+    }
 
     // Clean up temporary directory
     std::fs::remove_dir_all(&temp_dir)
@@ -709,45 +775,460 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     Ok(())
 }
 
-// Helper function to recursively add files to the ZIP archive while preserving folder structure
-fn add_files_to_zip_recursive(
-    zip_writer: &mut ZipWriter<File>,
-    base_path: &std::path::Path,
-    current_path: &std::path::Path,
-) -> Result<(), CliError> {
-    for entry in std::fs::read_dir(current_path)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
-        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
-        let path = entry.path();
 
-        if path.is_file() {
-            // Calculate the relative path from the base path
-            let relative_path = path.strip_prefix(base_path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to strip prefix: {}", e)
-                ))))?;
+/// Upload all assets from a local directory to a Physna folder.
+///
+/// This function handles the "folder upload" command, uploading all asset files
+/// from a specified local directory to a Physna folder.
+///
+/// # Arguments
+///
+/// * `sub_matches` - The command-line argument matches containing the command parameters
+///
+/// # Returns
+///
+/// * `Ok(())` - If the folder was uploaded successfully
+/// * `Err(CliError)` - If an error occurred during upload
+pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::error::CliError> {
+    use std::path::Path;
+    use uuid::Uuid;
+    use crate::{
+        commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID},
+        configuration::Configuration,
+        error::CliError,
+        param_utils::{get_tenant},
+        physna_v3::{PhysnaApiClient, TryDefault},
+        model::normalize_path
+    };
 
-            let file_name = relative_path.to_str()
-                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Invalid file path"
-                ))))?;
+    tracing::trace!("Executing \"folder upload\" command...");
 
-            let options: FileOptions<()> = FileOptions::default();
-            zip_writer.start_file(file_name, options)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
-            let file_content = std::fs::read(&path)
+    // Get the local directory path from command line
+    let local_dir_path = sub_matches.get_one::<std::path::PathBuf>("local-path")
+        .ok_or_else(|| CliError::MissingRequiredArgument("Local directory path is required".to_string()))?;
+
+    // Check if the local path exists and is a directory
+    if !local_dir_path.exists() {
+        return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
+            std::io::Error::new(std::io::ErrorKind::NotFound, format!("Local path does not exist: {:?}", local_dir_path))
+        )));
+    }
+
+    if !local_dir_path.is_dir() {
+        return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("Local path is not a directory: {:?}", local_dir_path))
+        )));
+    }
+
+    // Get folder UUID or path from command line
+    let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
+    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
+
+    // Store the original folder path for asset path construction
+    let original_folder_path = if let Some(path) = folder_path_param {
+        path.clone()
+    } else {
+        // If only UUID was provided, we can't determine the path, so we'll use a placeholder
+        // In practice, this case should rarely happen since the upload command typically uses paths
+        String::from("/")
+    };
+
+    // Resolve the folder UUID - first try to get existing folder, then create if needed
+    let folder_uuid = if let Some(uuid) = folder_uuid_param {
+        *uuid
+    } else if let Some(path) = folder_path_param {
+        // Try to resolve the folder UUID by path
+        match resolve_folder_uuid_by_path(&mut api, &tenant, path).await {
+            Ok(uuid) => uuid,
+            Err(CliError::FolderNotFound(_)) => {
+                // Folder doesn't exist, create it
+                tracing::trace!("Folder does not exist, creating new folder with path: {}", path);
+
+                // Extract folder name from the path
+                let folder_name = Path::new(path)
+                    .file_name()
+                    .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
+                        std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid folder path")
+                    )))?
+                    .to_str()
+                    .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
+                        std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid folder name encoding")
+                    )))?
+                    .to_string();
+
+                // Find parent folder UUID if path has multiple segments
+                let parent_folder_path = if path.contains("/") {
+                    let parent_path = Path::new(path)
+                        .parent()
+                        .and_then(|p| p.to_str())
+                        .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
+                            std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid parent folder path")
+                        )))?;
+
+                    if !parent_path.is_empty() && normalize_path(parent_path) != "/" {
+                        Some(parent_path.to_string())
+                    } else {
+                        None // Root folder
+                    }
+                } else {
+                    None
+                };
+
+                let parent_folder_uuid = if let Some(parent_path) = parent_folder_path {
+                    Some(resolve_folder_uuid_by_path(&mut api, &tenant, &parent_path).await?)
+                } else {
+                    None
+                };
+
+                // Create the new folder
+                let new_folder_response = api.create_folder(&tenant.uuid, &folder_name, parent_folder_uuid).await?;
+                let new_folder_uuid = new_folder_response.folder.uuid;
+                tracing::trace!("Created new folder with UUID: {}", new_folder_uuid);
+                new_folder_uuid
+            },
+            Err(e) => return Err(e),
+        }
+    } else {
+        // Neither folder UUID nor path provided
+        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
+    };
+
+    // Get the command-line parameters
+    let skip_existing = sub_matches.get_flag(crate::commands::params::PARAMETER_SKIP_EXISTING);
+    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
+    let concurrent_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT).copied().unwrap_or(1);
+    let continue_on_error = sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
+    let delay_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_DELAY).copied().unwrap_or(0);
+
+    // Validate concurrent parameter
+    if concurrent_param < 1 || concurrent_param > 10 {
+        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", concurrent_param)));
+    }
+
+    // Validate delay parameter
+    if delay_param > 180 {
+        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--delay': must be between 0 and 180, got {}", delay_param)));
+    }
+
+    // Read all files in the local directory
+    let entries: Vec<_> = std::fs::read_dir(local_dir_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+    // Use a semaphore to limit concurrent operations
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent_param));
+
+    // Create progress bars if requested
+    let (progress_bar, multi_progress) = if show_progress {
+        let mp = indicatif::MultiProgress::new();
+        let pb = mp.add(indicatif::ProgressBar::new(entries.len() as u64));
+        pb.set_style(indicatif::ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall progress")
+            .unwrap()
+            .progress_chars("#>-"));
+        (Some(pb), Some(mp))
+    } else {
+        (None, None)
+    };
+
+    // Create a delay duration if delay is specified
+    let delay_duration = std::time::Duration::from_secs(delay_param as u64);
+
+    // Upload each file in the directory
+    let mut tasks = Vec::new();
+
+    for entry in entries {
+        let file_path = entry.path();
+
+        // Skip if it's a directory
+        if file_path.is_dir() {
+            continue;
+        }
+
+        let file_name = entry.file_name();
+        let file_name_str = file_name.to_str()
+            .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid file name encoding")
+            )))?.to_string(); // Clone to move into async closure
+
+        let tenant_clone = tenant.clone();
+        let _api_clone = api.clone(); // Clone the API client (currently unused but may be needed for future API calls)
+        let semaphore = semaphore.clone();
+        let progress_bar_clone = progress_bar.clone();
+        let multi_progress_clone = multi_progress.clone();
+        let original_folder_path_clone = original_folder_path.clone(); // Clone the original folder path
+        let folder_uuid_clone = folder_uuid;
+        let skip_existing_clone = skip_existing;
+        let delay_duration_clone = delay_duration;
+        let delay_param_clone = delay_param;
+        let concurrent_param_clone = concurrent_param;
+
+        // Spawn a task for each upload
+        let task = tokio::spawn(async move {
+            // Acquire a permit from the semaphore to limit concurrency
+            let _permit = semaphore.acquire().await.unwrap();
+
+            // Create individual progress bar for this upload if concurrent > 1 and progress is enabled
+            let individual_pb = if concurrent_param_clone > 1 && progress_bar_clone.is_some() {
+                if let Some(ref mp) = multi_progress_clone {
+                    let individual_pb = mp.add(indicatif::ProgressBar::new_spinner());
+                    individual_pb.set_style(indicatif::ProgressStyle::default_bar()
+                        .template("{spinner:.yellow} {msg}")
+                        .unwrap());
+                    individual_pb.set_message(format!("Starting upload: {}", file_name_str));
+                    Some(individual_pb)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Add delay if specified
+            if delay_param_clone > 0 {
+                tokio::time::sleep(delay_duration_clone).await;
+            }
+
+            // Create a new API client for this task
+            let mut api_task = match crate::physna_v3::PhysnaApiClient::try_default() {
+                Ok(client) => client,
+                Err(e) => {
+                    return Err(CliError::PhysnaExtendedApiError(crate::physna_v3::ApiError::from(e)));
+                }
+            };
+
+            // Check if an asset with the same name already exists in the folder
+            let assets_response = api_task.list_assets_by_parent_folder_uuid(&tenant_clone.uuid, Some(&folder_uuid_clone)).await;
+            let asset_exists = match assets_response {
+                Ok(response) => {
+                    let asset_list: crate::model::AssetList = response.into();
+                    asset_list.get_all_assets().iter()
+                        .any(|asset| asset.name() == file_name_str)
+                },
+                Err(_) => false, // If we can't check, assume it doesn't exist to allow upload
+            };
+
+            if asset_exists {
+                if skip_existing_clone {
+                    println!("Skipping existing asset: {}", file_name_str);
+                    // Update overall progress bar if present
+                    if let Some(ref pb) = progress_bar_clone {
+                        pb.inc(1);
+                    }
+                    return Ok(Ok(file_name_str));
+                } else {
+                    return Err(CliError::ActionError(crate::actions::CliActionError::BusinessLogicError(
+                        format!("Asset already exists: {}. Use --skip-existing to skip existing assets.", file_name_str)
+                    )));
+                }
+            }
+
+            // Upload the file
+            tracing::trace!("Uploading asset: {} to folder UUID: {}", file_name_str, folder_uuid_clone);
+
+            // Read the file content
+            let file_content = std::fs::read(&file_path)
                 .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
-            zip_writer.write_all(&file_content)
+            // Create a temporary file to pass to the API
+            let temp_file = std::env::temp_dir().join(&file_name_str);
+            std::fs::write(&temp_file, &file_content)
                 .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-        } else if path.is_dir() {
-            // Recursively process subdirectories
-            add_files_to_zip_recursive(zip_writer, base_path, &path)?;
+
+            // Construct the asset path using the original folder path and file name
+            // Use the original folder path provided to the command to ensure correct asset path
+            let asset_path = if original_folder_path_clone.ends_with('/') {
+                format!("{}{}", original_folder_path_clone, file_name_str)
+            } else {
+                format!("{}/{}", original_folder_path_clone, file_name_str)
+            };
+
+            // Upload the asset to the specified folder
+            let upload_result = api_task.create_asset(&tenant_clone.uuid, &temp_file, &asset_path, &folder_uuid_clone).await;
+
+            // Clean up the temporary file
+            let _ = std::fs::remove_file(&temp_file);
+
+            match upload_result {
+                Ok(_) => {
+                    // Update individual progress bar
+                    if let Some(ref ipb) = individual_pb {
+                        ipb.set_message(format!("Uploaded: {}", file_name_str));
+                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
+                    }
+
+                    // Update overall progress bar if present
+                    if let Some(ref pb) = progress_bar_clone {
+                        pb.inc(1);
+                    }
+
+                    Ok(Ok(file_name_str))
+                },
+                Err(e) => {
+                    // Update individual progress bar for error
+                    if let Some(ref ipb) = individual_pb {
+                        ipb.set_message(format!("Failed: {} - {}", file_name_str, e));
+                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
+                    }
+
+                    // Log the detailed error for debugging
+                    tracing::error!("Failed to upload asset '{}' (Asset path: {}): {}", file_name_str, asset_path, e);
+                    tracing::debug!("Error details for asset '{}': error type = {:?}", file_name_str, e);
+
+                    Err(CliError::PhysnaExtendedApiError(e))
+                }
+            }
+        });
+
+        tasks.push(task);
+    }
+
+    // Wait for all tasks to complete
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut errors_occurred = false;
+
+    for task in tasks {
+        match task.await {
+            Ok(task_result) => {
+                match task_result {
+                    Ok(asset_result) => {
+                        match asset_result {
+                            Ok(asset_name) => {
+                                success_count += 1;
+                                // Only print individual success messages if progress is not shown
+                                // Otherwise, the progress bar already shows the status
+                                if !show_progress {
+                                    println!("Successfully uploaded: {}", asset_name);
+                                }
+                            },
+                            Err(cli_error) => {
+                                error_count += 1;
+                                errors_occurred = true;
+                                // If continue_on_error is true, we continue processing other assets
+                                if !continue_on_error {
+                                    return Err(cli_error);
+                                }
+                                // Log the error but continue processing
+                                eprintln!("Error uploading asset: {}", cli_error);
+                            }
+                        }
+                    },
+                    Err(cli_error) => {
+                        error_count += 1;
+                        errors_occurred = true;
+                        // If continue_on_error is true, we continue processing other assets
+                        if !continue_on_error {
+                            return Err(cli_error);
+                        }
+                        // Log the error but continue processing
+                        eprintln!("Error in task: {}", cli_error);
+                    }
+                }
+            },
+            Err(join_error) => {
+                error_count += 1;
+                errors_occurred = true;
+                // If continue_on_error is true, we continue processing other assets
+                if !continue_on_error {
+                    return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
+                        std::io::Error::new(std::io::ErrorKind::Other, join_error.to_string())
+                    )));
+                }
+                // Log the error but continue processing
+                eprintln!("Join error: {}", join_error);
+            }
         }
     }
 
+    // Print summary if there were errors or if no progress bar was shown
+    if errors_occurred {
+        eprintln!("❌ Uploaded {} assets successfully, {} assets failed", success_count, error_count);
+    } else if !show_progress {
+        println!("✅ Successfully uploaded {} assets", success_count);
+    }
+
+    // Finish progress bar if present
+    if let Some(pb) = progress_bar {
+        pb.finish_with_message("All assets uploaded!");
+    }
+
     Ok(())
+}fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Error> {
+    use std::io::Cursor;
+    
+    // Read the ZIP file content
+    let zip_content = std::fs::read(zip_path)?;
+    
+    // Create a cursor from the content
+    let cursor = Cursor::new(zip_content);
+    
+    // Create a ZipArchive from the cursor
+    let mut archive = zip::ZipArchive::new(cursor)?;
+    
+    // Extract all files to the same directory as the ZIP file
+    let parent_dir = zip_path.parent()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory"))?;
+    
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        
+        let file_path = parent_dir.join(file.mangled_name());
+        
+        if file.is_dir() {
+            std::fs::create_dir_all(&file_path)?;
+        } else {
+            // Create parent directories if they don't exist
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            
+            let mut output_file = std::fs::File::create(&file_path)?;
+            std::io::copy(&mut file, &mut output_file)?;
+        }
+    }
+    
+    // Remove the original ZIP file after successful extraction
+    std::fs::remove_file(zip_path)?;
+    
+    Ok(())
+}
+async fn download_asset_with_retry(
+    api: &mut crate::physna_v3::PhysnaApiClient,
+    tenant_id: &str,
+    asset_id: &str,
+) -> Result<Vec<u8>, crate::physna_v3::ApiError> {
+    use rand::Rng;
+
+    // First attempt
+    match api.download_asset(tenant_id, asset_id).await {
+        Ok(content) => Ok(content),
+        Err(e) => {
+            // If the first attempt fails, wait for a random delay between 3-5 seconds and retry once
+            tracing::warn!("Asset download failed (attempt 1), retrying after delay: {}", e);
+
+            // Generate random delay between 3 and 5 seconds
+            // Use thread_rng in a blocking way to avoid Send issues
+            let delay_seconds = tokio::task::spawn_blocking(|| {
+                let mut rng = rand::thread_rng();
+                rng.gen_range(3..=5)
+            }).await.unwrap_or(3); // Default to 3 seconds if spawning fails
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
+
+            // Second and final attempt
+            match api.download_asset(tenant_id, asset_id).await {
+                Ok(content) => Ok(content),
+                Err(final_e) => {
+                    tracing::error!("Asset download failed after retry: {}", final_e);
+                    Err(final_e)
+                }
+            }
+        }
+    }
 }

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.16] - 2026-01-27
+
+### Added
+- Added detailed shell completion instructions for all supported shells (Zsh, Bash, Fish, PowerShell, Elvish) to README.md
+
+### Changed
+- Enhanced shell completion documentation with comprehensive setup instructions for each shell
+- Updated README.md with step-by-step instructions for applying shell completions
+
 ## [0.2.15] - 2026-01-27
 
 ### Added
@@ -395,7 +404,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.11...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.16...HEAD
+[0.2.15]: https://github.com/physna/pcli2/compare/v0.2.14...v0.2.15
+[0.2.14]: https://github.com/physna/pcli2/compare/v0.2.13...v0.2.14
+[0.2.13]: https://github.com/physna/pcli2/compare/v0.2.12...v0.2.13
+[0.2.12]: https://github.com/physna/pcli2/compare/v0.2.11...v0.2.12
+[0.2.11]: https://github.com/physna/pcli2/compare/v0.2.9...v0.2.11
+[0.2.9]: https://github.com/physna/pcli2/compare/v0.2.8...v0.2.9
+[0.2.8]: https://github.com/physna/pcli2/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/physna/pcli2/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/physna/pcli2/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/physna/pcli2/compare/v0.2.4...v0.2.5

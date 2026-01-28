@@ -96,7 +96,7 @@ pub fn folder_command() -> Command {
         )
         .subcommand(
             Command::new("download")
-                .about("Download all assets in a folder as a ZIP archive")
+                .about("Download all assets in a folder to a local directory")
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
@@ -106,7 +106,7 @@ pub fn folder_command() -> Command {
                         .long(crate::commands::params::PARAMETER_OUTPUT)
                         .num_args(1)
                         .required(false)
-                        .help("Output file path (default: <folder_name>.zip in the current directory)")
+                        .help("Output directory path (default: <folder_name> directory in the current directory)")
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
                 .arg(
@@ -329,6 +329,75 @@ pub fn folder_command() -> Command {
                         .action(clap::ArgAction::SetTrue)
                         .required(false)
                         .help("Display progress bar during processing"),
+                )
+        )
+        .subcommand(
+            Command::new(crate::commands::params::COMMAND_UPLOAD)
+                .about("Upload all assets from a local directory to a Physna folder")
+                .arg(tenant_parameter())
+                .arg(folder_uuid_parameter())
+                .arg(folder_path_parameter())
+                .group(folder_identifier_group())
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_LOCAL_PATH)
+                        .long(crate::commands::params::PARAMETER_LOCAL_PATH)
+                        .num_args(1)
+                        .required(true)
+                        .help("Local directory path containing asset files to upload")
+                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_SKIP_EXISTING)
+                        .long(crate::commands::params::PARAMETER_SKIP_EXISTING)
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Skip assets that already exist in the target folder instead of failing"),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_PROGRESS)
+                        .long(crate::commands::params::PARAMETER_PROGRESS)
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Display progress bar during upload"),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_CONCURRENT)
+                        .long(crate::commands::params::PARAMETER_CONCURRENT)
+                        .num_args(1)
+                        .required(false)
+                        .default_value("1")
+                        .help("Maximum number of concurrent uploads (range: 1-10)")
+                        .value_parser(|s: &str| -> Result<usize, String> {
+                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
+                            if val < 1 || val > 10 {
+                                Err("Value must be between 1 and 10".to_string())
+                            } else {
+                                Ok(val)
+                            }
+                        }),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
+                        .long(crate::commands::params::PARAMETER_DELAY)
+                        .num_args(1)
+                        .required(false)
+                        .default_value("0")
+                        .help("Delay in seconds between uploads (range: 0-180)")
+                        .value_parser(|s: &str| -> Result<usize, String> {
+                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
+                            if val > 180 {
+                                Err("Value must be between 0 and 180".to_string())
+                            } else {
+                                Ok(val)
+                            }
+                        }),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
+                        .long(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Continue uploading other assets if one fails"),
                 )
         )
 }

@@ -577,20 +577,79 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         output_path.clone()
     } else {
         // Use the asset name as the default output file name
+        // For assemblies, we still use the original name since we'll extract the ZIP contents
         let asset_name = asset.name();
+
         let mut path = std::path::PathBuf::new();
         path.push(asset_name);
         path
     };
 
-    // Download the asset file
-    let file_content = ctx.api().download_asset(
+    // Download the asset file with retry logic
+    let file_content = download_asset_with_retry(
+        ctx.api(),
         &tenant_uuid.to_string(),
         &asset.uuid().to_string()
     ).await?;
 
     // Write the file content to the output file
     std::fs::write(&output_file_path, file_content).map_err(|e| CliActionError::IoError(e))?;
+
+    // If the asset is an assembly, the downloaded file is a ZIP file that needs to be extracted
+    if asset.is_assembly() {
+        extract_zip_and_cleanup(&output_file_path)?;
+    }
+
+    Ok(())
+}
+
+fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError> {
+    use std::io::Cursor;
+
+    // Read the ZIP file content
+    let zip_content = std::fs::read(zip_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+    // Create a cursor from the content
+    let cursor = Cursor::new(zip_content);
+
+    // Create a ZipArchive from the cursor
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+
+    // Extract all files to the same directory as the ZIP file
+    let parent_dir = zip_path.parent()
+        .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
+            std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory")
+        )))?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)
+            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+
+        let file_path = parent_dir.join(file.mangled_name());
+
+        if file.is_dir() {
+            std::fs::create_dir_all(&file_path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+        } else {
+            // Create parent directories if they don't exist
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+            }
+
+            let mut output_file = std::fs::File::create(&file_path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+            std::io::copy(&mut file, &mut output_file)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+        }
+    }
+
+    // Remove the original ZIP file after successful extraction
+    std::fs::remove_file(zip_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
     Ok(())
 }
@@ -3233,4 +3292,36 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
     }
 
     Ok(())
+}
+
+async fn download_asset_with_retry(
+    api: &mut crate::physna_v3::PhysnaApiClient,
+    tenant_id: &str,
+    asset_id: &str,
+) -> Result<Vec<u8>, CliError> {
+    use rand::Rng;
+    
+    // First attempt
+    match api.download_asset(tenant_id, asset_id).await {
+        Ok(content) => Ok(content),
+        Err(e) => {
+            // If the first attempt fails, wait for a random delay between 3-5 seconds and retry once
+            tracing::warn!("Asset download failed (attempt 1), retrying after delay: {}", e);
+            
+            // Generate random delay between 3 and 5 seconds
+            let mut rng = rand::thread_rng();
+            let delay_seconds = rng.gen_range(3..=5);
+            
+            tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
+            
+            // Second and final attempt
+            match api.download_asset(tenant_id, asset_id).await {
+                Ok(content) => Ok(content),
+                Err(final_e) => {
+                    tracing::error!("Asset download failed after retry: {}", final_e);
+                    Err(CliError::PhysnaExtendedApiError(final_e))
+                }
+            }
+        }
+    }
 }

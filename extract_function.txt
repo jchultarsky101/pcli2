@@ -1,0 +1,39 @@
+fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Error> {
+    use std::io::Cursor;
+    
+    // Read the ZIP file content
+    let zip_content = std::fs::read(zip_path)?;
+    
+    // Create a cursor from the content
+    let cursor = Cursor::new(zip_content);
+    
+    // Create a ZipArchive from the cursor
+    let mut archive = zip::ZipArchive::new(cursor)?;
+    
+    // Extract all files to the same directory as the ZIP file
+    let parent_dir = zip_path.parent()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory"))?;
+    
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        
+        let file_path = parent_dir.join(file.mangled_name());
+        
+        if file.is_dir() {
+            std::fs::create_dir_all(&file_path)?;
+        } else {
+            // Create parent directories if they don't exist
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            
+            let mut output_file = std::fs::File::create(&file_path)?;
+            std::io::copy(&mut file, &mut output_file)?;
+        }
+    }
+    
+    // Remove the original ZIP file after successful extraction
+    std::fs::remove_file(zip_path)?;
+    
+    Ok(())
+}

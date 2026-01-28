@@ -585,8 +585,9 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         path
     };
 
-    // Download the asset file
-    let file_content = ctx.api().download_asset(
+    // Download the asset file with retry logic
+    let file_content = download_asset_with_retry(
+        ctx.api(),
         &tenant_uuid.to_string(),
         &asset.uuid().to_string()
     ).await?;
@@ -3291,4 +3292,36 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
     }
 
     Ok(())
+}
+
+async fn download_asset_with_retry(
+    api: &mut crate::physna_v3::PhysnaApiClient,
+    tenant_id: &str,
+    asset_id: &str,
+) -> Result<Vec<u8>, CliError> {
+    use rand::Rng;
+    
+    // First attempt
+    match api.download_asset(tenant_id, asset_id).await {
+        Ok(content) => Ok(content),
+        Err(e) => {
+            // If the first attempt fails, wait for a random delay between 3-5 seconds and retry once
+            tracing::warn!("Asset download failed (attempt 1), retrying after delay: {}", e);
+            
+            // Generate random delay between 3 and 5 seconds
+            let mut rng = rand::thread_rng();
+            let delay_seconds = rng.gen_range(3..=5);
+            
+            tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
+            
+            // Second and final attempt
+            match api.download_asset(tenant_id, asset_id).await {
+                Ok(content) => Ok(content),
+                Err(final_e) => {
+                    tracing::error!("Asset download failed after retry: {}", final_e);
+                    Err(CliError::PhysnaExtendedApiError(final_e))
+                }
+            }
+        }
+    }
 }

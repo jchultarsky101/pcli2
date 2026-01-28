@@ -353,5 +353,44 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Skip assets that already exist in the target folder instead of failing"),
                 )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_PROGRESS)
+                        .long(crate::commands::params::PARAMETER_PROGRESS)
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Display progress bar during upload"),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_CONCURRENT)
+                        .long(crate::commands::params::PARAMETER_CONCURRENT)
+                        .num_args(1)
+                        .required(false)
+                        .default_value("1")
+                        .help("Maximum number of concurrent uploads (range: 1-10)")
+                        .value_parser(|s: &str| -> Result<usize, String> {
+                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
+                            if val < 1 || val > 10 {
+                                Err("Value must be between 1 and 10".to_string())
+                            } else {
+                                Ok(val)
+                            }
+                        }),
+                )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
+                        .long(crate::commands::params::PARAMETER_DELAY)
+                        .num_args(1)
+                        .required(false)
+                        .default_value("0")
+                        .help("Delay in seconds between uploads (range: 0-180)")
+                        .value_parser(|s: &str| -> Result<usize, String> {
+                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
+                            if val > 180 {
+                                Err("Value must be between 0 and 180".to_string())
+                            } else {
+                                Ok(val)
+                            }
+                        }),
+                )
         )
 }

@@ -897,17 +897,51 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
     };
 
-    // Get the skip-existing flag
-    let skip_existing = sub_matches.get_flag("skip-existing");
+    // Get the command-line parameters
+    let skip_existing = sub_matches.get_flag(crate::commands::params::PARAMETER_SKIP_EXISTING);
+    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
+    let concurrent_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT).copied().unwrap_or(1);
+    let delay_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_DELAY).copied().unwrap_or(0);
+
+    // Validate concurrent parameter
+    if concurrent_param < 1 || concurrent_param > 10 {
+        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", concurrent_param)));
+    }
+
+    // Validate delay parameter
+    if delay_param > 180 {
+        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--delay': must be between 0 and 180, got {}", delay_param)));
+    }
 
     // Read all files in the local directory
-    let entries = std::fs::read_dir(local_dir_path)
+    let entries: Vec<_> = std::fs::read_dir(local_dir_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
+    // Use a semaphore to limit concurrent operations
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent_param));
+
+    // Create progress bars if requested
+    let (progress_bar, multi_progress) = if show_progress {
+        let mp = indicatif::MultiProgress::new();
+        let pb = mp.add(indicatif::ProgressBar::new(entries.len() as u64));
+        pb.set_style(indicatif::ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall progress")
+            .unwrap()
+            .progress_chars("#>-"));
+        (Some(pb), Some(mp))
+    } else {
+        (None, None)
+    };
+
+    // Create a delay duration if delay is specified
+    let delay_duration = std::time::Duration::from_secs(delay_param as u64);
+
     // Upload each file in the directory
+    let mut tasks = Vec::new();
+
     for entry in entries {
-        let entry = entry
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
         let file_path = entry.path();
 
         // Skip if it's a directory
@@ -919,62 +953,171 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         let file_name_str = file_name.to_str()
             .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid file name encoding")
-            )))?;
+            )))?.to_string(); // Clone to move into async closure
 
-        tracing::trace!("Checking if asset exists: {}", file_name_str);
+        let tenant_clone = tenant.clone();
+        let _api_clone = api.clone(); // Clone the API client (currently unused but may be needed for future API calls)
+        let semaphore = semaphore.clone();
+        let progress_bar_clone = progress_bar.clone();
+        let multi_progress_clone = multi_progress.clone();
+        let original_folder_path_clone = original_folder_path.clone(); // Clone the original folder path
+        let folder_uuid_clone = folder_uuid;
+        let skip_existing_clone = skip_existing;
+        let delay_duration_clone = delay_duration;
+        let delay_param_clone = delay_param;
+        let concurrent_param_clone = concurrent_param;
 
-        // Check if an asset with the same name already exists in the folder
-        let assets_response = api.list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&folder_uuid)).await?;
-        let asset_list: crate::model::AssetList = assets_response.into();
-        
-        let asset_exists = asset_list.get_all_assets().iter()
-            .any(|asset| asset.name() == file_name_str);
+        // Spawn a task for each upload
+        let task = tokio::spawn(async move {
+            // Acquire a permit from the semaphore to limit concurrency
+            let _permit = semaphore.acquire().await.unwrap();
 
-        if asset_exists {
-            if skip_existing {
-                println!("Skipping existing asset: {}", file_name_str);
-                continue;
+            // Create individual progress bar for this upload if concurrent > 1 and progress is enabled
+            let individual_pb = if concurrent_param_clone > 1 && progress_bar_clone.is_some() {
+                if let Some(ref mp) = multi_progress_clone {
+                    let individual_pb = mp.add(indicatif::ProgressBar::new_spinner());
+                    individual_pb.set_style(indicatif::ProgressStyle::default_bar()
+                        .template("{spinner:.yellow} {msg}")
+                        .unwrap());
+                    individual_pb.set_message(format!("Starting upload: {}", file_name_str));
+                    Some(individual_pb)
+                } else {
+                    None
+                }
             } else {
-                return Err(CliError::ActionError(crate::actions::CliActionError::BusinessLogicError(
-                    format!("Asset already exists: {}. Use --skip-existing to skip existing assets.", file_name_str)
+                None
+            };
+
+            // Add delay if specified
+            if delay_param_clone > 0 {
+                tokio::time::sleep(delay_duration_clone).await;
+            }
+
+            // Create a new API client for this task
+            let mut api_task = match crate::physna_v3::PhysnaApiClient::try_default() {
+                Ok(client) => client,
+                Err(e) => {
+                    return Err(CliError::PhysnaExtendedApiError(crate::physna_v3::ApiError::from(e)));
+                }
+            };
+
+            // Check if an asset with the same name already exists in the folder
+            let assets_response = api_task.list_assets_by_parent_folder_uuid(&tenant_clone.uuid, Some(&folder_uuid_clone)).await;
+            let asset_exists = match assets_response {
+                Ok(response) => {
+                    let asset_list: crate::model::AssetList = response.into();
+                    asset_list.get_all_assets().iter()
+                        .any(|asset| asset.name() == file_name_str)
+                },
+                Err(_) => false, // If we can't check, assume it doesn't exist to allow upload
+            };
+
+            if asset_exists {
+                if skip_existing_clone {
+                    println!("Skipping existing asset: {}", file_name_str);
+                    // Update overall progress bar if present
+                    if let Some(ref pb) = progress_bar_clone {
+                        pb.inc(1);
+                    }
+                    return Ok(Ok(file_name_str));
+                } else {
+                    return Err(CliError::ActionError(crate::actions::CliActionError::BusinessLogicError(
+                        format!("Asset already exists: {}. Use --skip-existing to skip existing assets.", file_name_str)
+                    )));
+                }
+            }
+
+            // Upload the file
+            tracing::trace!("Uploading asset: {} to folder UUID: {}", file_name_str, folder_uuid_clone);
+
+            // Read the file content
+            let file_content = std::fs::read(&file_path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+            // Create a temporary file to pass to the API
+            let temp_file = std::env::temp_dir().join(&file_name_str);
+            std::fs::write(&temp_file, &file_content)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+            // Construct the asset path using the original folder path and file name
+            // Use the original folder path provided to the command to ensure correct asset path
+            let asset_path = if original_folder_path_clone.ends_with('/') {
+                format!("{}{}", original_folder_path_clone, file_name_str)
+            } else {
+                format!("{}/{}", original_folder_path_clone, file_name_str)
+            };
+
+            // Upload the asset to the specified folder
+            let upload_result = api_task.create_asset(&tenant_clone.uuid, &temp_file, &asset_path, &folder_uuid_clone).await;
+
+            // Clean up the temporary file
+            let _ = std::fs::remove_file(&temp_file);
+
+            match upload_result {
+                Ok(_) => {
+                    // Update individual progress bar
+                    if let Some(ref ipb) = individual_pb {
+                        ipb.set_message(format!("Uploaded: {}", file_name_str));
+                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
+                    }
+
+                    // Update overall progress bar if present
+                    if let Some(ref pb) = progress_bar_clone {
+                        pb.inc(1);
+                    }
+
+                    Ok(Ok(file_name_str))
+                },
+                Err(e) => {
+                    // Update individual progress bar for error
+                    if let Some(ref ipb) = individual_pb {
+                        ipb.set_message(format!("Failed: {} - {}", file_name_str, e));
+                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
+                    }
+
+                    // Log the detailed error for debugging
+                    tracing::error!("Failed to upload asset '{}' (Asset path: {}): {}", file_name_str, asset_path, e);
+                    tracing::debug!("Error details for asset '{}': error type = {:?}", file_name_str, e);
+
+                    Err(CliError::PhysnaExtendedApiError(e))
+                }
+            }
+        });
+
+        tasks.push(task);
+    }
+
+    // Wait for all tasks to complete
+    for task in tasks {
+        match task.await {
+            Ok(task_result) => {
+                match task_result {
+                    Ok(asset_result) => {
+                        match asset_result {
+                            Ok(asset_name) => {
+                                println!("Successfully uploaded: {}", asset_name);
+                            },
+                            Err(cli_error) => {
+                                return Err(cli_error);
+                            }
+                        }
+                    },
+                    Err(cli_error) => {
+                        return Err(cli_error);
+                    }
+                }
+            },
+            Err(join_error) => {
+                return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
+                    std::io::Error::new(std::io::ErrorKind::Other, join_error.to_string())
                 )));
             }
         }
+    }
 
-        // Upload the file
-        tracing::trace!("Uploading asset: {} to folder UUID: {}", file_name_str, folder_uuid);
-        
-        // Read the file content
-        let file_content = std::fs::read(&file_path)
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-        
-        // Create a temporary file to pass to the API
-        let temp_file = std::env::temp_dir().join(file_name_str);
-        std::fs::write(&temp_file, &file_content)
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-        
-        // Construct the asset path using the original folder path and file name
-        // Use the original folder path provided to the command to ensure correct asset path
-        let asset_path = if original_folder_path.ends_with('/') {
-            format!("{}{}", original_folder_path, file_name_str)
-        } else {
-            format!("{}/{}", original_folder_path, file_name_str)
-        };
-
-        // Upload the asset to the specified folder
-        let upload_result = api.create_asset(&tenant.uuid, &temp_file, &asset_path, &folder_uuid).await;
-        
-        // Clean up the temporary file
-        let _ = std::fs::remove_file(&temp_file);
-        
-        match upload_result {
-            Ok(_) => {
-                println!("Successfully uploaded: {}", file_name_str);
-            },
-            Err(e) => {
-                return Err(CliError::PhysnaExtendedApiError(e));
-            }
-        }
+    // Finish progress bar if present
+    if let Some(pb) = progress_bar {
+        pb.finish_with_message("All assets uploaded!");
     }
 
     Ok(())

@@ -705,10 +705,24 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Create ZIP file with all downloaded assets, preserving folder structure
     let zip_file = File::create(&output_file_path).map_err(|e| crate::actions::CliActionError::IoError(e))?;
+
+    // Create a progress bar for the zipping process if the original progress bar was shown
+    let zip_progress_bar = if show_progress {
+        let zip_pb = ProgressBar::new(100); // Generic progress bar for zipping
+        zip_pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Creating ZIP archive...")
+            .unwrap()
+            .progress_chars("#>-"));
+        zip_pb.set_message("Starting ZIP creation...");
+        Some(zip_pb)
+    } else {
+        None
+    };
+
     let mut zip_writer = ZipWriter::new(zip_file);
 
     // Walk through the temp directory recursively and add files to the ZIP
-    add_files_to_zip_recursive(&mut zip_writer, &temp_dir, &temp_dir)?;
+    add_files_to_zip_recursive_with_progress(&mut zip_writer, &temp_dir, &temp_dir, zip_progress_bar.as_ref())?;
 
     zip_writer.finish()
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
@@ -757,6 +771,99 @@ fn add_files_to_zip_recursive(
         } else if path.is_dir() {
             // Recursively process subdirectories
             add_files_to_zip_recursive(zip_writer, base_path, &path)?;
+        }
+    }
+
+    Ok(())
+}
+
+// Helper function to recursively add files to the ZIP archive while preserving folder structure with progress indication
+fn add_files_to_zip_recursive_with_progress(
+    zip_writer: &mut ZipWriter<File>,
+    base_path: &std::path::Path,
+    current_path: &std::path::Path,
+    progress_bar: Option<&ProgressBar>,
+) -> Result<(), CliError> {
+    // Count total files first to provide progress indication
+    let total_files = count_files_recursive(current_path)?;
+    
+    if let Some(pb) = progress_bar {
+        pb.set_length(total_files as u64);
+        pb.set_message("Counted files, starting ZIP creation...");
+    }
+
+    // Now actually add files to the ZIP with progress updates
+    add_files_to_zip_recursive_with_progress_impl(zip_writer, base_path, current_path, progress_bar, &total_files)?;
+
+    if let Some(pb) = progress_bar {
+        pb.finish_with_message("ZIP archive created successfully!");
+    }
+
+    Ok(())
+}
+
+// Helper function to count total files recursively
+fn count_files_recursive(current_path: &std::path::Path) -> Result<usize, CliError> {
+    let mut count = 0;
+    for entry in std::fs::read_dir(current_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
+        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
+        let path = entry.path();
+
+        if path.is_file() {
+            count += 1;
+        } else if path.is_dir() {
+            count += count_files_recursive(&path)?;
+        }
+    }
+    Ok(count)
+}
+
+// Actual implementation of adding files to ZIP with progress
+fn add_files_to_zip_recursive_with_progress_impl(
+    zip_writer: &mut ZipWriter<File>,
+    base_path: &std::path::Path,
+    current_path: &std::path::Path,
+    progress_bar: Option<&ProgressBar>,
+    total_files: &usize,
+) -> Result<(), CliError> {
+    for entry in std::fs::read_dir(current_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
+        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
+        let path = entry.path();
+
+        if path.is_file() {
+            // Calculate the relative path from the base path
+            let relative_path = path.strip_prefix(base_path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to strip prefix: {}", e)
+                ))))?;
+
+            let file_name = relative_path.to_str()
+                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Invalid file path"
+                ))))?;
+
+            let options: FileOptions<()> = FileOptions::default();
+            zip_writer.start_file(file_name, options)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+
+            let file_content = std::fs::read(&path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+            zip_writer.write_all(&file_content)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+            // Update progress bar
+            if let Some(pb) = progress_bar {
+                pb.inc(1);
+                pb.set_message(format!("Added file: {}", file_name));
+            }
+        } else if path.is_dir() {
+            // Recursively process subdirectories
+            add_files_to_zip_recursive_with_progress_impl(zip_writer, base_path, &path, progress_bar, total_files)?;
         }
     }
 

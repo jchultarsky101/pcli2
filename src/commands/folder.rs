@@ -96,7 +96,7 @@ pub fn folder_command() -> Command {
         )
         .subcommand(
             Command::new("download")
-                .about("Download all assets in a folder as a ZIP archive")
+                .about("Download all assets in a folder to a local directory")
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
@@ -106,7 +106,7 @@ pub fn folder_command() -> Command {
                         .long(crate::commands::params::PARAMETER_OUTPUT)
                         .num_args(1)
                         .required(false)
-                        .help("Output file path (default: <folder_name>.zip in the current directory)")
+                        .help("Output directory path (default: <folder_name> directory in the current directory)")
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
                 .arg(

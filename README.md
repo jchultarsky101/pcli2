@@ -424,19 +424,19 @@ pcli2 folder delete --path "/Root/FolderToDelete" --force
 
 #### Downloading All Assets in a Folder
 
-The `folder download` command allows you to download all assets from a specified folder and its entire subfolder hierarchy as a single ZIP archive. This is particularly useful for backing up entire folder trees or transferring assets between systems.
+The `folder download` command allows you to download all assets from a specified folder and its entire subfolder hierarchy to a local directory. This is particularly useful for backing up entire folder trees or transferring assets between systems. The downloaded assets are saved in their native formats rather than being archived in a ZIP file.
 
 ```bash
-# Download all assets in a folder as a ZIP archive
-pcli2 folder download --folder-path "/Root/MyFolder" --output "my_folder.zip"
+# Download all assets in a folder to a local directory
+pcli2 folder download --folder-path "/Root/MyFolder" --output "my_folder"
 
 # Download all assets in a folder with progress indicator
 pcli2 folder download --folder-path "/Root/MyFolder" --progress
 
-# Download all assets in a folder with custom output path
-pcli2 folder download --folder-path "/Root/MyFolder" --output "./backups/my_backup.zip"
+# Download all assets in a folder with custom output directory
+pcli2 folder download --folder-path "/Root/MyFolder" --output "./backups/my_backup"
 
-# Download all assets from the root folder (uses tenant name as default filename)
+# Download all assets from the root folder (uses folder name as default directory name)
 pcli2 folder download --folder-path "/"
 
 # Download with concurrent downloads (up to 5 at a time)
@@ -454,25 +454,26 @@ pcli2 folder download --folder-path "/Root/MyFolder" --concurrent 3 --continue-o
 
 **Key Features**:
 - **Recursive Download**: Downloads assets from the specified folder AND all its subfolders recursively
-- **Folder Structure Preservation**: The ZIP file maintains the original folder hierarchy with appropriate subdirectories
+- **Native Format**: Assets are saved in their native formats rather than being archived
+- **Folder Structure Preservation**: The local directory maintains the original folder hierarchy with appropriate subdirectories
 - **Progress Indication**: Use `--progress` flag to show download progress
-- **Custom Output**: Use `--output` to specify a custom file path and name
-- **Default Naming**: When no output path is specified, uses the folder name (or tenant name for root folder) as the default filename
+- **Custom Output**: Use `--output` to specify a custom directory path and name
+- **Default Naming**: When no output path is specified, uses the folder name (or tenant name for root folder) as the default directory name
 - **Concurrent Downloads**: Use `--concurrent N` flag to download up to N assets simultaneously (range: 1-10)
 - **Error Tolerance**: Use `--continue-on-error` flag to continue downloading other assets if one fails
 - **Rate Limiting**: Use `--delay N` flag to add N seconds delay between downloads (range: 0-180)
 
 **Important Notes about Folder Download**:
 - The command downloads assets from the specified folder and ALL its subfolders recursively
-- The folder structure is preserved in the ZIP file with appropriate subdirectories
-- For the root folder (`/`), if no output filename is specified, the tenant name is used as the default (e.g., `demo-1.zip`)
+- The folder structure is preserved in the local directory with appropriate subdirectories
+- For the root folder (`/`), if no output directory is specified, the tenant name is used as the default (e.g., `demo-1/`)
 - Large folder hierarchies may take considerable time to download depending on the number of assets
-- The command creates a temporary directory during the download process which is cleaned up after the ZIP file is created
+- The command creates a temporary directory during the download process which is cleaned up after the download is complete
 - Concurrent downloads can significantly speed up large download operations but may increase server load
 - When using `--concurrent N` with `--progress`, you'll see an overall progress bar plus individual indicators for each concurrent download
 - Use `--continue-on-error` to handle intermittent network issues or problematic assets gracefully
 - Use `--delay` to prevent overwhelming the server with too many requests
-- Assets in subfolders will be placed in corresponding subdirectories within the ZIP file (e.g., an asset in `/Root/Parent/Child/file.stl` will be placed as `Child/file.stl` in the ZIP)
+- Assets in subfolders will be placed in corresponding subdirectories within the output directory (e.g., an asset in `/Root/Parent/Child/file.stl` will be placed as `Child/file.stl` in the output directory)
 
 ### Working with Assets
 

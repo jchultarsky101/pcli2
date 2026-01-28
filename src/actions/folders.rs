@@ -944,9 +944,18 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         std::fs::write(&temp_file, &file_content)
             .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
         
-        // Construct the asset path (this would typically be the file name)
-        let asset_path = format!("/{}", file_name_str);
-        
+        // Construct the asset path using the folder path and file name
+        // Get the folder path to create the full asset path
+        let folder_info = api.get_folder(&tenant.uuid, &folder_uuid).await?;
+        let folder_path = folder_info.path();
+
+        // Construct the asset path by combining the folder path and file name
+        let asset_path = if folder_path.ends_with('/') {
+            format!("{}{}", folder_path, file_name_str)
+        } else {
+            format!("{}/{}", folder_path, file_name_str)
+        };
+
         // Upload the asset to the specified folder
         let upload_result = api.create_asset(&tenant.uuid, &temp_file, &asset_path, &folder_uuid).await;
         

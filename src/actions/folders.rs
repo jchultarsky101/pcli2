@@ -569,10 +569,10 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 }
             };
 
-            // Attempt to download the asset
-            let result = api_task.download_asset(&tenant_id, &asset_id).await;
+            // Download the asset file with retry logic (similar to asset download)
+            let file_content = download_asset_with_retry(&mut api_task, &tenant_id, &asset_id).await;
 
-            match result {
+            match file_content {
                 Ok(file_content) => {
                     // Update individual progress bar
                     if let Some(ref ipb) = individual_pb {
@@ -1002,4 +1002,38 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     std::fs::remove_file(zip_path)?;
     
     Ok(())
+}
+async fn download_asset_with_retry(
+    api: &mut crate::physna_v3::PhysnaApiClient,
+    tenant_id: &str,
+    asset_id: &str,
+) -> Result<Vec<u8>, crate::physna_v3::ApiError> {
+    use rand::Rng;
+
+    // First attempt
+    match api.download_asset(tenant_id, asset_id).await {
+        Ok(content) => Ok(content),
+        Err(e) => {
+            // If the first attempt fails, wait for a random delay between 3-5 seconds and retry once
+            tracing::warn!("Asset download failed (attempt 1), retrying after delay: {}", e);
+
+            // Generate random delay between 3 and 5 seconds
+            // Use thread_rng in a blocking way to avoid Send issues
+            let delay_seconds = tokio::task::spawn_blocking(|| {
+                let mut rng = rand::thread_rng();
+                rng.gen_range(3..=5)
+            }).await.unwrap_or(3); // Default to 3 seconds if spawning fails
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
+
+            // Second and final attempt
+            match api.download_asset(tenant_id, asset_id).await {
+                Ok(content) => Ok(content),
+                Err(final_e) => {
+                    tracing::error!("Asset download failed after retry: {}", final_e);
+                    Err(final_e)
+                }
+            }
+        }
+    }
 }

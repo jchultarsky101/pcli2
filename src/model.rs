@@ -3646,6 +3646,67 @@ pub struct AssemblyTree {
     root: AssemblyNode,
 }
 
+// Separate struct to handle lazy computation of expensive operations
+pub struct AssemblyTreeWithCache {
+    tree: AssemblyTree,
+    /// Cached total asset count, computed lazily to avoid repeated expensive traversals
+    cached_asset_count: std::cell::RefCell<Option<usize>>,
+}
+
+impl From<AssemblyTree> for AssemblyTreeWithCache {
+    fn from(tree: AssemblyTree) -> Self {
+        Self {
+            tree,
+            cached_asset_count: std::cell::RefCell::new(None),
+        }
+    }
+}
+
+impl AssemblyTreeWithCache {
+    /// Get the total count of assets in the assembly tree (including root and all descendants)
+    /// This computation is cached to avoid repeated expensive tree traversals
+    pub fn asset_count(&self) -> usize {
+        let mut cached_count = self.cached_asset_count.borrow_mut();
+        if let Some(count) = *cached_count {
+            return count;
+        }
+
+        // Compute the count by traversing the tree
+        let count = self.count_assets_recursive(&self.tree.root);
+        *cached_count = Some(count);
+        count
+    }
+
+    /// Helper function to recursively count assets in the tree
+    fn count_assets_recursive(&self, node: &AssemblyNode) -> usize {
+        let mut count = 1; // Count this node
+
+        if let Some(children) = &node.children {
+            for child in children.iter() {
+                count += self.count_assets_recursive(child);
+            }
+        }
+
+        count
+    }
+
+    /// Clear the cached asset count (useful when the tree structure changes)
+    pub fn clear_asset_count_cache(&mut self) {
+        let mut cached_count = self.cached_asset_count.borrow_mut();
+        *cached_count = None;
+    }
+
+    /// Get a reference to the underlying tree
+    pub fn tree(&self) -> &AssemblyTree {
+        &self.tree
+    }
+
+    /// Get a mutable reference to the underlying tree
+    pub fn tree_mut(&mut self) -> &mut AssemblyTree {
+        &mut self.tree
+    }
+}
+
 impl AssemblyTree {
     pub fn new(asset: Asset) -> Self {
         let root = AssemblyNode::new(asset);

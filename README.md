@@ -1427,6 +1427,7 @@ You can also use the `-h` or `--help` flag with any command to get detailed usag
 
 PCLI2 supports shell completions for various shells. To generate completions:
 
+#### Zsh
 ```bash
 # Generate ZSH completions
 pcli2 completions zsh > ~/.zsh/completion/_pcli2
@@ -1435,14 +1436,56 @@ pcli2 completions zsh > ~/.zsh/completion/_pcli2
 fpath=(~/.zsh/completion $fpath)
 autoload -U compinit && compinit
 
-# Generate Bash completions
-pcli2 completions bash > /etc/bash_completion.d/pcli2
+# Alternative method: place the completion file in one of these directories:
+# /usr/local/share/zsh/site-functions/
+# ~/.zfunc/
+# Then add to ~/.zshrc:
+# fpath+=~/.zfunc
+# autoload -Uz compinit && compinit
+# compinit
+```
 
+#### Bash
+```bash
+# Generate Bash completions to a system-wide location
+sudo pcli2 completions bash > /etc/bash_completion.d/pcli2
+
+# Or generate to a user-specific location
+mkdir -p ~/.local/share/bash-completion/completions
+pcli2 completions bash > ~/.local/share/bash-completion/completions/pcli2
+
+# Make sure the following is in your ~/.bashrc:
+# if [ -f /usr/share/bash-completion/bash_completion ]; then
+#   . /usr/share/bash-completion/bash_completion
+# fi
+```
+
+#### Fish
+```bash
 # Generate Fish completions
+mkdir -p ~/.config/fish/completions
 pcli2 completions fish > ~/.config/fish/completions/pcli2.fish
+```
 
+#### PowerShell
+```powershell
 # Generate PowerShell completions
 pcli2 completions powershell > pcli2.ps1
+
+# To use the completions, add the generated file to your PowerShell profile:
+# 1. Find your profile location: $PROFILE
+# 2. Add this line to your profile: . "path/to/pcli2.ps1"
+# 3. Reload your profile: . $PROFILE
+```
+
+#### Elvish
+```bash
+# Generate Elvish completions
+mkdir -p ~/.elvish/lib
+pcli2 completions elvish > ~/.elvish/lib/pcli2.elv
+
+# Add to your ~/.elvish/rc.elv to load the module:
+# use pcli2
 ```
 
 After installing the completions, restart your shell or source your configuration file to enable tab completion for PCLI2 commands.

@@ -810,7 +810,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         *uuid
     } else if let Some(path) = folder_path_param {
         // Try to resolve the folder UUID by path
-        match super::folders::resolve_folder_uuid_by_path(&mut api, &tenant, path).await {
+        match resolve_folder_uuid_by_path(&mut api, &tenant, path).await {
             Ok(uuid) => uuid,
             Err(CliError::FolderNotFound(_)) => {
                 // Folder doesn't exist, create it
@@ -847,7 +847,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 };
                 
                 let parent_folder_uuid = if let Some(parent_path) = parent_folder_path {
-                    Some(super::folders::resolve_folder_uuid_by_path(&mut api, &tenant, &parent_path).await?)
+                    Some(resolve_folder_uuid_by_path(&mut api, &tenant, &parent_path).await?)
                 } else {
                     None
                 };

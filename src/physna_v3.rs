@@ -1,6 +1,5 @@
 use std::path::Path;
 use crate::auth::AuthClient;
-use crate::folder_hierarchy::FolderHierarchy;
 use crate::http_utils::HttpClient;
 use crate::keyring::{Keyring, KeyringError};
 use crate::model::{
@@ -16,13 +15,13 @@ use crate::model::{
     FolderListResponse,
     SingleAssetResponse,
     SingleFolderResponse};
+use mime_guess;
 use async_recursion::async_recursion;
 use reqwest;
 use serde_json;
 use serde_urlencoded;
 use tracing::{debug, trace, error};
 use glob::glob;
-use futures::stream::{self, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use uuid::Uuid;
 
@@ -119,6 +118,7 @@ pub trait TryDefault: Sized {
 ///     Ok(())
 /// }
 /// ```
+
 #[derive(Clone)]
 pub struct PhysnaApiClient {
     /// Base URL for the Physna V3 API (e.g., "https://app-api.physna.com/v3")
@@ -244,6 +244,25 @@ impl PhysnaApiClient {
             auth_url: configuration.get_auth_base_url(),
             http_client,
             environment_name,
+        }
+    }
+
+    /// Create a new Physna API client with a shared HTTP client
+    ///
+    /// # Arguments
+    /// * `http_client` - A shared HTTP client instance to reuse connection pools
+    /// * `base_url` - The base URL for the Physna V3 API
+    ///
+    /// # Returns
+    /// A new `PhysnaApiClient` instance that shares the HTTP client
+    pub fn new_with_shared_http_client(http_client: HttpClient, base_url: String) -> Self {
+        Self {
+            base_url,
+            access_token: None,
+            client_credentials: None,
+            auth_url: "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token".to_string(), // Default auth URL
+            http_client,
+            environment_name: "default".to_string(),
         }
     }
 
@@ -978,7 +997,78 @@ impl PhysnaApiClient {
 
         Ok(assets.into())
     }
-    
+
+    /// Stream assets from a specific folder by folder UUID without loading all pages into memory
+    ///
+    /// This function returns a stream that yields assets page by page, which is more memory-efficient
+    /// when dealing with large numbers of assets.
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The ID of the tenant
+    /// * `parent_folder_uuid` - The ID of the folder to list assets from. If None, it will list the root folder
+    ///
+    /// # Returns
+    /// * `impl Stream<Item = Result<Asset, ApiError>>` - Stream of assets
+    pub fn stream_assets_by_parent_folder_uuid(
+        &mut self,
+        tenant_uuid: &Uuid,
+        parent_folder_uuid: Option<&Uuid>,
+    ) -> impl futures::Stream<Item = Result<Asset, ApiError>> {
+        use tokio::sync::mpsc;
+        use tokio_stream::wrappers::ReceiverStream;
+
+        // Create a channel to pass assets from the background task to the stream
+        let (tx, rx) = mpsc::channel::<Result<Asset, ApiError>>(100); // Buffer size of 100
+
+        // Clone the client to move into the async block
+        let mut client_clone = self.clone();
+        let tenant_uuid_clone = *tenant_uuid;
+        let parent_folder_uuid_clone = parent_folder_uuid.cloned();
+
+        // Spawn a task to fetch pages and send assets through the channel
+        tokio::spawn(async move {
+            let mut current_page = 1;
+            let per_page = 200;
+
+            loop {
+                match client_clone
+                    .list_assets_by_parent_folder_uuid_with_pagination(
+                        &tenant_uuid_clone,
+                        parent_folder_uuid_clone.as_ref(),
+                        current_page,
+                        per_page,
+                    )
+                    .await
+                {
+                    Ok(response) => {
+                        // Send each asset individually to avoid loading all into memory at once
+                        for asset_response in &response.assets {
+                            let asset: Asset = asset_response.into();
+                            if tx.send(Ok(asset)).await.is_err() {
+                                // Receiver dropped, stop sending
+                                return;
+                            }
+                        }
+
+                        if response.page_data.current_page >= response.page_data.last_page {
+                            break;
+                        }
+
+                        current_page += 1;
+                    }
+                    Err(e) => {
+                        // Send the error and stop
+                        let _ = tx.send(Err(e)).await;
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Wrap the receiver in a stream
+        ReceiverStream::new(rx)
+    }
+
     /// List a single page of assets in a specific folder by folder UUID
     /// 
     /// This method lists assets that are contained in a specific folder using the 
@@ -1020,14 +1110,14 @@ impl PhysnaApiClient {
     }
     
     /// Get the folder ID for a given path by traversing the folder structure efficiently
-    /// 
+    ///
     /// This method efficiently resolves a folder path to its corresponding folder ID
     /// by using the root/content and folderId/contents API endpoints, with content filtering.
-    /// 
+    ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant
     /// * `folder_path` - The path to resolve (e.g., "Root/Child/Grandchild" or "/Root/Child/Grandchild")
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Some(String))` - The folder ID if found
     /// * `Ok(None)` - If the path doesn't exist
@@ -1048,9 +1138,10 @@ impl PhysnaApiClient {
             // Remove leading slash for hierarchy lookup
             let path_for_hierarchy = normalized_path.strip_prefix('/').unwrap_or(&normalized_path);
 
-            // Use the folder hierarchy approach to find the folder by path
+            // Use the cached folder hierarchy approach to find the folder by path
             // This properly handles nested paths like "test/sub1" by traversing the hierarchy
-            if let Ok(hierarchy) = FolderHierarchy::build_from_api(self, tenant_uuid).await {
+            // and avoids rebuilding the hierarchy for each path resolution
+            if let Ok(hierarchy) = crate::folder_cache::FolderCache::get_or_fetch(self, tenant_uuid).await {
                 if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
                     debug!("Found folder at path '{}' using hierarchy: {}", path_for_hierarchy, folder_node.folder.uuid);
                     return Ok(Some(folder_node.folder.uuid.clone()));
@@ -1649,15 +1740,15 @@ impl PhysnaApiClient {
         
         let file_name = file_path.file_name().unwrap().to_string_lossy().into_owned(); // It is save to unwrap because we already confired the file exists
         
-        // Read the file content
-        let file_data = tokio::fs::read(file_path).await?;
         trace!("Derived asset path: {}", &asset_path);
-            
-        
-        
-        // Create a file part from the file data
-        let file_part = reqwest::multipart::Part::bytes(file_data)
-            .file_name(file_name.clone());
+
+        // Open the file for streaming upload
+        let file = tokio::fs::File::open(file_path).await
+            .map_err(|e| ApiError::IoError(e))?;
+        let file_part = reqwest::multipart::Part::stream(file)
+            .file_name(file_name.clone())
+            .mime_str(mime_guess::from_path(file_path).first_or_octet_stream().as_ref())
+            .unwrap();
         
         // Build the multipart form with file part and required parameters
         let mut form = reqwest::multipart::Form::new()
@@ -1697,13 +1788,16 @@ impl PhysnaApiClient {
             }
 
             // Create a new form for the retry
-            let file_data = tokio::fs::read(file_path).await?;
-            let file_part = reqwest::multipart::Part::bytes(file_data)
-                .file_name(file_name.clone());
+            let retry_file = tokio::fs::File::open(file_path).await
+                .map_err(|e| ApiError::IoError(e))?;
+            let retry_file_part = reqwest::multipart::Part::stream(retry_file)
+                .file_name(file_name.clone())
+                .mime_str(mime_guess::from_path(file_path).first_or_octet_stream().as_ref())
+                .unwrap();
 
             // Build the multipart form with file part and required parameters
             let mut retry_form = reqwest::multipart::Form::new()
-                .part("file", file_part)
+                .part("file", retry_file_part)
                 .text("path", asset_path.clone())  // Use the full asset path including folder
                 .text("metadata", "")  // Empty metadata as in the working example
                 .text("createMissingFolders", "");  // Empty createMissingFolders as in the working example
@@ -2180,28 +2274,28 @@ impl PhysnaApiClient {
     /// * `folder_id` - Optional folder ID where to place the assets
     /// * `concurrent` - Maximum number of concurrent uploads
     /// * `show_progress` - Whether to display a progress bar during upload
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Vec<crate::model::AssetResponse>)` - Successfully created assets
     /// * `Err(ApiError)` - HTTP error, IO error, or other error
     pub async fn create_assets_batch(
-        &mut self, 
-        tenant_uuid: &Uuid, 
-        glob_pattern: &str, 
+        &mut self,
+        tenant_uuid: &Uuid,
+        glob_pattern: &str,
         folder_path: Option<&str>,
         folder_uuid: Option<&Uuid>,
         concurrent: usize,
         show_progress: bool
     ) -> Result<Vec<crate::model::Asset>, ApiError> {
         debug!("Creating batch assets in tenant: {}, folder_path: {:?}, folder_id: {:?}", &tenant_uuid, folder_path, folder_uuid);
-        
+
         // Expand the glob pattern to get matching files
         let paths: Vec<_> = glob(glob_pattern)?
             .filter_map(|path_result| path_result.ok()) // Filter out any errors and extract the PathBuf
             .collect();
-        
+
         debug!("Found {} files matching pattern: {}", paths.len(), glob_pattern);
-        
+
         // Create progress bar if requested
         let progress_bar = if show_progress {
             let pb = ProgressBar::new(paths.len() as u64);
@@ -2213,80 +2307,162 @@ impl PhysnaApiClient {
         } else {
             None
         };
-        
-        // Create a stream of futures for uploading files concurrently
+
+        // Share the HTTP client across all concurrent uploads to leverage connection pooling
+        let shared_http_client = self.http_client.clone();
         let base_url = self.base_url.clone();
         let access_token = self.access_token.clone();
         let client_credentials = self.client_credentials.clone();
         let folder_path = folder_path.map(|s| s.to_string());
-        
+
         debug!("Folder path for batch upload: {:?}, folder ID: {:?}", folder_path, folder_uuid);
-        
-        let results: Result<Vec<_>, _> = stream::iter(paths)
-            .filter(|path_buf| {
-                futures::future::ready(path_buf.exists() && path_buf.is_file())
-            })
-            .map(|path_buf| {
-                let base_url = base_url.clone();
-                let access_token = access_token.clone();
-                let client_credentials = client_credentials.clone();
-                let folder_path = folder_path.clone();
-                let folder_uuid = folder_uuid.clone();
-                let progress_bar = progress_bar.clone();
-                
-                async move {
-                    let path_str = path_buf.to_string_lossy().to_string();
-                    let file_name = path_buf.file_name();
 
-                    let file_name = match file_name {
-                        Some(file_name) => file_name,
-                        None => return Err(ApiError::PathNotFound(path_buf.to_string_lossy().into())),
-                    };
+        // Use a semaphore to control concurrency
+        use tokio::sync::Semaphore;
+        use tokio_stream::wrappers::ReceiverStream;
 
-                
-                
-                    // Create a new client for each request to avoid borrowing issues
-                    let mut client = PhysnaApiClient::new().with_base_url(base_url);
-                    if let Some(token) = access_token {
-                        client = client.with_access_token(token);
+        let semaphore = std::sync::Arc::new(Semaphore::new(concurrent));
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<crate::model::Asset, (std::path::PathBuf, ApiError)>>(paths.len());
+
+        // Process each file with controlled concurrency
+        // Convert folder_uuid to owned value to avoid lifetime issues
+        let folder_uuid_owned = folder_uuid.cloned();
+
+        let tasks: Vec<_> = paths.into_iter().map(|path_buf| {
+            let tx = tx.clone();
+            let shared_http_client = shared_http_client.clone();
+            let base_url = base_url.clone();
+            let access_token = access_token.clone();
+            let client_credentials = client_credentials.clone();
+            let folder_path = folder_path.clone();
+            let folder_uuid = folder_uuid_owned.clone();
+            let progress_bar = progress_bar.clone();
+            let tenant_uuid = *tenant_uuid;
+            let semaphore = semaphore.clone();
+
+            tokio::spawn(async move {
+                // Acquire a permit to control concurrency
+                let _permit = semaphore.acquire().await.unwrap();
+
+                let path_str = path_buf.to_string_lossy().to_string();
+                let file_name = path_buf.file_name();
+
+                let file_name = match file_name {
+                    Some(file_name) => file_name,
+                    None => {
+                        if let Err(e) = tx.send(Err((path_buf.clone(), ApiError::PathNotFound(path_buf.to_string_lossy().into())))).await {
+                            tracing::error!("Failed to send error result: {}", e);
+                        }
+                        return;
                     }
-                    if let Some((client_id, client_secret)) = client_credentials {
-                        client = client.with_client_credentials(client_id, client_secret);
-                    }
-                
-                    // Upload the file
-                    let asset_path = format!("{}/{}", folder_path.unwrap(), file_name.to_string_lossy());
-                    debug!("Uploading file: {}, as asset_path: {}, folder_uuid: {:?}", path_str, asset_path, folder_uuid);
-                    let result = client.create_asset(&tenant_uuid, &path_buf, &asset_path, folder_uuid.unwrap()).await;
-                
-                    // Update progress bar if present
-                    if let Some(pb) = &progress_bar {
-                        pb.inc(1);
-                        match &result {
-                            Ok(asset) => {
-                                pb.set_message(format!("Uploaded: {}", asset.path()));
-                            }
-                            Err(_) => {
-                                pb.set_message(format!("Failed: {}", path_buf.file_name().unwrap_or_default().to_string_lossy()));
-                            }
+                };
+
+                // Create a new client that shares the HTTP client to leverage connection pooling
+                let base_client = PhysnaApiClient::new_with_shared_http_client(shared_http_client, base_url);
+                let mut client = base_client.for_upload_operations(); // Use upload-optimized timeout
+
+                if let Some(token) = access_token {
+                    client = client.with_access_token(token);
+                }
+                if let Some((client_id, client_secret)) = client_credentials {
+                    client = client.with_client_credentials(client_id, client_secret);
+                }
+
+                // Upload the file
+                let asset_path = format!("{}/{}", folder_path.unwrap(), file_name.to_string_lossy());
+                debug!("Uploading file: {}, as asset_path: {}, folder_uuid: {:?}", path_str, asset_path, folder_uuid);
+                let result = client.create_asset(&tenant_uuid, &path_buf, &asset_path, &folder_uuid.unwrap()).await;
+
+                // Update progress bar if present
+                if let Some(pb) = &progress_bar {
+                    pb.inc(1);
+                    match &result {
+                        Ok(asset) => {
+                            pb.set_message(format!("Uploaded: {}", asset.path()));
+                        }
+                        Err(_) => {
+                            pb.set_message(format!("Failed: {}", path_buf.file_name().unwrap_or_default().to_string_lossy()));
                         }
                     }
-                
-                    result
+                }
+
+                // Send result through channel - success or detailed error with file path
+                match result {
+                    Ok(asset) => {
+                        if let Err(e) = tx.send(Ok(asset)).await {
+                            tracing::error!("Failed to send success result: {}", e);
+                        }
+                    }
+                    Err(error) => {
+                        if let Err(e) = tx.send(Err((path_buf.clone(), error))).await {
+                            tracing::error!("Failed to send error result: {}", e);
+                        }
+                    }
                 }
             })
-            .buffer_unordered(concurrent)
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .collect();
-        
-        // Finish progress bar if present
-        if let Some(pb) = progress_bar {
-            pb.finish_with_message("Batch upload complete");
+        }).collect();
+
+        // Wait for all tasks to complete
+        for task in tasks {
+            let _ = task.await;
         }
-        
-        results
+
+        // Drop the original sender so the receiver knows when all tasks are done
+        drop(tx);
+
+        // Collect results from the channel
+        let mut success_count = 0;
+        let mut failure_count = 0;
+        let mut successful_assets = Vec::new();
+        let mut failed_files = Vec::new();
+
+        use tokio_stream::StreamExt;
+        let mut receiver_stream = ReceiverStream::new(rx);
+        while let Some(result) = receiver_stream.next().await {
+            match result {
+                Ok(asset) => {
+                    successful_assets.push(asset);
+                    success_count += 1;
+                }
+                Err((file_path, error)) => {
+                    failed_files.push((file_path, error));
+                    failure_count += 1;
+                }
+            }
+        }
+
+        // Report summary if progress is shown
+        if show_progress {
+            if let Some(pb) = &progress_bar {
+                pb.finish_with_message(format!("Batch upload complete: {} successful, {} failed", success_count, failure_count));
+            }
+        }
+
+        // If all operations failed, return an error
+        if success_count == 0 && failure_count > 0 {
+            // Return the first error as representative of the failures
+            if let Some((_, error)) = failed_files.first() {
+                // Since ApiError doesn't implement Clone, we'll return a generic error
+                // that indicates batch failure and includes the first error's message
+                return Err(ApiError::ConflictError(format!("Batch operation failed: {}", error)));
+            } else {
+                return Err(ApiError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "All batch operations failed but no specific error available"
+                )));
+            }
+        }
+
+        // Log detailed summary of successes and failures
+        debug!("Batch upload completed: {} successful, {} failed", success_count, failure_count);
+        if !failed_files.is_empty() {
+            debug!("Failed files:");
+            for (file_path, error) in &failed_files {
+                debug!("  {}: {}", file_path.display(), error);
+            }
+        }
+
+        Ok(successful_assets)
     }
 
     async fn get_asset_dependencies_by_path_with_pagination<S: AsRef<str>>(&mut self, tenant_uuid: &Uuid, physna_path: S, page: usize, per_page: usize) -> Result<AssetDependenciesResponse, ApiError> {
@@ -2661,6 +2837,167 @@ impl PhysnaApiClient {
                 }
             }
         }
+    }
+
+    /// Download asset file as a stream to avoid loading entire file into memory
+    ///
+    /// This method downloads the raw file content of the specified asset from the Physna API
+    /// as a stream, which can be processed without loading the entire file into memory.
+    ///
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_id` - The UUID of the asset to download
+    ///
+    /// # Returns
+    /// * `Ok(impl Stream<Item = Result<Bytes, reqwest::Error>>)` - Stream of file content chunks
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn download_asset_stream(&mut self, tenant_id: &str, asset_id: &str)
+        -> Result<impl futures::Stream<Item = Result<bytes::Bytes, reqwest::Error>>, ApiError> {
+        debug!("Downloading asset file stream for tenant_id: {}, asset_id: {}", tenant_id, asset_id);
+
+        let url = format!("{}/tenants/{}/assets/{}/file", self.base_url, tenant_id, asset_id);
+        debug!("Download asset file stream request URL: {}", url);
+
+        // Make the request and get the response
+        let response = self
+            .http_client
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.access_token.as_ref().ok_or_else(|| ApiError::AuthError("No access token available for download".to_string()))?))
+            .send()
+            .await
+            .map_err(|e| {
+                debug!("Failed to send download stream request: {}", e);
+                ApiError::from(e)
+            })?;
+
+        // Check if the request was successful
+        if response.status().is_success() {
+            // Return the response body as a stream
+            Ok(response.bytes_stream())
+        } else {
+            // Handle error case
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            debug!("Download stream request failed with status: {}, body: {}", status, error_body);
+
+            // Create an appropriate error based on the response status
+            match status {
+                reqwest::StatusCode::UNAUTHORIZED => {
+                    // Check if we have an access token - if not, this is a general auth error
+                    if self.access_token.is_none() {
+                        return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
+                    } else {
+                        return Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid".to_string()));
+                    }
+                }
+                reqwest::StatusCode::FORBIDDEN => {
+                    // Check if we have an access token - if not, this is a general auth error
+                    if self.access_token.is_none() {
+                        return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
+                    } else {
+                        return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
+                    }
+                }
+                reqwest::StatusCode::NOT_FOUND => {
+                    return Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", error_body)));
+                }
+                _ => {
+                    // For other error statuses, we return the error body that we captured earlier
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error_body)));
+                }
+            }
+        }
+    }
+
+    /// Create a specialized client for upload operations with appropriate timeout
+    pub fn for_upload_operations(&self) -> Self {
+        let timeout = self.http_client.config().upload_timeout.unwrap_or(self.http_client.config().timeout);
+        let http_client_with_upload_timeout = match crate::http_utils::HttpClient::new_with_timeout(timeout) {
+            Ok(client) => client,
+            Err(_) => self.http_client.clone(), // Fall back to original client if timeout creation fails
+        };
+
+        Self {
+            base_url: self.base_url.clone(),
+            access_token: self.access_token.clone(),
+            client_credentials: self.client_credentials.clone(),
+            auth_url: self.auth_url.clone(),
+            http_client: http_client_with_upload_timeout,
+            environment_name: self.environment_name.clone(),
+        }
+    }
+
+    /// Create a specialized client for download operations with appropriate timeout
+    pub fn for_download_operations(&self) -> Self {
+        let timeout = self.http_client.config().download_timeout.unwrap_or(self.http_client.config().timeout);
+        let http_client_with_download_timeout = match crate::http_utils::HttpClient::new_with_timeout(timeout) {
+            Ok(client) => client,
+            Err(_) => self.http_client.clone(), // Fall back to original client if timeout creation fails
+        };
+
+        Self {
+            base_url: self.base_url.clone(),
+            access_token: self.access_token.clone(),
+            client_credentials: self.client_credentials.clone(),
+            auth_url: self.auth_url.clone(),
+            http_client: http_client_with_download_timeout,
+            environment_name: self.environment_name.clone(),
+        }
+    }
+
+    /// Create a specialized client for search operations with appropriate timeout
+    pub fn for_search_operations(&self) -> Self {
+        let timeout = self.http_client.config().search_timeout.unwrap_or(self.http_client.config().timeout);
+        let http_client_with_search_timeout = match crate::http_utils::HttpClient::new_with_timeout(timeout) {
+            Ok(client) => client,
+            Err(_) => self.http_client.clone(), // Fall back to original client if timeout creation fails
+        };
+
+        Self {
+            base_url: self.base_url.clone(),
+            access_token: self.access_token.clone(),
+            client_credentials: self.client_credentials.clone(),
+            auth_url: self.auth_url.clone(),
+            http_client: http_client_with_search_timeout,
+            environment_name: self.environment_name.clone(),
+        }
+    }
+
+    /// Retrieve multiple assets by their UUIDs concurrently with controlled parallelism
+    /// This is more efficient than sequential API calls for multiple assets
+    pub async fn get_assets_batch(&mut self, tenant_uuid: &Uuid, asset_uuids: &[Uuid]) -> Result<Vec<Asset>, ApiError> {
+        use futures::stream;
+        use futures::stream::StreamExt;
+
+        // Process assets concurrently but with limited parallelism to avoid overwhelming the API
+        const MAX_CONCURRENT_REQUESTS: usize = 10;
+
+        let results: Vec<Result<Asset, ApiError>> = stream::iter(asset_uuids)
+            .map(|asset_uuid| {
+                let mut client = self.clone(); // Clone client for the async operation
+                let tenant_uuid = *tenant_uuid;
+                let asset_uuid = *asset_uuid;
+
+                async move {
+                    client.get_asset_by_uuid(&tenant_uuid, &asset_uuid).await
+                }
+            })
+            .buffer_unordered(MAX_CONCURRENT_REQUESTS)
+            .collect()
+            .await;
+
+        // Collect all successful results, ignoring errors for now
+        // In a more robust implementation, we might want to handle individual errors differently
+        let mut assets = Vec::new();
+        for result in results {
+            match result {
+                Ok(asset) => assets.push(asset),
+                Err(e) => return Err(e), // Return first error encountered
+            }
+        }
+
+        Ok(assets)
     }
 }
 

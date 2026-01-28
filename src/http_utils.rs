@@ -13,12 +13,18 @@ use std::collections::HashMap;
 pub struct HttpRequestConfig {
     /// Base URL for the API
     pub base_url: String,
-    /// Default headers to include with all requests  
+    /// Default headers to include with all requests
     pub default_headers: HashMap<String, String>,
     /// Request timeout in seconds
     pub timeout: u64,
     /// Whether to automatically retry on certain error codes
     pub retry_on_auth_error: bool,
+    /// Timeout for upload operations in seconds (defaults to timeout if not set)
+    pub upload_timeout: Option<u64>,
+    /// Timeout for download operations in seconds (defaults to timeout if not set)
+    pub download_timeout: Option<u64>,
+    /// Timeout for search operations in seconds (defaults to timeout if not set)
+    pub search_timeout: Option<u64>,
 }
 
 impl Default for HttpRequestConfig {
@@ -31,6 +37,9 @@ impl Default for HttpRequestConfig {
             default_headers,
             timeout: 60, // 60 seconds
             retry_on_auth_error: true,
+            upload_timeout: None,
+            download_timeout: None,
+            search_timeout: None,
         }
     }
 }
@@ -45,28 +54,68 @@ impl HttpRequestConfig {
             default_headers,
             timeout: 60, // 60 seconds
             retry_on_auth_error: true,
+            upload_timeout: None,
+            download_timeout: None,
+            search_timeout: None,
         }
     }
 }
+
+use std::sync::Arc;
 
 /// HTTP client wrapper with common request handling logic
 #[derive(Clone)]
 pub struct HttpClient {
     /// The reqwest client instance
-    pub client: Client,
+    pub client: Arc<Client>,
     /// Configuration for the HTTP client
     config: HttpRequestConfig,
 }
 
 impl HttpClient {
+    /// Get a reference to the HTTP client configuration
+    pub fn config(&self) -> &HttpRequestConfig {
+        &self.config
+    }
+
     /// Create a new HTTP client with the given configuration
     pub fn new(config: HttpRequestConfig) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(config.timeout))
             .build()
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-        
-        Ok(Self { client, config })
+
+        Ok(Self {
+            client: Arc::new(client),
+            config
+        })
+    }
+
+    /// Create a new HTTP client with a specific timeout
+    pub fn new_with_timeout(timeout: u64) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout))
+            .build()
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+        let config = HttpRequestConfig {
+            base_url: "https://app-api.physna.com/v3".to_string(), // Default base URL
+            default_headers: {
+                let mut headers = std::collections::HashMap::new();
+                headers.insert("User-Agent".to_string(), "PCLI2".to_string());
+                headers
+            },
+            timeout,
+            retry_on_auth_error: true,
+            upload_timeout: None,
+            download_timeout: None,
+            search_timeout: None,
+        };
+
+        Ok(Self {
+            client: Arc::new(client),
+            config
+        })
     }
 
     /// Make a GET request to the specified path with automatic error handling

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.17] - 2026-01-28
+
+### Added
+- Implemented performance and efficiency optimizations across multiple components
+- Added HTTP connection pooling and optimized timeout configuration
+- Implemented lazy loading and caching for expensive computations
+- Added streaming for large file operations and pagination
+- Implemented better error handling for individual file failures in batch operations
+- Added configurable concurrency limits for batch operations
+- Implemented bulk operations to reduce API calls
+- Added caching mechanisms to avoid redundant API calls
+
+### Changed
+- Optimized batch processing with improved progress tracking and detailed reporting
+- Enhanced path resolution logic to reduce redundant API calls
+- Improved memory usage with streaming implementations for large files
+- Refactored code to reduce unnecessary cloning operations
+
 ## [0.2.16] - 2026-01-27
 
 ### Added

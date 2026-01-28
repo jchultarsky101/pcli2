@@ -27,6 +27,7 @@ pub mod dev_keyring;
 pub mod error;
 pub mod error_utils;
 pub mod exit_codes;
+pub mod folder_cache;
 pub mod folder_hierarchy;
 pub mod format;
 pub mod format_utils;

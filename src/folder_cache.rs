@@ -295,7 +295,8 @@ mod tests {
         std::env::set_var("PCLI2_TEST_CACHE_DIR", temp_dir.path());
         
         // Test that save creates cache directory
-        let result = FolderCache::save("test_tenant", &crate::folder_hierarchy::FolderHierarchy::new());
+        let test_uuid = uuid::Uuid::new_v4();
+        let result = FolderCache::save(&test_uuid, &crate::folder_hierarchy::FolderHierarchy::new());
         assert!(result.is_ok());
         
         std::env::remove_var("PCLI2_TEST_CACHE_DIR");

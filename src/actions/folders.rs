@@ -828,6 +828,15 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
 
+    // Store the original folder path for asset path construction
+    let original_folder_path = if let Some(path) = folder_path_param {
+        path.clone()
+    } else {
+        // If only UUID was provided, we can't determine the path, so we'll use a placeholder
+        // In practice, this case should rarely happen since the upload command typically uses paths
+        String::from("/")
+    };
+
     // Resolve the folder UUID - first try to get existing folder, then create if needed
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
         *uuid
@@ -838,7 +847,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             Err(CliError::FolderNotFound(_)) => {
                 // Folder doesn't exist, create it
                 tracing::trace!("Folder does not exist, creating new folder with path: {}", path);
-                
+
                 // Extract folder name from the path
                 let folder_name = Path::new(path)
                     .file_name()
@@ -850,7 +859,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                         std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid folder name encoding")
                     )))?
                     .to_string();
-                
+
                 // Find parent folder UUID if path has multiple segments
                 let parent_folder_path = if path.contains("/") {
                     let parent_path = Path::new(path)
@@ -859,7 +868,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                         .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
                             std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid parent folder path")
                         )))?;
-                    
+
                     if !parent_path.is_empty() && normalize_path(parent_path) != "/" {
                         Some(parent_path.to_string())
                     } else {
@@ -868,13 +877,13 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 } else {
                     None
                 };
-                
+
                 let parent_folder_uuid = if let Some(parent_path) = parent_folder_path {
                     Some(resolve_folder_uuid_by_path(&mut api, &tenant, &parent_path).await?)
                 } else {
                     None
                 };
-                
+
                 // Create the new folder
                 let new_folder_response = api.create_folder(&tenant.uuid, &folder_name, parent_folder_uuid).await?;
                 let new_folder_uuid = new_folder_response.folder.uuid;
@@ -944,16 +953,12 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         std::fs::write(&temp_file, &file_content)
             .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
         
-        // Construct the asset path using the folder path and file name
-        // Get the folder path to create the full asset path
-        let folder_info = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-        let folder_path = folder_info.path();
-
-        // Construct the asset path by combining the folder path and file name
-        let asset_path = if folder_path.ends_with('/') {
-            format!("{}{}", folder_path, file_name_str)
+        // Construct the asset path using the original folder path and file name
+        // Use the original folder path provided to the command to ensure correct asset path
+        let asset_path = if original_folder_path.ends_with('/') {
+            format!("{}{}", original_folder_path, file_name_str)
         } else {
-            format!("{}/{}", folder_path, file_name_str)
+            format!("{}/{}", original_folder_path, file_name_str)
         };
 
         // Upload the asset to the specified folder

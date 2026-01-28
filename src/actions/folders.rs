@@ -901,6 +901,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     let skip_existing = sub_matches.get_flag(crate::commands::params::PARAMETER_SKIP_EXISTING);
     let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
     let concurrent_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT).copied().unwrap_or(1);
+    let continue_on_error = sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
     let delay_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_DELAY).copied().unwrap_or(0);
 
     // Validate concurrent parameter
@@ -1088,6 +1089,10 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     }
 
     // Wait for all tasks to complete
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut errors_occurred = false;
+
     for task in tasks {
         match task.await {
             Ok(task_result) => {
@@ -1095,24 +1100,57 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     Ok(asset_result) => {
                         match asset_result {
                             Ok(asset_name) => {
-                                println!("Successfully uploaded: {}", asset_name);
+                                success_count += 1;
+                                // Only print individual success messages if progress is not shown
+                                // Otherwise, the progress bar already shows the status
+                                if !show_progress {
+                                    println!("Successfully uploaded: {}", asset_name);
+                                }
                             },
                             Err(cli_error) => {
-                                return Err(cli_error);
+                                error_count += 1;
+                                errors_occurred = true;
+                                // If continue_on_error is true, we continue processing other assets
+                                if !continue_on_error {
+                                    return Err(cli_error);
+                                }
+                                // Log the error but continue processing
+                                eprintln!("Error uploading asset: {}", cli_error);
                             }
                         }
                     },
                     Err(cli_error) => {
-                        return Err(cli_error);
+                        error_count += 1;
+                        errors_occurred = true;
+                        // If continue_on_error is true, we continue processing other assets
+                        if !continue_on_error {
+                            return Err(cli_error);
+                        }
+                        // Log the error but continue processing
+                        eprintln!("Error in task: {}", cli_error);
                     }
                 }
             },
             Err(join_error) => {
-                return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
-                    std::io::Error::new(std::io::ErrorKind::Other, join_error.to_string())
-                )));
+                error_count += 1;
+                errors_occurred = true;
+                // If continue_on_error is true, we continue processing other assets
+                if !continue_on_error {
+                    return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
+                        std::io::Error::new(std::io::ErrorKind::Other, join_error.to_string())
+                    )));
+                }
+                // Log the error but continue processing
+                eprintln!("Join error: {}", join_error);
             }
         }
+    }
+
+    // Print summary if there were errors or if no progress bar was shown
+    if errors_occurred {
+        eprintln!("❌ Uploaded {} assets successfully, {} assets failed", success_count, error_count);
+    } else if !show_progress {
+        println!("✅ Successfully uploaded {} assets", success_count);
     }
 
     // Finish progress bar if present

@@ -392,5 +392,12 @@ pub fn folder_command() -> Command {
                             }
                         }),
                 )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
+                        .long(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Continue uploading other assets if one fails"),
+                )
         )
 }

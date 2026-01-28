@@ -734,48 +734,6 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     Ok(())
 }
 
-// Helper function to recursively add files to the ZIP archive while preserving folder structure
-fn add_files_to_zip_recursive(
-    zip_writer: &mut ZipWriter<File>,
-    base_path: &std::path::Path,
-    current_path: &std::path::Path,
-) -> Result<(), CliError> {
-    for entry in std::fs::read_dir(current_path)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
-        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
-        let path = entry.path();
-
-        if path.is_file() {
-            // Calculate the relative path from the base path
-            let relative_path = path.strip_prefix(base_path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to strip prefix: {}", e)
-                ))))?;
-
-            let file_name = relative_path.to_str()
-                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Invalid file path"
-                ))))?;
-
-            let options: FileOptions<()> = FileOptions::default();
-            zip_writer.start_file(file_name, options)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
-
-            let file_content = std::fs::read(&path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-            zip_writer.write_all(&file_content)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-        } else if path.is_dir() {
-            // Recursively process subdirectories
-            add_files_to_zip_recursive(zip_writer, base_path, &path)?;
-        }
-    }
-
-    Ok(())
-}
 
 // Helper function to recursively add files to the ZIP archive while preserving folder structure with progress indication
 fn add_files_to_zip_recursive_with_progress(

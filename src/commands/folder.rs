@@ -331,4 +331,27 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during processing"),
                 )
         )
+        .subcommand(
+            Command::new("upload")
+                .about("Upload all assets from a local directory to a Physna folder")
+                .arg(tenant_parameter())
+                .arg(folder_uuid_parameter())
+                .arg(folder_path_parameter())
+                .group(folder_identifier_group())
+                .arg(
+                    clap::Arg::new("local-path")
+                        .long("local-path")
+                        .num_args(1)
+                        .required(true)
+                        .help("Local directory path containing asset files to upload")
+                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                )
+                .arg(
+                    clap::Arg::new("skip-existing")
+                        .long("skip-existing")
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Skip assets that already exist in the target folder instead of failing"),
+                )
+        )
 }

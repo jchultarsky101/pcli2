@@ -5,7 +5,6 @@ use std::io::Write;
 use tracing::trace;
 use uuid::Uuid;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
-use zip::{ZipWriter, write::FileOptions};
 use tokio::sync::Semaphore;
 use std::sync::Arc;
 use tokio::time::sleep;
@@ -703,29 +702,48 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         }
     }
 
-    // Create ZIP file with all downloaded assets, preserving folder structure
-    let zip_file = File::create(&output_file_path).map_err(|e| crate::actions::CliActionError::IoError(e))?;
-
-    // Create a progress bar for the zipping process if the original progress bar was shown
-    let zip_progress_bar = if show_progress {
-        let zip_pb = ProgressBar::new(100); // Generic progress bar for zipping
-        zip_pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Creating ZIP archive...")
-            .unwrap()
-            .progress_chars("#>-"));
-        zip_pb.set_message("Starting ZIP creation...");
-        Some(zip_pb)
+    // If an output file path was specified, move the entire temp directory contents to that location
+    // Otherwise, leave the files in the temp directory for the user to handle
+    if output_file_path.exists() && output_file_path.is_file() {
+        // If output file exists and is a file, we would normally create a ZIP, but now we just notify the user
+        println!("Files downloaded to temporary directory: {:?}", temp_dir);
+        println!("Skipping ZIP creation as per new requirements. Files are available in native format.");
     } else {
-        None
-    };
+        // If output is a directory or doesn't exist as a file, move the contents there
+        let dest_path = if output_file_path.is_dir() {
+            &output_file_path
+        } else {
+            // If the output path is not a directory, use parent directory
+            output_file_path.parent().unwrap_or(&temp_dir)
+        };
 
-    let mut zip_writer = ZipWriter::new(zip_file);
+        // Move all files from temp directory to destination
+        for entry in std::fs::read_dir(&temp_dir)
+            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
+            let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
+            let file_path = entry.path();
+            let dest_file_path = dest_path.join(entry.file_name());
 
-    // Walk through the temp directory recursively and add files to the ZIP
-    add_files_to_zip_recursive_with_progress(&mut zip_writer, &temp_dir, &temp_dir, zip_progress_bar.as_ref())?;
+            if file_path.is_file() {
+                std::fs::rename(&file_path, &dest_file_path)
+                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+            } else if file_path.is_dir() {
+                // For directories, we need to move the contents
+                for sub_entry in std::fs::read_dir(&file_path)
+                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
+                    let sub_entry = sub_entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
+                    let sub_file_path = sub_entry.path();
+                    let dest_sub_file_path = dest_path.join(sub_entry.file_name());
 
-    zip_writer.finish()
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+                    std::fs::rename(&sub_file_path, &dest_sub_file_path)
+                        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+                }
+                // Remove the now-empty source directory
+                std::fs::remove_dir(&file_path)
+                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+            }
+        }
+    }
 
     // Clean up temporary directory
     std::fs::remove_dir_all(&temp_dir)
@@ -735,95 +753,3 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 }
 
 
-// Helper function to recursively add files to the ZIP archive while preserving folder structure with progress indication
-fn add_files_to_zip_recursive_with_progress(
-    zip_writer: &mut ZipWriter<File>,
-    base_path: &std::path::Path,
-    current_path: &std::path::Path,
-    progress_bar: Option<&ProgressBar>,
-) -> Result<(), CliError> {
-    // Count total files first to provide progress indication
-    let total_files = count_files_recursive(current_path)?;
-    
-    if let Some(pb) = progress_bar {
-        pb.set_length(total_files as u64);
-        pb.set_message("Counted files, starting ZIP creation...");
-    }
-
-    // Now actually add files to the ZIP with progress updates
-    add_files_to_zip_recursive_with_progress_impl(zip_writer, base_path, current_path, progress_bar, &total_files)?;
-
-    if let Some(pb) = progress_bar {
-        pb.finish_with_message("ZIP archive created successfully!");
-    }
-
-    Ok(())
-}
-
-// Helper function to count total files recursively
-fn count_files_recursive(current_path: &std::path::Path) -> Result<usize, CliError> {
-    let mut count = 0;
-    for entry in std::fs::read_dir(current_path)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
-        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
-        let path = entry.path();
-
-        if path.is_file() {
-            count += 1;
-        } else if path.is_dir() {
-            count += count_files_recursive(&path)?;
-        }
-    }
-    Ok(count)
-}
-
-// Actual implementation of adding files to ZIP with progress
-fn add_files_to_zip_recursive_with_progress_impl(
-    zip_writer: &mut ZipWriter<File>,
-    base_path: &std::path::Path,
-    current_path: &std::path::Path,
-    progress_bar: Option<&ProgressBar>,
-    total_files: &usize,
-) -> Result<(), CliError> {
-    for entry in std::fs::read_dir(current_path)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
-        let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
-        let path = entry.path();
-
-        if path.is_file() {
-            // Calculate the relative path from the base path
-            let relative_path = path.strip_prefix(base_path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to strip prefix: {}", e)
-                ))))?;
-
-            let file_name = relative_path.to_str()
-                .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Invalid file path"
-                ))))?;
-
-            let options: FileOptions<()> = FileOptions::default();
-            zip_writer.start_file(file_name, options)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
-
-            let file_content = std::fs::read(&path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-            zip_writer.write_all(&file_content)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-            // Update progress bar
-            if let Some(pb) = progress_bar {
-                pb.inc(1);
-                pb.set_message(format!("Added file: {}", file_name));
-            }
-        } else if path.is_dir() {
-            // Recursively process subdirectories
-            add_files_to_zip_recursive_with_progress_impl(zip_writer, base_path, &path, progress_bar, total_files)?;
-        }
-    }
-
-    Ok(())
-}

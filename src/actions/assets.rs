@@ -577,16 +577,8 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         output_path.clone()
     } else {
         // Use the asset name as the default output file name
-        // If the asset is an assembly, append .zip extension since assemblies download as ZIP files
-        let mut asset_name = asset.name();
-        if asset.is_assembly() {
-            // Change the extension to .zip for assemblies
-            let path = std::path::Path::new(&asset_name);
-            let stem = path.file_stem().unwrap_or(std::ffi::OsStr::new(&asset_name));
-            if let Some(stem_str) = stem.to_str() {
-                asset_name = format!("{}.zip", stem_str);
-            }
-        }
+        // For assemblies, we still use the original name since we'll extract the ZIP contents
+        let asset_name = asset.name();
 
         let mut path = std::path::PathBuf::new();
         path.push(asset_name);
@@ -601,6 +593,62 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Write the file content to the output file
     std::fs::write(&output_file_path, file_content).map_err(|e| CliActionError::IoError(e))?;
+
+    // If the asset is an assembly, the downloaded file is a ZIP file that needs to be extracted
+    if asset.is_assembly() {
+        extract_zip_and_cleanup(&output_file_path)?;
+    }
+
+    Ok(())
+}
+
+fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError> {
+    use std::io::Cursor;
+
+    // Read the ZIP file content
+    let zip_content = std::fs::read(zip_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+    // Create a cursor from the content
+    let cursor = Cursor::new(zip_content);
+
+    // Create a ZipArchive from the cursor
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+
+    // Extract all files to the same directory as the ZIP file
+    let parent_dir = zip_path.parent()
+        .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
+            std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory")
+        )))?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)
+            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+
+        let file_path = parent_dir.join(file.mangled_name());
+
+        if file.is_dir() {
+            std::fs::create_dir_all(&file_path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+        } else {
+            // Create parent directories if they don't exist
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+            }
+
+            let mut output_file = std::fs::File::create(&file_path)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+            std::io::copy(&mut file, &mut output_file)
+                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+        }
+    }
+
+    // Remove the original ZIP file after successful extraction
+    std::fs::remove_file(zip_path)
+        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
     Ok(())
 }

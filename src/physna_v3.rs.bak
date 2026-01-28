@@ -2517,7 +2517,8 @@ impl PhysnaApiClient {
         let url = format!("{}/tenants/{}/assets/{}/file", self.base_url, tenant_id, asset_id);
         debug!("Download asset file request URL: {}", url);
 
-        // First attempt to download the asset
+        // Execute GET request for file content using HttpClient
+        // Since HttpClient doesn't handle binary responses directly, we'll use the underlying client
         let response = self
             .http_client
             .client
@@ -2530,135 +2531,64 @@ impl PhysnaApiClient {
                 ApiError::from(e)
             })?;
 
-        // Check if the first attempt was successful
-        if response.status().is_success() {
-            // Get the file content as bytes
-            let bytes_result = response.bytes().await;
-            match bytes_result {
-                Ok(bytes) => {
-                    debug!("Successfully downloaded {} bytes for asset_id: {}", bytes.len(), asset_id);
-                    Ok(bytes.to_vec())
-                },
-                Err(e) => {
-                    // Enhanced error logging for debugging
-                    error!("Failed to read response bytes for asset_id: {}: {}", asset_id, e);
+        // Check status code
+        if !response.status().is_success() {
+            let status = response.status();
+            // Clone the status before consuming the response in text()
+            let status_clone = status;
+            let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            debug!("Download request failed with status: {}, body: {}", status_clone, error_body);
 
-                    // Provide more context about the error
-                    let _error_context = format!(
-                        "Error decoding response body for asset_id: {}. This may be due to network interruption, server-side error, or response corruption. Error details: {}",
-                        asset_id,
-                        e
-                    );
-
-                    debug!("Detailed error context for asset_id {}: {:?}", asset_id, e);
-
-                    // Return a more descriptive error
-                    Err(ApiError::HttpError(e))
+            // Create an appropriate error based on the response status
+            match status_clone {
+                reqwest::StatusCode::UNAUTHORIZED => {
+                    // Check if we have an access token - if not, this is a general auth error
+                    if self.access_token.is_none() {
+                        return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
+                    } else {
+                        return Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid".to_string()));
+                    }
+                }
+                reqwest::StatusCode::FORBIDDEN => {
+                    // Check if we have an access token - if not, this is a general auth error
+                    if self.access_token.is_none() {
+                        return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
+                    } else {
+                        return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
+                    }
+                }
+                reqwest::StatusCode::NOT_FOUND => {
+                    return Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", error_body)));
+                }
+                _ => {
+                    // For other error statuses, we return the error body that we captured earlier
+                    return Err(ApiError::ConflictError(format!("HTTP {} - {}", status_clone, error_body)));
                 }
             }
-        } else {
-            let status = response.status();
-            // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
-            if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-                debug!("Received authentication error ({}), attempting token refresh", status);
+        }
 
-                // Try to refresh the expired or invalid access token
-                self.refresh_token().await?;
+        // Get the file content as bytes
+        let bytes_result = response.bytes().await;
+        match bytes_result {
+            Ok(bytes) => {
+                debug!("Successfully downloaded {} bytes for asset_id: {}", bytes.len(), asset_id);
+                Ok(bytes.to_vec())
+            },
+            Err(e) => {
+                // Enhanced error logging for debugging
+                error!("Failed to read response bytes for asset_id: {}: {}", asset_id, e);
 
-                // Retry the original request with the newly refreshed token
-                debug!("Retrying download request with refreshed token");
-                let retry_response = self
-                    .http_client
-                    .client
-                    .get(&url)
-                    .header("Authorization", format!("Bearer {}", self.access_token.as_ref().ok_or_else(|| ApiError::AuthError("No access token available for download after refresh".to_string()))?))
-                    .send()
-                    .await
-                    .map_err(|e| {
-                        debug!("Failed to send retry download request: {}", e);
-                        ApiError::from(e)
-                    })?;
+                // Provide more context about the error
+                let _error_context = format!(
+                    "Error decoding response body for asset_id: {}. This may be due to network interruption, server-side error, or response corruption. Error details: {}",
+                    asset_id,
+                    e
+                );
 
-                // Check if the retry was successful
-                if retry_response.status().is_success() {
-                    // Get the file content as bytes from the retry response
-                    let bytes_result = retry_response.bytes().await;
-                    match bytes_result {
-                        Ok(bytes) => {
-                            debug!("Successfully downloaded {} bytes for asset_id: {} (after retry)", bytes.len(), asset_id);
-                            Ok(bytes.to_vec())
-                        },
-                        Err(e) => {
-                            // Enhanced error logging for debugging
-                            error!("Failed to read retry response bytes for asset_id: {}: {}", asset_id, e);
+                debug!("Detailed error context for asset_id {}: {:?}", asset_id, e);
 
-                            // Provide more context about the error
-                            let _error_context = format!(
-                                "Error decoding retry response body for asset_id: {}. This may be due to network interruption, server-side error, or response corruption. Error details: {}",
-                                asset_id,
-                                e
-                            );
-
-                            debug!("Detailed error context for asset_id {} (retry): {:?}", asset_id, e);
-
-                            // Return a more descriptive error
-                            Err(ApiError::HttpError(e))
-                        }
-                    }
-                } else {
-                    // The retry also failed, return an appropriate error
-                    let status = retry_response.status();
-                    let error_body = retry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                    debug!("Retry download request failed with status: {}, body: {}", status, error_body);
-
-                    // Create an appropriate error based on the response status
-                    match status {
-                        reqwest::StatusCode::UNAUTHORIZED => {
-                            return Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid even after refresh".to_string()));
-                        }
-                        reqwest::StatusCode::FORBIDDEN => {
-                            return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
-                        }
-                        reqwest::StatusCode::NOT_FOUND => {
-                            return Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", error_body)));
-                        }
-                        _ => {
-                            // For other error statuses, we return the error body that we captured earlier
-                            return Err(ApiError::ConflictError(format!("HTTP {} - {} (after retry)", status, error_body)));
-                        }
-                    }
-                }
-            } else {
-                // For non-authentication errors, process as before
-                let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                debug!("Download request failed with status: {}, body: {}", status, error_body);
-
-                // Create an appropriate error based on the response status
-                match status {
-                    reqwest::StatusCode::UNAUTHORIZED => {
-                        // Check if we have an access token - if not, this is a general auth error
-                        if self.access_token.is_none() {
-                            return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
-                        } else {
-                            return Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid".to_string()));
-                        }
-                    }
-                    reqwest::StatusCode::FORBIDDEN => {
-                        // Check if we have an access token - if not, this is a general auth error
-                        if self.access_token.is_none() {
-                            return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
-                        } else {
-                            return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
-                        }
-                    }
-                    reqwest::StatusCode::NOT_FOUND => {
-                        return Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", error_body)));
-                    }
-                    _ => {
-                        // For other error statuses, we return the error body that we captured earlier
-                        return Err(ApiError::ConflictError(format!("HTTP {} - {}", status, error_body)));
-                    }
-                }
+                // Return a more descriptive error
+                Err(ApiError::HttpError(e))
             }
         }
     }

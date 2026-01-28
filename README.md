@@ -4,7 +4,7 @@
 
 The goal of this project is to create version 2 of the Physna Command Line Interface client (PCLI2).
 
-Current Version: 0.2.16 <!-- Updated: 2026-01-27T16:07:00Z -->
+Current Version: 0.2.17 <!-- Updated: 2026-01-28T00:00:00Z -->
 
 Based on lessons learned from the previous version, we have developed a new and more ergonomic interface. It operates more like Git's excellent CLI, utilizing nested sub-commands, sensible defaults, and configuration.
 

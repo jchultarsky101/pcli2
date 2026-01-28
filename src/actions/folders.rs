@@ -413,9 +413,20 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             }
 
             // Calculate the relative path from the root folder
+            let mut asset_name_for_path = asset.name().to_string();
+
+            // If the asset is an assembly, change the extension to .zip since assemblies download as ZIP files
+            if asset.is_assembly() {
+                let path = std::path::Path::new(&asset_name_for_path);
+                let stem = path.file_stem().unwrap_or(std::ffi::OsStr::new(&asset_name_for_path));
+                if let Some(stem_str) = stem.to_str() {
+                    asset_name_for_path = format!("{}.zip", stem_str);
+                }
+            }
+
             let relative_path = if current_folder_path == root_folder_path {
-                // If it's the root folder, just use the asset name
-                asset.name().to_string()
+                // If it's the root folder, just use the asset name (with .zip extension if assembly)
+                asset_name_for_path
             } else {
                 // Otherwise, create a subfolder path by removing the root folder path prefix
                 // For example, if root is "/Julian/sub1" and current is "/Julian/sub1/sub2",
@@ -426,9 +437,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     .trim_end_matches('/');   // remove trailing slash
 
                 if relative_folder_path.is_empty() {
-                    asset.name().to_string()
+                    asset_name_for_path
                 } else {
-                    format!("{}/{}", relative_folder_path, asset.name())
+                    format!("{}/{}", relative_folder_path, asset_name_for_path)
                 }
             };
 

@@ -577,7 +577,17 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         output_path.clone()
     } else {
         // Use the asset name as the default output file name
-        let asset_name = asset.name();
+        // If the asset is an assembly, append .zip extension since assemblies download as ZIP files
+        let mut asset_name = asset.name();
+        if asset.is_assembly() {
+            // Change the extension to .zip for assemblies
+            let path = std::path::Path::new(&asset_name);
+            let stem = path.file_stem().unwrap_or(std::ffi::OsStr::new(&asset_name));
+            if let Some(stem_str) = stem.to_str() {
+                asset_name = format!("{}.zip", stem_str);
+            }
+        }
+
         let mut path = std::path::PathBuf::new();
         path.push(asset_name);
         path

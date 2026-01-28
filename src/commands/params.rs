@@ -45,6 +45,7 @@ pub const COMMAND_TENANT: &str = "tenant";
 // Folder commands
 pub const COMMAND_FOLDER: &str = "folder";
 pub const COMMAND_FILE: &str = "file";
+pub const COMMAND_UPLOAD: &str = "upload";
 
 // Context commands have been moved to tenant command
 pub const COMMAND_SET: &str = "set";
@@ -97,6 +98,8 @@ pub const PARAMETER_PROGRESS: &str = "progress";
 pub const PARAMETER_FOLDER_PATHS: &str = "folder-paths";
 pub const PARAMETER_CONTINUE_ON_ERROR: &str = "continue-on-error";
 pub const PARAMETER_DELAY: &str = "delay";
+pub const PARAMETER_LOCAL_PATH: &str = "local-path";
+pub const PARAMETER_SKIP_EXISTING: &str = "skip-existing";
 
 // Format options
 pub const FORMAT_CSV: &str = "csv";

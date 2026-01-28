@@ -332,23 +332,23 @@ pub fn folder_command() -> Command {
                 )
         )
         .subcommand(
-            Command::new("upload")
+            Command::new(crate::commands::params::COMMAND_UPLOAD)
                 .about("Upload all assets from a local directory to a Physna folder")
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
                 .arg(
-                    clap::Arg::new("local-path")
-                        .long("local-path")
+                    clap::Arg::new(crate::commands::params::PARAMETER_LOCAL_PATH)
+                        .long(crate::commands::params::PARAMETER_LOCAL_PATH)
                         .num_args(1)
                         .required(true)
                         .help("Local directory path containing asset files to upload")
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
                 .arg(
-                    clap::Arg::new("skip-existing")
-                        .long("skip-existing")
+                    clap::Arg::new(crate::commands::params::PARAMETER_SKIP_EXISTING)
+                        .long(crate::commands::params::PARAMETER_SKIP_EXISTING)
                         .action(clap::ArgAction::SetTrue)
                         .required(false)
                         .help("Skip assets that already exist in the target folder instead of failing"),

@@ -22,18 +22,18 @@ pub struct ExecutionContext {
 
 impl ExecutionContext {
     /// Create a new execution context from command-line arguments.
-    /// 
+    ///
     /// This method handles the common initialization pattern:
     /// 1. Load configuration
     /// 2. Create API client
     /// 3. Resolve tenant
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `sub_matches` - The command-line argument matches containing the command parameters
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `Ok(ExecutionContext)` - The initialized execution context
     /// * `Err(CliError)` - If initialization fails
     pub async fn from_args(sub_matches: &ArgMatches) -> Result<Self, CliError> {
@@ -47,22 +47,22 @@ impl ExecutionContext {
             tenant,
         })
     }
-    
+
     /// Get a reference to the tenant UUID.
     pub fn tenant_uuid(&self) -> &Uuid {
         &self.tenant.uuid
     }
-    
+
     /// Get a mutable reference to the API client.
     pub fn api(&mut self) -> &mut PhysnaApiClient {
         &mut self.api
     }
-    
+
     /// Get a reference to the configuration.
     pub fn configuration(&self) -> &Configuration {
         &self.configuration
     }
-    
+
     /// Get a reference to the tenant.
     pub fn tenant(&self) -> &Tenant {
         &self.tenant

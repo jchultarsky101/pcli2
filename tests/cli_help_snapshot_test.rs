@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod cli_help_snapshot_tests {
     use assert_cmd::prelude::*;
-    use std::process::Command;
     use std::collections::HashMap;
+    use std::process::Command;
 
     #[test]
     fn test_cli_help_snapshot() {
@@ -44,9 +44,9 @@ mod cli_help_snapshot_tests {
             let assert_result = cmd.arg(subcommand).arg("--help").assert().success();
             let output = assert_result.get_output();
             let help_output = String::from_utf8_lossy(&output.stdout);
-            
+
             snapshots.insert(subcommand.to_string(), help_output.to_string());
-            
+
             // Verify each subcommand help contains expected elements
             assert!(help_output.contains(&format!("Usage: pcli2 {}", subcommand)));
             assert!(help_output.contains("Options:"));
@@ -103,7 +103,12 @@ mod cli_help_snapshot_tests {
 
         for (parent_cmd, sub_cmd) in test_cases {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
-            let assert_result = cmd.arg(parent_cmd).arg(sub_cmd).arg("--help").assert().success();
+            let assert_result = cmd
+                .arg(parent_cmd)
+                .arg(sub_cmd)
+                .arg("--help")
+                .assert()
+                .success();
             let output = assert_result.get_output();
             let help_output = String::from_utf8_lossy(&output.stdout);
 
@@ -111,7 +116,10 @@ mod cli_help_snapshot_tests {
             assert!(help_output.contains(&format!("Usage: pcli2 {} {}", parent_cmd, sub_cmd)));
 
             // Print the snapshot
-            println!("Snapshot for '{} {}':\n{}", parent_cmd, sub_cmd, help_output);
+            println!(
+                "Snapshot for '{} {}':\n{}",
+                parent_cmd, sub_cmd, help_output
+            );
         }
     }
 
@@ -134,15 +142,27 @@ mod cli_help_snapshot_tests {
 
         for (parent_cmd, sub_cmd, sub_sub_cmd) in test_cases {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
-            let assert_result = cmd.arg(parent_cmd).arg(sub_cmd).arg(sub_sub_cmd).arg("--help").assert().success();
+            let assert_result = cmd
+                .arg(parent_cmd)
+                .arg(sub_cmd)
+                .arg(sub_sub_cmd)
+                .arg("--help")
+                .assert()
+                .success();
             let output = assert_result.get_output();
             let help_output = String::from_utf8_lossy(&output.stdout);
 
             // Verify each deeply nested subcommand help contains expected elements
-            assert!(help_output.contains(&format!("Usage: pcli2 {} {} {}", parent_cmd, sub_cmd, sub_sub_cmd)));
+            assert!(help_output.contains(&format!(
+                "Usage: pcli2 {} {} {}",
+                parent_cmd, sub_cmd, sub_sub_cmd
+            )));
 
             // Print the snapshot
-            println!("Snapshot for '{} {} {}':\n{}", parent_cmd, sub_cmd, sub_sub_cmd, help_output);
+            println!(
+                "Snapshot for '{} {} {}':\n{}",
+                parent_cmd, sub_cmd, sub_sub_cmd, help_output
+            );
         }
     }
 }

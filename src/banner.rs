@@ -6,7 +6,7 @@ pub fn print_banner() {
     cprintln!("<r>PCLI2</r> - Physna Command Line Interface v2");
     println!();
     println!();
-    
+
     // Print ASCII art spelling out "PCLI2" with smooth gradient from light to dark orange (top to bottom)
     cprintln!("<#FFA500> ███████████    █████████  █████       █████  ████████ </#FFA500>");
     cprintln!("<#FF9500>░░███░░░░░███  ███░░░░░███░░███       ░░███  ███░░░░███</#FF9500>");

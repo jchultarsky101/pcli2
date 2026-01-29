@@ -1,5 +1,5 @@
 //! Error handling utilities for the PCLI2 application.
-//! 
+//!
 //! This module provides consistent error reporting and handling utilities
 //! across the application to ensure uniform user experience.
 
@@ -12,35 +12,35 @@ pub enum CommonError {
     /// Error when required arguments are missing
     #[error("Missing required argument: {arg}")]
     MissingArgument { arg: String },
-    
+
     /// Error when API calls fail
     #[error("API error: {message}")]
     ApiError { message: String },
-    
+
     /// Error when authentication fails
     #[error("Authentication error: {message}")]
     AuthError { message: String },
-    
+
     /// Error when resource is not found
     #[error("Resource not found: {resource}")]
     NotFound { resource: String },
-    
+
     /// Error when cache operations fail
     #[error("Cache error: {message}")]
     CacheError { message: String },
-    
+
     /// Error when configuration operations fail
     #[error("Configuration error: {message}")]
     ConfigError { message: String },
-    
+
     /// Error when file operations fail
     #[error("File error: {message}")]
     FileError { message: String },
-    
+
     /// Error when data formatting fails
     #[error("Formatting error: {message}")]
     FormatError { message: String },
-    
+
     /// Generic error with custom message
     #[error("Error: {message}")]
     Generic { message: String },
@@ -76,7 +76,11 @@ pub fn report_detailed_error<E: std::fmt::Display>(error: &E, context: Option<&s
     }
 
     // Log the technical details for debugging (only in debug/trace mode)
-    tracing::debug!("Technical error details: {} (context: {:?})", error, context);
+    tracing::debug!(
+        "Technical error details: {} (context: {:?})",
+        error,
+        context
+    );
 }
 
 /// Report an error with suggested remediation steps.
@@ -95,7 +99,11 @@ pub fn report_error_with_remediation<E: std::fmt::Display>(error: &E, remediatio
         }
     }
 
-    tracing::debug!("Error with remediation: {} (steps: {:?})", error, remediation_steps);
+    tracing::debug!(
+        "Error with remediation: {} (steps: {:?})",
+        error,
+        remediation_steps
+    );
 }
 
 /// Report an error with a custom user message for better clarity.
@@ -128,7 +136,8 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
         "Authentication failed: Unauthorized client. Please verify your client credentials and try logging in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("invalid_request") {
         "Authentication failed: Invalid request. Please verify your credentials and try logging in again with 'pcli2 auth login'.".to_string()
-    } else if error_str.contains("No access token") || error_str.contains("Authentication required") {
+    } else if error_str.contains("No access token") || error_str.contains("Authentication required")
+    {
         // Handle authentication errors that indicate missing or invalid tokens
         error_str
     } else if error_str.contains("401") || error_str.to_lowercase().contains("unauthorized") {
@@ -137,7 +146,9 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
         "Access forbidden. You don't have permission to perform this operation. This may be due to:\n  - Missing access token (try 'pcli2 auth login')\n  - Expired access token (try 'pcli2 auth login')\n  - Insufficient permissions for this operation".to_string()
     } else if error_str.contains("404") || error_str.to_lowercase().contains("not found") {
         // Check if this is actually an authentication issue masquerading as a "not found" error
-        if error_str.to_lowercase().contains("authentication") || error_str.to_lowercase().contains("token") {
+        if error_str.to_lowercase().contains("authentication")
+            || error_str.to_lowercase().contains("token")
+        {
             // This is likely an authentication error, not a resource not found error
             "Authentication required. Please log in with 'pcli2 auth login'.".to_string()
         } else {
@@ -147,7 +158,9 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
         "Operation conflict. The resource may already exist or be in use.".to_string()
     } else if error_str.to_lowercase().contains("timeout") {
         "Request timeout. The server took too long to respond. Please try again.".to_string()
-    } else if error_str.to_lowercase().contains("connection") || error_str.to_lowercase().contains("network") {
+    } else if error_str.to_lowercase().contains("connection")
+        || error_str.to_lowercase().contains("network")
+    {
         "Network error. Please check your internet connection and try again.".to_string()
     } else {
         // Return the original error if no specific user-friendly message applies
@@ -164,9 +177,9 @@ pub fn report_error_with_user_friendly_message<E: std::fmt::Display>(error: E) {
 /// Check if an error is retryable and user should try again
 pub fn is_retryable_error<E: std::fmt::Display>(error: E) -> bool {
     let error_str = error.to_string().to_lowercase();
-    
-    error_str.contains("timeout") 
-        || error_str.contains("connection") 
+
+    error_str.contains("timeout")
+        || error_str.contains("connection")
         || error_str.contains("network")
         || error_str.contains("502")
         || error_str.contains("503")
@@ -216,5 +229,3 @@ mod tests {
         assert!(!is_retryable_error("Invalid argument"));
     }
 }
-
-

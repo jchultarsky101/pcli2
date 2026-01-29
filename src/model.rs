@@ -1619,7 +1619,10 @@ impl Asset {
     }
 
     /// Generate tree output with metadata
-    pub fn to_tree_with_metadata(&self, _options: crate::format::OutputFormatOptions) -> Result<String, FormattingError> {
+    pub fn to_tree_with_metadata(
+        &self,
+        _options: crate::format::OutputFormatOptions,
+    ) -> Result<String, FormattingError> {
         // For tree format, we'll show the asset with its metadata
         let mut result = format!("Asset: {} [{}]", self.name(), self.uuid());
 
@@ -1636,7 +1639,10 @@ impl Asset {
     }
 
     /// Generate tree output without metadata
-    pub fn to_tree(&self, _options: crate::format::OutputFormatOptions) -> Result<String, FormattingError> {
+    pub fn to_tree(
+        &self,
+        _options: crate::format::OutputFormatOptions,
+    ) -> Result<String, FormattingError> {
         Ok(format!("Asset: {} [{}]", self.name(), self.uuid()))
     }
 }
@@ -3149,7 +3155,7 @@ impl From<AssetDependencyApiResponse> for AssetDependency {
             occurrences: api_dep.occurrences,
             has_dependencies: api_dep.has_dependencies,
             assembly_path: String::new(), // Will be filled in by the tree building logic
-            original_asset_path: None, // Default to None for API responses
+            original_asset_path: None,    // Default to None for API responses
         }
     }
 }
@@ -3176,7 +3182,8 @@ pub struct AssetDependencyList {
 impl From<AssetDependenciesResponse> for AssetDependencyList {
     fn from(response: AssetDependenciesResponse) -> Self {
         // Convert from API response to our internal representation
-        let dependencies = response.dependencies
+        let dependencies = response
+            .dependencies
             .into_iter()
             .map(|api_dep| AssetDependency::from(api_dep))
             .collect();
@@ -3227,12 +3234,13 @@ impl CsvRecordProducer for AssetDependencyList {
                                 asset.uuid.to_string()
                             },
                             filename,
-                            normalized_state
+                            normalized_state,
                         )
                     }
                     None => {
                         // For missing dependencies, use the path as the name and mark as missing
-                        let filename = dep.path
+                        let filename = dep
+                            .path
                             .split('/')
                             .next_back()
                             .unwrap_or(&dep.path)
@@ -3246,7 +3254,11 @@ impl CsvRecordProducer for AssetDependencyList {
                         // For folder dependencies, use the original asset path from the dependency if available
                         dep.original_asset_path.clone().unwrap_or_else(|| {
                             // Fallback to extracting from the dependency's path if original asset path is not set
-                            dep.path.split('/').take(dep.path.matches('/').count()).collect::<Vec<&str>>().join("/")
+                            dep.path
+                                .split('/')
+                                .take(dep.path.matches('/').count())
+                                .collect::<Vec<&str>>()
+                                .join("/")
                         })
                     } else {
                         // For single asset dependencies, use the list's path as the original asset path
@@ -3261,9 +3273,9 @@ impl CsvRecordProducer for AssetDependencyList {
                         dep.assembly_path.clone()
                     }, // ASSEMBLY_PATH (the relative path within assembly hierarchy)
                     dep.path.clone(), // DEPENDENCY_PATH (the dependency path)
-                    asset_uuid, // ASSET_UUID
-                    asset_filename, // ASSET_NAME
-                    asset_state, // ASSET_STATE (added as requested)
+                    asset_uuid,       // ASSET_UUID
+                    asset_filename,   // ASSET_NAME
+                    asset_state,      // ASSET_STATE (added as requested)
                     dep.occurrences.to_string(), // OCCURRENCES
                     dep.has_dependencies.to_string(), // HAS_DEPENDENCIES
                 ]
@@ -3296,7 +3308,8 @@ impl OutputFormatter for AssetDependencyList {
                     dependencies: Vec<SimplifiedAssetDependency>,
                 }
 
-                let simplified_deps: Vec<SimplifiedAssetDependency> = self.dependencies
+                let simplified_deps: Vec<SimplifiedAssetDependency> = self
+                    .dependencies
                     .iter()
                     .map(|dep| {
                         let (asset_id, asset_name, asset_state) = match &dep.asset {
@@ -3320,12 +3333,13 @@ impl OutputFormatter for AssetDependencyList {
                                         asset.uuid.to_string()
                                     }),
                                     Some(name),
-                                    Some(normalized_state)
+                                    Some(normalized_state),
                                 )
                             }
                             None => {
                                 // For missing dependencies, use the path as the name and mark as missing
-                                let name = dep.path
+                                let name = dep
+                                    .path
                                     .split('/')
                                     .next_back()
                                     .unwrap_or(&dep.path)
@@ -3414,7 +3428,7 @@ impl OutputFormatter for AssetDependencyList {
                         .split('/')
                         .next_back()
                         .unwrap_or(&self.path)
-                        .to_string()
+                        .to_string(),
                 );
 
                 for dep in &self.dependencies {
@@ -3433,10 +3447,11 @@ impl OutputFormatter for AssetDependencyList {
                                 asset.state.clone()
                             };
                             (name, normalized_state)
-                        },
+                        }
                         None => {
                             // If asset details are not available, use the path directly and mark as missing
-                            let name = dep.path
+                            let name = dep
+                                .path
                                 .split('/')
                                 .next_back()
                                 .unwrap_or(&dep.path)
@@ -3445,7 +3460,10 @@ impl OutputFormatter for AssetDependencyList {
                         }
                     };
 
-                    let node_label = format!("{} [{}] ({} occurrences)", asset_name, asset_state, dep.occurrences);
+                    let node_label = format!(
+                        "{} [{}] ({} occurrences)",
+                        asset_name, asset_state, dep.occurrences
+                    );
                     tree.add_empty_child(node_label);
                 }
 
@@ -3606,7 +3624,12 @@ impl AssemblyNode {
 
         fn build_ptree_recursive(builder: &mut TreeBuilder, node: &AssemblyNode) {
             for child in node.children() {
-                let state = child.asset().processing_status().as_ref().map(|s| s.as_str()).unwrap_or("missing");
+                let state = child
+                    .asset()
+                    .processing_status()
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("missing");
                 let uuid_str = if child.asset().uuid().is_nil() {
                     "None".to_string()
                 } else {
@@ -3622,13 +3645,23 @@ impl AssemblyNode {
             }
         }
 
-        let state = self.asset().processing_status().as_ref().map(|s| s.as_str()).unwrap_or("missing");
+        let state = self
+            .asset()
+            .processing_status()
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("missing");
         let uuid_str = if self.asset().uuid().is_nil() {
             "None".to_string()
         } else {
             self.asset().uuid().to_string()
         };
-        let mut builder = TreeBuilder::new(format!("{} [{}] ({})", self.asset().name(), state, uuid_str));
+        let mut builder = TreeBuilder::new(format!(
+            "{} [{}] ({})",
+            self.asset().name(),
+            state,
+            uuid_str
+        ));
 
         // Add all direct children of the root node
         build_ptree_recursive(&mut builder, self);
@@ -3877,7 +3910,11 @@ pub struct TextMatch {
     /// The matching asset details
     pub asset: AssetResponse,
     /// The relevance score of the match (may not be present in all API responses)
-    #[serde(rename = "relevanceScore", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "relevanceScore",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub relevance_score: Option<f64>,
     /// The comparison URL for viewing the match in the UI
     #[serde(rename = "comparisonUrl")]
@@ -3919,7 +3956,12 @@ impl CsvRecordProducer for TextMatch {
     /// Convert the TextMatch to CSV records
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         // Extract the asset name from the path (last segment after the final '/')
-        let asset_name = self.asset.path.split('/').last().unwrap_or(&self.asset.path);
+        let asset_name = self
+            .asset
+            .path
+            .split('/')
+            .last()
+            .unwrap_or(&self.asset.path);
 
         // Build the asset URL using the template: {baseUrl}/tenants/{tenantId}/asset/{assetUuid}
         let asset_url = if let Some(ref comparison_url) = self.comparison_url {
@@ -3929,38 +3971,36 @@ impl CsvRecordProducer for TextMatch {
                 // Check if the base URL already contains the tenant path to avoid duplication
                 if base_url.contains("/tenants/") {
                     // If the base URL already has tenant info, just replace compare with asset
-                    format!("{}/asset/{}",
-                        base_url,
-                        self.asset.uuid
-                    )
+                    format!("{}/asset/{}", base_url, self.asset.uuid)
                 } else {
                     // If the base URL doesn't have tenant info, add it
-                    format!("{}/tenants/{}/asset/{}",
-                        base_url,
-                        self.asset.tenant_id,
-                        self.asset.uuid
+                    format!(
+                        "{}/tenants/{}/asset/{}",
+                        base_url, self.asset.tenant_id, self.asset.uuid
                     )
                 }
             } else {
-                comparison_url.replace("compare?", "asset/").replace("&", "")
+                comparison_url
+                    .replace("compare?", "asset/")
+                    .replace("&", "")
             }
         } else {
             // If no comparison URL is available, construct a basic URL
-            format!("https://app.physna.com/tenants/{}/asset/{}",
-                self.asset.tenant_id,
-                self.asset.uuid
+            format!(
+                "https://app.physna.com/tenants/{}/asset/{}",
+                self.asset.tenant_id, self.asset.uuid
             )
         };
 
         vec![vec![
-            asset_name.to_string(), // ASSET_NAME
-            self.asset.path.clone(), // ASSET_PATH
-            self.asset.asset_type.clone(), // TYPE
-            self.asset.state.clone(), // STATE
-            self.asset.is_assembly.to_string(), // IS_ASSEMBLY
+            asset_name.to_string(),                             // ASSET_NAME
+            self.asset.path.clone(),                            // ASSET_PATH
+            self.asset.asset_type.clone(),                      // TYPE
+            self.asset.state.clone(),                           // STATE
+            self.asset.is_assembly.to_string(),                 // IS_ASSEMBLY
             format!("{}", self.relevance_score.unwrap_or(0.0)), // RELEVANCE_SCORE
-            self.asset.uuid.to_string(), // ASSET_UUID
-            asset_url, // ASSET_URL
+            self.asset.uuid.to_string(),                        // ASSET_UUID
+            asset_url,                                          // ASSET_URL
         ]]
     }
 }
@@ -4014,11 +4054,7 @@ impl CsvRecordProducer for EnhancedTextSearchResponse {
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         self.matches
             .iter()
-            .flat_map(|m| {
-                m.as_csv_records()
-                    .into_iter()
-                    .collect::<Vec<Vec<String>>>()
-            })
+            .flat_map(|m| m.as_csv_records().into_iter().collect::<Vec<Vec<String>>>())
             .collect()
     }
 }
@@ -4058,7 +4094,12 @@ impl CsvRecordProducer for TextMatchPair {
     /// Convert the TextMatchPair to CSV records
     fn as_csv_records(&self) -> Vec<Vec<String>> {
         // Extract the asset name from the path (last segment after the final '/')
-        let asset_name = self.reference_asset.path.split('/').last().unwrap_or(&self.reference_asset.path);
+        let asset_name = self
+            .reference_asset
+            .path
+            .split('/')
+            .last()
+            .unwrap_or(&self.reference_asset.path);
 
         // Build the asset URL using the template: {baseUrl}/tenants/{tenantId}/asset/{assetUuid}
         let asset_url = if let Some(ref comparison_url) = self.comparison_url {
@@ -4068,38 +4109,36 @@ impl CsvRecordProducer for TextMatchPair {
                 // Check if the base URL already contains the tenant path to avoid duplication
                 if base_url.contains("/tenants/") {
                     // If the base URL already has tenant info, just replace compare with asset
-                    format!("{}/asset/{}",
-                        base_url,
-                        self.reference_asset.uuid
-                    )
+                    format!("{}/asset/{}", base_url, self.reference_asset.uuid)
                 } else {
                     // If the base URL doesn't have tenant info, add it
-                    format!("{}/tenants/{}/asset/{}",
-                        base_url,
-                        self.reference_asset.tenant_id,
-                        self.reference_asset.uuid
+                    format!(
+                        "{}/tenants/{}/asset/{}",
+                        base_url, self.reference_asset.tenant_id, self.reference_asset.uuid
                     )
                 }
             } else {
-                comparison_url.replace("compare?", "asset/").replace("&", "")
+                comparison_url
+                    .replace("compare?", "asset/")
+                    .replace("&", "")
             }
         } else {
             // If no comparison URL is available, construct a basic URL
-            format!("https://app.physna.com/tenants/{}/asset/{}",
-                self.reference_asset.tenant_id,
-                self.reference_asset.uuid
+            format!(
+                "https://app.physna.com/tenants/{}/asset/{}",
+                self.reference_asset.tenant_id, self.reference_asset.uuid
             )
         };
 
         vec![vec![
-            asset_name.to_string(), // ASSET_NAME
-            self.reference_asset.path.clone(), // ASSET_PATH
-            self.reference_asset.asset_type.clone(), // TYPE
-            self.reference_asset.state.clone(), // STATE
+            asset_name.to_string(),                       // ASSET_NAME
+            self.reference_asset.path.clone(),            // ASSET_PATH
+            self.reference_asset.asset_type.clone(),      // TYPE
+            self.reference_asset.state.clone(),           // STATE
             self.reference_asset.is_assembly.to_string(), // IS_ASSEMBLY
-            format!("{}", self.relevance_score), // RELEVANCE_SCORE
-            self.reference_asset.uuid.to_string(), // ASSET_UUID
-            asset_url, // ASSET_URL
+            format!("{}", self.relevance_score),          // RELEVANCE_SCORE
+            self.reference_asset.uuid.to_string(),        // ASSET_UUID
+            asset_url,                                    // ASSET_URL
         ]]
     }
 }

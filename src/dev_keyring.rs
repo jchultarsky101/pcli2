@@ -1,6 +1,6 @@
+use dirs::config_dir;
 use std::fs;
 use std::path::PathBuf;
-use dirs::config_dir;
 use thiserror::Error;
 use tracing;
 
@@ -117,25 +117,42 @@ impl DevKeyring {
             if let Some(env_credentials) = all_credentials.environments.get(tenant) {
                 match key.as_str() {
                     "client-id" => {
-                        tracing::debug!("Retrieved client-id from dev_keyring for environment: {}", tenant);
+                        tracing::debug!(
+                            "Retrieved client-id from dev_keyring for environment: {}",
+                            tenant
+                        );
                         Ok(Some(env_credentials.client_id.clone()))
-                    },
+                    }
                     "client-secret" => {
-                        tracing::debug!("Retrieved client-secret from dev_keyring for environment: {}", tenant);
+                        tracing::debug!(
+                            "Retrieved client-secret from dev_keyring for environment: {}",
+                            tenant
+                        );
                         Ok(Some(env_credentials.client_secret.clone()))
-                    },
+                    }
                     "access-token" => {
-                        tracing::debug!("Retrieved access-token from dev_keyring for environment: {}", tenant);
+                        tracing::debug!(
+                            "Retrieved access-token from dev_keyring for environment: {}",
+                            tenant
+                        );
                         Ok(env_credentials.access_token.clone())
-                    },
+                    }
                     _ => Ok(None),
                 }
             } else {
-                tracing::debug!("No credentials found in dev_keyring for environment: {}, key: {}", tenant, key);
+                tracing::debug!(
+                    "No credentials found in dev_keyring for environment: {}, key: {}",
+                    tenant,
+                    key
+                );
                 Ok(None)
             }
         } else {
-            tracing::debug!("No credentials found in dev_keyring for environment: {}, key: {}", tenant, key);
+            tracing::debug!(
+                "No credentials found in dev_keyring for environment: {}, key: {}",
+                tenant,
+                key
+            );
             Ok(None)
         }
     }
@@ -154,25 +171,37 @@ impl DevKeyring {
         });
 
         // Get or create environment-specific credentials
-        let env_credentials = all_credentials.environments.entry(tenant.to_string()).or_insert_with(|| EnvironmentCredentials {
-            client_id: String::new(),
-            client_secret: String::new(),
-            access_token: None,
-        });
+        let env_credentials = all_credentials
+            .environments
+            .entry(tenant.to_string())
+            .or_insert_with(|| EnvironmentCredentials {
+                client_id: String::new(),
+                client_secret: String::new(),
+                access_token: None,
+            });
 
         match key.as_str() {
             "client-id" => {
                 env_credentials.client_id = value;
-                tracing::debug!("Stored client-id in dev_keyring for environment: {}", tenant);
-            },
+                tracing::debug!(
+                    "Stored client-id in dev_keyring for environment: {}",
+                    tenant
+                );
+            }
             "client-secret" => {
                 env_credentials.client_secret = value;
-                tracing::debug!("Stored client-secret in dev_keyring for environment: {}", tenant);
-            },
+                tracing::debug!(
+                    "Stored client-secret in dev_keyring for environment: {}",
+                    tenant
+                );
+            }
             "access-token" => {
                 env_credentials.access_token = Some(value);
-                tracing::debug!("Stored access-token in dev_keyring for environment: {}", tenant);
-            },
+                tracing::debug!(
+                    "Stored access-token in dev_keyring for environment: {}",
+                    tenant
+                );
+            }
             _ => {} // Ignore unknown keys
         }
 

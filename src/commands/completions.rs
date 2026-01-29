@@ -12,12 +12,6 @@ pub fn completions_command() -> Command {
             clap::Arg::new("shell")
                 .help("The shell to generate completions for")
                 .required(true)
-                .value_parser([
-                    "bash",
-                    "zsh",
-                    "fish",
-                    "powershell",
-                    "elvish",
-                ])
+                .value_parser(["bash", "zsh", "fish", "powershell", "elvish"]),
         )
 }

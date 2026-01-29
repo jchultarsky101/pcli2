@@ -35,11 +35,11 @@ impl Default for HttpRequestConfig {
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
             default_headers,
-            timeout: 60, // 60 seconds
+            timeout: 1800, // 30 minutes (1800 seconds)
             retry_on_auth_error: true,
-            upload_timeout: None,
-            download_timeout: Some(900), // 15 minutes (900 seconds) for download operations
-            search_timeout: None,
+            upload_timeout: Some(1800), // 30 minutes (1800 seconds) for upload operations
+            download_timeout: Some(1800), // 30 minutes (1800 seconds) for download operations
+            search_timeout: Some(1800), // 30 minutes (1800 seconds) for search operations
         }
     }
 }
@@ -52,11 +52,11 @@ impl HttpRequestConfig {
         Self {
             base_url: configuration.get_api_base_url(),
             default_headers,
-            timeout: 60, // 60 seconds
+            timeout: 1800, // 30 minutes (1800 seconds)
             retry_on_auth_error: true,
-            upload_timeout: None,
-            download_timeout: Some(900), // 15 minutes (900 seconds) for download operations
-            search_timeout: None,
+            upload_timeout: Some(1800), // 30 minutes (1800 seconds) for upload operations
+            download_timeout: Some(1800), // 30 minutes (1800 seconds) for download operations
+            search_timeout: Some(1800), // 30 minutes (1800 seconds) for search operations
         }
     }
 }

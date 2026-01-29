@@ -3,8 +3,9 @@
 //! This module defines CLI commands related to asset metadata management.
 
 use crate::commands::params::{
-    format_parameter, format_pretty_parameter, format_with_headers_parameter, path_parameter, tenant_parameter, uuid_parameter, COMMAND_CREATE,
-    COMMAND_DELETE, COMMAND_GET, COMMAND_METADATA,
+    format_parameter, format_pretty_parameter, format_with_headers_parameter, path_parameter,
+    tenant_parameter, uuid_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_GET,
+    COMMAND_METADATA,
 };
 use clap::{Arg, ArgAction, ArgGroup, Command};
 

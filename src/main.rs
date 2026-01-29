@@ -3,7 +3,7 @@
 //! This module contains the main function that serves as the entry point
 //! for the CLI application. It handles initialization, configuration loading,
 //! command parsing, and error handling.
-//! 
+//!
 //! The application follows a layered architecture pattern:
 //! - main.rs: Entry point and application initialization
 //! - cli.rs: Command execution logic
@@ -15,10 +15,7 @@
 
 use configuration::ConfigurationError;
 use pcli2::error::CliError;
-use pcli2::{
-    configuration,
-    error_utils,
-};
+use pcli2::{configuration, error_utils};
 use std::env;
 use std::process;
 use thiserror::Error;
@@ -43,7 +40,7 @@ enum MainError {
 
 impl MainError {
     /// Get the appropriate exit code for this error
-    /// 
+    ///
     /// Returns:
     /// - `PcliExitCode::ConfigError` for configuration errors
     /// - The CLI error's specific exit code for command execution errors
@@ -56,19 +53,19 @@ impl MainError {
 }
 
 /// Main entry point for the Physna CLI client application.
-/// 
+///
 /// This function performs the following steps:
 /// 1. Initializes the logging subsystem using tracing with environment-filtered configuration
 /// 2. Loads the application configuration from persistent storage
 /// 3. Parses command-line arguments using the pre-defined command structure
 /// 4. Routes execution to the appropriate command handler based on user input
 /// 5. Handles any errors and exits with appropriate exit codes based on error types
-/// 
+///
 /// The function uses structured error handling with the `MainError` enum to provide
 /// clear error categorization and appropriate exit codes based on error types.
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Ok(())` - If the command executed successfully (exit code 0)
 /// * `Err(i32)` - If an error occurred, with the appropriate exit code for the error type
 #[tokio::main]
@@ -89,9 +86,9 @@ async fn main() {
         Ok(()) => {
             // Success - exit with code 0
             process::exit(0);
-        },
+        }
         Err(e) => {
-            error_utils::report_detailed_error(&e, None);  // Remove generic context
+            error_utils::report_detailed_error(&e, None); // Remove generic context
             let main_error = MainError::CliError(e);
             process::exit(main_error.exit_code());
         }

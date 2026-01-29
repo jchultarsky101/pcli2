@@ -1,35 +1,28 @@
-use std::{path::PathBuf, str::FromStr};
-use clap::ArgMatches;
-use uuid::Uuid;
 use crate::actions::CliActionError;
 use crate::{
     actions::folders::resolve_folder_uuid_by_path,
-    commands::params::{PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID, PARAMETER_FUZZY},
+    commands::params::{
+        PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID,
+        PARAMETER_FUZZY, PARAMETER_PATH, PARAMETER_UUID,
+    },
     configuration::Configuration,
     error::CliError,
     error_utils,
-    format::{OutputFormatter, CsvRecordProducer},
+    format::{CsvRecordProducer, OutputFormatter},
     metadata::convert_single_metadata_to_json_value,
-    model::{
-        AssetList,
-        Folder,
-        normalize_path
-    },
-    param_utils::{
-        get_format_parameter_value,
-        get_tenant
-    },
-    physna_v3::{
-        PhysnaApiClient,
-        TryDefault
-    }
+    model::{normalize_path, AssetList, Folder},
+    param_utils::{get_format_parameter_value, get_tenant},
+    physna_v3::{PhysnaApiClient, TryDefault},
 };
+use clap::ArgMatches;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::{path::PathBuf, str::FromStr};
 use tracing::{debug, trace};
+use uuid::Uuid;
 
 pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Listing assets...");
-    
+
     let format = get_format_parameter_value(sub_matches).await;
     let configuration = Configuration::load_default()?;
     let mut api = PhysnaApiClient::try_default()?;
@@ -38,17 +31,18 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // If a path is specified, get assets filtered by folder path
     if let Some(path) = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH) {
         trace!("Listing assets for folder path: {}", path);
-        
+
         let path = normalize_path(path);
         trace!("Normalized folder path: {}", &path);
-        
-        let assets = api.list_assets_by_parent_folder_path(&tenant.uuid, path.as_str()).await?;
+
+        let assets = api
+            .list_assets_by_parent_folder_path(&tenant.uuid, path.as_str())
+            .await?;
 
         println!("{}", assets.format(format)?);
     };
-    
 
-	Ok(())
+    Ok(())
 }
 
 pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
@@ -57,7 +51,10 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     // Get format parameters directly from sub_matches since asset get command has all format flags
-    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap_or(&"json".to_string()).clone();
+    let format_str = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .unwrap_or(&"json".to_string())
+        .clone();
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
     let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
@@ -71,7 +68,9 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(|e| crate::actions::CliActionError::FormattingError(e))?;
 
-    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID).map(|s| Uuid::from_str(s).unwrap());
+    let asset_uuid_param = sub_matches
+        .get_one::<String>(PARAMETER_UUID)
+        .map(|s| Uuid::from_str(s).unwrap());
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
@@ -82,13 +81,17 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param.as_ref(),
-        asset_path_param
-    ).await?;
+        asset_path_param,
+    )
+    .await?;
 
     // Format the asset considering the metadata flag
-    println!("{}", asset.format_with_metadata_flag(format, with_metadata)?);
+    println!(
+        "{}",
+        asset.format_with_metadata_flag(format, with_metadata)?
+    );
 
-	Ok(())
+    Ok(())
 }
 
 pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), CliError> {
@@ -97,7 +100,9 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
     let format = get_format_parameter_value(sub_matches).await;
 
-    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID).map(|s| Uuid::from_str(s).unwrap());
+    let asset_uuid_param = sub_matches
+        .get_one::<String>(PARAMETER_UUID)
+        .map(|s| Uuid::from_str(s).unwrap());
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
@@ -108,14 +113,20 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param.as_ref(),
-        asset_path_param
-    ).await?;
+        asset_path_param,
+    )
+    .await?;
 
     // Get the full assembly tree with all recursive dependencies
-    let assembly_tree = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
+    let assembly_tree = ctx
+        .api()
+        .get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str())
+        .await?;
 
     // For tree and JSON formats, output the assembly tree directly to preserve hierarchy
-    if matches!(format, crate::format::OutputFormat::Tree(_)) || matches!(format, crate::format::OutputFormat::Json(_)) {
+    if matches!(format, crate::format::OutputFormat::Tree(_))
+        || matches!(format, crate::format::OutputFormat::Json(_))
+    {
         println!("{}", assembly_tree.format(format)?);
     } else {
         // For other formats (CSV), extract all dependencies from the full tree structure
@@ -130,11 +141,13 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
         println!("{}", dependency_list.format(format)?);
     }
 
-	Ok(())
+    Ok(())
 }
 
 // Helper function to extract all dependencies from AssemblyTree recursively
-fn extract_all_dependencies_from_tree(assembly_tree: &crate::model::AssemblyTree) -> Vec<crate::model::AssetDependency> {
+fn extract_all_dependencies_from_tree(
+    assembly_tree: &crate::model::AssemblyTree,
+) -> Vec<crate::model::AssetDependency> {
     let mut all_dependencies = Vec::new();
 
     // Process all nodes in the tree recursively, starting with the root assembly name as the parent path
@@ -145,7 +158,11 @@ fn extract_all_dependencies_from_tree(assembly_tree: &crate::model::AssemblyTree
 }
 
 // Recursive helper to collect all dependencies with assembly path tracking
-fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencies: &mut Vec<crate::model::AssetDependency>, parent_assembly_path: String) {
+fn collect_dependencies_recursive(
+    node: &crate::model::AssemblyNode,
+    dependencies: &mut Vec<crate::model::AssetDependency>,
+    parent_assembly_path: String,
+) {
     for child in node.children() {
         // Calculate the assembly path for this child
         let child_name = child.asset().name();
@@ -161,10 +178,18 @@ fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencie
             tenant_id: Uuid::nil(), // Placeholder - would need actual tenant ID if available
             path: child.asset().path(),
             folder_id: None,
-            asset_type: child.asset().file_type().cloned().unwrap_or_else(|| "unknown".to_string()),
+            asset_type: child
+                .asset()
+                .file_type()
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string()),
             created_at: child.asset().created_at().cloned().unwrap_or_default(),
             updated_at: child.asset().updated_at().cloned().unwrap_or_default(),
-            state: child.asset().processing_status().cloned().unwrap_or_else(|| "missing".to_string()),
+            state: child
+                .asset()
+                .processing_status()
+                .cloned()
+                .unwrap_or_else(|| "missing".to_string()),
             is_assembly: child.has_children(),
             metadata: std::collections::HashMap::new(), // Empty metadata
             parent_folder_id: None,
@@ -194,7 +219,6 @@ fn collect_dependencies_recursive(node: &crate::model::AssemblyNode, dependencie
 }
 
 pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
-
     trace!("Executing file upload...");
 
     let configuration = Configuration::load_or_create_default()?;
@@ -218,9 +242,11 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         }
     } else {
         // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Either folder UUID or path must be provided".to_string(),
+        ));
     };
-            
+
     // Check if the folder exists
     let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
     let mut folder: Folder = folder.into();
@@ -229,8 +255,10 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         None => (),
     }
 
-    let file_path = sub_matches.get_one::<PathBuf>(PARAMETER_FILE).ok_or(CliError::MissingRequiredArgument("file".to_string()))?;
-                
+    let file_path = sub_matches
+        .get_one::<PathBuf>(PARAMETER_FILE)
+        .ok_or(CliError::MissingRequiredArgument("file".to_string()))?;
+
     // Extract filename from path for use in asset path construction
     let file_name = file_path
         .file_name()
@@ -239,7 +267,6 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .ok_or_else(|| CliError::MissingRequiredArgument("Invalid file name".to_string()))?
         .to_string();
 
-    
     // Construct the full asset path by combining folder path with filename
     let asset_path = match folder_path_param {
         Some(folder_path) => {
@@ -248,27 +275,28 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
             } else {
                 format!("{}/{}", folder_path, file_name)
             }
-        },
+        }
         None => file_name.clone(),
     };
-    
+
     debug!("Creating asset with path: {}", asset_path);
 
-    let asset = api.create_asset(&tenant.uuid, &file_path, &asset_path, &folder_uuid).await?;
+    let asset = api
+        .create_asset(&tenant.uuid, &file_path, &asset_path, &folder_uuid)
+        .await?;
     println!("{}", asset.format(format)?);
 
     Ok(())
 }
 
 pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing \"create asset batch\" command...");
 
-     trace!("Executing \"create asset batch\" command...");
-
-    let glob_pattern = sub_matches.get_one::<String>(PARAMETER_FILES)
+    let glob_pattern = sub_matches
+        .get_one::<String>(PARAMETER_FILES)
         .ok_or(CliError::MissingRequiredArgument("files".to_string()))?
         .clone();
-    let concurrent_param = sub_matches.get_one::<usize>("concurrent")
-        .unwrap_or(&5);
+    let concurrent_param = sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
     let concurrent = *concurrent_param;
     let show_progress = sub_matches.get_flag("progress");
 
@@ -293,9 +321,11 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         }
     } else {
         // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Either folder UUID or path must be provided".to_string(),
+        ));
     };
-            
+
     // Check if the folder exists
     let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
     let mut folder: Folder = folder.into();
@@ -304,12 +334,20 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         None => (),
     }
 
-    let assets = api.create_assets_batch(&tenant.uuid, &glob_pattern, Some(folder.path().as_str()), Some(&folder_uuid), concurrent, show_progress).await?;
+    let assets = api
+        .create_assets_batch(
+            &tenant.uuid,
+            &glob_pattern,
+            Some(folder.path().as_str()),
+            Some(&folder_uuid),
+            concurrent,
+            show_progress,
+        )
+        .await?;
     println!("{}", AssetList::from(assets).format(format)?);
-        
+
     Ok(())
 }
-
 
 use std::collections::HashMap;
 
@@ -320,7 +358,8 @@ use std::collections::HashMap;
 pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing \"create asset metadata batch\" command...");
 
-    let csv_file_path = sub_matches.get_one::<std::path::PathBuf>("csv-file")
+    let csv_file_path = sub_matches
+        .get_one::<std::path::PathBuf>("csv-file")
         .ok_or(CliError::MissingRequiredArgument("csv-file".to_string()))?;
 
     let show_progress = sub_matches.get_flag("progress");
@@ -335,10 +374,12 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     let mut reader = csv::Reader::from_reader(file);
 
     // Parse the CSV records
-    let mut asset_metadata_map: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
+    let mut asset_metadata_map: HashMap<String, HashMap<String, serde_json::Value>> =
+        HashMap::new();
 
     for result in reader.records() {
-        let record: csv::StringRecord = result.map_err(|e| CliError::FormattingError(crate::format::FormattingError::CsvError(e)))?;
+        let record: csv::StringRecord = result
+            .map_err(|e| CliError::FormattingError(crate::format::FormattingError::CsvError(e)))?;
 
         if record.len() >= 3 {
             let asset_path: &str = record[0].trim();
@@ -347,14 +388,15 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
 
             // Use the same conversion logic as individual metadata command (default to text type)
             let json_value = crate::metadata::convert_single_metadata_to_json_value(
-                metadata_name,  // name parameter (not used in function)
+                metadata_name, // name parameter (not used in function)
                 metadata_value,
-                "text"  // default to text type since CSV doesn't specify type
+                "text", // default to text type since CSV doesn't specify type
             );
 
             // Group metadata by asset path (strip leading slash if present for consistency with asset paths in system)
             let clean_asset_path = asset_path.strip_prefix('/').unwrap_or(asset_path);
-            asset_metadata_map.entry(clean_asset_path.to_string())
+            asset_metadata_map
+                .entry(clean_asset_path.to_string())
                 .or_insert_with(HashMap::new)
                 .insert(metadata_name.to_string(), json_value);
         }
@@ -367,22 +409,31 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     for (asset_path, metadata) in &asset_metadata_map {
         if show_progress {
             current_asset += 1;
-            eprint!("\rProcessing asset {}/{}: {}", current_asset, total_assets, asset_path);
+            eprint!(
+                "\rProcessing asset {}/{}: {}",
+                current_asset, total_assets, asset_path
+            );
         }
 
         // Get the asset by the normalized path
         match api.get_asset_by_path(&tenant.uuid, asset_path).await {
             Ok(asset) => {
                 // Update the asset's metadata with automatic registration of new keys
-                if let Err(e) = api.update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), metadata).await {
+                if let Err(e) = api
+                    .update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), metadata)
+                    .await
+                {
                     error_utils::report_error_with_remediation(
-                        &format!("Failed to update metadata for asset '{}': {}", asset_path, e),
+                        &format!(
+                            "Failed to update metadata for asset '{}': {}",
+                            asset_path, e
+                        ),
                         &[
                             "Verify metadata field names and values are valid",
                             "Check that you have sufficient permissions to modify this asset",
                             "Verify your network connectivity",
-                            "Confirm the asset hasn't been deleted or modified recently"
-                        ]
+                            "Confirm the asset hasn't been deleted or modified recently",
+                        ],
                     );
                 }
             }
@@ -423,7 +474,6 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
 /// * `Ok(())` - If the metadata was updated successfully
 /// * `Err(CliError)` - If an error occurred during the update
 pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliError> {
-
     trace!("Execute \"asset metadata create\" command...");
 
     let configuration = Configuration::load_or_create_default()?;
@@ -434,20 +484,20 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Get metadata parameters from command line
-    let metadata_name = sub_matches.get_one::<String>("name")
+    let metadata_name = sub_matches
+        .get_one::<String>("name")
         .ok_or(CliError::MissingRequiredArgument("name".to_string()))?;
-    let metadata_value = sub_matches.get_one::<String>("value")
+    let metadata_value = sub_matches
+        .get_one::<String>("value")
         .ok_or(CliError::MissingRequiredArgument("value".to_string()))?;
-    let metadata_type = sub_matches.get_one::<String>("type")
+    let metadata_type = sub_matches
+        .get_one::<String>("type")
         .map(|s| s.as_str())
         .unwrap_or("text");
 
     // Convert the single metadata entry to JSON value using shared function
-    let json_value = convert_single_metadata_to_json_value(
-        metadata_name,
-        metadata_value,
-        metadata_type
-    );
+    let json_value =
+        convert_single_metadata_to_json_value(metadata_name, metadata_value, metadata_type);
 
     // Create a HashMap with the single metadata entry
     // This hashmap represents the desired metadata fields to update
@@ -463,11 +513,14 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
         api.get_asset_by_path(&tenant.uuid, asset_path).await?
     } else {
         // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Either asset UUID or path must be provided".to_string(),
+        ));
     };
 
     // Update the asset's metadata with automatic registration of new keys
-    api.update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), &metadata).await?;
+    api.update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), &metadata)
+        .await?;
 
     // No output on success (per requirements)
 
@@ -475,11 +528,12 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
 }
 
 pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliError> {
-
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
     let format = get_format_parameter_value(sub_matches).await;
 
-    let asset_uuid_param = sub_matches.get_one::<String>(PARAMETER_UUID).map(|s| Uuid::from_str(s).unwrap());
+    let asset_uuid_param = sub_matches
+        .get_one::<String>(PARAMETER_UUID)
+        .map(|s| Uuid::from_str(s).unwrap());
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
@@ -490,16 +544,16 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param.as_ref(),
-        asset_path_param
-    ).await?;
+        asset_path_param,
+    )
+    .await?;
 
     match asset.metadata() {
         Some(metadata) => println!("{}", metadata.format(format)?),
-        None => ()
+        None => (),
     };
 
     Ok(())
-
 }
 
 /// Delete an asset by UUID or path.
@@ -531,11 +585,14 @@ pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param,
-        asset_path_param
-    ).await?;
+        asset_path_param,
+    )
+    .await?;
 
     // Delete the asset
-    ctx.api().delete_asset(&tenant_uuid.to_string(), &asset.uuid().to_string()).await?;
+    ctx.api()
+        .delete_asset(&tenant_uuid.to_string(), &asset.uuid().to_string())
+        .await?;
 
     Ok(())
 }
@@ -569,11 +626,14 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param,
-        asset_path_param
-    ).await?;
+        asset_path_param,
+    )
+    .await?;
 
     // Get the output file path
-    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE) {
+    let output_file_path = if let Some(output_path) =
+        sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE)
+    {
         output_path.clone()
     } else {
         // Use the asset name as the default output file name
@@ -589,8 +649,9 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let file_content = download_asset_with_retry(
         ctx.api(),
         &tenant_uuid.to_string(),
-        &asset.uuid().to_string()
-    ).await?;
+        &asset.uuid().to_string(),
+    )
+    .await?;
 
     // Write the file content to the output file
     std::fs::write(&output_file_path, file_content).map_err(|e| CliActionError::IoError(e))?;
@@ -618,13 +679,15 @@ fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
 
     // Extract all files to the same directory as the ZIP file
-    let parent_dir = zip_path.parent()
-        .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
-            std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory")
-        )))?;
+    let parent_dir = zip_path.parent().ok_or_else(|| {
+        CliError::ActionError(crate::actions::CliActionError::IoError(
+            std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory"),
+        ))
+    })?;
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)
+        let mut file = archive
+            .by_index(i)
             .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
 
         let file_path = parent_dir.join(file.mangled_name());
@@ -635,8 +698,9 @@ fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError
         } else {
             // Create parent directories if they don't exist
             if let Some(parent) = file_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    CliError::ActionError(crate::actions::CliActionError::IoError(e))
+                })?;
             }
 
             let mut output_file = std::fs::File::create(&file_path)
@@ -663,12 +727,15 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
 
     // Get threshold parameter
-    let threshold = sub_matches.get_one::<f64>("threshold")
+    let threshold = sub_matches
+        .get_one::<f64>("threshold")
         .copied()
         .unwrap_or(80.0);
 
     // Get format parameters directly from sub_matches since geometric match commands have all format flags
-    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap();
+    let format_str = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .unwrap();
 
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
@@ -692,19 +759,23 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param,
-        asset_path_param
-    ).await?;
+        asset_path_param,
+    )
+    .await?;
 
     // Perform geometric search
-    let mut search_results = ctx.api().geometric_search(&tenant_uuid, &asset.uuid(), threshold).await?;
+    let mut search_results = ctx
+        .api()
+        .geometric_search(&tenant_uuid, &asset.uuid(), threshold)
+        .await?;
 
     // Load configuration to get the UI base URL
-    let configuration = crate::configuration::Configuration::load_or_create_default()
-        .map_err(|e| CliError::ConfigurationError(
-            crate::configuration::ConfigurationError::FailedToLoadData {
-                cause: Box::new(e),
-            }
-        ))?;
+    let configuration =
+        crate::configuration::Configuration::load_or_create_default().map_err(|e| {
+            CliError::ConfigurationError(
+                crate::configuration::ConfigurationError::FailedToLoadData { cause: Box::new(e) },
+            )
+        })?;
     let ui_base_url = configuration.get_ui_base_url();
 
     // Populate comparison URLs for each match
@@ -762,7 +833,7 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
         is_assembly: false, // Default is not assembly
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None, // No owner ID
+        owner_id: None,  // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
@@ -785,12 +856,15 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
 
     // Get threshold parameter
-    let threshold = sub_matches.get_one::<f64>("threshold")
+    let threshold = sub_matches
+        .get_one::<f64>("threshold")
         .copied()
         .unwrap_or(80.0);
 
     // Get format parameters directly from sub_matches since part match commands have all format flags
-    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
+    let format_str = if let Some(format_val) =
+        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+    {
         format_val.clone()
     } else {
         // Check environment variable first, then use default
@@ -823,19 +897,23 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param,
-        asset_path_param
-    ).await?;
+        asset_path_param,
+    )
+    .await?;
 
     // Perform part search
-    let mut search_results = ctx.api().part_search(&tenant_uuid, &asset.uuid(), threshold).await?;
+    let mut search_results = ctx
+        .api()
+        .part_search(&tenant_uuid, &asset.uuid(), threshold)
+        .await?;
 
     // Load configuration to get the UI base URL
-    let configuration = crate::configuration::Configuration::load_or_create_default()
-        .map_err(|e| CliError::ConfigurationError(
-            crate::configuration::ConfigurationError::FailedToLoadData {
-                cause: Box::new(e),
-            }
-        ))?;
+    let configuration =
+        crate::configuration::Configuration::load_or_create_default().map_err(|e| {
+            CliError::ConfigurationError(
+                crate::configuration::ConfigurationError::FailedToLoadData { cause: Box::new(e) },
+            )
+        })?;
     let ui_base_url = configuration.get_ui_base_url();
 
     // Populate comparison URLs for each match
@@ -895,7 +973,7 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
         is_assembly: false, // Default is not assembly
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None, // No owner ID
+        owner_id: None,  // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
@@ -905,7 +983,10 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
     };
 
     // Format the response considering the metadata flag
-    println!("{}", enhanced_response.format_with_metadata_flag(format, with_metadata)?);
+    println!(
+        "{}",
+        enhanced_response.format_with_metadata_flag(format, with_metadata)?
+    );
 
     Ok(())
 }
@@ -925,12 +1006,16 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         .collect();
 
     // Get threshold parameter
-    let threshold = sub_matches.get_one::<f64>("threshold")
+    let threshold = sub_matches
+        .get_one::<f64>("threshold")
         .copied()
         .unwrap_or(80.0);
 
     // Get format parameters
-    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT).unwrap_or(&"json".to_string()).clone();
+    let format_str = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .unwrap_or(&"json".to_string())
+        .clone();
 
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
@@ -953,10 +1038,13 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     let concurrent = match concurrent_param {
         Some(val) => {
             if val < 1 || val > 10 {
-                return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", val)));
+                return Err(CliError::MissingRequiredArgument(format!(
+                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
+                    val
+                )));
             }
             val
-        },
+        }
         None => 1, // Default value
     };
 
@@ -967,7 +1055,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     for folder_path in &folder_paths {
         trace!("Listing assets for folder path: {}", folder_path);
-        let assets_response = api.list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str()).await?;
+        let assets_response = api
+            .list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str())
+            .await?;
 
         for asset in assets_response.get_all_assets() {
             all_assets.insert(asset.uuid(), asset.clone());
@@ -982,8 +1072,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             &[
                 "Verify the folder path is correct",
                 "Check that the folder contains assets",
-                "Ensure you have permissions to access the specified folder(s)"
-            ]
+                "Ensure you have permissions to access the specified folder(s)",
+            ],
         );
         return Ok(());
     }
@@ -1015,7 +1105,10 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     let mut seen_pairs = std::collections::HashSet::new();
 
     // Create tasks for concurrent processing
-    type TaskResult = Result<Vec<crate::model::EnhancedGeometricSearchResponse>, Box<dyn std::error::Error + Send + Sync>>;
+    type TaskResult = Result<
+        Vec<crate::model::EnhancedGeometricSearchResponse>,
+        Box<dyn std::error::Error + Send + Sync>,
+    >;
     let mut tasks: Vec<tokio::task::JoinHandle<TaskResult>> = Vec::new();
     for (asset_uuid, asset) in &all_assets {
         let semaphore = semaphore.clone();
@@ -1035,8 +1128,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 let pb = mp.add(ProgressBar::new_spinner());
                 pb.set_style(
                     ProgressStyle::default_spinner()
-                        .template(&format!("{{spinner:.green}} Processing: {} {{msg}}", asset_clone.name()))
-                        .unwrap()
+                        .template(&format!(
+                            "{{spinner:.green}} Processing: {} {{msg}}",
+                            asset_clone.name()
+                        ))
+                        .unwrap(),
                 );
                 Some(pb)
             } else {
@@ -1048,11 +1144,17 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 pb.set_message("Starting geometric search...");
             }
 
-            let result = match api_clone.geometric_search(&tenant_uuid, &asset_uuid, threshold).await {
+            let result = match api_clone
+                .geometric_search(&tenant_uuid, &asset_uuid, threshold)
+                .await
+            {
                 Ok(search_results) => {
                     // Update progress bar to show processing matches
                     if let Some(ref pb) = individual_pb {
-                        pb.set_message(format!("Processing {} matches...", search_results.matches.len()));
+                        pb.set_message(format!(
+                            "Processing {} matches...",
+                            search_results.matches.len()
+                        ));
                     }
 
                     let mut asset_matches = Vec::new();
@@ -1064,12 +1166,16 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                         }
 
                         // Load configuration to get the UI base URL
-                        let configuration = crate::configuration::Configuration::load_or_create_default()
-                            .map_err(|e| CliError::ConfigurationError(
+                        let configuration =
+                            crate::configuration::Configuration::load_or_create_default().map_err(
+                                |e| {
+                                    CliError::ConfigurationError(
                                 crate::configuration::ConfigurationError::FailedToLoadData {
                                     cause: Box::new(e),
                                 }
-                            ))?;
+                            )
+                                },
+                            )?;
                         let ui_base_url = configuration.get_ui_base_url();
 
                         // Populate comparison URL for this match
@@ -1100,9 +1206,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
-                        let candidate_in_specified_folders = folder_paths_clone.iter().any(|folder_path| {
-                            match_result.asset.path.starts_with(folder_path)
-                        });
+                        let candidate_in_specified_folders = folder_paths_clone
+                            .iter()
+                            .any(|folder_path| match_result.asset.path.starts_with(folder_path));
 
                         if exclusive && !candidate_in_specified_folders {
                             continue;
@@ -1114,7 +1220,10 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                             let mut map = std::collections::HashMap::new();
                             for key in asset_metadata.keys() {
                                 if let Some(value) = asset_metadata.get(key) {
-                                    map.insert(key.clone(), serde_json::Value::String(value.clone()));
+                                    map.insert(
+                                        key.clone(),
+                                        serde_json::Value::String(value.clone()),
+                                    );
                                 }
                             }
                             map
@@ -1128,13 +1237,13 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                             path: asset_clone.path(),
                             folder_id: None,
                             asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(), // Placeholder for creation time
-                            updated_at: "".to_string(), // Placeholder for update time
-                            state: "active".to_string(), // Default state
-                            is_assembly: false, // Default is not assembly
+                            created_at: "".to_string(),      // Placeholder for creation time
+                            updated_at: "".to_string(),      // Placeholder for update time
+                            state: "active".to_string(),     // Default state
+                            is_assembly: false,              // Default is not assembly
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
-                            owner_id: None, // No owner ID
+                            owner_id: None,         // No owner ID
                         };
 
                         let enhanced_match = crate::model::EnhancedGeometricSearchResponse {
@@ -1153,7 +1262,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     Ok(asset_matches)
                 }
                 Err(e) => {
-                    error_utils::report_warning(&format!("🔍 Failed to perform geometric search for asset {}: {}", asset_clone.name(), e));
+                    error_utils::report_warning(&format!(
+                        "🔍 Failed to perform geometric search for asset {}: {}",
+                        asset_clone.name(),
+                        e
+                    ));
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
                     }
@@ -1181,11 +1294,12 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     for match_result in &enhanced_match.matches {
                         // Create a unique pair identifier to avoid duplicates
                         // We want to avoid having both (A,B) and (B,A) in results
-                        let (ref_uuid, cand_uuid) = if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
-                            (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
-                        } else {
-                            (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
-                        };
+                        let (ref_uuid, cand_uuid) =
+                            if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
+                                (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
+                            } else {
+                                (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
+                            };
 
                         let pair_key = (ref_uuid, cand_uuid);
 
@@ -1202,8 +1316,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     &[
                         "Check your network connection",
                         "Verify the asset exists and is accessible",
-                        "Retry the operation"
-                    ]
+                        "Retry the operation",
+                    ],
                 );
             }
             Err(e) => {
@@ -1212,8 +1326,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     &[
                         "Check your network connection",
                         "Verify your authentication credentials are valid",
-                        "Retry the operation"
-                    ]
+                        "Retry the operation",
+                    ],
                 );
             }
         }
@@ -1224,7 +1338,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     }
 
     if let Some((_, ref overall_pb)) = multi_progress {
-        overall_pb.finish_with_message(format!("Processed {} assets. Found {} unique matches.", all_assets.len(), all_matches.len()));
+        overall_pb.finish_with_message(format!(
+            "Processed {} assets. Found {} unique matches.",
+            all_assets.len(),
+            all_matches.len()
+        ));
     }
 
     // Output the results based on format
@@ -1234,10 +1352,12 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             let mut flattened_matches = Vec::new();
             for enhanced_response in all_matches {
                 for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::GeometricMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result
-                    ));
+                    flattened_matches.push(
+                        crate::model::GeometricMatchPair::from_reference_and_match(
+                            enhanced_response.reference_asset.clone(),
+                            match_result,
+                        ),
+                    );
                 }
             }
             println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
@@ -1247,10 +1367,12 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             let mut flattened_matches = Vec::new();
             for enhanced_response in all_matches {
                 for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::GeometricMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result
-                    ));
+                    flattened_matches.push(
+                        crate::model::GeometricMatchPair::from_reference_and_match(
+                            enhanced_response.reference_asset.clone(),
+                            match_result,
+                        ),
+                    );
                 }
             }
 
@@ -1291,7 +1413,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
 
                 if let Err(e) = wtr.serialize(base_headers.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
@@ -1309,14 +1433,20 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     // Add metadata values for each key that was included in the header
                     for key in &header_metadata_keys {
                         // Add reference asset metadata value
-                        let ref_value = match_pair.reference_asset.metadata.get(key)
+                        let ref_value = match_pair
+                            .reference_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
                         // Add candidate asset metadata value
-                        let cand_value = match_pair.candidate_asset.metadata.get(key)
+                        let cand_value = match_pair
+                            .candidate_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
@@ -1325,20 +1455,26 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
 
                 if let Err(e) = wtr.serialize(base_values.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
             let data = match wtr.into_inner() {
                 Ok(data) => data,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvIntoInnerError(e),
+                    )));
                 }
             };
             output = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::Utf8Error(e),
+                    )));
                 }
             };
 
@@ -1349,10 +1485,12 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             let mut flattened_matches = Vec::new();
             for enhanced_response in all_matches {
                 for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::GeometricMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result
-                    ));
+                    flattened_matches.push(
+                        crate::model::GeometricMatchPair::from_reference_and_match(
+                            enhanced_response.reference_asset.clone(),
+                            match_result,
+                        ),
+                    );
                 }
             }
             println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
@@ -1377,12 +1515,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         .collect();
 
     // Get threshold parameter
-    let threshold = sub_matches.get_one::<f64>("threshold")
+    let threshold = sub_matches
+        .get_one::<f64>("threshold")
         .copied()
         .unwrap_or(80.0);
 
     // Get format parameters
-    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
+    let format_str = if let Some(format_val) =
+        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+    {
         format_val.clone()
     } else {
         // Check environment variable first, then use default
@@ -1414,10 +1555,13 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     let concurrent = match concurrent_param {
         Some(val) => {
             if val < 1 || val > 10 {
-                return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", val)));
+                return Err(CliError::MissingRequiredArgument(format!(
+                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
+                    val
+                )));
             }
             val
-        },
+        }
         None => 1, // Default value
     };
 
@@ -1428,7 +1572,9 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
     for folder_path in &folder_paths {
         trace!("Listing assets for folder path: {}", folder_path);
-        let assets_response = api.list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str()).await?;
+        let assets_response = api
+            .list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str())
+            .await?;
 
         for asset in assets_response.get_all_assets() {
             all_assets.insert(asset.uuid(), asset.clone());
@@ -1443,8 +1589,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
             &[
                 "Verify the folder path is correct",
                 "Check that the folder contains assets",
-                "Ensure you have permissions to access the specified folder(s)"
-            ]
+                "Ensure you have permissions to access the specified folder(s)",
+            ],
         );
         return Ok(());
     }
@@ -1476,7 +1622,10 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     let mut seen_pairs = std::collections::HashSet::new();
 
     // Create tasks for concurrent processing
-    type TaskResult = Result<Vec<crate::model::EnhancedPartSearchResponse>, Box<dyn std::error::Error + Send + Sync>>;
+    type TaskResult = Result<
+        Vec<crate::model::EnhancedPartSearchResponse>,
+        Box<dyn std::error::Error + Send + Sync>,
+    >;
     let mut tasks: Vec<tokio::task::JoinHandle<TaskResult>> = Vec::new();
     for (asset_uuid, asset) in &all_assets {
         let semaphore = semaphore.clone();
@@ -1496,8 +1645,11 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 let pb = mp.add(ProgressBar::new_spinner());
                 pb.set_style(
                     ProgressStyle::default_spinner()
-                        .template(&format!("{{spinner:.green}} Processing: {} {{msg}}", asset_clone.name()))
-                        .unwrap()
+                        .template(&format!(
+                            "{{spinner:.green}} Processing: {} {{msg}}",
+                            asset_clone.name()
+                        ))
+                        .unwrap(),
                 );
                 Some(pb)
             } else {
@@ -1509,11 +1661,17 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 pb.set_message("Starting part search...");
             }
 
-            let result = match api_clone.part_search(&tenant_uuid, &asset_uuid, threshold).await {
+            let result = match api_clone
+                .part_search(&tenant_uuid, &asset_uuid, threshold)
+                .await
+            {
                 Ok(search_results) => {
                     // Update progress bar to show processing matches
                     if let Some(ref pb) = individual_pb {
-                        pb.set_message(format!("Processing {} matches...", search_results.matches.len()));
+                        pb.set_message(format!(
+                            "Processing {} matches...",
+                            search_results.matches.len()
+                        ));
                     }
 
                     let mut asset_matches = Vec::new();
@@ -1525,12 +1683,16 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                         }
 
                         // Load configuration to get the UI base URL
-                        let configuration = crate::configuration::Configuration::load_or_create_default()
-                            .map_err(|e| CliError::ConfigurationError(
+                        let configuration =
+                            crate::configuration::Configuration::load_or_create_default().map_err(
+                                |e| {
+                                    CliError::ConfigurationError(
                                 crate::configuration::ConfigurationError::FailedToLoadData {
                                     cause: Box::new(e),
                                 }
-                            ))?;
+                            )
+                                },
+                            )?;
                         let ui_base_url = configuration.get_ui_base_url();
 
                         // Populate comparison URL for this match
@@ -1563,9 +1725,9 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
-                        let candidate_in_specified_folders = folder_paths_clone.iter().any(|folder_path| {
-                            match_result.asset.path.starts_with(folder_path)
-                        });
+                        let candidate_in_specified_folders = folder_paths_clone
+                            .iter()
+                            .any(|folder_path| match_result.asset.path.starts_with(folder_path));
 
                         if exclusive && !candidate_in_specified_folders {
                             continue;
@@ -1577,7 +1739,10 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             let mut map = std::collections::HashMap::new();
                             for key in asset_metadata.keys() {
                                 if let Some(value) = asset_metadata.get(key) {
-                                    map.insert(key.clone(), serde_json::Value::String(value.clone()));
+                                    map.insert(
+                                        key.clone(),
+                                        serde_json::Value::String(value.clone()),
+                                    );
                                 }
                             }
                             map
@@ -1591,13 +1756,13 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             path: asset_clone.path(),
                             folder_id: None,
                             asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(), // Placeholder for creation time
-                            updated_at: "".to_string(), // Placeholder for update time
-                            state: "active".to_string(), // Default state
-                            is_assembly: false, // Default is not assembly
+                            created_at: "".to_string(),      // Placeholder for creation time
+                            updated_at: "".to_string(),      // Placeholder for update time
+                            state: "active".to_string(),     // Default state
+                            is_assembly: false,              // Default is not assembly
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
-                            owner_id: None, // No owner ID
+                            owner_id: None,         // No owner ID
                         };
 
                         let enhanced_match = crate::model::EnhancedPartSearchResponse {
@@ -1616,7 +1781,11 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     Ok(asset_matches)
                 }
                 Err(e) => {
-                    error_utils::report_warning(&format!("🔍 Failed to perform part search for asset {}: {}", asset_clone.name(), e));
+                    error_utils::report_warning(&format!(
+                        "🔍 Failed to perform part search for asset {}: {}",
+                        asset_clone.name(),
+                        e
+                    ));
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
                     }
@@ -1644,11 +1813,12 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     for match_result in &enhanced_match.matches {
                         // Create a unique pair identifier to avoid duplicates
                         // We want to avoid having both (A,B) and (B,A) in results
-                        let (ref_uuid, cand_uuid) = if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
-                            (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
-                        } else {
-                            (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
-                        };
+                        let (ref_uuid, cand_uuid) =
+                            if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
+                                (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
+                            } else {
+                                (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
+                            };
 
                         let pair_key = (ref_uuid, cand_uuid);
 
@@ -1665,8 +1835,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     &[
                         "Check your network connection",
                         "Verify the asset exists and is accessible",
-                        "Retry the operation"
-                    ]
+                        "Retry the operation",
+                    ],
                 );
             }
             Err(e) => {
@@ -1675,8 +1845,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     &[
                         "Check your network connection",
                         "Verify your authentication credentials are valid",
-                        "Retry the operation"
-                    ]
+                        "Retry the operation",
+                    ],
                 );
             }
         }
@@ -1687,7 +1857,11 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     }
 
     if let Some((_, ref overall_pb)) = multi_progress {
-        overall_pb.finish_with_message(format!("Processed {} assets. Found {} unique matches.", all_assets.len(), all_matches.len()));
+        overall_pb.finish_with_message(format!(
+            "Processed {} assets. Found {} unique matches.",
+            all_assets.len(),
+            all_matches.len()
+        ));
     }
 
     // Output the results based on format
@@ -1699,7 +1873,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 for match_result in enhanced_response.matches {
                     flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
                         enhanced_response.reference_asset.clone(),
-                        match_result
+                        match_result,
                     ));
                 }
             }
@@ -1712,7 +1886,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 for match_result in enhanced_response.matches {
                     flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
                         enhanced_response.reference_asset.clone(),
-                        match_result
+                        match_result,
                     ));
                 }
             }
@@ -1754,7 +1928,9 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 }
 
                 if let Err(e) = wtr.serialize(base_headers.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
@@ -1762,8 +1938,12 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 let mut base_values = vec![
                     match_pair.reference_asset.path.clone(),
                     match_pair.candidate_asset.path.clone(),
-                    match_pair.forward_match_percentage.map_or_else(|| "0.0".to_string(), |val| format!("{}", val)),
-                    match_pair.reverse_match_percentage.map_or_else(|| "0.0".to_string(), |val| format!("{}", val)),
+                    match_pair
+                        .forward_match_percentage
+                        .map_or_else(|| "0.0".to_string(), |val| format!("{}", val)),
+                    match_pair
+                        .reverse_match_percentage
+                        .map_or_else(|| "0.0".to_string(), |val| format!("{}", val)),
                     match_pair.reference_asset.uuid.to_string(),
                     match_pair.candidate_asset.uuid.to_string(),
                     match_pair.comparison_url.clone().unwrap_or_default(),
@@ -1773,14 +1953,20 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     // Add metadata values for each key that was included in the header
                     for key in &header_metadata_keys {
                         // Add reference asset metadata value
-                        let ref_value = match_pair.reference_asset.metadata.get(key)
+                        let ref_value = match_pair
+                            .reference_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
                         // Add candidate asset metadata value
-                        let cand_value = match_pair.candidate_asset.metadata.get(key)
+                        let cand_value = match_pair
+                            .candidate_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
@@ -1789,20 +1975,26 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 }
 
                 if let Err(e) = wtr.serialize(base_values.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
             let data = match wtr.into_inner() {
                 Ok(data) => data,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvIntoInnerError(e),
+                    )));
                 }
             };
             output = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::Utf8Error(e),
+                    )));
                 }
             };
 
@@ -1815,7 +2007,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 for match_result in enhanced_response.matches {
                     flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
                         enhanced_response.reference_asset.clone(),
-                        match_result
+                        match_result,
                     ));
                 }
             }
@@ -1835,7 +2027,9 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
 
     // Get format parameters directly from sub_matches since visual match commands have all format flags
-    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
+    let format_str = if let Some(format_val) =
+        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+    {
         format_val.clone()
     } else {
         // Check environment variable first, then use default
@@ -1868,19 +2062,20 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param,
-        asset_path_param
-    ).await?;
+        asset_path_param,
+    )
+    .await?;
 
     // Perform visual search
     let mut search_results = ctx.api().visual_search(&tenant_uuid, &asset.uuid()).await?;
 
     // Load configuration to get the UI base URL
-    let configuration = crate::configuration::Configuration::load_or_create_default()
-        .map_err(|e| CliError::ConfigurationError(
-            crate::configuration::ConfigurationError::FailedToLoadData {
-                cause: Box::new(e),
-            }
-        ))?;
+    let configuration =
+        crate::configuration::Configuration::load_or_create_default().map_err(|e| {
+            CliError::ConfigurationError(
+                crate::configuration::ConfigurationError::FailedToLoadData { cause: Box::new(e) },
+            )
+        })?;
     let ui_base_url = configuration.get_ui_base_url();
 
     // Populate comparison URLs for each match
@@ -1889,7 +2084,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         let comparison_url = if base_url.ends_with("/tenants") {
             format!(
                 "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
-                base_url, // Use configurable UI base URL without trailing slash
+                base_url,    // Use configurable UI base URL without trailing slash
                 tenant_name, // Use tenant short name in path
                 asset.uuid(),
                 match_result.asset.uuid,
@@ -1936,12 +2131,13 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         is_assembly: false, // Default is not assembly
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None, // No owner ID
+        owner_id: None,  // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
     // Create visual match pairs that exclude match percentages since visual search doesn't have them
-    let visual_match_pairs: Vec<crate::model::VisualMatchPair> = search_results.matches
+    let visual_match_pairs: Vec<crate::model::VisualMatchPair> = search_results
+        .matches
         .into_iter()
         .map(|match_result| crate::model::VisualMatchPair {
             reference_asset: reference_asset_response.clone(),
@@ -1991,7 +2187,9 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                 }
 
                 if let Err(e) = wtr.serialize(base_headers.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
@@ -2008,14 +2206,20 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                     // Add metadata values for each key that was included in the header
                     for key in &header_metadata_keys {
                         // Add reference asset metadata value
-                        let ref_value = match_pair.reference_asset.metadata.get(key)
+                        let ref_value = match_pair
+                            .reference_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
                         // Add candidate asset metadata value
-                        let cand_value = match_pair.candidate_asset.metadata.get(key)
+                        let cand_value = match_pair
+                            .candidate_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
@@ -2024,20 +2228,26 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                 }
 
                 if let Err(e) = wtr.serialize(base_values.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
             let data = match wtr.into_inner() {
                 Ok(data) => data,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvIntoInnerError(e),
+                    )));
                 }
             };
             let output = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::Utf8Error(e),
+                    )));
                 }
             };
 
@@ -2067,7 +2277,9 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         .collect();
 
     // Get format parameters
-    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
+    let format_str = if let Some(format_val) =
+        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+    {
         format_val.clone()
     } else {
         // Check environment variable first, then use default
@@ -2099,10 +2311,13 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     let concurrent = match concurrent_param {
         Some(val) => {
             if val < 1 || val > 10 {
-                return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", val)));
+                return Err(CliError::MissingRequiredArgument(format!(
+                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
+                    val
+                )));
             }
             val
-        },
+        }
         None => 1, // Default value
     };
 
@@ -2113,7 +2328,9 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
     for folder_path in &folder_paths {
         trace!("Listing assets for folder path: {}", folder_path);
-        let assets_response = api.list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str()).await?;
+        let assets_response = api
+            .list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str())
+            .await?;
 
         for asset in assets_response.get_all_assets() {
             all_assets.insert(asset.uuid(), asset.clone());
@@ -2128,8 +2345,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
             &[
                 "Verify the folder path is correct",
                 "Check that the folder contains assets",
-                "Ensure you have permissions to access the specified folder(s)"
-            ]
+                "Ensure you have permissions to access the specified folder(s)",
+            ],
         );
         return Ok(());
     }
@@ -2161,7 +2378,10 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     let mut seen_pairs = std::collections::HashSet::new();
 
     // Create tasks for concurrent processing
-    type TaskResult = Result<Vec<crate::model::EnhancedPartSearchResponse>, Box<dyn std::error::Error + Send + Sync>>;
+    type TaskResult = Result<
+        Vec<crate::model::EnhancedPartSearchResponse>,
+        Box<dyn std::error::Error + Send + Sync>,
+    >;
     let mut tasks: Vec<tokio::task::JoinHandle<TaskResult>> = Vec::new();
     for (asset_uuid, asset) in &all_assets {
         let semaphore = semaphore.clone();
@@ -2181,8 +2401,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 let pb = mp.add(ProgressBar::new_spinner());
                 pb.set_style(
                     ProgressStyle::default_spinner()
-                        .template(&format!("{{spinner:.green}} Processing: {} {{msg}}", asset_clone.name()))
-                        .unwrap()
+                        .template(&format!(
+                            "{{spinner:.green}} Processing: {} {{msg}}",
+                            asset_clone.name()
+                        ))
+                        .unwrap(),
                 );
                 Some(pb)
             } else {
@@ -2198,7 +2421,10 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 Ok(search_results) => {
                     // Update progress bar to show processing matches
                     if let Some(ref pb) = individual_pb {
-                        pb.set_message(format!("Processing {} matches...", search_results.matches.len()));
+                        pb.set_message(format!(
+                            "Processing {} matches...",
+                            search_results.matches.len()
+                        ));
                     }
 
                     let mut asset_matches = Vec::new();
@@ -2210,12 +2436,16 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                         }
 
                         // Load configuration to get the UI base URL
-                        let configuration = crate::configuration::Configuration::load_or_create_default()
-                            .map_err(|e| CliError::ConfigurationError(
+                        let configuration =
+                            crate::configuration::Configuration::load_or_create_default().map_err(
+                                |e| {
+                                    CliError::ConfigurationError(
                                 crate::configuration::ConfigurationError::FailedToLoadData {
                                     cause: Box::new(e),
                                 }
-                            ))?;
+                            )
+                                },
+                            )?;
                         let ui_base_url = configuration.get_ui_base_url();
 
                         // Populate comparison URL for this match
@@ -2244,9 +2474,9 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
-                        let candidate_in_specified_folders = folder_paths_clone.iter().any(|folder_path| {
-                            match_result.asset.path.starts_with(folder_path)
-                        });
+                        let candidate_in_specified_folders = folder_paths_clone
+                            .iter()
+                            .any(|folder_path| match_result.asset.path.starts_with(folder_path));
 
                         if exclusive && !candidate_in_specified_folders {
                             continue;
@@ -2258,7 +2488,10 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             let mut map = std::collections::HashMap::new();
                             for key in asset_metadata.keys() {
                                 if let Some(value) = asset_metadata.get(key) {
-                                    map.insert(key.clone(), serde_json::Value::String(value.clone()));
+                                    map.insert(
+                                        key.clone(),
+                                        serde_json::Value::String(value.clone()),
+                                    );
                                 }
                             }
                             map
@@ -2272,13 +2505,13 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             path: asset_clone.path(),
                             folder_id: None,
                             asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(), // Placeholder for creation time
-                            updated_at: "".to_string(), // Placeholder for update time
-                            state: "active".to_string(), // Default state
-                            is_assembly: false, // Default is not assembly
+                            created_at: "".to_string(),      // Placeholder for creation time
+                            updated_at: "".to_string(),      // Placeholder for update time
+                            state: "active".to_string(),     // Default state
+                            is_assembly: false,              // Default is not assembly
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
-                            owner_id: None, // No owner ID
+                            owner_id: None,         // No owner ID
                         };
 
                         let enhanced_match = crate::model::EnhancedPartSearchResponse {
@@ -2297,7 +2530,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     Ok(asset_matches)
                 }
                 Err(e) => {
-                    error_utils::report_warning(&format!("🔍 Failed to perform visual search for asset {}: {}", asset_clone.name(), e));
+                    error_utils::report_warning(&format!(
+                        "🔍 Failed to perform visual search for asset {}: {}",
+                        asset_clone.name(),
+                        e
+                    ));
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
                     }
@@ -2325,11 +2562,12 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     for match_result in &enhanced_match.matches {
                         // Create a unique pair identifier to avoid duplicates
                         // We want to avoid having both (A,B) and (B,A) in results
-                        let (ref_uuid, cand_uuid) = if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
-                            (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
-                        } else {
-                            (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
-                        };
+                        let (ref_uuid, cand_uuid) =
+                            if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
+                                (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
+                            } else {
+                                (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
+                            };
 
                         let pair_key = (ref_uuid, cand_uuid);
 
@@ -2346,8 +2584,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     &[
                         "Check your network connection",
                         "Verify the asset exists and is accessible",
-                        "Retry the operation"
-                    ]
+                        "Retry the operation",
+                    ],
                 );
             }
             Err(e) => {
@@ -2356,8 +2594,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     &[
                         "Check your network connection",
                         "Verify your authentication credentials are valid",
-                        "Retry the operation"
-                    ]
+                        "Retry the operation",
+                    ],
                 );
             }
         }
@@ -2368,7 +2606,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     }
 
     if let Some((_, ref overall_pb)) = multi_progress {
-        overall_pb.finish_with_message(format!("Processed {} assets. Found {} unique matches.", all_assets.len(), all_matches.len()));
+        overall_pb.finish_with_message(format!(
+            "Processed {} assets. Found {} unique matches.",
+            all_assets.len(),
+            all_matches.len()
+        ));
     }
 
     // Output the results based on format
@@ -2437,7 +2679,9 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 }
 
                 if let Err(e) = wtr.serialize(base_headers.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
@@ -2454,14 +2698,20 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     // Add metadata values for each key that was included in the header
                     for key in &header_metadata_keys {
                         // Add reference asset metadata value
-                        let ref_value = match_pair.reference_asset.metadata.get(key)
+                        let ref_value = match_pair
+                            .reference_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
                         // Add candidate asset metadata value
-                        let cand_value = match_pair.candidate_asset.metadata.get(key)
+                        let cand_value = match_pair
+                            .candidate_asset
+                            .metadata
+                            .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();
@@ -2470,20 +2720,26 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 }
 
                 if let Err(e) = wtr.serialize(base_values.as_slice()) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
             let data = match wtr.into_inner() {
                 Ok(data) => data,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvIntoInnerError(e),
+                    )));
                 }
             };
             output = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::Utf8Error(e),
+                    )));
                 }
             };
 
@@ -2534,8 +2790,10 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder UUID or path from command line
-    let folder_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_FOLDER_UUID);
-    let folder_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
+    let folder_uuid_param =
+        sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_FOLDER_UUID);
+    let folder_path_param =
+        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
 
     // Resolve folder UUID from either UUID parameter or path
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
@@ -2545,11 +2803,15 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         crate::actions::folders::resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
     } else {
         // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Either folder UUID or path must be provided".to_string(),
+        ));
     };
 
     // Get the output file path
-    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE) {
+    let output_file_path = if let Some(output_path) =
+        sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE)
+    {
         output_path.clone()
     } else {
         // Use the folder name as the default output file name
@@ -2568,7 +2830,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             let folder: crate::model::Folder = folder.into();
 
             let folder_path = folder.path();
-            let path_segments: Vec<&str> = folder_path.split('/').filter(|s| !s.is_empty()).collect();
+            let path_segments: Vec<&str> =
+                folder_path.split('/').filter(|s| !s.is_empty()).collect();
             if path_segments.is_empty() {
                 "untitled".to_string()
             } else {
@@ -2582,7 +2845,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     // Get all assets in the folder
-    let assets_response = api.list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&folder_uuid)).await?;
+    let assets_response = api
+        .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&folder_uuid))
+        .await?;
     let assets: Vec<_> = assets_response.get_all_assets().iter().cloned().collect();
 
     if assets.is_empty() {
@@ -2591,8 +2856,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             &[
                 "Verify the folder UUID or path is correct",
                 "Check that the folder contains assets",
-                "Ensure you have permissions to access the folder"
-            ]
+                "Ensure you have permissions to access the folder",
+            ],
         );
         return Ok(());
     }
@@ -2619,14 +2884,18 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Download each asset to the temporary directory
     for asset in &assets {
-        let file_content = api.download_asset(
-            &tenant.uuid.to_string(),
-            &asset.uuid().to_string()
-        ).await?;
+        let file_content = api
+            .download_asset(
+                &tenant.uuid.to_string(),
+                &asset.uuid().to_string(),
+                Some(&asset.name()),
+            )
+            .await?;
 
         let asset_file_path = temp_dir.join(asset.name());
         let mut file = File::create(&asset_file_path).map_err(|e| CliActionError::IoError(e))?;
-        file.write_all(&file_content).map_err(|e| CliActionError::IoError(e))?;
+        file.write_all(&file_content)
+            .map_err(|e| CliActionError::IoError(e))?;
 
         // Update progress bar if present
         if let Some(ref pb) = progress_bar {
@@ -2645,33 +2914,42 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Walk through the temp directory and add files to the ZIP
     for entry in std::fs::read_dir(&temp_dir)
-        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))? {
+        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?
+    {
         let entry = entry.map_err(|e| CliActionError::IoError(e))?;
         let path = entry.path();
 
         if path.is_file() {
-            let file_name = path.file_name()
-                .ok_or_else(|| CliError::ActionError(CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Could not get file name"
-                ))))?
+            let file_name = path
+                .file_name()
+                .ok_or_else(|| {
+                    CliError::ActionError(CliActionError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "Could not get file name",
+                    )))
+                })?
                 .to_str()
-                .ok_or_else(|| CliError::ActionError(CliActionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Invalid file name"
-                ))))?;
+                .ok_or_else(|| {
+                    CliError::ActionError(CliActionError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "Invalid file name",
+                    )))
+                })?;
 
             let options: FileOptions<()> = FileOptions::default();
-            zip_writer.start_file(file_name, options)
+            zip_writer
+                .start_file(file_name, options)
                 .map_err(|e| CliError::ActionError(CliActionError::ZipError(e)))?;
             let file_content = std::fs::read(&path)
                 .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
-            zip_writer.write_all(&file_content)
+            zip_writer
+                .write_all(&file_content)
                 .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
         }
     }
 
-    zip_writer.finish()
+    zip_writer
+        .finish()
         .map_err(|e| CliError::ActionError(CliActionError::ZipError(e)))?;
 
     // Clean up temporary directory
@@ -2695,9 +2973,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 /// * `Ok(())` - If the metadata was deleted successfully
 /// * `Err(CliError)` - If an error occurred during the deletion
 pub async fn delete_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliError> {
-
     trace!("Execute \"asset metadata delete\" command...");
-    
+
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
@@ -2706,7 +2983,8 @@ pub async fn delete_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
 
     // Get metadata name parameter from command line
-    let metadata_names = sub_matches.get_many::<String>("field_name")
+    let metadata_names = sub_matches
+        .get_many::<String>("field_name")
         .ok_or(CliError::MissingRequiredArgument("field_name".to_string()))?
         .map(|s| s.as_str())
         .collect::<Vec<_>>();
@@ -2719,12 +2997,19 @@ pub async fn delete_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
         api.get_asset_by_path(&tenant.uuid, asset_path).await?
     } else {
         // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Either asset UUID or path must be provided".to_string(),
+        ));
     };
 
     // Delete the specified metadata fields using the dedicated API endpoint
     let metadata_keys: Vec<&str> = metadata_names.iter().map(|s| s.as_ref()).collect();
-    api.delete_asset_metadata(&tenant.uuid.to_string(), &asset.uuid().to_string(), metadata_keys).await?;
+    api.delete_asset_metadata(
+        &tenant.uuid.to_string(),
+        &asset.uuid().to_string(),
+        metadata_keys,
+    )
+    .await?;
 
     Ok(())
 }
@@ -2748,7 +3033,8 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get the reference asset path
-    let asset_path = sub_matches.get_one::<String>("path")
+    let asset_path = sub_matches
+        .get_one::<String>("path")
         .ok_or_else(|| CliError::MissingRequiredArgument("path".to_string()))?;
 
     // Get the metadata field names to copy
@@ -2759,7 +3045,8 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
         .collect();
 
     // Get threshold parameter
-    let threshold = sub_matches.get_one::<f64>("threshold")
+    let threshold = sub_matches
+        .get_one::<f64>("threshold")
         .copied()
         .unwrap_or(80.0);
 
@@ -2767,7 +3054,8 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
     let exclusive = sub_matches.get_flag("exclusive");
 
     // Get format parameters
-    let format_str = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+    let format_str = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
         .map(|s| s.as_str())
         .unwrap_or("json");
 
@@ -2780,8 +3068,13 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
         pretty,
     };
 
-    let format = crate::format::OutputFormat::from_string_with_options(format_str, format_options.clone())
-        .map_err(|e| CliActionError::FormattingError(crate::format::FormattingError::FormatFailure { cause: Box::new(e) }))?;
+    let format =
+        crate::format::OutputFormat::from_string_with_options(format_str, format_options.clone())
+            .map_err(|e| {
+            CliActionError::FormattingError(crate::format::FormattingError::FormatFailure {
+                cause: Box::new(e),
+            })
+        })?;
 
     // Get the reference asset
     let reference_asset = api.get_asset_by_path(&tenant.uuid, asset_path).await?;
@@ -2799,13 +3092,18 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
 
     // Fail fast if no requested fields exist in the reference asset
     if available_fields.is_empty() {
-        return Err(CliError::from(CliActionError::MissingRequiredArgument(format!(
-            "Reference asset '{}' has no metadata fields matching: {:?}", asset_path, metadata_names
-        ))));
+        return Err(CliError::from(CliActionError::MissingRequiredArgument(
+            format!(
+                "Reference asset '{}' has no metadata fields matching: {:?}",
+                asset_path, metadata_names
+            ),
+        )));
     }
 
     // Only perform expensive geometric search if we know we have fields to copy
-    let search_results = api.geometric_search(&tenant.uuid, &reference_asset.uuid(), threshold).await?;
+    let search_results = api
+        .geometric_search(&tenant.uuid, &reference_asset.uuid(), threshold)
+        .await?;
 
     let mut assets_updated = Vec::new();
 
@@ -2815,7 +3113,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
         let path_parts: Vec<&str> = path_str.split('/').collect();
         if path_parts.len() > 1 {
             // Join all parts except the last one (filename) to get the parent folder path
-            path_parts[..path_parts.len()-1].join("/")
+            path_parts[..path_parts.len() - 1].join("/")
         } else {
             // If there's only one part, the parent is root
             "".to_string()
@@ -2829,7 +3127,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
                 let path_str = match_result.asset.path.clone();
                 let path_parts: Vec<&str> = path_str.split('/').collect();
                 if path_parts.len() > 1 {
-                    path_parts[..path_parts.len()-1].join("/")
+                    path_parts[..path_parts.len() - 1].join("/")
                 } else {
                     "".to_string()
                 }
@@ -2847,14 +3145,20 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
         if let Some(asset_metadata) = reference_metadata {
             for field_name in &available_fields {
                 if let Some(value) = asset_metadata.get(field_name) {
-                    new_metadata_map.insert(field_name.clone(), serde_json::Value::String(value.clone()));
+                    new_metadata_map
+                        .insert(field_name.clone(), serde_json::Value::String(value.clone()));
                 }
             }
         }
 
         // Update the similar asset with the copied metadata with automatic registration of new keys
         if !new_metadata_map.is_empty() {
-            api.update_asset_metadata_with_registration(&tenant.uuid, &match_result.asset.uuid, &new_metadata_map).await?;
+            api.update_asset_metadata_with_registration(
+                &tenant.uuid,
+                &match_result.asset.uuid,
+                &new_metadata_map,
+            )
+            .await?;
 
             // Track which assets were updated
             assets_updated.push((match_result.asset.path.clone(), new_metadata_map.clone()));
@@ -2884,21 +3188,31 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
             let mut wtr = csv::Writer::from_writer(vec![]);
 
             if options.with_headers {
-                if let Err(e) = wtr.serialize(&["REFERENCE_ASSET_PATH", "CANDIDATE_ASSET_PATH", "FIELD_NAME", "FIELD_VALUE", "THRESHOLD"]) {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                if let Err(e) = wtr.serialize(&[
+                    "REFERENCE_ASSET_PATH",
+                    "CANDIDATE_ASSET_PATH",
+                    "FIELD_NAME",
+                    "FIELD_VALUE",
+                    "THRESHOLD",
+                ]) {
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvError(e),
+                    )));
                 }
             }
 
             for (candidate_asset_path, metadata_map) in &assets_updated {
                 for (field_name, field_value) in metadata_map {
                     if let Err(e) = wtr.serialize(&[
-                        asset_path,  // REFERENCE_ASSET_PATH - the reference asset path
-                        candidate_asset_path,  // CANDIDATE_ASSET_PATH - the asset that received the metadata
-                        field_name,  // FIELD_NAME
+                        asset_path,                         // REFERENCE_ASSET_PATH - the reference asset path
+                        candidate_asset_path, // CANDIDATE_ASSET_PATH - the asset that received the metadata
+                        field_name,           // FIELD_NAME
                         field_value.as_str().unwrap_or(""), // FIELD_VALUE
-                        &threshold.to_string() // THRESHOLD
+                        &threshold.to_string(), // THRESHOLD
                     ]) {
-                        return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                        return Err(CliError::from(CliActionError::FormattingError(
+                            crate::format::FormattingError::CsvError(e),
+                        )));
                     }
                 }
             }
@@ -2906,13 +3220,17 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
             let data = match wtr.into_inner() {
                 Ok(data) => data,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvIntoInnerError(e),
+                    )));
                 }
             };
             let csv_string = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::Utf8Error(e),
+                    )));
                 }
             };
             print!("{}", csv_string);
@@ -2936,8 +3254,12 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     // Get the text query parameter
-    let text_query = sub_matches.get_one::<String>("text")
-        .ok_or(CliError::MissingRequiredArgument("text query is required".to_string()))?;
+    let text_query =
+        sub_matches
+            .get_one::<String>("text")
+            .ok_or(CliError::MissingRequiredArgument(
+                "text query is required".to_string(),
+            ))?;
 
     // Get the fuzzy flag - if not specified, default to false (meaning exact search with quoted text)
     let fuzzy = sub_matches.get_flag(PARAMETER_FUZZY);
@@ -2950,7 +3272,9 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     // Get format parameters directly from sub_matches since text match commands have format flags
-    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT) {
+    let format_str = if let Some(format_val) =
+        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+    {
         format_val.clone()
     } else {
         // Check environment variable first, then use default
@@ -2982,12 +3306,12 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut search_results = ctx.api().text_search(&tenant_uuid, &search_query).await?;
 
     // Load configuration to get the UI base URL
-    let configuration = crate::configuration::Configuration::load_or_create_default()
-        .map_err(|e| CliError::ConfigurationError(
-            crate::configuration::ConfigurationError::FailedToLoadData {
-                cause: Box::new(e),
-            }
-        ))?;
+    let configuration =
+        crate::configuration::Configuration::load_or_create_default().map_err(|e| {
+            CliError::ConfigurationError(
+                crate::configuration::ConfigurationError::FailedToLoadData { cause: Box::new(e) },
+            )
+        })?;
     let ui_base_url = configuration.get_ui_base_url();
 
     // Populate asset URLs for each match (not comparison URLs since text search doesn't compare two assets)
@@ -2995,7 +3319,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let base_url = ui_base_url.trim_end_matches('/');
         let asset_url = format!(
             "{}/tenants/{}/asset/{}",
-            base_url, // Use configurable UI base URL without trailing slash
+            base_url,    // Use configurable UI base URL without trailing slash
             tenant_name, // Use tenant short name in path
             match_result.asset.uuid
         );
@@ -3043,12 +3367,16 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     }
 
                     if let Err(e) = wtr.serialize(base_headers.as_slice()) {
-                        return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                        return Err(CliError::from(CliActionError::FormattingError(
+                            crate::format::FormattingError::CsvError(e),
+                        )));
                     }
                 } else {
                     let headers = crate::model::EnhancedTextSearchResponse::csv_header();
                     if let Err(e) = wtr.serialize(headers.as_slice()) {
-                        return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                        return Err(CliError::from(CliActionError::FormattingError(
+                            crate::format::FormattingError::CsvError(e),
+                        )));
                     }
                 }
             }
@@ -3057,14 +3385,20 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 if options.with_metadata {
                     // Include metadata values in the output
                     let base_values = vec![
-                        match_result.asset.path.split('/').last().unwrap_or(&match_result.asset.path).to_string(), // ASSET_NAME
+                        match_result
+                            .asset
+                            .path
+                            .split('/')
+                            .last()
+                            .unwrap_or(&match_result.asset.path)
+                            .to_string(), // ASSET_NAME
                         match_result.asset.path.clone(), // ASSET_PATH
                         match_result.asset.asset_type.clone(), // TYPE
                         match_result.asset.state.clone(), // STATE
                         match_result.asset.is_assembly.to_string(), // IS_ASSEMBLY
                         format!("{}", match_result.relevance_score.unwrap_or(0.0)), // RELEVANCE_SCORE
-                        match_result.asset.uuid.to_string(), // ASSET_UUID
-                        match_result.comparison_url.clone().unwrap_or_default(), // ASSET_URL
+                        match_result.asset.uuid.to_string(),                        // ASSET_UUID
+                        match_result.comparison_url.clone().unwrap_or_default(),    // ASSET_URL
                     ];
 
                     // Get unique metadata keys from all assets in the response
@@ -3082,7 +3416,9 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     // Add metadata values for each key
                     let mut extended_values = base_values.clone();
                     for key in &sorted_keys {
-                        let value = match_result.asset.metadata
+                        let value = match_result
+                            .asset
+                            .metadata
                             .get(key)
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
@@ -3091,13 +3427,17 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     }
 
                     if let Err(e) = wtr.serialize(extended_values.as_slice()) {
-                        return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                        return Err(CliError::from(CliActionError::FormattingError(
+                            crate::format::FormattingError::CsvError(e),
+                        )));
                     }
                 } else {
                     let records = match_result.as_csv_records();
                     for record in records {
                         if let Err(e) = wtr.serialize(record.as_slice()) {
-                            return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvError(e))));
+                            return Err(CliError::from(CliActionError::FormattingError(
+                                crate::format::FormattingError::CsvError(e),
+                            )));
                         }
                     }
                 }
@@ -3106,13 +3446,17 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
             let data = match wtr.into_inner() {
                 Ok(data) => data,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::CsvIntoInnerError(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::CsvIntoInnerError(e),
+                    )));
                 }
             };
             let output = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(crate::format::FormattingError::Utf8Error(e))));
+                    return Err(CliError::from(CliActionError::FormattingError(
+                        crate::format::FormattingError::Utf8Error(e),
+                    )));
                 }
             };
             print!("{}", output);
@@ -3141,7 +3485,9 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
         .collect();
 
     if folder_paths.is_empty() {
-        return Err(CliError::MissingRequiredArgument("At least one folder path must be provided".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "At least one folder path must be provided".to_string(),
+        ));
     }
 
     let tenant_uuid = *ctx.tenant_uuid();
@@ -3177,10 +3523,14 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
         }
 
         // List all assets in the folder
-        let assets_response = ctx.api().list_assets_by_parent_folder_path(&tenant_uuid, folder_path).await?;
+        let assets_response = ctx
+            .api()
+            .list_assets_by_parent_folder_path(&tenant_uuid, folder_path)
+            .await?;
 
         // Count total assemblies in this folder for progress tracking
-        let assemblies: Vec<_> = assets_response.get_all_assets()
+        let assemblies: Vec<_> = assets_response
+            .get_all_assets()
             .into_iter()
             .filter(|asset| asset.is_assembly())
             .collect();
@@ -3190,9 +3540,12 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
             let pb = mp.add(indicatif::ProgressBar::new(assemblies.len() as u64));
             pb.set_style(
                 indicatif::ProgressStyle::default_bar()
-                    .template(&format!("{{spinner:.yellow}} Processing assets in {}: {{pos}}/{{len}} {{msg}}", folder_path))
+                    .template(&format!(
+                        "{{spinner:.yellow}} Processing assets in {}: {{pos}}/{{len}} {{msg}}",
+                        folder_path
+                    ))
                     .unwrap()
-                    .progress_chars("#>-")
+                    .progress_chars("#>-"),
             );
             Some(pb)
         } else {
@@ -3205,10 +3558,17 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
                 pb.set_message(format!("Getting dependencies for: {}", asset.name()));
             }
 
-            trace!("Processing assembly: {} (path: {})", asset.name(), asset.path());
+            trace!(
+                "Processing assembly: {} (path: {})",
+                asset.name(),
+                asset.path()
+            );
 
             // Get the full assembly tree with all recursive dependencies for this asset
-            let assembly_tree = ctx.api().get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str()).await?;
+            let assembly_tree = ctx
+                .api()
+                .get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str())
+                .await?;
 
             // For tree and JSON formats, we'll collect the assembly trees to preserve hierarchy
             let format_is_tree = matches!(format, crate::format::OutputFormat::Tree(_));
@@ -3300,22 +3660,25 @@ async fn download_asset_with_retry(
     asset_id: &str,
 ) -> Result<Vec<u8>, CliError> {
     use rand::Rng;
-    
+
     // First attempt
-    match api.download_asset(tenant_id, asset_id).await {
+    match api.download_asset(tenant_id, asset_id, None).await {
         Ok(content) => Ok(content),
         Err(e) => {
             // If the first attempt fails, wait for a random delay between 3-5 seconds and retry once
-            tracing::warn!("Asset download failed (attempt 1), retrying after delay: {}", e);
-            
+            tracing::warn!(
+                "Asset download failed (attempt 1), retrying after delay: {}",
+                e
+            );
+
             // Generate random delay between 3 and 5 seconds
             let mut rng = rand::thread_rng();
             let delay_seconds = rng.gen_range(3..=5);
-            
+
             tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
-            
+
             // Second and final attempt
-            match api.download_asset(tenant_id, asset_id).await {
+            match api.download_asset(tenant_id, asset_id, None).await {
                 Ok(content) => Ok(content),
                 Err(final_e) => {
                     tracing::error!("Asset download failed after retry: {}", final_e);

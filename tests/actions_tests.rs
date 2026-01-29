@@ -13,10 +13,8 @@ mod actions_tests {
     fn create_mock_arg_matches() -> ArgMatches {
         use clap::{Arg, ArgAction, Command};
 
-        let cmd = Command::new("test")
-            .arg(Arg::new("dummy")
-                 .long("dummy")
-                 .action(ArgAction::SetTrue));
+        let cmd =
+            Command::new("test").arg(Arg::new("dummy").long("dummy").action(ArgAction::SetTrue));
 
         cmd.get_matches_from(vec!["test"])
     }

@@ -4,10 +4,10 @@
 //! checking tenant information. It caches the list of available tenants
 //! for the current user.
 
+use crate::cache::CacheError;
+use crate::model::TenantSetting;
 use std::path::PathBuf;
 use tracing::{debug, trace, warn};
-use crate::model::TenantSetting;
-use crate::cache::CacheError;
 
 /// Cache for tenant information to avoid repeated API calls
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -24,10 +24,12 @@ impl TenantCache {
     pub fn new() -> Self {
         Self {
             tenants: Vec::new(),
-            last_updated_timestamp: Some(std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()),
+            last_updated_timestamp: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            ),
         }
     }
 
@@ -55,11 +57,13 @@ impl TenantCache {
         let configuration = crate::configuration::Configuration::load_or_create_default()
             .map_err(|e| CacheError::Other(format!("Could not load configuration: {}", e)))?;
 
-        let environment_name = configuration.get_active_environment()
+        let environment_name = configuration
+            .get_active_environment()
             .unwrap_or_else(|| "default".to_string());
 
         // Sanitize environment name to be a valid filename
-        let sanitized_env_name = environment_name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
+        let sanitized_env_name =
+            environment_name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
 
         // Check for PCLI2_CACHE_DIR environment variable first
         if let Ok(cache_dir_str) = std::env::var("PCLI2_CACHE_DIR") {
@@ -68,9 +72,8 @@ impl TenantCache {
             return Ok(cache_path);
         }
 
-        let mut path = dirs::cache_dir().ok_or_else(|| {
-            CacheError::Other("Could not determine cache directory".to_string())
-        })?;
+        let mut path = dirs::cache_dir()
+            .ok_or_else(|| CacheError::Other("Could not determine cache directory".to_string()))?;
         path.push("pcli2");
         path.push(format!("tenant_cache_{}.json", sanitized_env_name));
         Ok(path)
@@ -103,7 +106,7 @@ impl TenantCache {
     /// * `Err` - If there was an error saving the cache
     pub fn save(&self) -> Result<(), CacheError> {
         let path = Self::get_cache_file_path()?;
-        
+
         // Create cache directory if it doesn't exist
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -138,10 +141,12 @@ impl TenantCache {
             // Update cache
             let mut cache = Self::load().unwrap_or_else(|_| Self::new());
             cache.tenants = tenants.clone();
-            cache.last_updated_timestamp = Some(std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs());
+            cache.last_updated_timestamp = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            );
             if let Err(e) = cache.save() {
                 warn!("Failed to save tenant cache: {}", e);
             }
@@ -161,10 +166,12 @@ impl TenantCache {
 
         // Update cache
         cache.tenants = tenants.clone();
-        cache.last_updated_timestamp = Some(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs());
+        cache.last_updated_timestamp = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        );
         if let Err(e) = cache.save() {
             warn!("Failed to save tenant cache: {}", e);
         }

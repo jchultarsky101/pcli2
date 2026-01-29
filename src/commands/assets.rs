@@ -8,11 +8,10 @@ use crate::commands::params::{
     asset_identifier_group, asset_identifier_multiple_group, file_parameter,
     folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    multiple_files_parameter, path_parameter, tenant_parameter,
-    uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE,
-    COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH,
-    COMMAND_PART_MATCH, COMMAND_TEXT_MATCH, COMMAND_VISUAL_MATCH,
-    FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
+    multiple_files_parameter, path_parameter, tenant_parameter, uuid_parameter, COMMAND_ASSET,
+    COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD,
+    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_TEXT_MATCH,
+    COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
     PARAMETER_FILE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};

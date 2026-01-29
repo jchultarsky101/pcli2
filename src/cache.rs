@@ -95,7 +95,7 @@ impl BaseCache {
     }
 
     /// Get the default cache directory path
-    /// 
+    ///
     /// In a test environment (when PCLI2_TEST_CACHE_DIR is set), it uses that directory.
     /// For general cross-platform support (when PCLI2_CACHE_DIR is set), it uses that directory.
     /// Otherwise, it uses the system's cache directory with a "pcli2" subdirectory.
@@ -134,7 +134,11 @@ impl BaseCache {
     }
 
     /// Get the cache file path for a specific key
-    pub fn get_cache_file_path(cache_dir: &std::path::Path, key: &str, extension: &str) -> std::path::PathBuf {
+    pub fn get_cache_file_path(
+        cache_dir: &std::path::Path,
+        key: &str,
+        extension: &str,
+    ) -> std::path::PathBuf {
         cache_dir.join(format!("{}.{}", key, extension))
     }
 }

@@ -300,41 +300,111 @@ pcli2 config get
 ## 📜 Commands Reference
 
 ### Asset Commands
+
+Manage individual assets in your Physna tenant.
+
 ```
-pcli2 asset create          # Upload a file as an asset
-pcli2 asset create-batch    # Upload multiple files as assets
-pcli2 asset list            # List assets in a folder
-pcli2 asset get             # Get asset details
-pcli2 asset download        # Download an asset
-pcli2 asset delete          # Delete an asset
-pcli2 asset dependencies    # Get dependencies for an asset
-pcli2 asset geometric-match # Find similar assets
-pcli2 asset part-match      # Find part matches for an asset
-pcli2 asset visual-match    # Find visually similar assets
-pcli2 asset text-match      # Find assets using text search
-pcli2 asset metadata        # Manage asset metadata
+pcli2 asset create           # Upload a file as an asset
+pcli2 asset create-batch     # Upload multiple files as assets using glob patterns
+pcli2 asset list             # List assets in a folder
+pcli2 asset get              # Get asset details
+pcli2 asset download         # Download an asset
+pcli2 asset delete           # Delete an asset
+pcli2 asset dependencies     # Get dependencies for an asset
+pcli2 asset geometric-match  # Find geometrically similar assets
+pcli2 asset part-match       # Find part matches for an asset
+pcli2 asset visual-match     # Find visually similar assets
+pcli2 asset text-match       # Find assets using text search
+pcli2 asset metadata         # Manage asset metadata
+```
+
+#### Asset Metadata Commands
+
+Manage custom properties for assets.
+
+```
+pcli2 asset metadata get           # Get metadata for an asset
+pcli2 asset metadata create        # Add metadata to an asset
+pcli2 asset metadata delete        # Delete specific metadata fields from an asset
+pcli2 asset metadata create-batch  # Create metadata for multiple assets from a CSV file
+pcli2 asset metadata inference     # Apply metadata from a reference asset to geometrically similar assets
 ```
 
 ### Folder Commands
+
+Manage folder structures and bulk operations.
+
 ```
-pcli2 folder list           # List folder structure
-pcli2 folder create         # Create a new folder
-pcli2 folder download       # Download all assets in a folder (supports --resume flag)
-pcli2 folder geometric-match # Find similar assets in folder
-pcli2 folder upload         # Upload all assets from a local directory to a Physna folder
-pcli2 folder dependencies   # Get dependencies for all assembly assets in folder
+pcli2 folder list             # List folder structure
+pcli2 folder create           # Create a new folder
+pcli2 folder get              # Get folder details
+pcli2 folder delete           # Delete a folder
+pcli2 folder rename           # Rename a folder
+pcli2 folder move             # Move a folder to a new parent folder
+pcli2 folder resolve          # Resolve a folder path to its UUID
+pcli2 folder download         # Download all assets in a folder (supports --resume flag)
+pcli2 folder upload           # Upload all assets from a local directory to a Physna folder
+pcli2 folder dependencies     # Get dependencies for all assembly assets in folder
+pcli2 folder geometric-match  # Find geometrically similar assets for all assets in folder
+pcli2 folder part-match       # Find part matches for all assets in folder
+pcli2 folder visual-match     # Find visually similar assets for all assets in folder
+```
+
+### Tenant Commands
+
+Manage tenant-level operations.
+
+```
+pcli2 tenant list     # List all tenants
+pcli2 tenant get      # Get tenant details
+pcli2 tenant use      # Set the active tenant
+pcli2 tenant current  # Get the active tenant
+pcli2 tenant clear    # Clear the active tenant
+pcli2 tenant state    # Get asset state counts for the current tenant
+```
+
+### Authentication Commands
+
+Manage authentication with your Physna tenant.
+
+```
+pcli2 auth login        # Authenticate with Physna using client credentials
+pcli2 auth logout       # Logout and clear session
+pcli2 auth get          # Get current access token
+pcli2 auth clear-token  # Clear the cached access token
+pcli2 auth expiration   # Show token expiration time
+```
+
+### Configuration Commands
+
+Manage PCLI2 configuration settings.
+
+```
+pcli2 config get           # Get configuration details
+pcli2 config export        # Export configuration to file
+pcli2 config import        # Import configuration from file
+pcli2 config environment   # Manage environment configurations
+```
+
+#### Environment Configuration Commands
+
+Manage multiple Physna environment configurations.
+
+```
+pcli2 config environment add     # Add a new environment configuration
+pcli2 config environment use     # Switch to an environment
+pcli2 config environment remove  # Remove an environment
+pcli2 config environment list    # List all environments
+pcli2 config environment reset   # Reset all environment configurations
+pcli2 config environment get     # Get environment details
 ```
 
 ### Other Commands
+
+Additional utility commands.
+
 ```
-pcli2 auth login            # Authenticate with Physna
-pcli2 auth get              # Get current access token
-pcli2 auth expiration       # Show token expiration time
-pcli2 tenant use            # Set active tenant
-pcli2 tenant list           # List all tenants
-pcli2 tenant current        # Get active tenant
-pcli2 config environment    # Manage environments
-pcli2 completions           # Generate shell completions
+pcli2 completions  # Generate shell completions for various shells
 ```
 
 ## 🤝 Support

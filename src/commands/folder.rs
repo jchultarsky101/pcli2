@@ -5,10 +5,10 @@
 use crate::commands::params::{
     folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    name_parameter, parent_folder_identifier_group, parent_folder_path_parameter, parent_folder_uuid_parameter, tenant_parameter,
-    COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET,
-    COMMAND_LIST, PARAMETER_PROGRESS, COMMAND_MATCH, COMMAND_PART_MATCH,
-    COMMAND_VISUAL_MATCH,
+    name_parameter, parent_folder_identifier_group, parent_folder_path_parameter,
+    parent_folder_uuid_parameter, tenant_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER,
+    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_VISUAL_MATCH,
+    PARAMETER_PROGRESS,
 };
 use clap::Command;
 
@@ -154,6 +154,9 @@ pub fn folder_command() -> Command {
                                 Ok(val)
                             }
                         }),
+                )
+                .arg(
+                    crate::commands::params::resume_parameter()
                 )
         )
         .subcommand(

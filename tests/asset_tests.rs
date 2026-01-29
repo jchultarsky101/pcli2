@@ -18,9 +18,7 @@ mod tests {
     #[test]
     fn test_asset_list_command_help() {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("list")
-            .arg("--help");
+        cmd.arg("asset").arg("list").arg("--help");
 
         cmd.assert()
             .success()
@@ -40,9 +38,7 @@ mod tests {
     #[test]
     fn test_asset_get_command_help() {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("get")
-            .arg("--help");
+        cmd.arg("asset").arg("get").arg("--help");
 
         cmd.assert()
             .success()
@@ -62,13 +58,13 @@ mod tests {
     #[test]
     fn test_asset_create_command_help() {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("create")
-            .arg("--help");
+        cmd.arg("asset").arg("create").arg("--help");
 
         cmd.assert()
             .success()
-            .stdout(predicate::str::contains("Create a new asset by uploading a file"))
+            .stdout(predicate::str::contains(
+                "Create a new asset by uploading a file",
+            ))
             .stdout(predicate::str::contains("--file"))
             .stdout(predicate::str::contains("--folder-path"));
     }
@@ -83,13 +79,13 @@ mod tests {
     #[test]
     fn test_asset_create_batch_command_help() {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("create-batch")
-            .arg("--help");
+        cmd.arg("asset").arg("create-batch").arg("--help");
 
         cmd.assert()
             .success()
-            .stdout(predicate::str::contains("Create multiple assets by uploading files"))
+            .stdout(predicate::str::contains(
+                "Create multiple assets by uploading files",
+            ))
             .stdout(predicate::str::contains("--files"));
     }
 
@@ -103,9 +99,7 @@ mod tests {
     #[test]
     fn test_asset_delete_command_help() {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("delete")
-            .arg("--help");
+        cmd.arg("asset").arg("delete").arg("--help");
 
         cmd.assert()
             .success()
@@ -124,9 +118,7 @@ mod tests {
     #[test]
     fn test_asset_download_command_help() {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
-        cmd.arg("asset")
-            .arg("download")
-            .arg("--help");
+        cmd.arg("asset").arg("download").arg("--help");
 
         cmd.assert()
             .success()
@@ -134,7 +126,6 @@ mod tests {
             .stdout(predicate::str::contains("--uuid"))
             .stdout(predicate::str::contains("--path"));
     }
-
 
     /// Test that all supported output formats are accepted by the asset get command.
     ///
@@ -152,13 +143,12 @@ mod tests {
             cmd.arg("asset")
                 .arg("get")
                 .arg("--uuid")
-                .arg("00000000-0000-0000-0000-000000000000")  // Invalid UUID to test format acceptance
+                .arg("00000000-0000-0000-0000-000000000000") // Invalid UUID to test format acceptance
                 .arg("--format")
                 .arg(format);
 
             // For invalid UUID, we expect an error but not a format-related error
-            cmd.assert()
-                .failure();  // Will fail due to API access but not format-related
+            cmd.assert().failure(); // Will fail due to API access but not format-related
         }
 
         // Test that tree format is not supported (should fail)
@@ -175,8 +165,6 @@ mod tests {
             .stderr(predicate::str::contains("invalid value 'tree'"));
     }
 
-
-
     /// Test that the asset get command supports --pretty flag with JSON format.
     ///
     /// This test verifies that:
@@ -188,14 +176,13 @@ mod tests {
         cmd.arg("asset")
             .arg("get")
             .arg("--uuid")
-            .arg("00000000-0000-0000-0000-000000000000")  // Invalid UUID to test flag acceptance
+            .arg("00000000-0000-0000-0000-000000000000") // Invalid UUID to test flag acceptance
             .arg("--format")
             .arg("json")
             .arg("--pretty");
 
         // Should fail due to invalid UUID but should accept the format flags
-        cmd.assert()
-            .failure();  // Will fail due to API access but should accept the flag
+        cmd.assert().failure(); // Will fail due to API access but should accept the flag
     }
 
     /// Test that the asset get command supports --headers flag with CSV format.
@@ -209,13 +196,12 @@ mod tests {
         cmd.arg("asset")
             .arg("get")
             .arg("--uuid")
-            .arg("00000000-0000-0000-0000-000000000000")  // Invalid UUID to test flag acceptance
+            .arg("00000000-0000-0000-0000-000000000000") // Invalid UUID to test flag acceptance
             .arg("--format")
             .arg("csv")
             .arg("--headers");
 
         // Should fail due to invalid UUID but should accept the format flags
-        cmd.assert()
-            .failure();  // Will fail due to API access but should accept the flag
+        cmd.assert().failure(); // Will fail due to API access but should accept the flag
     }
 }

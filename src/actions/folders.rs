@@ -1,20 +1,35 @@
+use crate::physna_v3::ApiError;
 use clap::ArgMatches;
-use std::path::PathBuf;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::File;
 use std::io::Write;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
+use tokio::time::sleep;
 use tracing::trace;
 use uuid::Uuid;
-use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
-use tokio::sync::Semaphore;
-use std::sync::Arc;
-use tokio::time::sleep;
-use std::time::Duration;
-use crate::physna_v3::ApiError;
 
-use crate::{commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_NAME, PARAMETER_PARENT_FOLDER_PATH, PARAMETER_PARENT_FOLDER_UUID}, configuration::Configuration, error::CliError, folder_hierarchy::FolderHierarchy, format::{OutputFormat, OutputFormatter}, model::{Folder, Tenant, normalize_path}, param_utils::{get_format_parameter_value, get_tenant}, physna_v3::{PhysnaApiClient, TryDefault}};
+use crate::{
+    commands::params::{
+        PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_NAME, PARAMETER_PARENT_FOLDER_PATH,
+        PARAMETER_PARENT_FOLDER_UUID,
+    },
+    configuration::Configuration,
+    error::CliError,
+    folder_hierarchy::FolderHierarchy,
+    format::{OutputFormat, OutputFormatter},
+    model::{normalize_path, Folder, Tenant},
+    param_utils::{get_format_parameter_value, get_tenant},
+    physna_v3::{PhysnaApiClient, TryDefault},
+};
 
-
-pub async fn resolve_folder_uuid_by_path(api: &mut PhysnaApiClient, tenant: &Tenant, path: &str) -> Result<Uuid, CliError> {
+pub async fn resolve_folder_uuid_by_path(
+    api: &mut PhysnaApiClient,
+    tenant: &Tenant,
+    path: &str,
+) -> Result<Uuid, CliError> {
     trace!("Resolving the UUID for folder path {}...", path);
 
     // Root path should be handled separately by the calling function, so this function is only for non-root paths
@@ -29,9 +44,8 @@ pub async fn resolve_folder_uuid_by_path(api: &mut PhysnaApiClient, tenant: &Ten
 }
 
 pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
-
     trace!("Listing folders...");
-    
+
     let format = get_format_parameter_value(sub_matches).await;
     let configuration = Configuration::load_default()?;
     let mut api = PhysnaApiClient::try_default()?;
@@ -43,35 +57,37 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // It is not efficient, but the only option is to read the full directory hieratchy from the API
     let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
 
-    
     // If tree format is requested, display the hierarchical tree structure
     match format {
         OutputFormat::Tree(_) => {
-                let hierarchy = if path.eq("/") {
-                        hierarchy
-                    } else {
-                        hierarchy.filter_by_path(path.as_str()).ok_or(CliError::FolderNotFound(path))?
-                    };
-                hierarchy.print_tree();
-            }
+            let hierarchy = if path.eq("/") {
+                hierarchy
+            } else {
+                hierarchy
+                    .filter_by_path(path.as_str())
+                    .ok_or(CliError::FolderNotFound(path))?
+            };
+            hierarchy.print_tree();
+        }
         _ => {
-                // Convert to folder list with only direct children for non-tree formats
-                let folder_list = if path.eq("/") {
-                        hierarchy.to_direct_children_list()
-                    } else {
-                        // Use get_children_by_path to get only direct children, not all descendants
-                        hierarchy.get_children_by_path(path.as_str()).ok_or(CliError::FolderNotFound(path))?
-                    };
+            // Convert to folder list with only direct children for non-tree formats
+            let folder_list = if path.eq("/") {
+                hierarchy.to_direct_children_list()
+            } else {
+                // Use get_children_by_path to get only direct children, not all descendants
+                hierarchy
+                    .get_children_by_path(path.as_str())
+                    .ok_or(CliError::FolderNotFound(path))?
+            };
 
-                println!("{}", folder_list.format(format)?);
-            }
+            println!("{}", folder_list.format(format)?);
+        }
     }
 
-	Ok(())
+    Ok(())
 }
 
 pub async fn print_folder_details(sub_matches: &ArgMatches) -> Result<(), CliError> {
-
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
     let format = get_format_parameter_value(sub_matches).await;
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
@@ -85,8 +101,9 @@ pub async fn print_folder_details(sub_matches: &ArgMatches) -> Result<(), CliErr
         ctx.api(),
         &tenant,
         folder_uuid_param,
-        folder_path_param
-    ).await?;
+        folder_path_param,
+    )
+    .await?;
 
     // Set path if provided in parameters
     if let Some(path) = folder_path_param {
@@ -101,8 +118,11 @@ pub async fn print_folder_details(sub_matches: &ArgMatches) -> Result<(), CliErr
 pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
-    let new_name = sub_matches.get_one::<String>(PARAMETER_NAME)
-        .ok_or(CliError::MissingRequiredArgument(PARAMETER_NAME.to_string()))?
+    let new_name = sub_matches
+        .get_one::<String>(PARAMETER_NAME)
+        .ok_or(CliError::MissingRequiredArgument(
+            PARAMETER_NAME.to_string(),
+        ))?
         .clone();
 
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
@@ -115,22 +135,36 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ctx.api(),
         &tenant,
         folder_uuid_param,
-        folder_path_param
-    ).await?;
+        folder_path_param,
+    )
+    .await?;
 
     // Check if trying to rename the root folder
     if folder_path_param.map_or(false, |p| crate::model::normalize_path(p) == "/") {
-        return Err(CliError::MissingRequiredArgument("Cannot rename the root folder".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Cannot rename the root folder".to_string(),
+        ));
     }
 
     // Extract tenant UUID before calling rename_folder to avoid borrowing conflicts
     let tenant_uuid = tenant.uuid;
 
     // Attempt to rename the folder
-    if let Err(e) = ctx.api().rename_folder(&tenant_uuid.to_string(), &folder.uuid().to_string(), &new_name).await {
+    if let Err(e) = ctx
+        .api()
+        .rename_folder(
+            &tenant_uuid.to_string(),
+            &folder.uuid().to_string(),
+            &new_name,
+        )
+        .await
+    {
         // If we got here, the folder was successfully found/resolved, but the rename operation failed
         // This could be due to permissions, API endpoint issues, etc.
-        return Err(CliError::FolderRenameFailed(folder.uuid().to_string(), e.to_string()));
+        return Err(CliError::FolderRenameFailed(
+            folder.uuid().to_string(),
+            e.to_string(),
+        ));
     }
 
     Ok(())
@@ -144,12 +178,17 @@ pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Validate that only one folder parameter is provided (mutual exclusivity handled by clap group)
     if folder_uuid_param.is_some() && folder_path_param.is_some() {
-        return Err(CliError::MissingRequiredArgument("Only one of --folder-uuid or --folder-path can be specified, not both".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Only one of --folder-uuid or --folder-path can be specified, not both".to_string(),
+        ));
     }
 
     // Validate that only one parent folder parameter is provided (mutual exclusivity handled by clap group)
     if parent_folder_uuid_param.is_some() && parent_folder_path_param.is_some() {
-        return Err(CliError::MissingRequiredArgument("Only one of --parent-folder-uuid or --parent-folder-path can be specified, not both".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Only one of --parent-folder-uuid or --parent-folder-path can be specified, not both"
+                .to_string(),
+        ));
     }
 
     let configuration = Configuration::load_or_create_default()?;
@@ -162,7 +201,9 @@ pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     } else if let Some(path) = folder_path_param {
         resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
     } else {
-        return Err(CliError::MissingRequiredArgument(format!("Missing folder identifier")));
+        return Err(CliError::MissingRequiredArgument(format!(
+            "Missing folder identifier"
+        )));
     };
 
     // Resolve parent folder ID from either ID parameter or path
@@ -182,22 +223,32 @@ pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         None
     };
 
-    api.move_folder(&tenant.uuid.to_string(), &folder_uuid.to_string(), parent_folder_uuid).await?;
+    api.move_folder(
+        &tenant.uuid.to_string(),
+        &folder_uuid.to_string(),
+        parent_folder_uuid,
+    )
+    .await?;
 
     Ok(())
 }
 
 pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
-    
-    let name = sub_matches.get_one::<String>(PARAMETER_NAME)
-        .ok_or(CliError::MissingRequiredArgument(PARAMETER_NAME.to_string()))?
+    let name = sub_matches
+        .get_one::<String>(PARAMETER_NAME)
+        .ok_or(CliError::MissingRequiredArgument(
+            PARAMETER_NAME.to_string(),
+        ))?
         .clone();
     let parent_folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_PARENT_FOLDER_UUID);
     let parent_folder_path_param = sub_matches.get_one::<String>(PARAMETER_PARENT_FOLDER_PATH);
 
     // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
     if parent_folder_uuid_param.is_some() && parent_folder_path_param.is_some() {
-        return Err(CliError::MissingRequiredArgument("Only one of --parent-folder-uuid or --parent-folder-path can be specified, not both".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Only one of --parent-folder-uuid or --parent-folder-path can be specified, not both"
+                .to_string(),
+        ));
     }
 
     let configuration = Configuration::load_or_create_default()?;
@@ -219,20 +270,22 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         None
     };
 
-    api.create_folder(&tenant.uuid, name.as_str(), parent_folder_uuid).await?;
-    
+    api.create_folder(&tenant.uuid, name.as_str(), parent_folder_uuid)
+        .await?;
+
     Ok(())
 }
 
 pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
-
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
     let force_flag = sub_matches.get_flag("force");
 
     // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
     if folder_uuid_param.is_some() && folder_path_param.is_some() {
-        return Err(CliError::MissingRequiredArgument("Only one of --folder-uuid or --folder-path can be specified, not both".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Only one of --folder-uuid or --folder-path can be specified, not both".to_string(),
+        ));
     }
 
     let configuration = Configuration::load_or_create_default()?;
@@ -246,15 +299,22 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let normalized_path = crate::model::normalize_path(path);
         if normalized_path == "/" {
             // Root path doesn't have a specific UUID, so this operation is not valid
-            return Err(CliError::MissingRequiredArgument("Cannot delete the root folder".to_string()));
+            return Err(CliError::MissingRequiredArgument(
+                "Cannot delete the root folder".to_string(),
+            ));
         } else {
             resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
         }
     } else {
-        return Err(CliError::MissingRequiredArgument(format!("Missing folder path")));
+        return Err(CliError::MissingRequiredArgument(format!(
+            "Missing folder path"
+        )));
     };
 
-    match api.delete_folder(&tenant.uuid, &folder_uuid, force_flag).await {
+    match api
+        .delete_folder(&tenant.uuid, &folder_uuid, force_flag)
+        .await
+    {
         Ok(()) => Ok(()),
         Err(api_error) => {
             // Check if this is a 404 error on a folder deletion, which likely means the folder is not empty
@@ -276,8 +336,9 @@ pub async fn resolve_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
-    let folder_path = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument("folder-path is required".to_string()))?;
+    let folder_path = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH).ok_or(
+        CliError::MissingRequiredArgument("folder-path is required".to_string()),
+    )?;
 
     trace!("Resolving path: {}", folder_path);
 
@@ -290,14 +351,15 @@ pub async fn resolve_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         return Ok(());
     }
 
-    match api.get_folder_uuid_by_path(&tenant.uuid, folder_path).await? {
+    match api
+        .get_folder_uuid_by_path(&tenant.uuid, folder_path)
+        .await?
+    {
         Some(uuid) => {
             println!("{}", uuid);
             Ok(())
-        },
-        None => {
-            Err(CliError::FolderNotFound(folder_path.clone()))
         }
+        None => Err(CliError::FolderNotFound(folder_path.clone())),
     }
 }
 
@@ -323,8 +385,10 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder UUID or path from command line
-    let folder_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_FOLDER_UUID);
-    let folder_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
+    let folder_uuid_param =
+        sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_FOLDER_UUID);
+    let folder_path_param =
+        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
 
     // Resolve folder UUID from either UUID parameter or path
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
@@ -334,11 +398,15 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
     } else {
         // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Either folder UUID or path must be provided".to_string(),
+        ));
     };
 
     // Get the output file path
-    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_OUTPUT) {
+    let output_file_path = if let Some(output_path) =
+        sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_OUTPUT)
+    {
         output_path.clone()
     } else {
         // Use the folder name as the default output file name
@@ -368,7 +436,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 // Use tenant name for root folder
                 tenant.name.clone()
             } else {
-                let path_segments: Vec<&str> = folder_path.split('/').filter(|s| !s.is_empty()).collect();
+                let path_segments: Vec<&str> =
+                    folder_path.split('/').filter(|s| !s.is_empty()).collect();
                 if path_segments.is_empty() {
                     "untitled".to_string()
                 } else {
@@ -378,13 +447,22 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         };
 
         let mut path = std::path::PathBuf::new();
-        path.push(format!("{}.zip", folder_name));
+        path.push(folder_name);
         path
     };
 
-    // Create a temporary directory to store downloaded files
-    let temp_dir = std::env::temp_dir().join(format!("pcli2_temp_{}", folder_uuid));
-    std::fs::create_dir_all(&temp_dir)
+    // Use the destination directory directly instead of a temporary directory to avoid cross-device issues
+    let dest_dir = if output_file_path.is_file() {
+        // If output is a file, use its parent directory
+        output_file_path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf()
+    } else {
+        // If output is a directory, use it directly
+        output_file_path.clone()
+    };
+    std::fs::create_dir_all(&dest_dir)
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
     // Use BFS to collect all folders in the hierarchy and their assets
@@ -401,7 +479,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     while let Some((current_folder_uuid, current_folder_path)) = folder_queue.pop_front() {
         // Get all assets in the current folder
-        let assets_response = api.list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid)).await?;
+        let assets_response = api
+            .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid))
+            .await?;
         let asset_list: crate::model::AssetList = assets_response.into();
 
         // Add assets with their relative paths
@@ -417,7 +497,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             // If the asset is an assembly, change the extension to .zip since assemblies download as ZIP files
             if asset.is_assembly() {
                 let path = std::path::Path::new(&asset_name_for_path);
-                let stem = path.file_stem().unwrap_or(std::ffi::OsStr::new(&asset_name_for_path));
+                let stem = path
+                    .file_stem()
+                    .unwrap_or(std::ffi::OsStr::new(&asset_name_for_path));
                 if let Some(stem_str) = stem.to_str() {
                     asset_name_for_path = format!("{}.zip", stem_str);
                 }
@@ -430,10 +512,11 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 // Otherwise, create a subfolder path by removing the root folder path prefix
                 // For example, if root is "/Julian/sub1" and current is "/Julian/sub1/sub2",
                 // the relative path becomes "sub2/asset_name"
-                let relative_folder_path = current_folder_path.strip_prefix(&root_folder_path)
-                    .unwrap_or(&current_folder_path)  // fallback if strip_prefix fails
-                    .trim_start_matches('/')  // remove leading slash
-                    .trim_end_matches('/');   // remove trailing slash
+                let relative_folder_path = current_folder_path
+                    .strip_prefix(&root_folder_path)
+                    .unwrap_or(&current_folder_path) // fallback if strip_prefix fails
+                    .trim_start_matches('/') // remove leading slash
+                    .trim_end_matches('/'); // remove trailing slash
 
                 if relative_folder_path.is_empty() {
                     asset_name_for_path
@@ -450,7 +533,15 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
         // Get subfolders of current folder to process next
         // Use get_folder_contents to get only direct children of the current folder
-        let subfolders_response = api.get_folder_contents(&tenant.uuid, Some(&current_folder_uuid), "folders", Some(1), Some(1000)).await?;
+        let subfolders_response = api
+            .get_folder_contents(
+                &tenant.uuid,
+                Some(&current_folder_uuid),
+                "folders",
+                Some(1),
+                Some(1000),
+            )
+            .await?;
         for folder in subfolders_response.folders() {
             // Get the full folder details to get the name
             let folder_detail = api.get_folder(&tenant.uuid, &folder.uuid()).await?;
@@ -470,30 +561,47 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     if all_assets_with_paths.is_empty() {
         crate::error_utils::report_error_with_remediation(
-            &format!("No assets found in folder with UUID: {} or its subfolders", folder_uuid),
+            &format!(
+                "No assets found in folder with UUID: {} or its subfolders",
+                folder_uuid
+            ),
             &[
                 "Verify the folder UUID or path is correct",
                 "Check that the folder or its subfolders contain assets",
-                "Ensure you have permissions to access the folder"
-            ]
+                "Ensure you have permissions to access the folder",
+            ],
         );
         return Ok(());
     }
 
     // Get the new parameters
     let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
-    let concurrent_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT).copied().unwrap_or(1);
-    let continue_on_error = sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
-    let delay_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_DELAY).copied().unwrap_or(0);
+    let concurrent_param = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT)
+        .copied()
+        .unwrap_or(1);
+    let continue_on_error =
+        sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
+    let delay_param = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_DELAY)
+        .copied()
+        .unwrap_or(0);
+    let resume_flag = sub_matches.get_flag(crate::commands::params::PARAMETER_RESUME);
 
     // Validate concurrent parameter
     if concurrent_param < 1 || concurrent_param > 10 {
-        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", concurrent_param)));
+        return Err(CliError::MissingRequiredArgument(format!(
+            "Invalid value for '--concurrent': must be between 1 and 10, got {}",
+            concurrent_param
+        )));
     }
 
     // Validate delay parameter
     if delay_param > 180 {
-        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--delay': must be between 0 and 180, got {}", delay_param)));
+        return Err(CliError::MissingRequiredArgument(format!(
+            "Invalid value for '--delay': must be between 0 and 180, got {}",
+            delay_param
+        )));
     }
 
     // Use a semaphore to limit concurrent operations
@@ -515,6 +623,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Track errors if continue-on-error is enabled
     let mut error_count = 0;
     let mut success_count = 0;
+    let total_assets = all_assets_with_paths.len(); // Store the length before moving the vector
 
     // Download each asset to the appropriate subdirectory in the temp directory
     let mut tasks = Vec::new();
@@ -523,7 +632,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let tenant_id = tenant.uuid.to_string();
         let asset_id = asset.uuid().to_string();
         let asset_name = asset.name().to_string();
-        let asset_file_path = temp_dir.join(&relative_path);
+        let asset_file_path = dest_dir.join(&relative_path);
         let semaphore = semaphore.clone();
         let progress_bar_clone = progress_bar.clone();
         let multi_progress_clone = multi_progress.clone();
@@ -540,9 +649,11 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             let individual_pb = if concurrent_param_clone > 1 && progress_bar_clone.is_some() {
                 if let Some(ref mp) = multi_progress_clone {
                     let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
-                    individual_pb.set_style(ProgressStyle::default_bar()
-                        .template(&format!("{{spinner:.yellow}} {{msg}}"))
-                        .unwrap());
+                    individual_pb.set_style(
+                        ProgressStyle::default_bar()
+                            .template(&format!("{{spinner:.yellow}} {{msg}}"))
+                            .unwrap(),
+                    );
                     individual_pb.set_message(format!("Downloading: {}", asset_name));
                     Some(individual_pb)
                 } else {
@@ -552,7 +663,19 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 None
             };
 
-            // Add delay if specified
+            // Check if resume flag is set and file already exists
+            if resume_flag && asset_file_path.exists() {
+                tracing::debug!("Skipping existing file: {}", asset_file_path.display());
+
+                // Update overall progress bar if present
+                if let Some(ref pb) = progress_bar_clone {
+                    pb.inc(1);
+                }
+
+                return Ok(Ok(asset_name));
+            }
+
+            // Add delay if specified (only when actually downloading, not when skipping)
             if delay_param > 0 {
                 sleep(delay_duration).await;
             }
@@ -562,7 +685,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 Ok(client) => client,
                 Err(e) => {
                     if continue_on_error_clone {
-                        return Ok(Err((asset_name, physna_path, ApiError::from(e), true))); // true indicates it's a recoverable error
+                        return Ok(Err((asset_name, physna_path, ApiError::from(e), true)));
+                    // true indicates it's a recoverable error
                     } else {
                         return Err(CliError::PhysnaExtendedApiError(ApiError::from(e)));
                     }
@@ -570,7 +694,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             };
 
             // Download the asset file with retry logic (similar to asset download)
-            let file_content = download_asset_with_retry(&mut api_task, &tenant_id, &asset_id).await;
+            let file_content =
+                download_asset_with_retry(&mut api_task, &tenant_id, &asset_id, &asset_name).await;
 
             match file_content {
                 Ok(file_content) => {
@@ -584,32 +709,51 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     if let Some(parent) = asset_file_path.parent() {
                         if let Err(e) = std::fs::create_dir_all(parent) {
                             if continue_on_error_clone {
-                                return Ok(Err((asset_name, physna_path, ApiError::IoError(e), true)));
+                                return Ok(Err((
+                                    asset_name,
+                                    physna_path,
+                                    ApiError::IoError(e),
+                                    true,
+                                )));
                             } else {
-                                return Err(CliError::ActionError(crate::actions::CliActionError::IoError(e)));
+                                return Err(CliError::ActionError(
+                                    crate::actions::CliActionError::IoError(e),
+                                ));
                             }
                         }
                     }
 
                     let file_result = File::create(&asset_file_path);
                     match file_result {
-                        Ok(mut file) => {
-                            match file.write_all(&file_content) {
-                                Ok(_) => {},
-                                Err(e) => {
-                                    if continue_on_error_clone {
-                                        return Ok(Err((asset_name, physna_path, ApiError::IoError(e), true)));
-                                    } else {
-                                        return Err(CliError::ActionError(crate::actions::CliActionError::IoError(e)));
-                                    }
+                        Ok(mut file) => match file.write_all(&file_content) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                if continue_on_error_clone {
+                                    return Ok(Err((
+                                        asset_name,
+                                        physna_path,
+                                        ApiError::IoError(e),
+                                        true,
+                                    )));
+                                } else {
+                                    return Err(CliError::ActionError(
+                                        crate::actions::CliActionError::IoError(e),
+                                    ));
                                 }
                             }
                         },
                         Err(e) => {
                             if continue_on_error_clone {
-                                return Ok(Err((asset_name, physna_path, ApiError::IoError(e), true)));
+                                return Ok(Err((
+                                    asset_name,
+                                    physna_path,
+                                    ApiError::IoError(e),
+                                    true,
+                                )));
                             } else {
-                                return Err(CliError::ActionError(crate::actions::CliActionError::IoError(e)));
+                                return Err(CliError::ActionError(
+                                    crate::actions::CliActionError::IoError(e),
+                                ));
                             }
                         }
                     }
@@ -618,20 +762,36 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     if asset.is_assembly() {
                         match extract_zip_and_cleanup(&asset_file_path) {
                             Ok(_) => {
-                                tracing::debug!("Successfully extracted assembly ZIP file: {}", asset_file_path.display());
-                            },
+                                tracing::debug!(
+                                    "Successfully extracted assembly ZIP file: {}",
+                                    asset_file_path.display()
+                                );
+                            }
                             Err(e) => {
-                                tracing::error!("Failed to extract assembly ZIP file: {}: {}", asset_file_path.display(), e);
+                                tracing::error!(
+                                    "Failed to extract assembly ZIP file: {}: {}",
+                                    asset_file_path.display(),
+                                    e
+                                );
                                 if continue_on_error_clone {
-                                    return Ok(Err((asset_name, physna_path, ApiError::IoError(std::io::Error::new(
-                                        std::io::ErrorKind::Other,
-                                        format!("Failed to extract ZIP file: {}", e)
-                                    )), true)));
+                                    return Ok(Err((
+                                        asset_name,
+                                        physna_path,
+                                        ApiError::IoError(std::io::Error::new(
+                                            std::io::ErrorKind::Other,
+                                            format!("Failed to extract ZIP file: {}", e),
+                                        )),
+                                        true,
+                                    )));
                                 } else {
-                                    return Err(CliError::ActionError(crate::actions::CliActionError::IoError(std::io::Error::new(
-                                        std::io::ErrorKind::Other,
-                                        format!("Failed to extract ZIP file: {}", e)
-                                    ))));
+                                    return Err(CliError::ActionError(
+                                        crate::actions::CliActionError::IoError(
+                                            std::io::Error::new(
+                                                std::io::ErrorKind::Other,
+                                                format!("Failed to extract ZIP file: {}", e),
+                                            ),
+                                        ),
+                                    ));
                                 }
                             }
                         }
@@ -643,7 +803,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     }
 
                     Ok(Ok(asset_name))
-                },
+                }
                 Err(e) => {
                     // Update individual progress bar for error
                     if let Some(ref ipb) = individual_pb {
@@ -652,8 +812,18 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     }
 
                     // Log the detailed error for debugging with asset UUID and Physna path
-                    tracing::error!("Failed to download asset '{}' (Asset UUID: {}, Physna path: {}): {}", asset_name, asset_id, physna_path, e);
-                    tracing::debug!("Error details for asset '{}': error type = {:?}", asset_name, e);
+                    tracing::error!(
+                        "Failed to download asset '{}' (Asset UUID: {}, Physna path: {}): {}",
+                        asset_name,
+                        asset_id,
+                        physna_path,
+                        e
+                    );
+                    tracing::debug!(
+                        "Error details for asset '{}': error type = {:?}",
+                        asset_name,
+                        e
+                    );
 
                     // If continue-on-error is enabled, return the error as a warning instead of failing
                     if continue_on_error_clone {
@@ -668,113 +838,76 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         tasks.push(task);
     }
 
-
     // Wait for all tasks to complete
     for task in tasks {
         match task.await {
             Ok(task_result) => {
                 match task_result {
-                    Ok(asset_result) => {
-                        match asset_result {
-                            Ok(_asset_name) => {
-                                success_count += 1;
-                            },
-                            Err((asset_name, physna_path, error, is_recoverable)) => {
-                                if is_recoverable {
-                                    error_count += 1;
-                                    eprintln!("⚠️  Warning: Failed to download asset '{}' (Physna path: {}): {}", asset_name, physna_path, error);
-                                } else {
-                                    return Err(CliError::PhysnaExtendedApiError(error));
-                                }
+                    Ok(asset_result) => match asset_result {
+                        Ok(_asset_name) => {
+                            success_count += 1;
+                        }
+                        Err((asset_name, physna_path, error, is_recoverable)) => {
+                            if is_recoverable {
+                                error_count += 1;
+                                eprintln!("⚠️  Warning: Failed to download asset '{}' (Physna path: {}): {}", asset_name, physna_path, error);
+                            } else {
+                                return Err(CliError::PhysnaExtendedApiError(error));
                             }
                         }
                     },
                     Err(cli_error) => {
                         if continue_on_error {
                             error_count += 1;
-                            eprintln!("⚠️  Warning: Failed to download asset due to CLI error: {}", cli_error);
+                            eprintln!(
+                                "⚠️  Warning: Failed to download asset due to CLI error: {}",
+                                cli_error
+                            );
                         } else {
                             return Err(cli_error);
                         }
                     }
                 }
-            },
+            }
             Err(join_error) => {
                 if continue_on_error {
                     error_count += 1;
                     eprintln!("⚠️  Warning: Task failed to execute: {}", join_error);
                 } else {
-                    return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
-                        std::io::Error::new(std::io::ErrorKind::Other, join_error.to_string())
-                    )));
+                    return Err(CliError::ActionError(
+                        crate::actions::CliActionError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            join_error.to_string(),
+                        )),
+                    ));
                 }
             }
         }
     }
 
-    // Finish progress bar if present
-    if let Some(pb) = progress_bar {
-        pb.finish_with_message("Assets downloaded, creating ZIP...");
-    }
-
-    // Report summary if continue-on-error was used
-    if continue_on_error && (error_count > 0 || success_count > 0) {
-        println!("✅ Successfully downloaded: {} assets", success_count);
-        if error_count > 0 {
-            eprintln!("❌ Failed to download: {} assets", error_count);
-        }
-    }
-
-    // If an output file path was specified, move the entire temp directory contents to that location
-    // Otherwise, leave the files in the temp directory for the user to handle
-    if output_file_path.exists() && output_file_path.is_file() {
-        // If output file exists and is a file, we would normally create a ZIP, but now we just notify the user
-        println!("Files downloaded to temporary directory: {:?}", temp_dir);
-        println!("Skipping ZIP creation as per new requirements. Files are available in native format.");
+    // Report summary with nice statistics
+    println!("\n📊 Download Statistics Report");
+    println!("===========================");
+    println!("✅ Successfully downloaded: {}", success_count);
+    if resume_flag {
+        // For resume, we need to calculate how many were skipped
+        // This requires knowing the total number of assets vs. how many were actually downloaded
+        let skipped_count = total_assets - success_count - error_count;
+        println!("⏭️  Skipped (already existed): {}", skipped_count);
     } else {
-        // If output is a directory or doesn't exist as a file, move the contents there
-        let dest_path = if output_file_path.is_dir() {
-            &output_file_path
-        } else {
-            // If the output path is not a directory, use parent directory
-            output_file_path.parent().unwrap_or(&temp_dir)
-        };
-
-        // Move all files from temp directory to destination
-        for entry in std::fs::read_dir(&temp_dir)
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
-            let entry = entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
-            let file_path = entry.path();
-            let dest_file_path = dest_path.join(entry.file_name());
-
-            if file_path.is_file() {
-                std::fs::rename(&file_path, &dest_file_path)
-                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-            } else if file_path.is_dir() {
-                // For directories, we need to move the contents
-                for sub_entry in std::fs::read_dir(&file_path)
-                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))? {
-                    let sub_entry = sub_entry.map_err(|e| crate::actions::CliActionError::IoError(e))?;
-                    let sub_file_path = sub_entry.path();
-                    let dest_sub_file_path = dest_path.join(sub_entry.file_name());
-
-                    std::fs::rename(&sub_file_path, &dest_sub_file_path)
-                        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-                }
-                // Remove the now-empty source directory
-                std::fs::remove_dir(&file_path)
-                    .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-            }
-        }
+        println!("⏭️  Skipped (already existed): 0");
     }
-
-    // Clean up temporary directory
-    std::fs::remove_dir_all(&temp_dir)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    if error_count > 0 {
+        println!("❌ Failed downloads: {}", error_count);
+    } else {
+        println!("❌ Failed downloads: 0");
+    }
+    println!("📁 Total assets processed: {}", total_assets);
+    println!("⏳ Operation completed successfully!");
+    println!("\n📁 Files downloaded to destination directory: {:?}", dest_dir);
 
     Ok(())
 }
-
 
 /// Upload all assets from a local directory to a Physna folder.
 ///
@@ -790,16 +923,16 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 /// * `Ok(())` - If the folder was uploaded successfully
 /// * `Err(CliError)` - If an error occurred during upload
 pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::error::CliError> {
-    use std::path::Path;
-    use uuid::Uuid;
     use crate::{
         commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID},
         configuration::Configuration,
         error::CliError,
-        param_utils::{get_tenant},
+        model::normalize_path,
+        param_utils::get_tenant,
         physna_v3::{PhysnaApiClient, TryDefault},
-        model::normalize_path
     };
+    use std::path::Path;
+    use uuid::Uuid;
 
     tracing::trace!("Executing \"folder upload\" command...");
 
@@ -808,20 +941,29 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get the local directory path from command line
-    let local_dir_path = sub_matches.get_one::<std::path::PathBuf>("local-path")
-        .ok_or_else(|| CliError::MissingRequiredArgument("Local directory path is required".to_string()))?;
+    let local_dir_path = sub_matches
+        .get_one::<std::path::PathBuf>("local-path")
+        .ok_or_else(|| {
+            CliError::MissingRequiredArgument("Local directory path is required".to_string())
+        })?;
 
     // Check if the local path exists and is a directory
     if !local_dir_path.exists() {
-        return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
-            std::io::Error::new(std::io::ErrorKind::NotFound, format!("Local path does not exist: {:?}", local_dir_path))
-        )));
+        return Err(CliError::ActionError(
+            crate::actions::CliActionError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Local path does not exist: {:?}", local_dir_path),
+            )),
+        ));
     }
 
     if !local_dir_path.is_dir() {
-        return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("Local path is not a directory: {:?}", local_dir_path))
-        )));
+        return Err(CliError::ActionError(
+            crate::actions::CliActionError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Local path is not a directory: {:?}", local_dir_path),
+            )),
+        ));
     }
 
     // Get folder UUID or path from command line
@@ -846,18 +988,31 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             Ok(uuid) => uuid,
             Err(CliError::FolderNotFound(_)) => {
                 // Folder doesn't exist, create it
-                tracing::trace!("Folder does not exist, creating new folder with path: {}", path);
+                tracing::trace!(
+                    "Folder does not exist, creating new folder with path: {}",
+                    path
+                );
 
                 // Extract folder name from the path
                 let folder_name = Path::new(path)
                     .file_name()
-                    .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
-                        std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid folder path")
-                    )))?
+                    .ok_or_else(|| {
+                        CliError::ActionError(crate::actions::CliActionError::IoError(
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "Invalid folder path",
+                            ),
+                        ))
+                    })?
                     .to_str()
-                    .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
-                        std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid folder name encoding")
-                    )))?
+                    .ok_or_else(|| {
+                        CliError::ActionError(crate::actions::CliActionError::IoError(
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "Invalid folder name encoding",
+                            ),
+                        ))
+                    })?
                     .to_string();
 
                 // Find parent folder UUID if path has multiple segments
@@ -865,9 +1020,14 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     let parent_path = Path::new(path)
                         .parent()
                         .and_then(|p| p.to_str())
-                        .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
-                            std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid parent folder path")
-                        )))?;
+                        .ok_or_else(|| {
+                            CliError::ActionError(crate::actions::CliActionError::IoError(
+                                std::io::Error::new(
+                                    std::io::ErrorKind::InvalidInput,
+                                    "Invalid parent folder path",
+                                ),
+                            ))
+                        })?;
 
                     if !parent_path.is_empty() && normalize_path(parent_path) != "/" {
                         Some(parent_path.to_string())
@@ -885,33 +1045,50 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 };
 
                 // Create the new folder
-                let new_folder_response = api.create_folder(&tenant.uuid, &folder_name, parent_folder_uuid).await?;
+                let new_folder_response = api
+                    .create_folder(&tenant.uuid, &folder_name, parent_folder_uuid)
+                    .await?;
                 let new_folder_uuid = new_folder_response.folder.uuid;
                 tracing::trace!("Created new folder with UUID: {}", new_folder_uuid);
                 new_folder_uuid
-            },
+            }
             Err(e) => return Err(e),
         }
     } else {
         // Neither folder UUID nor path provided
-        return Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Either folder UUID or path must be provided".to_string(),
+        ));
     };
 
     // Get the command-line parameters
     let skip_existing = sub_matches.get_flag(crate::commands::params::PARAMETER_SKIP_EXISTING);
     let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
-    let concurrent_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT).copied().unwrap_or(1);
-    let continue_on_error = sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
-    let delay_param = sub_matches.get_one::<usize>(crate::commands::params::PARAMETER_DELAY).copied().unwrap_or(0);
+    let concurrent_param = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT)
+        .copied()
+        .unwrap_or(1);
+    let continue_on_error =
+        sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
+    let delay_param = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_DELAY)
+        .copied()
+        .unwrap_or(0);
 
     // Validate concurrent parameter
     if concurrent_param < 1 || concurrent_param > 10 {
-        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--concurrent': must be between 1 and 10, got {}", concurrent_param)));
+        return Err(CliError::MissingRequiredArgument(format!(
+            "Invalid value for '--concurrent': must be between 1 and 10, got {}",
+            concurrent_param
+        )));
     }
 
     // Validate delay parameter
     if delay_param > 180 {
-        return Err(CliError::MissingRequiredArgument(format!("Invalid value for '--delay': must be between 0 and 180, got {}", delay_param)));
+        return Err(CliError::MissingRequiredArgument(format!(
+            "Invalid value for '--delay': must be between 0 and 180, got {}",
+            delay_param
+        )));
     }
 
     // Read all files in the local directory
@@ -951,10 +1128,17 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         }
 
         let file_name = entry.file_name();
-        let file_name_str = file_name.to_str()
-            .ok_or_else(|| CliError::ActionError(crate::actions::CliActionError::IoError(
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid file name encoding")
-            )))?.to_string(); // Clone to move into async closure
+        let file_name_str = file_name
+            .to_str()
+            .ok_or_else(|| {
+                CliError::ActionError(crate::actions::CliActionError::IoError(
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Invalid file name encoding",
+                    ),
+                ))
+            })?
+            .to_string(); // Clone to move into async closure
 
         let tenant_clone = tenant.clone();
         let _api_clone = api.clone(); // Clone the API client (currently unused but may be needed for future API calls)
@@ -977,9 +1161,11 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             let individual_pb = if concurrent_param_clone > 1 && progress_bar_clone.is_some() {
                 if let Some(ref mp) = multi_progress_clone {
                     let individual_pb = mp.add(indicatif::ProgressBar::new_spinner());
-                    individual_pb.set_style(indicatif::ProgressStyle::default_bar()
-                        .template("{spinner:.yellow} {msg}")
-                        .unwrap());
+                    individual_pb.set_style(
+                        indicatif::ProgressStyle::default_bar()
+                            .template("{spinner:.yellow} {msg}")
+                            .unwrap(),
+                    );
                     individual_pb.set_message(format!("Starting upload: {}", file_name_str));
                     Some(individual_pb)
                 } else {
@@ -998,18 +1184,24 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             let mut api_task = match crate::physna_v3::PhysnaApiClient::try_default() {
                 Ok(client) => client,
                 Err(e) => {
-                    return Err(CliError::PhysnaExtendedApiError(crate::physna_v3::ApiError::from(e)));
+                    return Err(CliError::PhysnaExtendedApiError(
+                        crate::physna_v3::ApiError::from(e),
+                    ));
                 }
             };
 
             // Check if an asset with the same name already exists in the folder
-            let assets_response = api_task.list_assets_by_parent_folder_uuid(&tenant_clone.uuid, Some(&folder_uuid_clone)).await;
+            let assets_response = api_task
+                .list_assets_by_parent_folder_uuid(&tenant_clone.uuid, Some(&folder_uuid_clone))
+                .await;
             let asset_exists = match assets_response {
                 Ok(response) => {
                     let asset_list: crate::model::AssetList = response.into();
-                    asset_list.get_all_assets().iter()
+                    asset_list
+                        .get_all_assets()
+                        .iter()
                         .any(|asset| asset.name() == file_name_str)
-                },
+                }
                 Err(_) => false, // If we can't check, assume it doesn't exist to allow upload
             };
 
@@ -1029,7 +1221,11 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             }
 
             // Upload the file
-            tracing::trace!("Uploading asset: {} to folder UUID: {}", file_name_str, folder_uuid_clone);
+            tracing::trace!(
+                "Uploading asset: {} to folder UUID: {}",
+                file_name_str,
+                folder_uuid_clone
+            );
 
             // Read the file content
             let file_content = std::fs::read(&file_path)
@@ -1049,7 +1245,14 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             };
 
             // Upload the asset to the specified folder
-            let upload_result = api_task.create_asset(&tenant_clone.uuid, &temp_file, &asset_path, &folder_uuid_clone).await;
+            let upload_result = api_task
+                .create_asset(
+                    &tenant_clone.uuid,
+                    &temp_file,
+                    &asset_path,
+                    &folder_uuid_clone,
+                )
+                .await;
 
             // Clean up the temporary file
             let _ = std::fs::remove_file(&temp_file);
@@ -1068,7 +1271,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     }
 
                     Ok(Ok(file_name_str))
-                },
+                }
                 Err(e) => {
                     // Update individual progress bar for error
                     if let Some(ref ipb) = individual_pb {
@@ -1077,8 +1280,17 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     }
 
                     // Log the detailed error for debugging
-                    tracing::error!("Failed to upload asset '{}' (Asset path: {}): {}", file_name_str, asset_path, e);
-                    tracing::debug!("Error details for asset '{}': error type = {:?}", file_name_str, e);
+                    tracing::error!(
+                        "Failed to upload asset '{}' (Asset path: {}): {}",
+                        file_name_str,
+                        asset_path,
+                        e
+                    );
+                    tracing::debug!(
+                        "Error details for asset '{}': error type = {:?}",
+                        file_name_str,
+                        e
+                    );
 
                     Err(CliError::PhysnaExtendedApiError(e))
                 }
@@ -1106,7 +1318,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                                 if !show_progress {
                                     println!("Successfully uploaded: {}", asset_name);
                                 }
-                            },
+                            }
                             Err(cli_error) => {
                                 error_count += 1;
                                 errors_occurred = true;
@@ -1118,7 +1330,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                                 eprintln!("Error uploading asset: {}", cli_error);
                             }
                         }
-                    },
+                    }
                     Err(cli_error) => {
                         error_count += 1;
                         errors_occurred = true;
@@ -1130,15 +1342,18 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                         eprintln!("Error in task: {}", cli_error);
                     }
                 }
-            },
+            }
             Err(join_error) => {
                 error_count += 1;
                 errors_occurred = true;
                 // If continue_on_error is true, we continue processing other assets
                 if !continue_on_error {
-                    return Err(CliError::ActionError(crate::actions::CliActionError::IoError(
-                        std::io::Error::new(std::io::ErrorKind::Other, join_error.to_string())
-                    )));
+                    return Err(CliError::ActionError(
+                        crate::actions::CliActionError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            join_error.to_string(),
+                        )),
+                    ));
                 }
                 // Log the error but continue processing
                 eprintln!("Join error: {}", join_error);
@@ -1148,7 +1363,10 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
 
     // Print summary if there were errors or if no progress bar was shown
     if errors_occurred {
-        eprintln!("❌ Uploaded {} assets successfully, {} assets failed", success_count, error_count);
+        eprintln!(
+            "❌ Uploaded {} assets successfully, {} assets failed",
+            success_count, error_count
+        );
     } else if !show_progress {
         println!("✅ Successfully uploaded {} assets", success_count);
     }
@@ -1159,27 +1377,29 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     }
 
     Ok(())
-}fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Error> {
+}
+fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Error> {
     use std::io::Cursor;
-    
+
     // Read the ZIP file content
     let zip_content = std::fs::read(zip_path)?;
-    
+
     // Create a cursor from the content
     let cursor = Cursor::new(zip_content);
-    
+
     // Create a ZipArchive from the cursor
     let mut archive = zip::ZipArchive::new(cursor)?;
-    
+
     // Extract all files to the same directory as the ZIP file
-    let parent_dir = zip_path.parent()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory"))?;
-    
+    let parent_dir = zip_path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory")
+    })?;
+
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        
+
         let file_path = parent_dir.join(file.mangled_name());
-        
+
         if file.is_dir() {
             std::fs::create_dir_all(&file_path)?;
         } else {
@@ -1187,45 +1407,65 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             if let Some(parent) = file_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            
+
             let mut output_file = std::fs::File::create(&file_path)?;
             std::io::copy(&mut file, &mut output_file)?;
         }
     }
-    
+
     // Remove the original ZIP file after successful extraction
     std::fs::remove_file(zip_path)?;
-    
+
     Ok(())
 }
 async fn download_asset_with_retry(
     api: &mut crate::physna_v3::PhysnaApiClient,
     tenant_id: &str,
     asset_id: &str,
+    asset_name: &str,
 ) -> Result<Vec<u8>, crate::physna_v3::ApiError> {
     use rand::Rng;
 
     // First attempt
-    match api.download_asset(tenant_id, asset_id).await {
+    match api
+        .download_asset(tenant_id, asset_id, Some(asset_name))
+        .await
+    {
         Ok(content) => Ok(content),
         Err(e) => {
-            // If the first attempt fails, wait for a random delay between 3-5 seconds and retry once
-            tracing::warn!("Asset download failed (attempt 1), retrying after delay: {}", e);
+            // If the first attempt fails, wait for a random delay between 5-10 seconds and retry once
+            // Don't log the first error to avoid confusing users if the retry succeeds
+            tracing::debug!(
+                "Asset download failed for '{}' (ID: {}) (attempt 1), retrying after delay: {}",
+                asset_name,
+                asset_id,
+                e
+            );
 
-            // Generate random delay between 3 and 5 seconds
+            // Generate random delay between 5 and 10 seconds
             // Use thread_rng in a blocking way to avoid Send issues
             let delay_seconds = tokio::task::spawn_blocking(|| {
                 let mut rng = rand::thread_rng();
-                rng.gen_range(3..=5)
-            }).await.unwrap_or(3); // Default to 3 seconds if spawning fails
+                rng.gen_range(5..=10)
+            })
+            .await
+            .unwrap_or(5); // Default to 5 seconds if spawning fails
 
             tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
 
             // Second and final attempt
-            match api.download_asset(tenant_id, asset_id).await {
+            match api
+                .download_asset(tenant_id, asset_id, Some(asset_name))
+                .await
+            {
                 Ok(content) => Ok(content),
                 Err(final_e) => {
-                    tracing::error!("Asset download failed after retry: {}", final_e);
+                    tracing::error!(
+                        "Asset download failed for '{}' (ID: {}) after retry: {}",
+                        asset_name,
+                        asset_id,
+                        final_e
+                    );
                     Err(final_e)
                 }
             }

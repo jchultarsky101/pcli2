@@ -1,9 +1,9 @@
-use uuid::Uuid;
 use crate::{
     error::CliError,
     model::{Asset, Folder, Tenant},
-    physna_v3::PhysnaApiClient
+    physna_v3::PhysnaApiClient,
 };
+use uuid::Uuid;
 
 /// Resolve an asset by either UUID or path parameter.
 ///
@@ -28,11 +28,17 @@ pub async fn resolve_asset<'a>(
     path_param: Option<&'a String>,
 ) -> Result<Asset, CliError> {
     if let Some(uuid) = uuid_param {
-        api.get_asset_by_uuid(tenant_uuid, uuid).await.map_err(CliError::PhysnaExtendedApiError)
+        api.get_asset_by_uuid(tenant_uuid, uuid)
+            .await
+            .map_err(CliError::PhysnaExtendedApiError)
     } else if let Some(path) = path_param {
-        api.get_asset_by_path(tenant_uuid, path).await.map_err(CliError::PhysnaExtendedApiError)
+        api.get_asset_by_path(tenant_uuid, path)
+            .await
+            .map_err(CliError::PhysnaExtendedApiError)
     } else {
-        Err(CliError::MissingRequiredArgument("Either asset UUID or path must be provided".to_string()))
+        Err(CliError::MissingRequiredArgument(
+            "Either asset UUID or path must be provided".to_string(),
+        ))
     }
 }
 
@@ -59,24 +65,37 @@ pub async fn resolve_folder<'a>(
     path_param: Option<&'a String>,
 ) -> Result<Folder, CliError> {
     if let Some(uuid) = uuid_param {
-        let folder_response = api.get_folder(&tenant.uuid, uuid).await.map_err(CliError::PhysnaExtendedApiError)?;
+        let folder_response = api
+            .get_folder(&tenant.uuid, uuid)
+            .await
+            .map_err(CliError::PhysnaExtendedApiError)?;
         Ok(folder_response.into())
     } else if let Some(path) = path_param {
         let normalized_path = crate::model::normalize_path(path);
         if normalized_path == "/" {
             // Handle root path specially
-            let folder_uuid = super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;
-            let folder_response = api.get_folder(&tenant.uuid, &folder_uuid).await.map_err(CliError::PhysnaExtendedApiError)?;
+            let folder_uuid =
+                super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;
+            let folder_response = api
+                .get_folder(&tenant.uuid, &folder_uuid)
+                .await
+                .map_err(CliError::PhysnaExtendedApiError)?;
             Ok(folder_response.into())
         } else {
-            let folder_uuid = super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;
-            let folder_response = api.get_folder(&tenant.uuid, &folder_uuid).await.map_err(CliError::PhysnaExtendedApiError)?;
+            let folder_uuid =
+                super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;
+            let folder_response = api
+                .get_folder(&tenant.uuid, &folder_uuid)
+                .await
+                .map_err(CliError::PhysnaExtendedApiError)?;
             let mut folder: Folder = folder_response.into();
             folder.set_path(path.to_owned());
             Ok(folder)
         }
     } else {
-        Err(CliError::MissingRequiredArgument("Either folder UUID or path must be provided".to_string()))
+        Err(CliError::MissingRequiredArgument(
+            "Either folder UUID or path must be provided".to_string(),
+        ))
     }
 }
 

@@ -4,41 +4,52 @@
 //! command definition module. It handles the execution of all supported commands
 //! including tenant, folder, asset, authentication, context, and configuration operations.
 
+use base64::Engine;
+use chrono::{DateTime, Local, Utc};
 use clap::ArgMatches;
+use pcli2::auth::AuthClient;
+use pcli2::commands::params::COMMAND_EXPIRATION;
+use pcli2::configuration::Configuration;
+use pcli2::error::CliError;
+use pcli2::error_utils;
+use pcli2::keyring::Keyring;
 use pcli2::{
     actions::{
         assets::{
-            create_asset, create_asset_batch, create_asset_metadata_batch, delete_asset, delete_asset_metadata, download_asset, geometric_match_asset, geometric_match_folder, list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset, print_asset_dependencies, print_asset_metadata, print_folder_dependencies, text_match, update_asset_metadata, visual_match_asset, visual_match_folder
+            create_asset, create_asset_batch, create_asset_metadata_batch, delete_asset,
+            delete_asset_metadata, download_asset, geometric_match_asset, geometric_match_folder,
+            list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset,
+            print_asset_dependencies, print_asset_metadata, print_folder_dependencies, text_match,
+            update_asset_metadata, visual_match_asset, visual_match_folder,
         },
         folders::{
-            create_folder, delete_folder, download_folder, list_folders, move_folder, print_folder_details, rename_folder, resolve_folder, upload_folder
+            create_folder, delete_folder, download_folder, list_folders, move_folder,
+            print_folder_details, rename_folder, resolve_folder, upload_folder,
         },
         tenants::{
-            clear_active_tenant,
-            get_tenant_details,
-            list_all_tenants,
-            print_active_tenant_name_with_format,
-            set_active_tenant
-        }
+            clear_active_tenant, get_tenant_details, list_all_tenants,
+            print_active_tenant_name_with_format, set_active_tenant,
+        },
     },
     commands::{
         create_cli_commands,
         params::{
-            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET, COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_STATE, COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH, PARAMETER_API_URL, PARAMETER_AUTH_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY, PARAMETER_UI_URL
-        }
+            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG,
+            COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE,
+            COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET,
+            COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT,
+            COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_STATE, COMMAND_TENANT,
+            COMMAND_TEXT_MATCH, COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH,
+            PARAMETER_API_URL, PARAMETER_AUTH_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET,
+            PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT,
+            PARAMETER_PRETTY, PARAMETER_UI_URL,
+        },
     },
-    format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions}};
-use pcli2::error_utils;
-use pcli2::auth::AuthClient;
-use pcli2::configuration::Configuration;
-use pcli2::keyring::Keyring;
-use pcli2::error::CliError;
+    format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions},
+};
 use std::path::PathBuf;
-use tracing::{debug, trace};
-use base64::Engine;
 use std::time::{SystemTime, UNIX_EPOCH};
-use chrono::{DateTime, Local, Utc};
-use pcli2::commands::params::COMMAND_EXPIRATION;
+use tracing::{debug, trace};
 
 #[derive(Debug)]
 struct TokenExpirationInfo {
@@ -73,14 +84,13 @@ fn decode_jwt_expiration(token: &str) -> Result<TokenExpirationInfo, Box<dyn std
     let payload_json: serde_json::Value = serde_json::from_str(&payload_str)?;
 
     // Extract the 'exp' claim (expiration time)
-    let exp = payload_json.get("exp")
+    let exp = payload_json
+        .get("exp")
         .and_then(|v| v.as_i64())
         .ok_or("Token does not contain an 'exp' (expiration) claim")?;
 
     // Calculate time remaining
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs() as i64;
+    let current_time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
 
     let time_remaining = exp - current_time;
 
@@ -182,7 +192,7 @@ pub async fn execute_command() -> Result<(), CliError> {
         // Folder resource commands
         Some((COMMAND_FOLDER, sub_matches)) => {
             trace!("Command: {}", COMMAND_FOLDER);
-            
+
             match sub_matches.subcommand() {
                 Some((COMMAND_LIST, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_LIST);
@@ -265,7 +275,7 @@ pub async fn execute_command() -> Result<(), CliError> {
         // Asset commands
         Some((COMMAND_ASSET, sub_matches)) => {
             trace!("Command: {}", COMMAND_ASSET);
-            
+
             match sub_matches.subcommand() {
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_GET);
@@ -328,38 +338,62 @@ pub async fn execute_command() -> Result<(), CliError> {
 
                     match sub_matches.subcommand() {
                         Some((COMMAND_CREATE, sub_matches)) => {
-                            trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_CREATE);
+                            trace!(
+                                "Command: {} {} {}",
+                                COMMAND_ASSET,
+                                COMMAND_METADATA,
+                                COMMAND_CREATE
+                            );
                             update_asset_metadata(sub_matches).await?;
                             Ok(())
                         }
                         Some((COMMAND_GET, sub_matches)) => {
-                            trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_GET);
+                            trace!(
+                                "Command: {} {} {}",
+                                COMMAND_ASSET,
+                                COMMAND_METADATA,
+                                COMMAND_GET
+                            );
                             print_asset_metadata(sub_matches).await?;
                             Ok(())
                         }
                         Some((COMMAND_DELETE, sub_matches)) => {
-                            trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_DELETE);
+                            trace!(
+                                "Command: {} {} {}",
+                                COMMAND_ASSET,
+                                COMMAND_METADATA,
+                                COMMAND_DELETE
+                            );
                             delete_asset_metadata(sub_matches).await?;
                             Ok(())
                         }
                         Some((COMMAND_INFERENCE, sub_matches)) => {
-                            trace!("Command: {} {} {}", COMMAND_ASSET, COMMAND_METADATA, COMMAND_INFERENCE);
+                            trace!(
+                                "Command: {} {} {}",
+                                COMMAND_ASSET,
+                                COMMAND_METADATA,
+                                COMMAND_INFERENCE
+                            );
                             metadata_inference(sub_matches).await?;
                             Ok(())
                         }
                         Some(("create-batch", sub_matches)) => {
-                            trace!("Command: {} {} create-batch", COMMAND_ASSET, COMMAND_METADATA);
+                            trace!(
+                                "Command: {} {} create-batch",
+                                COMMAND_ASSET,
+                                COMMAND_METADATA
+                            );
                             create_asset_metadata_batch(sub_matches).await?;
                             Ok(())
                         }
                         _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                             sub_matches,
-                        )))
+                        ))),
                     }
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
-                )))
+                ))),
             }
         }
         // Authentication commands
@@ -371,7 +405,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                     let configuration = Configuration::load_or_create_default()?;
 
                     // Use the active environment name for keyring storage, fallback to "default" if no environment is set
-                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+                    let environment_name = configuration
+                        .get_active_environment()
+                        .unwrap_or_else(|| "default".to_string());
 
                     // Try to get client credentials from command line or stored values
                     #[allow(unused_mut)]
@@ -383,58 +419,84 @@ pub async fn execute_command() -> Result<(), CliError> {
                             match keyring.get(&environment_name, "client-id".to_string()) {
                                 Ok(Some(stored_id)) => stored_id,
                                 _ => {
-                                    return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_ID.to_string()));
+                                    return Err(CliError::MissingRequiredArgument(
+                                        PARAMETER_CLIENT_ID.to_string(),
+                                    ));
                                 }
                             }
                         }
                     };
 
-                    let client_secret = match sub_matches.get_one::<String>(PARAMETER_CLIENT_SECRET) {
+                    let client_secret = match sub_matches.get_one::<String>(PARAMETER_CLIENT_SECRET)
+                    {
                         Some(secret) => secret.clone(),
                         None => {
                             // Try to get stored client secret
                             match keyring.get(&environment_name, "client-secret".to_string()) {
                                 Ok(Some(stored_secret)) => stored_secret,
                                 _ => {
-                                    return Err(CliError::MissingRequiredArgument(PARAMETER_CLIENT_SECRET.to_string()));
+                                    return Err(CliError::MissingRequiredArgument(
+                                        PARAMETER_CLIENT_SECRET.to_string(),
+                                    ));
                                 }
                             }
                         }
                     };
 
-                    let auth_client = AuthClient::new_with_configuration(client_id.clone(), client_secret.clone(), &configuration);
+                    let auth_client = AuthClient::new_with_configuration(
+                        client_id.clone(),
+                        client_secret.clone(),
+                        &configuration,
+                    );
 
                     // Store the client credentials so they're available for token refresh
-                    let client_id_result = keyring.put(&environment_name, "client-id".to_string(), client_id.clone());
-                    let client_secret_result = keyring.put(&environment_name, "client-secret".to_string(), client_secret.clone());
+                    let client_id_result = keyring.put(
+                        &environment_name,
+                        "client-id".to_string(),
+                        client_id.clone(),
+                    );
+                    let client_secret_result = keyring.put(
+                        &environment_name,
+                        "client-secret".to_string(),
+                        client_secret.clone(),
+                    );
 
                     if client_id_result.is_err() || client_secret_result.is_err() {
                         error_utils::report_error_with_remediation(
-                            &CliError::SecurityError(String::from("Failed to store client credentials")),
+                            &CliError::SecurityError(String::from(
+                                "Failed to store client credentials",
+                            )),
                             &[
                                 "Check that your system's keyring service is running",
-                                "Try logging in again with 'pcli2 auth login'"
-                            ]
+                                "Try logging in again with 'pcli2 auth login'",
+                            ],
                         );
-                        return Err(CliError::SecurityError(String::from("Failed to store client credentials")));
+                        return Err(CliError::SecurityError(String::from(
+                            "Failed to store client credentials",
+                        )));
                     }
 
                     match auth_client.get_access_token().await {
                         Ok(token) => {
                             // Store the access token
-                            let token_result = keyring.put(&environment_name, "access-token".to_string(), token);
+                            let token_result =
+                                keyring.put(&environment_name, "access-token".to_string(), token);
 
                             if token_result.is_ok() {
                                 Ok(())
                             } else {
                                 error_utils::report_error_with_remediation(
-                                    &CliError::SecurityError(String::from("Failed to store access token")),
+                                    &CliError::SecurityError(String::from(
+                                        "Failed to store access token",
+                                    )),
                                     &[
                                         "Check that your system's keyring service is running",
-                                        "Try logging in again with 'pcli2 auth login'"
-                                    ]
+                                        "Try logging in again with 'pcli2 auth login'",
+                                    ],
                                 );
-                                Err(CliError::SecurityError(String::from("Failed to store access token")))
+                                Err(CliError::SecurityError(String::from(
+                                    "Failed to store access token",
+                                )))
                             }
                         }
                         Err(e) => {
@@ -443,8 +505,8 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 &[
                                     "Verify your client ID and client secret are correct",
                                     "Check your internet connection",
-                                    "Ensure your credentials have not expired"
-                                ]
+                                    "Ensure your credentials have not expired",
+                                ],
                             );
                             Err(CliError::SecurityError(String::from("Login failed")))
                         }
@@ -455,23 +517,25 @@ pub async fn execute_command() -> Result<(), CliError> {
 
                     let configuration = Configuration::load_or_create_default()?;
                     // Use the active environment name for keyring storage, fallback to "default" if no environment is set
-                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+                    let environment_name = configuration
+                        .get_active_environment()
+                        .unwrap_or_else(|| "default".to_string());
 
                     #[allow(unused_mut)]
                     let mut keyring = Keyring::default();
                     match keyring.delete(&environment_name, "access-token".to_string()) {
-                        Ok(()) => {
-                            Ok(())
-                        }
+                        Ok(()) => Ok(()),
                         Err(e) => {
                             error_utils::report_error_with_remediation(
                                 &format!("Error deleting access token: {}", e),
                                 &[
                                     "Check that your system's keyring service is running",
-                                    "Try logging in again with 'pcli2 auth login'"
-                                ]
+                                    "Try logging in again with 'pcli2 auth login'",
+                                ],
                             );
-                            Err(CliError::SecurityError(String::from("Failed to delete access token")))
+                            Err(CliError::SecurityError(String::from(
+                                "Failed to delete access token",
+                            )))
                         }
                     }
                 }
@@ -479,11 +543,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                     trace!("Executing auth token get command");
 
                     // Get format parameters directly from sub_matches since auth commands don't have metadata flag
-                    let format_str_owned = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
-                        format_val.clone()
-                    } else {
-                        "json".to_string()
-                    };
+                    let format_str_owned =
+                        if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                            format_val.clone()
+                        } else {
+                            "json".to_string()
+                        };
                     let format_str = &format_str_owned;
 
                     let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
@@ -491,16 +556,19 @@ pub async fn execute_command() -> Result<(), CliError> {
                     // Note: auth commands don't have metadata flag
 
                     let format_options = OutputFormatOptions {
-                        with_metadata: false,  // No metadata for auth
+                        with_metadata: false, // No metadata for auth
                         with_headers,
                         pretty,
                     };
 
-                    let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
+                    let format =
+                        OutputFormat::from_string_with_options(format_str, format_options).unwrap();
 
                     let configuration = Configuration::load_or_create_default()?;
                     // Use the active environment name for keyring storage, fallback to "default" if no environment is set
-                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+                    let environment_name = configuration
+                        .get_active_environment()
+                        .unwrap_or_else(|| "default".to_string());
 
                     // Try to get access token from keyring
                     #[allow(unused_mut)]
@@ -527,32 +595,48 @@ pub async fn execute_command() -> Result<(), CliError> {
                                     };
                                     match json_output {
                                         Ok(json) => println!("{}", json),
-                                        Err(e) => return Err(CliError::FormattingError(FormattingError::JsonSerializationError(e))),
+                                        Err(e) => {
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::JsonSerializationError(e),
+                                            ))
+                                        }
                                     }
-                                },
+                                }
                                 OutputFormat::Csv(options) => {
                                     let mut wtr = csv::Writer::from_writer(vec![]);
 
                                     if options.with_headers {
                                         if let Err(e) = wtr.serialize(("ACCESS_TOKEN",)) {
-                                            return Err(CliError::FormattingError(FormattingError::CsvError(e)));
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::CsvError(e),
+                                            ));
                                         }
                                     }
 
                                     if let Err(e) = wtr.serialize((&token_response.access_token,)) {
-                                        return Err(CliError::FormattingError(FormattingError::CsvError(e)));
+                                        return Err(CliError::FormattingError(
+                                            FormattingError::CsvError(e),
+                                        ));
                                     }
 
                                     let data = match wtr.into_inner() {
                                         Ok(data) => data,
-                                        Err(e) => return Err(CliError::FormattingError(FormattingError::CsvIntoInnerError(e))),
+                                        Err(e) => {
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::CsvIntoInnerError(e),
+                                            ))
+                                        }
                                     };
                                     let csv_output = match String::from_utf8(data) {
                                         Ok(csv_str) => csv_str,
-                                        Err(e) => return Err(CliError::FormattingError(FormattingError::Utf8Error(e))),
+                                        Err(e) => {
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::Utf8Error(e),
+                                            ))
+                                        }
                                     };
                                     print!("{}", csv_output);
-                                },
+                                }
                                 OutputFormat::Tree(_) => {
                                     // For tree format, just print the token
                                     println!("{}", token_response.access_token);
@@ -571,7 +655,10 @@ pub async fn execute_command() -> Result<(), CliError> {
                             Ok(())
                         }
                         Err(e) => {
-                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!(
+                                "Error retrieving access token: {}",
+                                e
+                            )));
                             Ok(())
                         }
                     }
@@ -581,7 +668,9 @@ pub async fn execute_command() -> Result<(), CliError> {
 
                     let configuration = Configuration::load_or_create_default()?;
                     // Use the active environment name for keyring storage, fallback to "default" if no environment is set
-                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+                    let environment_name = configuration
+                        .get_active_environment()
+                        .unwrap_or_else(|| "default".to_string());
 
                     #[allow(unused_mut)]
                     let mut keyring = Keyring::default();
@@ -600,10 +689,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                                         &format!("Error deleting access token: {}", e),
                                         &[
                                             "Check that your system's keyring service is running",
-                                            "Try logging in again with 'pcli2 auth login'"
-                                        ]
+                                            "Try logging in again with 'pcli2 auth login'",
+                                        ],
                                     );
-                                    Err(CliError::SecurityError(String::from("Failed to delete access token")))
+                                    Err(CliError::SecurityError(String::from(
+                                        "Failed to delete access token",
+                                    )))
                                 }
                             }
                         }
@@ -617,10 +708,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 &format!("Error checking for access token: {}", e),
                                 &[
                                     "Check that your system's keyring service is running",
-                                    "Try logging in again with 'pcli2 auth login'"
-                                ]
+                                    "Try logging in again with 'pcli2 auth login'",
+                                ],
                             );
-                            Err(CliError::SecurityError(String::from("Failed to check access token")))
+                            Err(CliError::SecurityError(String::from(
+                                "Failed to check access token",
+                            )))
                         }
                     }
                 }
@@ -629,7 +722,9 @@ pub async fn execute_command() -> Result<(), CliError> {
 
                     let configuration = Configuration::load_or_create_default()?;
                     // Use the active environment name for keyring storage, fallback to "default" if no environment is set
-                    let environment_name = configuration.get_active_environment().unwrap_or_else(|| "default".to_string());
+                    let environment_name = configuration
+                        .get_active_environment()
+                        .unwrap_or_else(|| "default".to_string());
 
                     // Try to get access token from keyring
                     #[allow(unused_mut)]
@@ -640,8 +735,14 @@ pub async fn execute_command() -> Result<(), CliError> {
                             match decode_jwt_expiration(&token) {
                                 Ok(expiration_info) => {
                                     // Print plain text output
-                                    println!("Expiration Time: {}", expiration_info.expiration_datetime);
-                                    println!("Time Remaining: {}", expiration_info.time_remaining_formatted);
+                                    println!(
+                                        "Expiration Time: {}",
+                                        expiration_info.expiration_datetime
+                                    );
+                                    println!(
+                                        "Time Remaining: {}",
+                                        expiration_info.time_remaining_formatted
+                                    );
                                     Ok(())
                                 }
                                 Err(e) => {
@@ -650,10 +751,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                                         &[
                                             "The token might not be a valid JWT",
                                             "Check that your token is properly formatted",
-                                            "Try logging in again with 'pcli2 auth login'"
-                                        ]
+                                            "Try logging in again with 'pcli2 auth login'",
+                                        ],
                                     );
-                                    Err(CliError::SecurityError(String::from("Failed to decode token expiration")))
+                                    Err(CliError::SecurityError(String::from(
+                                        "Failed to decode token expiration",
+                                    )))
                                 }
                             }
                         }
@@ -668,7 +771,10 @@ pub async fn execute_command() -> Result<(), CliError> {
                             Ok(())
                         }
                         Err(e) => {
-                            error_utils::report_error(&CliError::MissingRequiredArgument(format!("Error retrieving access token: {}", e)));
+                            error_utils::report_error(&CliError::MissingRequiredArgument(format!(
+                                "Error retrieving access token: {}",
+                                e
+                            )));
                             Ok(())
                         }
                     }
@@ -695,7 +801,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                         }
                         _ => {
                             // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
-                            let format_str_owned = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                            let format_str_owned = if let Some(format_val) =
+                                sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                            {
                                 // User explicitly provided --format argument
                                 format_val.clone()
                             } else {
@@ -714,12 +822,14 @@ pub async fn execute_command() -> Result<(), CliError> {
                             // Note: config commands don't have metadata flag
 
                             let format_options = OutputFormatOptions {
-                                with_metadata: false,  // No metadata for config
+                                with_metadata: false, // No metadata for config
                                 with_headers,
                                 pretty,
                             };
 
-                            let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
+                            let format =
+                                OutputFormat::from_string_with_options(format_str, format_options)
+                                    .unwrap();
 
                             let configuration = Configuration::load_or_create_default()?;
                             match configuration.format(&format) {
@@ -734,16 +844,18 @@ pub async fn execute_command() -> Result<(), CliError> {
                 }
                 Some((COMMAND_EXPORT, sub_matches)) => {
                     trace!("Executing config export command");
-                    let path = sub_matches.get_one::<PathBuf>(PARAMETER_OUTPUT)
-                        .ok_or(CliError::MissingRequiredArgument(PARAMETER_OUTPUT.to_string()))?;
+                    let path = sub_matches.get_one::<PathBuf>(PARAMETER_OUTPUT).ok_or(
+                        CliError::MissingRequiredArgument(PARAMETER_OUTPUT.to_string()),
+                    )?;
                     let configuration = Configuration::load_or_create_default()?;
                     configuration.save(path)?;
                     Ok(())
                 }
                 Some((COMMAND_IMPORT, sub_matches)) => {
                     trace!("Executing config import command");
-                    let path = sub_matches.get_one::<PathBuf>(PARAMETER_FILE)
-                        .ok_or(CliError::MissingRequiredArgument(PARAMETER_FILE.to_string()))?;
+                    let path = sub_matches.get_one::<PathBuf>(PARAMETER_FILE).ok_or(
+                        CliError::MissingRequiredArgument(PARAMETER_FILE.to_string()),
+                    )?;
                     // Implementation would import configuration
                     debug!("Importing configuration from: {:?}", path);
                     Ok(())
@@ -754,22 +866,26 @@ pub async fn execute_command() -> Result<(), CliError> {
                         Some(("add", sub_matches)) => {
                             trace!("Executing config environment add command");
 
-                            let env_name = sub_matches.get_one::<String>("name")
+                            let env_name = sub_matches
+                                .get_one::<String>("name")
                                 .ok_or(CliError::MissingRequiredArgument("name".to_string()))?;
 
                             let api_url = sub_matches.get_one::<String>(PARAMETER_API_URL).cloned();
                             let ui_url = sub_matches.get_one::<String>(PARAMETER_UI_URL).cloned();
-                            let auth_url = sub_matches.get_one::<String>(PARAMETER_AUTH_URL).cloned();
+                            let auth_url =
+                                sub_matches.get_one::<String>(PARAMETER_AUTH_URL).cloned();
 
                             let mut configuration = Configuration::load_or_create_default()?;
 
                             let env_config = pcli2::configuration::EnvironmentConfig {
-                                api_base_url: api_url.unwrap_or_else(||
-                                    pcli2::configuration::default_api_base_url()),
-                                ui_base_url: ui_url.unwrap_or_else(||
-                                    pcli2::configuration::default_ui_base_url()),
-                                auth_base_url: auth_url.unwrap_or_else(||
-                                    pcli2::configuration::default_auth_base_url()),
+                                api_base_url: api_url.unwrap_or_else(|| {
+                                    pcli2::configuration::default_api_base_url()
+                                }),
+                                ui_base_url: ui_url
+                                    .unwrap_or_else(|| pcli2::configuration::default_ui_base_url()),
+                                auth_base_url: auth_url.unwrap_or_else(|| {
+                                    pcli2::configuration::default_auth_base_url()
+                                }),
                             };
 
                             configuration.add_environment(env_name.clone(), env_config);
@@ -804,27 +920,36 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 }
 
                                 // Create options for the select menu
-                                let options: Vec<String> = available_envs.iter()
+                                let options: Vec<String> = available_envs
+                                    .iter()
                                     .map(|env_name| {
-                                        let is_active = if let Some(ref active) = configuration.get_active_environment() {
+                                        let is_active = if let Some(ref active) =
+                                            configuration.get_active_environment()
+                                        {
                                             env_name == active
                                         } else {
                                             false
                                         };
-                                        let active_status = if is_active { " (active)" } else { "" };
+                                        let active_status =
+                                            if is_active { " (active)" } else { "" };
                                         format!("{}{}", env_name, active_status)
                                     })
                                     .collect();
 
                                 // Use inquire to create an interactive selection
                                 let ans = inquire::Select::new("Select an environment:", options)
-                                    .with_help_message("Choose the environment you want to set as active")
+                                    .with_help_message(
+                                        "Choose the environment you want to set as active",
+                                    )
                                     .prompt();
 
                                 match ans {
                                     Ok(choice) => {
                                         // Extract the environment name from the choice (removing " (active)" if present)
-                                        let env_name = choice.split_once(" (active)").map(|(before, _)| before.trim()).unwrap_or(&choice);
+                                        let env_name = choice
+                                            .split_once(" (active)")
+                                            .map(|(before, _)| before.trim())
+                                            .unwrap_or(&choice);
                                         env_name.to_string()
                                     }
                                     Err(_) => {
@@ -851,7 +976,8 @@ pub async fn execute_command() -> Result<(), CliError> {
                         Some(("remove", sub_matches)) => {
                             trace!("Executing config environment remove command");
 
-                            let env_name = sub_matches.get_one::<String>("name")
+                            let env_name = sub_matches
+                                .get_one::<String>("name")
                                 .ok_or(CliError::MissingRequiredArgument("name".to_string()))?;
 
                             let mut configuration = Configuration::load_or_create_default()?;
@@ -866,7 +992,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                             trace!("Executing config environment list command");
 
                             // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
-                            let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                            let format_str = if let Some(format_val) =
+                                sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                            {
                                 // User explicitly provided --format argument
                                 format_val.clone()
                             } else {
@@ -884,12 +1012,14 @@ pub async fn execute_command() -> Result<(), CliError> {
                             // Note: environment list commands don't have metadata flag
 
                             let format_options = OutputFormatOptions {
-                                with_metadata: false,  // No metadata for environment list
+                                with_metadata: false, // No metadata for environment list
                                 with_headers,
                                 pretty,
                             };
 
-                            let format = OutputFormat::from_string_with_options(&format_str, format_options).unwrap();
+                            let format =
+                                OutputFormat::from_string_with_options(&format_str, format_options)
+                                    .unwrap();
 
                             let configuration = Configuration::load_or_create_default()?;
                             let active_env = configuration.get_active_environment();
@@ -904,7 +1034,8 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 auth_base_url: String,
                             }
 
-                            let env_details: Vec<EnvironmentDetails> = configuration.list_environments()
+                            let env_details: Vec<EnvironmentDetails> = configuration
+                                .list_environments()
                                 .into_iter()
                                 .map(|name| {
                                     let is_active = if let Some(ref active) = active_env {
@@ -913,7 +1044,8 @@ pub async fn execute_command() -> Result<(), CliError> {
                                         false
                                     };
 
-                                    let env_config = configuration.get_environment_config(&name).unwrap();
+                                    let env_config =
+                                        configuration.get_environment_config(&name).unwrap();
 
                                     EnvironmentDetails {
                                         name: name.clone(),
@@ -935,15 +1067,27 @@ pub async fn execute_command() -> Result<(), CliError> {
                                     };
                                     match json_output {
                                         Ok(json) => println!("{}", json),
-                                        Err(e) => return Err(CliError::FormattingError(FormattingError::JsonSerializationError(e))),
+                                        Err(e) => {
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::JsonSerializationError(e),
+                                            ))
+                                        }
                                     }
-                                },
+                                }
                                 OutputFormat::Csv(options) => {
                                     let mut wtr = csv::Writer::from_writer(vec![]);
 
                                     if options.with_headers {
-                                        if let Err(e) = wtr.serialize(("ENVIRONMENT_NAME", "IS_ACTIVE", "API_BASE_URL", "UI_BASE_URL", "AUTH_BASE_URL")) {
-                                            return Err(CliError::FormattingError(FormattingError::CsvError(e)));
+                                        if let Err(e) = wtr.serialize((
+                                            "ENVIRONMENT_NAME",
+                                            "IS_ACTIVE",
+                                            "API_BASE_URL",
+                                            "UI_BASE_URL",
+                                            "AUTH_BASE_URL",
+                                        )) {
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::CsvError(e),
+                                            ));
                                         }
                                     }
 
@@ -955,24 +1099,38 @@ pub async fn execute_command() -> Result<(), CliError> {
                                             &env_detail.ui_base_url,
                                             &env_detail.auth_base_url,
                                         )) {
-                                            return Err(CliError::FormattingError(FormattingError::CsvError(e)));
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::CsvError(e),
+                                            ));
                                         }
                                     }
 
                                     let data = match wtr.into_inner() {
                                         Ok(data) => data,
-                                        Err(e) => return Err(CliError::FormattingError(FormattingError::CsvIntoInnerError(e))),
+                                        Err(e) => {
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::CsvIntoInnerError(e),
+                                            ))
+                                        }
                                     };
                                     let csv_output = match String::from_utf8(data) {
                                         Ok(csv_str) => csv_str,
-                                        Err(e) => return Err(CliError::FormattingError(FormattingError::Utf8Error(e))),
+                                        Err(e) => {
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::Utf8Error(e),
+                                            ))
+                                        }
                                     };
                                     print!("{}", csv_output);
-                                },
+                                }
                                 OutputFormat::Tree(_) => {
                                     // For tree format, show detailed information
                                     for env_detail in &env_details {
-                                        let active_status = if env_detail.is_active { " (active)" } else { "" };
+                                        let active_status = if env_detail.is_active {
+                                            " (active)"
+                                        } else {
+                                            ""
+                                        };
                                         println!("{}{}:", env_detail.name, active_status);
                                         println!("  API Base URL: {}", env_detail.api_base_url);
                                         println!("  UI Base URL: {}", env_detail.ui_base_url);
@@ -998,7 +1156,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                             trace!("Executing config environment get command");
 
                             // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
-                            let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
+                            let format_str = if let Some(format_val) =
+                                sub_matches.get_one::<String>(PARAMETER_FORMAT)
+                            {
                                 // User explicitly provided --format argument
                                 format_val.clone()
                             } else {
@@ -1016,12 +1176,14 @@ pub async fn execute_command() -> Result<(), CliError> {
                             // Note: environment get commands don't have metadata flag
 
                             let format_options = OutputFormatOptions {
-                                with_metadata: false,  // No metadata for environment get
+                                with_metadata: false, // No metadata for environment get
                                 with_headers,
                                 pretty,
                             };
 
-                            let format = OutputFormat::from_string_with_options(&format_str, format_options).unwrap();
+                            let format =
+                                OutputFormat::from_string_with_options(&format_str, format_options)
+                                    .unwrap();
 
                             let env_name = sub_matches.get_one::<String>("name");
 
@@ -1047,7 +1209,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                             };
 
                             // Get the environment configuration
-                            if let Some(env_config) = configuration.get_environment_config(&target_env_name) {
+                            if let Some(env_config) =
+                                configuration.get_environment_config(&target_env_name)
+                            {
                                 // Create a detailed representation for display
                                 #[derive(serde::Serialize)]
                                 struct EnvironmentDetails {
@@ -1058,7 +1222,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                                     auth_base_url: String,
                                 }
 
-                                let is_active = if let Some(active_env) = configuration.get_active_environment() {
+                                let is_active = if let Some(active_env) =
+                                    configuration.get_active_environment()
+                                {
                                     active_env == target_env_name
                                 } else {
                                     false
@@ -1082,15 +1248,27 @@ pub async fn execute_command() -> Result<(), CliError> {
                                         };
                                         match json_output {
                                             Ok(json) => println!("{}", json),
-                                            Err(e) => return Err(CliError::FormattingError(FormattingError::JsonSerializationError(e))),
+                                            Err(e) => {
+                                                return Err(CliError::FormattingError(
+                                                    FormattingError::JsonSerializationError(e),
+                                                ))
+                                            }
                                         }
-                                    },
+                                    }
                                     OutputFormat::Csv(options) => {
                                         let mut wtr = csv::Writer::from_writer(vec![]);
 
                                         if options.with_headers {
-                                            if let Err(e) = wtr.serialize(("ENVIRONMENT_NAME", "IS_ACTIVE", "API_BASE_URL", "UI_BASE_URL", "AUTH_BASE_URL")) {
-                                                return Err(CliError::FormattingError(FormattingError::CsvError(e)));
+                                            if let Err(e) = wtr.serialize((
+                                                "ENVIRONMENT_NAME",
+                                                "IS_ACTIVE",
+                                                "API_BASE_URL",
+                                                "UI_BASE_URL",
+                                                "AUTH_BASE_URL",
+                                            )) {
+                                                return Err(CliError::FormattingError(
+                                                    FormattingError::CsvError(e),
+                                                ));
                                             }
                                         }
 
@@ -1101,25 +1279,40 @@ pub async fn execute_command() -> Result<(), CliError> {
                                             &env_details.ui_base_url,
                                             &env_details.auth_base_url,
                                         )) {
-                                            return Err(CliError::FormattingError(FormattingError::CsvError(e)));
+                                            return Err(CliError::FormattingError(
+                                                FormattingError::CsvError(e),
+                                            ));
                                         }
 
                                         let data = match wtr.into_inner() {
                                             Ok(data) => data,
-                                            Err(e) => return Err(CliError::FormattingError(FormattingError::CsvIntoInnerError(e))),
+                                            Err(e) => {
+                                                return Err(CliError::FormattingError(
+                                                    FormattingError::CsvIntoInnerError(e),
+                                                ))
+                                            }
                                         };
                                         let csv_output = match String::from_utf8(data) {
                                             Ok(csv_str) => csv_str,
-                                            Err(e) => return Err(CliError::FormattingError(FormattingError::Utf8Error(e))),
+                                            Err(e) => {
+                                                return Err(CliError::FormattingError(
+                                                    FormattingError::Utf8Error(e),
+                                                ))
+                                            }
                                         };
                                         print!("{}", csv_output);
-                                    },
+                                    }
                                     OutputFormat::Tree(_) => {
                                         // For tree format, output as JSON (since tree doesn't make sense for single environment)
-                                        let json_output = serde_json::to_string_pretty(&env_details);
+                                        let json_output =
+                                            serde_json::to_string_pretty(&env_details);
                                         match json_output {
                                             Ok(json) => println!("{}", json),
-                                            Err(e) => return Err(CliError::FormattingError(FormattingError::JsonSerializationError(e))),
+                                            Err(e) => {
+                                                return Err(CliError::FormattingError(
+                                                    FormattingError::JsonSerializationError(e),
+                                                ))
+                                            }
                                         }
                                     }
                                 }
@@ -1149,8 +1342,12 @@ pub async fn execute_command() -> Result<(), CliError> {
         Some(("completions", sub_matches)) => {
             trace!("Command: completions");
 
-            let shell = sub_matches.get_one::<String>("shell")
-                .ok_or(CliError::MissingRequiredArgument("shell is required".to_string()))?;
+            let shell =
+                sub_matches
+                    .get_one::<String>("shell")
+                    .ok_or(CliError::MissingRequiredArgument(
+                        "shell is required".to_string(),
+                    ))?;
 
             // Generate completions for the specified shell
             pcli2::actions::completions::generate_completions(shell)?;
@@ -1159,4 +1356,3 @@ pub async fn execute_command() -> Result<(), CliError> {
         _ => Err(CliError::UnsupportedSubcommand(String::from("unknown"))),
     }
 }
-

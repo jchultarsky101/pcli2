@@ -3,10 +3,11 @@
 //! This module defines CLI commands related to configuration management.
 
 use crate::commands::params::{
-    file_parameter, format_parameter, format_pretty_parameter, format_with_headers_parameter,
-    output_file_parameter, api_url_parameter, ui_url_parameter, auth_url_parameter,
-    COMMAND_CONFIG, COMMAND_EXPORT, COMMAND_GET, COMMAND_IMPORT, COMMAND_ENVIRONMENT,
-    COMMAND_ADD, COMMAND_USE, COMMAND_REMOVE, COMMAND_ENVIRONMENT_LIST, COMMAND_ENVIRONMENT_GET, COMMAND_RESET, PARAMETER_NAME,
+    api_url_parameter, auth_url_parameter, file_parameter, format_parameter,
+    format_pretty_parameter, format_with_headers_parameter, output_file_parameter,
+    ui_url_parameter, COMMAND_ADD, COMMAND_CONFIG, COMMAND_ENVIRONMENT, COMMAND_ENVIRONMENT_GET,
+    COMMAND_ENVIRONMENT_LIST, COMMAND_EXPORT, COMMAND_GET, COMMAND_IMPORT, COMMAND_REMOVE,
+    COMMAND_RESET, COMMAND_USE, PARAMETER_NAME,
 };
 use clap::Arg;
 use clap::Command;

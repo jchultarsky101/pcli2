@@ -9,12 +9,12 @@ use clap::{ArgMatches, Command};
 // Import all submodules
 pub mod assets;
 pub mod auth;
+pub mod completions;
 pub mod config;
 pub mod folder;
 pub mod metadata;
 pub mod params;
 pub mod tenant;
-pub mod completions;
 
 /// Create and configure all CLI commands and their arguments.
 ///

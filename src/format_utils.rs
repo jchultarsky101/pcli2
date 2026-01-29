@@ -22,28 +22,29 @@ impl FormatParams {
     pub fn from_args(sub_matches: &ArgMatches) -> FormatParams {
         // Get format string with environment variable precedence
         let format_str = get_format_string(sub_matches);
-        
+
         // Extract all format flags consistently
         let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
         let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
         let with_metadata = sub_matches.get_flag(PARAMETER_METADATA);
-        
-        let format_options = OutputFormatOptions { 
-            with_metadata, 
-            with_headers, 
-            pretty 
+
+        let format_options = OutputFormatOptions {
+            with_metadata,
+            with_headers,
+            pretty,
         };
-        
-        let format = OutputFormat::from_string_with_options_safe(&format_str, format_options.clone())
-            .unwrap_or_else(|_| OutputFormat::Json(OutputFormatOptions::default()));
-            
+
+        let format =
+            OutputFormat::from_string_with_options_safe(&format_str, format_options.clone())
+                .unwrap_or_else(|_| OutputFormat::Json(OutputFormatOptions::default()));
+
         FormatParams {
             format,
             format_options,
             format_str,
         }
     }
-    
+
     /// Get format with custom default when no format is specified.
     pub fn from_args_with_default(sub_matches: &ArgMatches, default_format: &str) -> FormatParams {
         let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
@@ -56,21 +57,22 @@ impl FormatParams {
                 default_format.to_string()
             }
         };
-        
+
         // Extract all format flags consistently
         let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
         let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
         let with_metadata = sub_matches.get_flag(PARAMETER_METADATA);
-        
-        let format_options = OutputFormatOptions { 
-            with_metadata, 
-            with_headers, 
-            pretty 
+
+        let format_options = OutputFormatOptions {
+            with_metadata,
+            with_headers,
+            pretty,
         };
-        
-        let format = OutputFormat::from_string_with_options_safe(&format_str, format_options.clone())
-            .unwrap_or_else(|_| OutputFormat::Json(OutputFormatOptions::default()));
-            
+
+        let format =
+            OutputFormat::from_string_with_options_safe(&format_str, format_options.clone())
+                .unwrap_or_else(|_| OutputFormat::Json(OutputFormatOptions::default()));
+
         FormatParams {
             format,
             format_options,
@@ -108,22 +110,22 @@ impl FormatOptionsBuilder {
             pretty: false,
         }
     }
-    
+
     pub fn with_metadata(mut self, enable: bool) -> Self {
         self.with_metadata = enable;
         self
     }
-    
+
     pub fn with_headers(mut self, enable: bool) -> Self {
         self.with_headers = enable;
         self
     }
-    
+
     pub fn pretty(mut self, enable: bool) -> Self {
         self.pretty = enable;
         self
     }
-    
+
     pub fn build(self) -> OutputFormatOptions {
         OutputFormatOptions {
             with_metadata: self.with_metadata,
@@ -131,7 +133,7 @@ impl FormatOptionsBuilder {
             pretty: self.pretty,
         }
     }
-    
+
     /// Create from command line arguments
     pub fn from_args(sub_matches: &ArgMatches) -> Self {
         Self::new()
@@ -185,11 +187,11 @@ impl FormatPreset {
                 pretty: false,
             },
         };
-        
+
         OutputFormat::from_string_with_options_safe(base_format, options)
             .unwrap_or_else(|_| OutputFormat::Json(OutputFormatOptions::default()))
     }
-    
+
     /// Apply preset to an existing format
     pub fn apply_to(&self, format: OutputFormat) -> OutputFormat {
         match format {
@@ -215,9 +217,13 @@ pub trait EnhancedOutputFormatter: crate::format::OutputFormatter {
             }
         }
     }
-    
+
     /// Format with conditional metadata inclusion
-    fn format_with_conditional_metadata(&self, format: OutputFormat, include_metadata: bool) -> Result<String, crate::format::FormattingError> {
+    fn format_with_conditional_metadata(
+        &self,
+        format: OutputFormat,
+        include_metadata: bool,
+    ) -> Result<String, crate::format::FormattingError> {
         match format {
             OutputFormat::Json(mut opts) => {
                 opts.with_metadata = include_metadata;
@@ -255,7 +261,7 @@ mod tests {
             .with_headers(true)
             .pretty(true)
             .build();
-        
+
         assert!(options.with_metadata);
         assert!(options.with_headers);
         assert!(options.pretty);

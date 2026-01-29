@@ -38,8 +38,8 @@ pub const COMMAND_LOGIN: &str = "login";
 pub const COMMAND_LOGOUT: &str = "logout";
 pub const COMMAND_CLEAR_TOKEN: &str = "clear-token";
 pub const COMMAND_EXPIRATION: &str = "expiration"; // Allow non snake case since it's used as a command name
-//
-// Tenant commands
+                                                   //
+                                                   // Tenant commands
 pub const COMMAND_TENANT: &str = "tenant";
 
 // Folder commands
@@ -100,6 +100,7 @@ pub const PARAMETER_CONTINUE_ON_ERROR: &str = "continue-on-error";
 pub const PARAMETER_DELAY: &str = "delay";
 pub const PARAMETER_LOCAL_PATH: &str = "local-path";
 pub const PARAMETER_SKIP_EXISTING: &str = "skip-existing";
+pub const PARAMETER_RESUME: &str = "resume";
 
 // Format options
 pub const FORMAT_CSV: &str = "csv";
@@ -415,4 +416,13 @@ pub fn delay_parameter() -> Arg {
                 Ok(val)
             }
         })
+}
+
+/// Create the resume parameter.
+pub fn resume_parameter() -> Arg {
+    Arg::new(PARAMETER_RESUME)
+        .long(PARAMETER_RESUME)
+        .action(ArgAction::SetTrue)
+        .required(false)
+        .help("Resume download by skipping files that already exist in the destination directory")
 }

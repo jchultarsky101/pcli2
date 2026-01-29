@@ -33,13 +33,18 @@ pub struct AuthClient {
 impl AuthClient {
     pub fn new(client_id: String, client_secret: String) -> Self {
         Self {
-            token_url: "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token".to_string(),
+            token_url: "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
+                .to_string(),
             client_id,
             client_secret,
         }
     }
 
-    pub fn new_with_configuration(client_id: String, client_secret: String, configuration: &crate::configuration::Configuration) -> Self {
+    pub fn new_with_configuration(
+        client_id: String,
+        client_secret: String,
+        configuration: &crate::configuration::Configuration,
+    ) -> Self {
         Self {
             token_url: configuration.get_auth_base_url(),
             client_id,
@@ -56,9 +61,7 @@ impl AuthClient {
     }
 
     pub async fn get_access_token(&self) -> Result<String, AuthError> {
-        let client = reqwest::Client::builder()
-            .user_agent("PCLI2")
-            .build()?;
+        let client = reqwest::Client::builder().user_agent("PCLI2").build()?;
 
         // Add tracing to see which URL is being used
         tracing::debug!("Authenticating with token URL: {}", &self.token_url);
@@ -87,8 +90,8 @@ impl AuthClient {
                 Ok(token_response) => {
                     tracing::debug!("Authentication successful, received token");
                     Ok(token_response.access_token)
-                },
-                Err(e) => Err(AuthError::HttpError(e))
+                }
+                Err(e) => Err(AuthError::HttpError(e)),
             }
         } else {
             let status = response.status();
@@ -102,7 +105,11 @@ impl AuthClient {
             };
 
             // Log the full error response for debugging
-            tracing::error!("Authentication request failed with status {}: {}", status, &error_body);
+            tracing::error!(
+                "Authentication request failed with status {}: {}",
+                status,
+                &error_body
+            );
 
             // Try to parse as JSON for better formatting
             let error_details = match serde_json::from_str::<serde_json::Value>(&error_body) {
@@ -114,40 +121,50 @@ impl AuthClient {
                         let error_str = error_val.as_str().unwrap_or("unknown");
 
                         // Also extract error description if available
-                        let error_description = if let Some(desc_val) = error_json.get("error_description") {
-                            format!(" - {}", desc_val.as_str().unwrap_or(""))
-                        } else {
-                            "".to_string()
-                        };
+                        let error_description =
+                            if let Some(desc_val) = error_json.get("error_description") {
+                                format!(" - {}", desc_val.as_str().unwrap_or(""))
+                            } else {
+                                "".to_string()
+                            };
 
                         match error_str {
                             "invalid_client" => {
-                                tracing::error!("Invalid client credentials. Client ID: {}", &self.client_id);
+                                tracing::error!(
+                                    "Invalid client credentials. Client ID: {}",
+                                    &self.client_id
+                                );
                                 format!("Invalid client credentials{}. Please check your client ID and secret.", error_description)
-                            },
+                            }
                             "invalid_grant" => {
                                 format!("Invalid grant{}. The authorization grant or refresh token is invalid.", error_description)
-                            },
+                            }
                             "unauthorized_client" => {
                                 format!("Unauthorized client{}. The client is not authorized to use this authorization grant type.", error_description)
-                            },
+                            }
                             "invalid_request" => {
                                 format!("Invalid request{}. The request is missing required parameters or contains invalid parameters.", error_description)
-                            },
+                            }
                             _ => format!("{}{}", error_str, error_description),
                         }
                     } else {
                         error_body.clone() // Return the raw error body if no specific error field
                     }
-                },
+                }
                 Err(json_err) => {
-                    tracing::warn!("Failed to parse error response as JSON: {}. Raw error: {}", json_err, &error_body);
+                    tracing::warn!(
+                        "Failed to parse error response as JSON: {}. Raw error: {}",
+                        json_err,
+                        &error_body
+                    );
                     error_body.clone() // Return the raw error body if JSON parsing fails
                 }
             };
 
-            Err(AuthError::AuthFailed(format!("HTTP {} {}", status, error_details)))
+            Err(AuthError::AuthFailed(format!(
+                "HTTP {} {}",
+                status, error_details
+            )))
         }
     }
 }
-

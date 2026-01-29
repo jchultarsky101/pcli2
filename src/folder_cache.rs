@@ -7,53 +7,54 @@
 use crate::cache::BaseCache;
 use crate::folder_hierarchy::FolderHierarchy;
 use crate::physna_v3::PhysnaApiClient;
-use std::fs;
-use std::path::PathBuf;
 use serde_json;
-use uuid::Uuid;
+use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
+use uuid::Uuid;
 
 /// Manages caching of folder hierarchies for Physna tenants
 pub struct FolderCache {
     // Removed unused base field since we're not using BaseCache directly
 }
 
-
-
 impl FolderCache {
     /// Get the cache directory path
-    /// 
+    ///
     /// In a test environment (when PCLI2_TEST_CACHE_DIR is set), it uses that directory.
     /// For general cross-platform support (when PCLI2_CACHE_DIR is set), it uses that directory.
     /// Otherwise, it uses the system's cache directory with a "pcli2/folder_cache" subdirectory.
     pub fn get_cache_dir() -> PathBuf {
         BaseCache::get_cache_dir().join("folder_cache")
     }
-    
+
     /// Get the cache file path for a specific tenant
-    /// 
+    ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant whose cache file path to retrieve
-    /// 
+    ///
     /// # Returns
     /// The full path to the tenant's cache file
     pub fn get_cache_file_path<S: AsRef<str>>(key: S) -> PathBuf {
         let key: &str = key.as_ref();
         BaseCache::get_cache_file_path(&Self::get_cache_dir(), key, "json")
     }
-    
+
     /// Load cached folder hierarchy for a tenant
-    /// 
+    ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant whose cached folder hierarchy to load
-    /// 
+    ///
     /// # Returns
     /// * `Some(FolderHierarchy)` - If a valid cache file exists for the tenant and hasn't expired
     /// * `None` - If no cache file exists, is expired, or if deserialization fails
     pub fn load(tenant_uuid: &Uuid) -> Option<FolderHierarchy> {
         let cache_file = Self::get_cache_file_path(tenant_uuid.to_string());
-        tracing::debug!("Attempting to load folder hierarchy from cache file: {:?}", cache_file);
-        
+        tracing::debug!(
+            "Attempting to load folder hierarchy from cache file: {:?}",
+            cache_file
+        );
+
         if cache_file.exists() {
             tracing::debug!("Cache file exists, checking expiration");
             // Check if the cache has expired
@@ -63,18 +64,23 @@ impl FolderCache {
                 let _ = fs::remove_file(&cache_file);
                 return None;
             }
-            
+
             tracing::debug!("Cache file is valid, attempting to read");
             match fs::read(&cache_file) {
                 Ok(data) => {
                     tracing::debug!("Successfully read {} bytes from cache file", data.len());
                     match serde_json::from_slice::<FolderHierarchy>(&data) {
                         Ok(hierarchy) => {
-                            tracing::debug!("Successfully deserialized folder hierarchy from cache");
+                            tracing::debug!(
+                                "Successfully deserialized folder hierarchy from cache"
+                            );
                             Some(hierarchy)
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to deserialize folder hierarchy from cache: {}", e);
+                            tracing::warn!(
+                                "Failed to deserialize folder hierarchy from cache: {}",
+                                e
+                            );
                             tracing::debug!("Deserialization error details: {:?}", e);
                             None
                         }
@@ -90,47 +96,50 @@ impl FolderCache {
             None
         }
     }
-    
+
     /// Save folder hierarchy to cache for a tenant
-    /// 
+    ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant to cache the folder hierarchy for
     /// * `hierarchy` - The folder hierarchy to cache
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - If the folder hierarchy was successfully cached
     /// * `Err` - If there was an error during serialization or file operations
-    pub fn save(tenant_uuid: &Uuid, hierarchy: &FolderHierarchy) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(
+        tenant_uuid: &Uuid,
+        hierarchy: &FolderHierarchy,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let serialized = serde_json::to_vec(hierarchy)?;
         tracing::debug!("Serialized folder hierarchy to {} bytes", serialized.len());
-        
+
         // Create cache directory if it doesn't exist
         let cache_dir = Self::get_cache_dir();
         fs::create_dir_all(&cache_dir)?;
-        
+
         let cache_file = Self::get_cache_file_path(tenant_uuid.to_string());
         tracing::debug!("Writing cache file to: {:?}", cache_file);
-        
+
         // Use buffered writer to ensure all data is written properly
         let file = std::fs::File::create(&cache_file)?;
         let mut writer = std::io::BufWriter::new(file);
         writer.write_all(&serialized)?;
         writer.flush()?;
-        
+
         tracing::debug!("Successfully wrote cache file");
-        
+
         Ok(())
     }
-    
+
     /// Get folder hierarchy from cache or fetch from API if not available/cached or expired
-    /// 
+    ///
     /// This method first attempts to load the folder hierarchy from cache. If it's not
     /// available in cache or has expired, it fetches the data from the Physna API and caches it.
-    /// 
+    ///
     /// # Arguments
     /// * `client` - A mutable reference to the Physna API client
     /// * `tenant_id` - The ID of the tenant whose folder hierarchy to retrieve
-    /// 
+    ///
     /// # Returns
     /// * `Ok(FolderHierarchy)` - The folder hierarchy for the tenant
     /// * `Err` - If there was an error during cache operations or API calls
@@ -142,27 +151,27 @@ impl FolderCache {
         if let Some(cached) = Self::load(tenant_uuid) {
             return Ok(cached);
         }
-        
+
         // If not in cache, fetch from API
         let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid).await?;
-        
+
         // Save to cache
         if let Err(e) = Self::save(tenant_uuid, &hierarchy) {
             tracing::warn!("Failed to cache folder hierarchy: {}", e);
         }
-        
+
         Ok(hierarchy)
     }
-    
+
     /// Refresh the cache for a specific tenant (force fetch from API)
-    /// 
+    ///
     /// This method always fetches the latest folder hierarchy from the Physna API
     /// and updates the cache, regardless of whether valid cached data exists.
-    /// 
+    ///
     /// # Arguments
     /// * `client` - A mutable reference to the Physna API client
     /// * `tenant_id` - The ID of the tenant whose folder hierarchy to refresh
-    /// 
+    ///
     /// # Returns
     /// * `Ok(FolderHierarchy)` - The refreshed folder hierarchy for the tenant
     /// * `Err` - If there was an error during the API call or cache operations
@@ -171,22 +180,22 @@ impl FolderCache {
         tenant_uuid: &Uuid,
     ) -> Result<FolderHierarchy, Box<dyn std::error::Error>> {
         let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid).await?;
-        
+
         // Save to cache
         if let Err(e) = Self::save(tenant_uuid, &hierarchy) {
             tracing::warn!("Failed to cache folder hierarchy: {}", e);
         }
-        
+
         Ok(hierarchy)
     }
-    
+
     /// Invalidate cache for a specific tenant
-    /// 
+    ///
     /// This method removes the cached folder hierarchy for the specified tenant.
-    /// 
+    ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant whose cache to invalidate
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - If the cache was successfully invalidated or didn't exist
     /// * `Err` - If there was an error during file operations
@@ -197,34 +206,34 @@ impl FolderCache {
         }
         Ok(())
     }
-    
+
     /// Clean expired cache files
-    /// 
+    ///
     /// This method removes all expired cache files from the cache directory
     pub fn clean_expired() -> Result<(), Box<dyn std::error::Error>> {
         let cache_dir = Self::get_cache_dir();
         if !cache_dir.exists() {
             return Ok(());
         }
-        
+
         for entry in fs::read_dir(cache_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.extension().is_some_and(|ext| ext == "json") {
                 let _ = fs::remove_file(&path);
                 tracing::debug!("Removed expired cache file: {:?}", path);
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Purge all cached data
-    /// 
-    /// This method removes all cache files from the cache directory, 
+    ///
+    /// This method removes all cache files from the cache directory,
     /// effectively clearing the entire cache for all tenants.
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - If all cache files were successfully removed
     /// * `Err` - If there was an error during file operations
@@ -233,18 +242,18 @@ impl FolderCache {
         if !cache_dir.exists() {
             return Ok(());
         }
-        
+
         // Remove all cache files
         for entry in fs::read_dir(&cache_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.extension().is_some_and(|ext| ext == "json") {
                 fs::remove_file(&path)?;
                 tracing::debug!("Removed cache file: {:?}", path);
             }
         }
-        
+
         tracing::debug!("Successfully purged all cached data");
         Ok(())
     }
@@ -275,30 +284,31 @@ mod tests {
     fn test_folder_cache_invalidate_nonexistent() {
         // Test that we can invalidate a cache file that doesn't exist
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Temporarily override the cache directory
         std::env::set_var("PCLI2_TEST_CACHE_DIR", temp_dir.path());
-        
+
         // This should not panic or return an error
         let result = FolderCache::invalidate("nonexistent-tenant");
         assert!(result.is_ok());
-        
+
         // Clean up
         std::env::remove_var("PCLI2_TEST_CACHE_DIR");
     }
-    
+
     #[test]
     fn test_folder_cache_save_and_load() {
         use tempfile::TempDir;
-        
+
         let temp_dir = TempDir::new().unwrap();
         std::env::set_var("PCLI2_TEST_CACHE_DIR", temp_dir.path());
-        
+
         // Test that save creates cache directory
         let test_uuid = uuid::Uuid::new_v4();
-        let result = FolderCache::save(&test_uuid, &crate::folder_hierarchy::FolderHierarchy::new());
+        let result =
+            FolderCache::save(&test_uuid, &crate::folder_hierarchy::FolderHierarchy::new());
         assert!(result.is_ok());
-        
+
         std::env::remove_var("PCLI2_TEST_CACHE_DIR");
     }
 }

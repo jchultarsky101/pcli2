@@ -22,12 +22,12 @@ mod cli_help_tests {
         assert!(help_output.contains("Commands:"));
 
         // Verify that major command groups are present
-        assert!(help_output.contains("tenant"));  // tenant commands
-        assert!(help_output.contains("folder"));  // folder commands
-        assert!(help_output.contains("asset"));   // asset commands
-        assert!(help_output.contains("auth"));    // auth commands
-        // Context command has been moved to tenant command
-        assert!(help_output.contains("config"));  // config commands
+        assert!(help_output.contains("tenant")); // tenant commands
+        assert!(help_output.contains("folder")); // folder commands
+        assert!(help_output.contains("asset")); // asset commands
+        assert!(help_output.contains("auth")); // auth commands
+                                               // Context command has been moved to tenant command
+        assert!(help_output.contains("config")); // config commands
 
         // Verify that help flags are present
         assert!(help_output.contains("-h, --help"));
@@ -140,12 +140,20 @@ mod cli_help_tests {
 
         for (parent_cmd, sub_cmd) in nested_commands {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
-            let assert_result = cmd.arg(parent_cmd).arg(sub_cmd).arg("--help").assert().success();
+            let assert_result = cmd
+                .arg(parent_cmd)
+                .arg(sub_cmd)
+                .arg("--help")
+                .assert()
+                .success();
             let output = assert_result.get_output();
             let help_output = String::from_utf8_lossy(&output.stdout);
 
             // Print the help output for manual verification
-            println!("Help Output for '{} {}':\n{}", parent_cmd, sub_cmd, help_output);
+            println!(
+                "Help Output for '{} {}':\n{}",
+                parent_cmd, sub_cmd, help_output
+            );
 
             // Verify that each nested subcommand help contains expected elements
             assert!(help_output.contains("Usage:"));
@@ -173,12 +181,21 @@ mod cli_help_tests {
 
         for (parent_cmd, sub_cmd, sub_sub_cmd) in deeply_nested_commands {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
-            let assert_result = cmd.arg(parent_cmd).arg(sub_cmd).arg(sub_sub_cmd).arg("--help").assert().success();
+            let assert_result = cmd
+                .arg(parent_cmd)
+                .arg(sub_cmd)
+                .arg(sub_sub_cmd)
+                .arg("--help")
+                .assert()
+                .success();
             let output = assert_result.get_output();
             let help_output = String::from_utf8_lossy(&output.stdout);
 
             // Print the help output for manual verification
-            println!("Help Output for '{} {} {}':\n{}", parent_cmd, sub_cmd, sub_sub_cmd, help_output);
+            println!(
+                "Help Output for '{} {} {}':\n{}",
+                parent_cmd, sub_cmd, sub_sub_cmd, help_output
+            );
 
             // Verify that each deeply nested subcommand help contains expected elements
             assert!(help_output.contains("Usage:"));

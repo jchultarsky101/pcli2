@@ -44,9 +44,13 @@ pub enum ConfigurationError {
     #[error("failed to resolve the configuration directory")]
     FailedToFindConfigurationDirectory,
     #[error("failed to load configuration data, because of: {cause:?}")]
-    FailedToLoadData { cause: Box<dyn std::error::Error + Send + Sync> },
+    FailedToLoadData {
+        cause: Box<dyn std::error::Error + Send + Sync>,
+    },
     #[error("failed to write configuration data to file, because of: {cause:?}")]
-    FailedToWriteData { cause: Box<dyn std::error::Error + Send + Sync> },
+    FailedToWriteData {
+        cause: Box<dyn std::error::Error + Send + Sync>,
+    },
     #[error("missing value for property {name:?}")]
     MissingRequiredPropertyValue { name: String },
     #[error("{cause:?}")]
@@ -358,45 +362,82 @@ impl Formattable for Configuration {
                 } else {
                     Ok(serde_json::to_string(self)?)
                 }
-            },
+            }
             OutputFormat::Csv(options) => {
                 let uuid_str = self.active_tenant_uuid.unwrap_or_default().to_string();
-                let api_url = self.api_base_url.clone().unwrap_or_else(|| "default".to_string());
-                let ui_url = self.ui_base_url.clone().unwrap_or_else(|| "default".to_string());
-                let auth_url = self.auth_base_url.clone().unwrap_or_else(|| "default".to_string());
-                let active_env = self.active_environment.clone().unwrap_or_else(|| "none".to_string());
+                let api_url = self
+                    .api_base_url
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string());
+                let ui_url = self
+                    .ui_base_url
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string());
+                let auth_url = self
+                    .auth_base_url
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string());
+                let active_env = self
+                    .active_environment
+                    .clone()
+                    .unwrap_or_else(|| "none".to_string());
 
                 if options.with_headers {
                     Ok(format!("ACTIVE_TENANT_UUID,API_BASE_URL,UI_BASE_URL,AUTH_BASE_URL,ACTIVE_ENVIRONMENT\n{},{},{},{},{}",
                               uuid_str, api_url, ui_url, auth_url, active_env))
                 } else {
-                    Ok(format!("{},{},{},{},{}", uuid_str, api_url, ui_url, auth_url, active_env))
+                    Ok(format!(
+                        "{},{},{},{},{}",
+                        uuid_str, api_url, ui_url, auth_url, active_env
+                    ))
                 }
-            },
+            }
             OutputFormat::Tree(_) => {
                 let mut result = String::new();
                 result.push_str("Configuration:\n");
-                result.push_str(&format!("  Active Tenant UUID: {}\n",
-                    self.active_tenant_uuid.map_or("None".to_string(), |uuid| uuid.to_string())));
-                result.push_str(&format!("  API Base URL: {}\n",
-                    self.api_base_url.clone().unwrap_or_else(|| "default".to_string())));
-                result.push_str(&format!("  UI Base URL: {}\n",
-                    self.ui_base_url.clone().unwrap_or_else(|| "default".to_string())));
-                result.push_str(&format!("  Auth Base URL: {}\n",
-                    self.auth_base_url.clone().unwrap_or_else(|| "default".to_string())));
-                result.push_str(&format!("  Active Environment: {}\n",
-                    self.active_environment.clone().unwrap_or_else(|| "None".to_string())));
+                result.push_str(&format!(
+                    "  Active Tenant UUID: {}\n",
+                    self.active_tenant_uuid
+                        .map_or("None".to_string(), |uuid| uuid.to_string())
+                ));
+                result.push_str(&format!(
+                    "  API Base URL: {}\n",
+                    self.api_base_url
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string())
+                ));
+                result.push_str(&format!(
+                    "  UI Base URL: {}\n",
+                    self.ui_base_url
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string())
+                ));
+                result.push_str(&format!(
+                    "  Auth Base URL: {}\n",
+                    self.auth_base_url
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string())
+                ));
+                result.push_str(&format!(
+                    "  Active Environment: {}\n",
+                    self.active_environment
+                        .clone()
+                        .unwrap_or_else(|| "None".to_string())
+                ));
                 result.push_str("  Environments:\n");
 
                 for (name, env_config) in &self.environments {
-                    result.push_str(&format!("    {}: {{api: {}, ui: {}, auth: {}}}\n",
-                        name, env_config.api_base_url, env_config.ui_base_url, env_config.auth_base_url));
+                    result.push_str(&format!(
+                        "    {}: {{api: {}, ui: {}, auth: {}}}\n",
+                        name,
+                        env_config.api_base_url,
+                        env_config.ui_base_url,
+                        env_config.auth_base_url
+                    ));
                 }
 
                 Ok(result)
-            },
+            }
         }
     }
 }
-
-

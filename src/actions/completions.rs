@@ -52,7 +52,10 @@ pub fn generate_completions(shell: &str) -> Result<(), CliError> {
             );
         }
         _ => {
-            return Err(CliError::UnsupportedSubcommand(format!("Unsupported shell: {}", shell)));
+            return Err(CliError::UnsupportedSubcommand(format!(
+                "Unsupported shell: {}",
+                shell
+            )));
         }
     }
 

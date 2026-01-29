@@ -58,7 +58,10 @@ mod implementation {
 
         /// Get multiple credential values for an environment in a single operation
         /// This helps reduce multiple keyring access calls that might trigger multiple authorization prompts
-        pub fn get_environment_credentials(&self, tenant: &str) -> Result<(Option<String>, Option<String>, Option<String>), KeyringError> {
+        pub fn get_environment_credentials(
+            &self,
+            tenant: &str,
+        ) -> Result<(Option<String>, Option<String>, Option<String>), KeyringError> {
             let access_token = self.get(tenant, "access-token".to_string()).ok().flatten();
             let client_id = self.get(tenant, "client-id".to_string()).ok().flatten();
             let client_secret = self.get(tenant, "client-secret".to_string()).ok().flatten();
@@ -86,23 +89,49 @@ mod implementation {
 
     impl Keyring {
         pub fn get(&mut self, tenant: &str, key: String) -> Result<Option<String>, KeyringError> {
-            self.dev_keyring.get(tenant, key).map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
+            self.dev_keyring
+                .get(tenant, key)
+                .map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
         }
 
-        pub fn put(&mut self, tenant: &str, key: String, value: String) -> Result<(), KeyringError> {
-            self.dev_keyring.put(tenant, key, value).map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
+        pub fn put(
+            &mut self,
+            tenant: &str,
+            key: String,
+            value: String,
+        ) -> Result<(), KeyringError> {
+            self.dev_keyring
+                .put(tenant, key, value)
+                .map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
         }
 
         pub fn delete(&mut self, tenant: &str, key: String) -> Result<(), KeyringError> {
-            self.dev_keyring.delete(tenant, key).map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
+            self.dev_keyring
+                .delete(tenant, key)
+                .map_err(|e| KeyringError::KeyringAccessError(format!("{:?}", e)))
         }
 
         /// Get multiple credential values for an environment in a single operation
         /// This helps reduce multiple keyring access calls that might trigger multiple authorization prompts
-        pub fn get_environment_credentials(&mut self, tenant: &str) -> Result<(Option<String>, Option<String>, Option<String>), KeyringError> {
-            let access_token = self.dev_keyring.get(tenant, "access-token".to_string()).ok().flatten();
-            let client_id = self.dev_keyring.get(tenant, "client-id".to_string()).ok().flatten();
-            let client_secret = self.dev_keyring.get(tenant, "client-secret".to_string()).ok().flatten();
+        pub fn get_environment_credentials(
+            &mut self,
+            tenant: &str,
+        ) -> Result<(Option<String>, Option<String>, Option<String>), KeyringError> {
+            let access_token = self
+                .dev_keyring
+                .get(tenant, "access-token".to_string())
+                .ok()
+                .flatten();
+            let client_id = self
+                .dev_keyring
+                .get(tenant, "client-id".to_string())
+                .ok()
+                .flatten();
+            let client_secret = self
+                .dev_keyring
+                .get(tenant, "client-secret".to_string())
+                .ok()
+                .flatten();
 
             Ok((access_token, client_id, client_secret))
         }

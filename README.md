@@ -450,6 +450,9 @@ pcli2 folder download --folder-path "/Root/MyFolder" --delay 2
 
 # Download with all options combined
 pcli2 folder download --folder-path "/Root/MyFolder" --concurrent 3 --continue-on-error --delay 1 --progress
+
+# Resume a partially completed download (skip files that already exist)
+pcli2 folder download --folder-path "/Root/MyFolder" --resume
 ```
 
 **Key Features**:
@@ -462,6 +465,9 @@ pcli2 folder download --folder-path "/Root/MyFolder" --concurrent 3 --continue-o
 - **Concurrent Downloads**: Use `--concurrent N` flag to download up to N assets simultaneously (range: 1-10)
 - **Error Tolerance**: Use `--continue-on-error` flag to continue downloading other assets if one fails
 - **Rate Limiting**: Use `--delay N` flag to add N seconds delay between downloads (range: 0-180)
+- **Resume Capability**: Use `--resume` flag to skip files that already exist in the destination directory, allowing you to resume interrupted downloads
+- **Extended Timeouts**: All operations now have extended timeouts (30 minutes) to accommodate large files and slow connections
+- **Detailed Statistics**: At the end of the download, a detailed statistics report is displayed showing successful, skipped, and failed downloads
 
 **Important Notes about Folder Download**:
 - The command downloads assets from the specified folder and ALL its subfolders recursively

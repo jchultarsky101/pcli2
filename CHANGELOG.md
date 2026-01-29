@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added --delay flag to folder download command to add delays between downloads (range: 0-180 seconds)
 - Added enhanced error logging with asset UUID and Physna path information to folder download command
 - Added improved progress indicators for concurrent downloads using MultiProgress
+- Added --resume flag to folder download command to skip files that already exist in the destination directory
+- Added detailed statistics report at the end of folder download showing successful, skipped, and failed downloads
+- Extended all timeout values to 30 minutes (1800 seconds) to accommodate large files and slow connections
 
 ### Changed
 - Improved folder download command to show separate progress bars for each concurrent download when using --progress

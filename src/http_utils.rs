@@ -291,14 +291,14 @@ mod tests {
     fn test_http_client_config_default() {
         let config = HttpRequestConfig::default();
         assert_eq!(config.base_url, "https://app-api.physna.com/v3");
-        assert_eq!(config.timeout, 60);
+        assert_eq!(config.timeout, 1800);
         assert!(config.retry_on_auth_error);
     }
 
     #[test]
     fn test_http_client_config() {
         let config = HttpRequestConfig::default();
-        assert_eq!(config.timeout, 60);
+        assert_eq!(config.timeout, 1800);
         assert!(config.retry_on_auth_error);
     }
 }

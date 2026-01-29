@@ -11,68 +11,48 @@ This guide explains how to install and set up PCLI2 on your system.
 
 ## Prerequisites
 
-Before installing PCLI2, ensure you have the following:
-
-- **Rust toolchain** (latest stable version)
-- **Cargo package manager** (usually installed with Rust)
-- **Git** (for cloning the repository)
-
-## Prerequisites
-
-Before installing PCLI2, ensure you have the following:
-
-- **Rust toolchain** (latest stable version)
-- **Cargo package manager** (usually installed with Rust)
-- **Git** (for cloning the repository)
-
-### Installing Rust
-
-If you don't have Rust installed, you can install it using rustup:
-
-```bash
-# Install Rust using rustup
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Reload your shell or source the rustup environment
-source ~/.cargo/env
-
-# Verify the installation
-rustc --version
-cargo --version
-```
+Before installing PCLI2, you will need:
+- Your Physna tenant's API client credentials (client ID and client secret)
+- A compatible operating system (Windows, macOS, or Linux)
 
 ## Installation Methods
 
-### Method 1: Pre-built Binaries (Recommended)
+### Method 1: Pre-built Installers (Recommended for Most Users)
 
-PCLI2 provides pre-built binaries for Windows, macOS, and Linux through GitHub Releases:
+PCLI2 provides pre-built installers for Windows, macOS, and Linux through GitHub Releases:
 
-1. Visit the [Latest Release](https://github.com/physna/pcli2/releases/latest)
-2. Download the appropriate installer or binary for your platform:
-   - **Windows**: `pcli2-x86_64-pc-windows-msvc.msi` (Installer) or `pcli2-x86_64-pc-windows-msvc.zip` (ZIP)
-   - **macOS**: `pcli2-installer.sh` (Universal script) or platform-specific archives
-   - **Linux**: `pcli2-installer.sh` (Universal script) or `pcli2-x86_64-unknown-linux-gnu.tar.xz` (Archive)
+1. Visit the [Latest Release](https://github.com/jchultarsky101/pcli2/releases/latest)
+2. Download the appropriate installer for your platform:
+   - **Windows**:
+     - `pcli2-x86_64-pc-windows-msvc.msi` (Installer) - *Does NOT include `pcli2-update` command*
+     - `pcli2-installer.ps1` (PowerShell script) - *Includes `pcli2-update` command*
+   - **macOS**: `pcli2-installer.sh` (Universal script) - *Includes `pcli2-update` command*
+   - **Linux**: `pcli2-installer.sh` (Universal script) - *Includes `pcli2-update` command*
 
-#### Using the Universal Installer Script:
+**Important Note for Windows Users**: The Windows MSI installer does not include the `pcli2-update` command. If you want to be able to update PCLI2 using the `pcli2-update` command, use the PowerShell installer script instead of the MSI installer. Alternatively, you can use the universal installer script within WSL (Windows Subsystem for Linux).
+
+##### Using the Universal Installer Script (macOS/Linux):
+
 ```bash
 # Download and run the installer script
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
 
-#### Manual Installation:
+#### Method 2: Manual Installation
+
 ```bash
 # Extract the archive (example for Linux)
 tar -xf pcli2-x86_64-unknown-linux-gnu.tar.xz
 sudo cp pcli2 /usr/local/bin/
 ```
 
-### Method 2: Building from Source
+#### Method 3: Building from Source (Advanced Users)
 
 This method gives you the latest development version of PCLI2:
 
 ```bash
 # Clone the repository
-git clone https://github.com/physna/pcli2.git
+git clone https://github.com/jchultarsky101/pcli2.git
 cd pcli2
 
 # Build the project (this may take a few minutes)
@@ -86,48 +66,55 @@ sudo cp target/release/pcli2 /usr/local/bin/
 echo 'export PATH="$PATH:/path/to/pcli2/target/release"' >> ~/.bashrc
 ```
 
-### Method 3: Installing via Cargo
-
-If you want to install PCLI2 directly from crates.io (once published):
-
-```bash
-# Install PCLI2 globally
-cargo install pcli2
-
-# Verify the installation
-pcli2 --version
-```
-
-## Verifying the Installation
+### Verifying the Installation
 
 After installation, verify that PCLI2 is working correctly:
 
 ```bash
 # Check the version
 pcli2 --version
-
-# View available commands
-pcli2 --help
-
-# View asset-related commands
-pcli2 asset --help
 ```
+If successful, this should print the PCLI2 version.
+
+### First-Time Authorization
+
+When you run PCLI2 for the first time after installation, you may see authorization prompts requesting permission to access your system's secure credential storage (keyring). This is normal and required for secure credential storage:
+
+- **macOS**: A dialog will appear asking you to allow PCLI2 to access the keychain
+- **Windows**: You may see a User Account Control (UAC) prompt
+- **Linux**: You may be prompted to unlock the keyring
+
+The authorization is typically remembered for subsequent runs.
 
 ## Updating PCLI2
 
-To update PCLI2 when building from source:
+The update mechanism depends on how you installed PCLI2:
 
+#### If Installed via Universal Installer Script (macOS/Linux) or Shell/PowerShell Scripts:
 ```bash
-# Navigate to your PCLI2 directory
+pcli2-update
+```
+
+This command checks if a new version is available and automatically installs it.
+
+For macOS/Linux users:
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
+```
+
+For Windows users using PowerShell:
+```powershell
+irm https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.ps1 | iex
+```
+
+#### If Installed via Windows MSI Installer:
+The Windows MSI installer does **not** include a `pcli2-update` executable. To upgrade to a new version, you must download and run the new version of the MSI installer from the [releases page](https://github.com/jchultarsky101/pcli2/releases/latest).
+
+For source builds:
+```bash
 cd /path/to/pcli2
-
-# Pull the latest changes
 git pull
-
-# Rebuild the project
 cargo build --release
-
-# Copy the updated binary (if needed)
 sudo cp target/release/pcli2 /usr/local/bin/
 ```
 
@@ -173,12 +160,17 @@ Your API credentials (client ID, client secret, and access tokens) are securely 
 4. **Keyring access denied**: Grant permission when prompted, or check system keyring settings
 5. **Authentication failures**: Ensure keyring access is granted and credentials are properly stored
 
+### Installation Troubleshooting
+
+1. **Permission denied when copying binary**: Use `sudo` or copy to a directory you own
+2. **Command not found**: Ensure the binary directory is in your PATH
+3. **Build failures**: Make sure you have the latest stable Rust version
+
 ### Getting Help
 
 If you encounter issues during installation:
 
 1. Check that all prerequisites are met
-2. Verify your Rust installation is working
-3. Ensure keyring access permissions are granted
-4. Consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page
-5. Contact the Physna development team for support
+2. Ensure keyring access permissions are granted
+3. Consult the [GitHub Issues](https://github.com/jchultarsky101/pcli2/issues) page
+4. Contact the Physna development team for support

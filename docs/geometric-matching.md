@@ -82,13 +82,16 @@ The threshold parameter controls the minimum similarity percentage required for 
 
 ### Folder-Based Matching
 
-Find geometrically similar assets for all assets in a specified folder. This command processes assets in parallel for improved performance.
+Find geometrically similar assets for all assets in one or more specified folders. This command processes assets in parallel for improved performance.
 
 ### Basic Usage
 
 ```bash
 # Find matches for all assets in a folder
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 85.0
+pcli2 folder geometric-match --folder-path /Root/SearchFolder/ --threshold 85.0
+
+# Find matches for all assets in multiple folders
+pcli2 folder geometric-match --folder-path /Root/Folder1/ --folder-path /Root/Folder2/ --threshold 80.0
 ```
 
 ### Performance Options
@@ -99,7 +102,7 @@ Control how many simultaneous operations are performed:
 
 ```bash
 # Use 10 concurrent operations (default is 5)
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 10
+pcli2 folder geometric-match --folder-path /Root/SearchFolder/ --concurrent 10
 ```
 
 #### Progress Tracking
@@ -108,10 +111,10 @@ Display a progress bar during long-running operations:
 
 ```bash
 # Show progress bar
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --progress
+pcli2 folder geometric-match --folder-path /Root/SearchFolder/ --progress
 
 # Combine with concurrency
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --concurrent 8 --progress
+pcli2 folder geometric-match --folder-path /Root/SearchFolder/ --concurrent 8 --progress
 ```
 
 ### Handling Large Folders
@@ -272,16 +275,16 @@ Find part matches for all assets in one or more specified folders. This command 
 
 ```bash
 # Find part matches for all assets in a folder
-pcli2 asset part-match-folder --path /Root/SearchFolder/ --threshold 85.0
+pcli2 folder part-match --folder-path /Root/SearchFolder/ --threshold 85.0
 
 # Find part matches for assets in multiple folders
-pcli2 asset part-match-folder --path /Root/Folder1/ --path /Root/Folder2/ --threshold 80.0
+pcli2 folder part-match --folder-path /Root/Folder1/ --folder-path /Root/Folder2/ --threshold 80.0
 
 # Use exclusive flag to only show matches where both assets belong to the specified paths
-pcli2 asset part-match-folder --path /Root/SearchFolder/ --threshold 85.0 --exclusive
+pcli2 folder part-match --folder-path /Root/SearchFolder/ --threshold 85.0 --exclusive
 
 # Combine with performance options
-pcli2 asset part-match-folder --path /Root/SearchFolder/ --threshold 85.0 --concurrent 8 --progress
+pcli2 folder part-match --folder-path /Root/SearchFolder/ --threshold 85.0 --concurrent 8 --progress
 ```
 
 ### Performance Options
@@ -292,7 +295,7 @@ Control how many simultaneous operations are performed:
 
 ```bash
 # Use 10 concurrent operations (default is 1)
-pcli2 asset part-match-folder --path /Root/SearchFolder/ --concurrent 10
+pcli2 folder part-match --folder-path /Root/SearchFolder/ --concurrent 10
 ```
 
 ##### Progress Tracking
@@ -301,10 +304,10 @@ Display a progress bar during long-running operations:
 
 ```bash
 # Show progress bar
-pcli2 asset part-match-folder --path /Root/SearchFolder/ --progress
+pcli2 folder part-match --folder-path /Root/SearchFolder/ --progress
 
 # Combine with concurrency
-pcli2 asset part-match-folder --path /Root/SearchFolder/ --concurrent 8 --progress
+pcli2 folder part-match --folder-path /Root/SearchFolder/ --concurrent 8 --progress
 ```
 
 ### Handling Large Folders
@@ -395,10 +398,10 @@ REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,FORWARD_MATCH_PERCENTAGE,REVERSE_MATCH
 ## Related Commands
 
 - `asset geometric-match` - Find matches for a single asset
-- `asset geometric-match-folder` - Find matches for all assets in a folder
+- `folder geometric-match` - Find matches for all assets in one or more folders
 - `asset part-match` - Find part matches for a single asset
-- `asset part-match-folder` - Find part matches for all assets in one or more folders
+- `folder part-match` - Find part matches for all assets in one or more folders
 - `asset list` - List assets in a folder
 - `asset get` - Get detailed asset information
 
-Use `pcli2 asset part-match --help` and `pcli2 asset part-match-folder --help` for detailed command information.
+Use `pcli2 asset part-match --help` and `pcli2 folder part-match --help` for detailed command information.

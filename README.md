@@ -302,11 +302,16 @@ pcli2 config get
 ### Asset Commands
 ```
 pcli2 asset create          # Upload a file as an asset
+pcli2 asset create-batch    # Upload multiple files as assets
 pcli2 asset list            # List assets in a folder
 pcli2 asset get             # Get asset details
 pcli2 asset download        # Download an asset
 pcli2 asset delete          # Delete an asset
+pcli2 asset dependencies    # Get dependencies for an asset
 pcli2 asset geometric-match # Find similar assets
+pcli2 asset part-match      # Find part matches for an asset
+pcli2 asset visual-match    # Find visually similar assets
+pcli2 asset text-match      # Find assets using text search
 pcli2 asset metadata        # Manage asset metadata
 ```
 
@@ -314,14 +319,20 @@ pcli2 asset metadata        # Manage asset metadata
 ```
 pcli2 folder list           # List folder structure
 pcli2 folder create         # Create a new folder
-pcli2 folder download       # Download all assets in a folder
+pcli2 folder download       # Download all assets in a folder (supports --resume flag)
 pcli2 folder geometric-match # Find similar assets in folder
+pcli2 folder upload         # Upload all assets from a local directory to a Physna folder
+pcli2 folder dependencies   # Get dependencies for all assembly assets in folder
 ```
 
 ### Other Commands
 ```
 pcli2 auth login            # Authenticate with Physna
+pcli2 auth get              # Get current access token
+pcli2 auth expiration       # Show token expiration time
 pcli2 tenant use            # Set active tenant
+pcli2 tenant list           # List all tenants
+pcli2 tenant current        # Get active tenant
 pcli2 config environment    # Manage environments
 pcli2 completions           # Generate shell completions
 ```

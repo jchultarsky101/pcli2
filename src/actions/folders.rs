@@ -623,6 +623,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Track errors if continue-on-error is enabled
     let mut error_count = 0;
     let mut success_count = 0;
+    let total_assets = all_assets_with_paths.len(); // Store the length before moving the vector
 
     // Download each asset to the appropriate subdirectory in the temp directory
     let mut tasks = Vec::new();
@@ -884,25 +885,26 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         }
     }
 
-    // Finish progress bar if present
-    if let Some(pb) = progress_bar {
-        pb.finish_with_message("Assets downloaded to destination directory");
+    // Report summary with nice statistics
+    println!("\n📊 Download Statistics Report");
+    println!("===========================");
+    println!("✅ Successfully downloaded: {}", success_count);
+    if resume_flag {
+        // For resume, we need to calculate how many were skipped
+        // This requires knowing the total number of assets vs. how many were actually downloaded
+        let skipped_count = total_assets - success_count - error_count;
+        println!("⏭️  Skipped (already existed): {}", skipped_count);
+    } else {
+        println!("⏭️  Skipped (already existed): 0");
     }
-
-    // Report summary if continue-on-error was used
-    if continue_on_error && (error_count > 0 || success_count > 0) {
-        println!("✅ Successfully downloaded: {} assets", success_count);
-        if error_count > 0 {
-            eprintln!("❌ Failed to download: {} assets", error_count);
-        }
-    }
-
-    // Notify user where files were downloaded
-    println!("Files downloaded to destination directory: {:?}", dest_dir);
-    println!("Downloaded {} assets successfully", success_count);
     if error_count > 0 {
-        eprintln!("⚠️  {} assets failed to download", error_count);
+        println!("❌ Failed downloads: {}", error_count);
+    } else {
+        println!("❌ Failed downloads: 0");
     }
+    println!("📁 Total assets processed: {}", total_assets);
+    println!("⏳ Operation completed successfully!");
+    println!("\n📁 Files downloaded to destination directory: {:?}", dest_dir);
 
     Ok(())
 }

@@ -436,11 +436,15 @@ Manage multiple Physna environment configurations.
 
 ```
 pcli2 config environment add --name <name>     # Add a new environment configuration
+pcli2 config environment add -n <name>         # Short form of add with name
 pcli2 config environment use --name <name>     # Switch to an environment
+pcli2 config environment use -n <name>         # Short form of use with name
 pcli2 config environment remove --name <name>  # Remove an environment
+pcli2 config environment remove -n <name>      # Short form of remove with name
 pcli2 config environment list                  # List all environments
 pcli2 config environment reset                 # Reset all environment configurations
 pcli2 config environment get --name <name>     # Get environment details
+pcli2 config environment get -n <name>         # Short form of get with name
 ```
 
 ### Other Commands
@@ -463,11 +467,32 @@ pcli2 completions fish      # Generate fish completions
 pcli2 completions powershell # Generate PowerShell completions
 pcli2 completions elvish    # Generate Elvish completions
 
-# Example: Install bash completions
-pcli2 completions bash > /etc/bash_completion.d/pcli2
+# Install bash completions (system-wide)
+sudo pcli2 completions bash > /etc/bash_completion.d/pcli2
 # Or for user-specific installation:
 mkdir -p ~/.local/share/bash-completion/completions
 pcli2 completions bash > ~/.local/share/bash-completion/completions/pcli2
+
+# Install zsh completions (MacOS/Linux)
+# For system-wide installation (requires sudo):
+sudo pcli2 completions zsh > /usr/local/share/zsh/site-functions/_pcli2
+# For user-specific installation:
+mkdir -p ~/.zsh/completions
+pcli2 completions zsh > ~/.zsh/completions/_pcli2
+# Then add to your ~/.zshrc:
+# fpath=(~/.zsh/completions $fpath)
+# autoload -U compinit && compinit
+
+# Install fish completions
+# For user-specific installation:
+mkdir -p ~/.config/fish/completions
+pcli2 completions fish > ~/.config/fish/completions/pcli2.fish
+
+# Install PowerShell completions
+# Add to your PowerShell profile:
+pcli2 completions powershell > pcli2-completion.ps1
+# Then dot source it in your PowerShell profile:
+# . "/path/to/pcli2-completion.ps1"
 ```
 
 ## 🤝 Support

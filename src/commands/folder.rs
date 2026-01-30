@@ -47,9 +47,21 @@ pub fn folder_command() -> Command {
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
                 .arg(format_parameter())
-                .arg(folder_uuid_parameter())
-                .arg(folder_path_parameter())
-                .group(folder_identifier_group()),
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_UUID)
+                        .long(crate::commands::params::PARAMETER_FOLDER_UUID)
+                        .num_args(1)
+                        .required(false)
+                        .value_parser(clap::value_parser!(uuid::Uuid))
+                        .help("Resource's folder UUID")
+                )
+                .arg(folder_path_parameter().required(false))
+                .group(
+                    clap::ArgGroup::new("folder-identifier")
+                        .args([crate::commands::params::PARAMETER_FOLDER_UUID, crate::commands::params::PARAMETER_FOLDER_PATH])
+                        .multiple(false)
+                        .required(false)  // Make the group optional
+                ),
         )
         .subcommand(
             Command::new(COMMAND_DELETE)
@@ -164,9 +176,9 @@ pub fn folder_command() -> Command {
                 .about("Get dependencies for all assembly assets in one or more folders")
                 .arg(tenant_parameter())
                 .arg(
-                    clap::Arg::new("folder-path")
+                    clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .short('p')
-                        .long("folder-path")
+                        .long(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .num_args(1..) // Accept one or more values
                         .required(true)
                         .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")

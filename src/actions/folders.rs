@@ -51,7 +51,12 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
     let path = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
-    let path = normalize_path(path.cloned().unwrap_or_default());
+    let path = if let Some(path) = path {
+        normalize_path(path.clone())
+    } else {
+        // If no path is provided, default to root path
+        "/".to_string()
+    };
     trace!("Path requested: \"{}\"", &path);
 
     // It is not efficient, but the only option is to read the full directory hieratchy from the API

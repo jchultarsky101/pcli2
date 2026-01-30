@@ -1001,7 +1001,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // Get folder paths
     let folder_paths: Vec<String> = sub_matches
         .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument("folder-path".to_string()))?
+        .ok_or(CliError::MissingRequiredArgument(crate::commands::params::PARAMETER_FOLDER_PATH.to_string()))?
         .map(|s| s.to_string())
         .collect();
 
@@ -1510,7 +1510,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     // Get folder paths
     let folder_paths: Vec<String> = sub_matches
         .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument("folder-path".to_string()))?
+        .ok_or(CliError::MissingRequiredArgument(crate::commands::params::PARAMETER_FOLDER_PATH.to_string()))?
         .cloned()
         .collect();
 
@@ -2272,7 +2272,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     // Get folder paths
     let folder_paths: Vec<String> = sub_matches
         .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument("folder-path".to_string()))?
+        .ok_or(CliError::MissingRequiredArgument(crate::commands::params::PARAMETER_FOLDER_PATH.to_string()))?
         .cloned()
         .collect();
 
@@ -3479,7 +3479,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
 
     // Get folder paths from the command line arguments
     let folder_paths: Vec<String> = sub_matches
-        .get_many::<String>("folder-path")
+        .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
         .unwrap_or_default()
         .map(|s| s.to_string())
         .collect();

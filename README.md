@@ -245,7 +245,7 @@ pcli2 config environment add --name "development" \
   --api-url "https://dev-api.physna.com/v3"
 
 # Switch environments
-pcli2 config environment use development
+pcli2 config environment use --name development
 
 # List all environments
 pcli2 config environment list
@@ -329,6 +329,26 @@ pcli2 asset metadata delete        # Delete specific metadata fields from an ass
 pcli2 asset metadata create-batch  # Create metadata for multiple assets from a CSV file
 pcli2 asset metadata inference     # Apply metadata from a reference asset to geometrically similar assets
 ```
+
+#### Asset Metadata Create-Batch CSV Format
+
+The CSV file for `asset metadata create-batch` must have the following columns in the specified order:
+
+```
+ASSET_PATH,NAME,VALUE
+/Root/Folder/Model1.stl,Material,Steel
+/Root/Folder/Model1.stl,Weight,"15.5 kg"
+/Root/Folder/Model2.ipt,Material,Aluminum
+/Root/Folder/Model2.ipt,Supplier,Richardson Electronics
+```
+
+**CSV File Requirements**:
+- The first row must contain the headers `ASSET_PATH,NAME,VALUE`
+- The file must be UTF-8 encoded
+- Values containing commas, quotes, or newlines must be enclosed in double quotes
+- Empty rows will be ignored
+- Each row represents a single metadata field assignment for an asset
+- If an asset has multiple metadata fields to update, include multiple rows with the same `ASSET_PATH` but different `NAME` and `VALUE` combinations
 
 ### Folder Commands
 
@@ -415,12 +435,12 @@ pcli2 config environment   # Manage environment configurations
 Manage multiple Physna environment configurations.
 
 ```
-pcli2 config environment add     # Add a new environment configuration
-pcli2 config environment use     # Switch to an environment
-pcli2 config environment remove  # Remove an environment
-pcli2 config environment list    # List all environments
-pcli2 config environment reset   # Reset all environment configurations
-pcli2 config environment get     # Get environment details
+pcli2 config environment add --name <name>     # Add a new environment configuration
+pcli2 config environment use --name <name>     # Switch to an environment
+pcli2 config environment remove --name <name>  # Remove an environment
+pcli2 config environment list                  # List all environments
+pcli2 config environment reset                 # Reset all environment configurations
+pcli2 config environment get --name <name>     # Get environment details
 ```
 
 ### Other Commands
@@ -429,6 +449,25 @@ Additional utility commands.
 
 ```
 pcli2 completions  # Generate shell completions for various shells
+```
+
+#### Shell Completions
+
+Generate shell completions for various shells to enable tab completion for PCLI2 commands.
+
+```bash
+# Generate shell completions for various shells
+pcli2 completions bash      # Generate bash completions
+pcli2 completions zsh       # Generate zsh completions
+pcli2 completions fish      # Generate fish completions
+pcli2 completions powershell # Generate PowerShell completions
+pcli2 completions elvish    # Generate Elvish completions
+
+# Example: Install bash completions
+pcli2 completions bash > /etc/bash_completion.d/pcli2
+# Or for user-specific installation:
+mkdir -p ~/.local/share/bash-completion/completions
+pcli2 completions bash > ~/.local/share/bash-completion/completions/pcli2
 ```
 
 ## 🤝 Support

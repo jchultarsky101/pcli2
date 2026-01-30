@@ -55,7 +55,13 @@ pub fn folder_command() -> Command {
                         .value_parser(clap::value_parser!(uuid::Uuid))
                         .help("Resource's folder UUID")
                 )
-                .arg(folder_path_parameter().required(false)),
+                .arg(folder_path_parameter().required(false))
+                .group(
+                    clap::ArgGroup::new("folder-identifier")
+                        .args([crate::commands::params::PARAMETER_FOLDER_UUID, crate::commands::params::PARAMETER_FOLDER_PATH])
+                        .multiple(false)
+                        .required(false)  // Make the group optional
+                ),
         )
         .subcommand(
             Command::new(COMMAND_DELETE)

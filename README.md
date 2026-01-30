@@ -335,7 +335,7 @@ pcli2 asset metadata inference     # Apply metadata from a reference asset to ge
 Manage folder structures and bulk operations.
 
 ```
-pcli2 folder list             # List folder structure
+pcli2 folder list             # List folder structure (defaults to root path if no path/UUID specified)
 pcli2 folder create           # Create a new folder
 pcli2 folder get              # Get folder details
 pcli2 folder delete           # Delete a folder
@@ -349,6 +349,30 @@ pcli2 folder geometric-match  # Find geometrically similar assets for all assets
 pcli2 folder part-match       # Find part matches for all assets in folder
 pcli2 folder visual-match     # Find visually similar assets for all assets in folder
 ```
+
+#### Folder List Command
+
+The `folder list` command allows you to list folders in your Physna tenant. When no folder path or UUID is specified, it defaults to listing the root folder.
+
+```bash
+# List all folders in the root directory (default behavior)
+pcli2 folder list
+
+# List folders in a specific path
+pcli2 folder list --folder-path "/Root/MyFolder"
+
+# List folders using folder UUID
+pcli2 folder list --folder-uuid 123e4567-e89b-12d3-a456-426614174000
+
+# List folders with specific output format
+pcli2 folder list --format tree
+```
+
+**Key Features**:
+- **Default Root Path**: When no folder identifier is provided, defaults to the root path (`/`)
+- **Mutual Exclusivity**: You can specify either `--folder-path` or `--folder-uuid`, but not both
+- **Flexible Output**: Supports JSON, CSV, and tree formats
+- **Folder Hierarchy**: Shows the complete folder structure when using tree format
 
 ### Tenant Commands
 

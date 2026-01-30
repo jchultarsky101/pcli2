@@ -370,6 +370,8 @@ pcli2 folder part-match       # Find part matches for all assets in folder
 pcli2 folder visual-match     # Find visually similar assets for all assets in folder
 ```
 
+**Important Note**: Folder paths are case-sensitive. Make sure to use the exact capitalization when specifying folder paths.
+
 #### Folder List Command
 
 The `folder list` command allows you to list folders in your Physna tenant. When no folder path or UUID is specified, it defaults to listing the root folder.
@@ -482,6 +484,11 @@ pcli2 completions zsh > ~/.zsh/completions/_pcli2
 # Then add to your ~/.zshrc:
 # fpath=(~/.zsh/completions $fpath)
 # autoload -U compinit && compinit
+
+# Alternative zsh installation method (works on most systems):
+pcli2 completions zsh > ~/.zfunc/_pcli2
+# Add the following line to your ~/.zshrc:
+# fpath+=~/.zfunc; autoload -U compinit && compinit
 
 # Install fish completions
 # For user-specific installation:

@@ -77,6 +77,38 @@ cargo build --release
 pcli2 --version
 ```
 
+### Updating PCLI2
+
+The update mechanism depends on how you installed PCLI2:
+
+#### If Installed via Universal Installer Script (macOS/Linux) or Shell/PowerShell Scripts:
+```bash
+pcli2-update
+```
+
+This command checks if a new version is available and automatically installs it.
+
+For macOS/Linux users:
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
+```
+
+For Windows users using PowerShell:
+```powershell
+irm https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.ps1 | iex
+```
+
+#### If Installed via Windows MSI Installer:
+The Windows MSI installer does **not** include a `pcli2-update` executable. To upgrade to a new version, you must download and run the new version of the MSI installer from the [releases page](https://github.com/jchultarsky101/pcli2/releases/latest).
+
+For source builds:
+```bash
+cd /path/to/pcli2
+git pull
+cargo build --release
+sudo cp target/release/pcli2 /usr/local/bin/
+```
+
 ## 🔐 Authentication
 
 Securely authenticate with your Physna tenant:
@@ -126,7 +158,7 @@ Manage your folder structure:
 pcli2 folder list --format tree
 
 # Create a new folder
-pcli2 folder create --name "New Folder" --path "/Root/Parent"
+pcli2 folder create --name "New Folder" --parent-folder-path "/Root/Parent"
 
 # Download all assets from a folder
 pcli2 folder download --folder-path "/Root/MyFolder" --output "backup" --resume
@@ -201,8 +233,20 @@ Skip existing files to resume large downloads:
 ```bash
 # Resume a partially completed download
 pcli2 folder download --folder-path "/Root/LargeFolder/" --resume --progress
+```
 
-# Statistics report shows skipped, downloaded, and failed files
+### 📊 Download Statistics Report
+
+When using folder download commands, you'll receive a detailed statistics report:
+
+```
+📊 Download Statistics Report
+===========================
+✅ Successfully downloaded: 125 assets
+⏭️  Skipped (already existed): 75 assets
+❌ Failed downloads: 2 assets
+📁 Total assets processed: 202 assets
+⏳ Operation completed successfully!
 ```
 
 ### 📊 Output Formats
@@ -233,6 +277,13 @@ pcli2 asset list --format json | jq '.[] | select(.size > 10000)'
 
 # Count results
 pcli2 asset list --format csv | wc -l
+
+# Advanced filtering with NuShell (nushell)
+# Filter assets by metadata values like weight in specific range
+pcli2 asset list --folder-path "/Root/MyFolder" --metadata --format json | nu -c 'from json | where ((metadata | get-or-null Weight) | default 0) >= 5.0 and ((metadata | get-or-null Weight) | default 0) <= 50.0 | select name path metadata.Material metadata.Weight'
+
+# Group assets by material type using NuShell
+pcli2 asset list --folder-path "/Root/Inventory" --metadata --format json | nu -c 'from json | where metadata.Material != null | group-by metadata.Material | each {|it| {material: ($it | get 0).metadata.Material, count: ($it | length), avg_weight: ($it | get metadata.Weight | compact | math avg)}}'
 ```
 
 ### ⚙️ Configuration Management
@@ -245,24 +296,10 @@ pcli2 config environment add --name "development" \
   --api-url "https://dev-api.physna.com/v3"
 
 # Switch environments
-pcli2 config environment use development
+pcli2 config environment use --name development
 
 # List all environments
 pcli2 config environment list
-```
-
-## 📊 Download Statistics Report
-
-When using folder download commands, you'll receive a detailed statistics report:
-
-```
-📊 Download Statistics Report
-===========================
-✅ Successfully downloaded: 125 assets
-⏭️  Skipped (already existed): 75 assets
-❌ Failed downloads: 2 assets
-📁 Total assets processed: 202 assets
-⏳ Operation completed successfully!
 ```
 
 ## 🛠️ Troubleshooting
@@ -330,12 +367,32 @@ pcli2 asset metadata create-batch  # Create metadata for multiple assets from a 
 pcli2 asset metadata inference     # Apply metadata from a reference asset to geometrically similar assets
 ```
 
+#### Asset Metadata Create-Batch CSV Format
+
+The CSV file for `asset metadata create-batch` must have the following columns in the specified order:
+
+```
+ASSET_PATH,NAME,VALUE
+/Root/Folder/Model1.stl,Material,Steel
+/Root/Folder/Model1.stl,Weight,"15.5 kg"
+/Root/Folder/Model2.ipt,Material,Aluminum
+/Root/Folder/Model2.ipt,Supplier,Richardson Electronics
+```
+
+**CSV File Requirements**:
+- The first row must contain the headers `ASSET_PATH,NAME,VALUE`
+- The file must be UTF-8 encoded
+- Values containing commas, quotes, or newlines must be enclosed in double quotes
+- Empty rows will be ignored
+- Each row represents a single metadata field assignment for an asset
+- If an asset has multiple metadata fields to update, include multiple rows with the same `ASSET_PATH` but different `NAME` and `VALUE` combinations
+
 ### Folder Commands
 
 Manage folder structures and bulk operations.
 
 ```
-pcli2 folder list             # List folder structure
+pcli2 folder list             # List folder structure (defaults to root path if no path/UUID specified)
 pcli2 folder create           # Create a new folder
 pcli2 folder get              # Get folder details
 pcli2 folder delete           # Delete a folder
@@ -349,6 +406,32 @@ pcli2 folder geometric-match  # Find geometrically similar assets for all assets
 pcli2 folder part-match       # Find part matches for all assets in folder
 pcli2 folder visual-match     # Find visually similar assets for all assets in folder
 ```
+
+**Important Note**: Folder paths are case-sensitive. Make sure to use the exact capitalization when specifying folder paths.
+
+#### Folder List Command
+
+The `folder list` command allows you to list folders in your Physna tenant. When no folder path or UUID is specified, it defaults to listing the root folder.
+
+```bash
+# List all folders in the root directory (default behavior)
+pcli2 folder list
+
+# List folders in a specific path
+pcli2 folder list --folder-path "/Root/MyFolder"
+
+# List folders using folder UUID
+pcli2 folder list --folder-uuid 123e4567-e89b-12d3-a456-426614174000
+
+# List folders with specific output format
+pcli2 folder list --format tree
+```
+
+**Key Features**:
+- **Default Root Path**: When no folder identifier is provided, defaults to the root path (`/`)
+- **Mutual Exclusivity**: You can specify either `--folder-path` or `--folder-uuid`, but not both
+- **Flexible Output**: Supports JSON, CSV, and tree formats
+- **Folder Hierarchy**: Shows the complete folder structure when using tree format
 
 ### Tenant Commands
 
@@ -391,12 +474,16 @@ pcli2 config environment   # Manage environment configurations
 Manage multiple Physna environment configurations.
 
 ```
-pcli2 config environment add     # Add a new environment configuration
-pcli2 config environment use     # Switch to an environment
-pcli2 config environment remove  # Remove an environment
-pcli2 config environment list    # List all environments
-pcli2 config environment reset   # Reset all environment configurations
-pcli2 config environment get     # Get environment details
+pcli2 config environment add --name <name>     # Add a new environment configuration
+pcli2 config environment add -n <name>         # Short form of add with name
+pcli2 config environment use --name <name>     # Switch to an environment
+pcli2 config environment use -n <name>         # Short form of use with name
+pcli2 config environment remove --name <name>  # Remove an environment
+pcli2 config environment remove -n <name>      # Short form of remove with name
+pcli2 config environment list                  # List all environments
+pcli2 config environment reset                 # Reset all environment configurations
+pcli2 config environment get --name <name>     # Get environment details
+pcli2 config environment get -n <name>         # Short form of get with name
 ```
 
 ### Other Commands
@@ -405,6 +492,55 @@ Additional utility commands.
 
 ```
 pcli2 completions  # Generate shell completions for various shells
+```
+
+#### Shell Completions
+
+Generate shell completions for various shells to enable tab completion for PCLI2 commands.
+
+```bash
+# Generate shell completions for various shells
+pcli2 completions bash      # Generate bash completions
+pcli2 completions zsh       # Generate zsh completions
+pcli2 completions fish      # Generate fish completions
+pcli2 completions powershell # Generate PowerShell completions
+pcli2 completions elvish    # Generate Elvish completions
+
+# Install bash completions (system-wide)
+sudo pcli2 completions bash > /etc/bash_completion.d/pcli2
+# Or for user-specific installation:
+mkdir -p ~/.local/share/bash-completion/completions
+pcli2 completions bash > ~/.local/share/bash-completion/completions/pcli2
+
+# Install zsh completions (MacOS/Linux)
+# For system-wide installation (requires sudo):
+sudo pcli2 completions zsh > /usr/local/share/zsh/site-functions/_pcli2
+# For user-specific installation:
+mkdir -p ~/.zsh/completions  # Standard location (note the 's' at the end)
+pcli2 completions zsh > ~/.zsh/completions/_pcli2
+# Then add to your ~/.zshrc:
+# fpath=(~/.zsh/completions $fpath)
+# autoload -U compinit && compinit
+
+# Alternative location (if your system uses the singular form):
+# mkdir -p ~/.zsh/completion
+# pcli2 completions zsh > ~/.zsh/completion/_pcli2
+
+# Alternative zsh installation method (works on most systems):
+pcli2 completions zsh > ~/.zfunc/_pcli2
+# Add the following line to your ~/.zshrc:
+# fpath+=~/.zfunc; autoload -U compinit && compinit
+
+# Install fish completions
+# For user-specific installation:
+mkdir -p ~/.config/fish/completions
+pcli2 completions fish > ~/.config/fish/completions/pcli2.fish
+
+# Install PowerShell completions
+# Add to your PowerShell profile:
+pcli2 completions powershell > pcli2-completion.ps1
+# Then dot source it in your PowerShell profile:
+# . "/path/to/pcli2-completion.ps1"
 ```
 
 ## 🤝 Support

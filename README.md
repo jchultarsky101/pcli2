@@ -77,6 +77,38 @@ cargo build --release
 pcli2 --version
 ```
 
+### Updating PCLI2
+
+The update mechanism depends on how you installed PCLI2:
+
+#### If Installed via Universal Installer Script (macOS/Linux) or Shell/PowerShell Scripts:
+```bash
+pcli2-update
+```
+
+This command checks if a new version is available and automatically installs it.
+
+For macOS/Linux users:
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
+```
+
+For Windows users using PowerShell:
+```powershell
+irm https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.ps1 | iex
+```
+
+#### If Installed via Windows MSI Installer:
+The Windows MSI installer does **not** include a `pcli2-update` executable. To upgrade to a new version, you must download and run the new version of the MSI installer from the [releases page](https://github.com/jchultarsky101/pcli2/releases/latest).
+
+For source builds:
+```bash
+cd /path/to/pcli2
+git pull
+cargo build --release
+sudo cp target/release/pcli2 /usr/local/bin/
+```
+
 ## 🔐 Authentication
 
 Securely authenticate with your Physna tenant:

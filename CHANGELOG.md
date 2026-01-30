@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.19] - 2026-01-29
+
+### Added
+- Added --resume flag to folder download command to skip files that already exist in the destination directory
+- Added detailed statistics report at the end of folder download showing successful, skipped, and failed downloads
+- Extended all timeout values to 30 minutes (1800 seconds) to accommodate large files and slow connections
+- Added short form (-n) for --name parameter in config environment commands
+- Added comprehensive NuShell examples for advanced pipeline operations
+- Added update instructions explaining different update methods based on installation approach
+- Added proper statistics tracking for download operations
+
+### Changed
+- Improved folder download command to check for existing files before downloading when --resume flag is used
+- Enhanced documentation with more detailed examples and parameter explanations
+- Optimized resume functionality to apply delays only when actually downloading, not when skipping files
+- Changed skip message log level from INFO to DEBUG in resume functionality
+
+## [0.2.18] - 2026-01-29
+
+### Added
+- Added --resume flag to folder download command to skip files that already exist in the destination directory
+- Added detailed statistics report at the end of folder download showing successful, skipped, and failed downloads
+- Extended all timeout values to 30 minutes (1800 seconds) to accommodate large files and slow connections
+
 ## [0.2.17] - 2026-01-28
 
 ### Added
@@ -425,7 +449,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.16...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.18...HEAD
+[0.2.19]: https://github.com/physna/pcli2/compare/v0.2.18...v0.2.19
+[0.2.18]: https://github.com/physna/pcli2/compare/v0.2.17...v0.2.18
+[0.2.17]: https://github.com/physna/pcli2/compare/v0.2.16...v0.2.17
+[0.2.16]: https://github.com/physna/pcli2/compare/v0.2.15...v0.2.16
 [0.2.15]: https://github.com/physna/pcli2/compare/v0.2.14...v0.2.15
 [0.2.14]: https://github.com/physna/pcli2/compare/v0.2.13...v0.2.14
 [0.2.13]: https://github.com/physna/pcli2/compare/v0.2.12...v0.2.13

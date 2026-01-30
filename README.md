@@ -477,11 +477,15 @@ pcli2 completions bash > ~/.local/share/bash-completion/completions/pcli2
 # For system-wide installation (requires sudo):
 sudo pcli2 completions zsh > /usr/local/share/zsh/site-functions/_pcli2
 # For user-specific installation:
-mkdir -p ~/.zsh/completions
+mkdir -p ~/.zsh/completions  # Standard location (note the 's' at the end)
 pcli2 completions zsh > ~/.zsh/completions/_pcli2
 # Then add to your ~/.zshrc:
 # fpath=(~/.zsh/completions $fpath)
 # autoload -U compinit && compinit
+
+# Alternative location (if your system uses the singular form):
+# mkdir -p ~/.zsh/completion
+# pcli2 completions zsh > ~/.zsh/completion/_pcli2
 
 # Alternative zsh installation method (works on most systems):
 pcli2 completions zsh > ~/.zfunc/_pcli2

@@ -126,7 +126,7 @@ Manage your folder structure:
 pcli2 folder list --format tree
 
 # Create a new folder
-pcli2 folder create --name "New Folder" --path "/Root/Parent"
+pcli2 folder create --name "New Folder" --parent-folder-path "/Root/Parent"
 
 # Download all assets from a folder
 pcli2 folder download --folder-path "/Root/MyFolder" --output "backup" --resume
@@ -201,8 +201,20 @@ Skip existing files to resume large downloads:
 ```bash
 # Resume a partially completed download
 pcli2 folder download --folder-path "/Root/LargeFolder/" --resume --progress
+```
 
-# Statistics report shows skipped, downloaded, and failed files
+### 📊 Download Statistics Report
+
+When using folder download commands, you'll receive a detailed statistics report:
+
+```
+📊 Download Statistics Report
+===========================
+✅ Successfully downloaded: 125 assets
+⏭️  Skipped (already existed): 75 assets
+❌ Failed downloads: 2 assets
+📁 Total assets processed: 202 assets
+⏳ Operation completed successfully!
 ```
 
 ### 📊 Output Formats
@@ -249,20 +261,6 @@ pcli2 config environment use --name development
 
 # List all environments
 pcli2 config environment list
-```
-
-## 📊 Download Statistics Report
-
-When using folder download commands, you'll receive a detailed statistics report:
-
-```
-📊 Download Statistics Report
-===========================
-✅ Successfully downloaded: 125 assets
-⏭️  Skipped (already existed): 75 assets
-❌ Failed downloads: 2 assets
-📁 Total assets processed: 202 assets
-⏳ Operation completed successfully!
 ```
 
 ## 🛠️ Troubleshooting

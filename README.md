@@ -277,6 +277,13 @@ pcli2 asset list --format json | jq '.[] | select(.size > 10000)'
 
 # Count results
 pcli2 asset list --format csv | wc -l
+
+# Advanced filtering with NuShell (nushell)
+# Filter assets by metadata values like weight in specific range
+pcli2 asset list --folder-path "/Root/MyFolder" --metadata --format json | nu -c 'from json | where ((metadata | get-or-null Weight) | default 0) >= 5.0 and ((metadata | get-or-null Weight) | default 0) <= 50.0 | select name path metadata.Material metadata.Weight'
+
+# Group assets by material type using NuShell
+pcli2 asset list --folder-path "/Root/Inventory" --metadata --format json | nu -c 'from json | where metadata.Material != null | group-by metadata.Material | each {|it| {material: ($it | get 0).metadata.Material, count: ($it | length), avg_weight: ($it | get metadata.Weight | compact | math avg)}}'
 ```
 
 ### ⚙️ Configuration Management

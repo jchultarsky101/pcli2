@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.20] - 2026-02-03
+
+### Added
+- Added asset reprocess command to trigger reprocessing of assets in the Physna system
+- Implemented reprocess API method to call the /tenants/{tenantId}/assets/reprocess endpoint
+- Added command-line interface for reprocess with --uuid and --path parameters
+- Added constants for reprocess command following existing patterns
+- Updated README.md with documentation for the new reprocess command
+
 ## [0.2.19] - 2026-01-29
 
 ### Added
@@ -449,7 +458,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration management
 - Context management for multi-tenant support
 
-[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.18...HEAD
+[Unreleased]: https://github.com/physna/pcli2/compare/v0.2.20...HEAD
+[0.2.20]: https://github.com/physna/pcli2/compare/v0.2.19...v0.2.20
 [0.2.19]: https://github.com/physna/pcli2/compare/v0.2.18...v0.2.19
 [0.2.18]: https://github.com/physna/pcli2/compare/v0.2.17...v0.2.18
 [0.2.17]: https://github.com/physna/pcli2/compare/v0.2.16...v0.2.17

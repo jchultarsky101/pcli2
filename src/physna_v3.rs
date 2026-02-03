@@ -1820,6 +1820,14 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(())` - Successfully executed request (empty response is considered success)
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    async fn post_no_response<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
+    where
+        B: serde::Serialize,
+    {
+        self.execute_request_no_response(|client| client.post(url).json(body))
+            .await
+    }
+
     async fn patch_no_response<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
     where
         B: serde::Serialize,
@@ -3698,6 +3706,38 @@ impl PhysnaApiClient {
         }
 
         Ok(assets)
+    }
+
+    /// Reprocess a single asset by its UUID
+    ///
+    /// This method triggers reprocessing of a specific asset in the Physna system.
+    /// The reprocess endpoint accepts an array of asset IDs, but for this method
+    /// we only submit a single asset ID.
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The UUID of the tenant that owns the asset
+    /// * `asset_uuid` - The UUID of the asset to reprocess
+    ///
+    /// # Returns
+    /// * `Ok(())` - Successfully triggered reprocessing
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn reprocess_asset(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+    ) -> Result<(), ApiError> {
+        let url = format!(
+            "{}/tenants/{}/assets/reprocess",
+            self.base_url, tenant_uuid
+        );
+
+        // Create the request body with a single asset ID in the array
+        let body = serde_json::json!({
+            "assetIds": [asset_uuid.to_string()]
+        });
+
+        // Execute POST request to trigger reprocessing
+        self.post_no_response(&url, &body).await
     }
 }
 

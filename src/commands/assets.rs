@@ -10,7 +10,7 @@ use crate::commands::params::{
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
     multiple_files_parameter, path_parameter, tenant_parameter, uuid_parameter, COMMAND_ASSET,
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD,
-    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_TEXT_MATCH,
+    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_TEXT_MATCH,
     COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
     PARAMETER_FILE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
@@ -206,5 +206,13 @@ pub fn asset_command() -> Command {
             .arg(format_with_metadata_parameter())  // Add metadata flag to be consistent with other match commands
             .arg(format_pretty_parameter())
             .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])) // Only support JSON and CSV as requested
+    )
+    .subcommand(
+        Command::new(COMMAND_REPROCESS)
+            .about("Reprocess an asset to refresh its analysis")
+            .arg(tenant_parameter())
+            .arg(uuid_parameter())
+            .arg(path_parameter())
+            .group(asset_identifier_group()), // Use the standard asset identifier group to ensure either UUID or path is provided, but not both
     )
 }

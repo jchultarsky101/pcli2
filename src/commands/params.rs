@@ -25,6 +25,7 @@ pub const COMMAND_PART_MATCH_FOLDER: &str = "part-match-folder"; // Allow non sn
 pub const COMMAND_VISUAL_MATCH: &str = "visual-match"; // Allow non snake case since it's used as a command name
 pub const COMMAND_VISUAL_MATCH_FOLDER: &str = "visual-match-folder"; // Allow non snake case since it's used as a command name
 pub const COMMAND_TEXT_MATCH: &str = "text-match"; // Allow non snake case since it's used as a command name
+pub const COMMAND_REPROCESS: &str = "reprocess";
 pub const PARAMETER_FUZZY: &str = "fuzzy";
 pub const COMMAND_METADATA: &str = "metadata";
 pub const COMMAND_INFERENCE: &str = "inference"; // Allow non snake case since it's used as a command name

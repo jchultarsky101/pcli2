@@ -180,6 +180,11 @@ pcli2 asset download --path "/Root/Models/model.stl"
 
 # View asset details
 pcli2 asset get --path "/Root/Models/model.stl" --metadata
+
+# Reprocess an asset to refresh its analysis
+pcli2 asset reprocess --path "/Root/Models/model.stl"
+# or
+pcli2 asset reprocess --uuid 550e8400-e29b-41d4-a716-446655440000
 ```
 
 ### 🔍 Geometric Matching
@@ -352,6 +357,7 @@ pcli2 asset geometric-match  # Find geometrically similar assets
 pcli2 asset part-match       # Find part matches for an asset
 pcli2 asset visual-match     # Find visually similar assets
 pcli2 asset text-match       # Find assets using text search
+pcli2 asset reprocess        # Reprocess an asset to refresh its analysis
 pcli2 asset metadata         # Manage asset metadata
 ```
 

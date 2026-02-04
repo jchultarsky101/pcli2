@@ -1333,7 +1333,7 @@ impl PhysnaApiClient {
                         "Found folder at path '{}' using hierarchy: {}",
                         path_for_hierarchy, folder_node.folder.uuid
                     );
-                    return Ok(Some(folder_node.folder.uuid.clone()));
+                    return Ok(Some(folder_node.folder.uuid));
                 }
             }
 
@@ -1481,7 +1481,7 @@ impl PhysnaApiClient {
         let assets = self
             .list_assets_by_parent_folder_uuid(tenant_uuid, parent_folder_uuid.clone().as_ref())
             .await?;
-        Ok(assets.into())
+        Ok(assets)
     }
 
     /// Get all contents (both folders and assets) of a specific folder path
@@ -2123,7 +2123,7 @@ impl PhysnaApiClient {
         // Open the file for streaming upload
         let file = tokio::fs::File::open(file_path)
             .await
-            .map_err(|e| ApiError::IoError(e))?;
+            .map_err(ApiError::IoError)?;
         let file_part = reqwest::multipart::Part::stream(file)
             .file_name(file_name.clone())
             .mime_str(
@@ -2176,7 +2176,7 @@ impl PhysnaApiClient {
             // Create a new form for the retry
             let retry_file = tokio::fs::File::open(file_path)
                 .await
-                .map_err(|e| ApiError::IoError(e))?;
+                .map_err(ApiError::IoError)?;
             let retry_file_part = reqwest::multipart::Part::stream(retry_file)
                 .file_name(file_name.clone())
                 .mime_str(
@@ -2812,7 +2812,7 @@ impl PhysnaApiClient {
                 let access_token = access_token.clone();
                 let client_credentials = client_credentials.clone();
                 let folder_path = folder_path.clone();
-                let folder_uuid = folder_uuid_owned.clone();
+                let folder_uuid = folder_uuid_owned;
                 let progress_bar = progress_bar.clone();
                 let tenant_uuid = *tenant_uuid;
                 let semaphore = semaphore.clone();
@@ -2946,8 +2946,7 @@ impl PhysnaApiClient {
                     error
                 )));
             } else {
-                return Err(ApiError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(ApiError::IoError(std::io::Error::other(
                     "All batch operations failed but no specific error available",
                 )));
             }
@@ -2968,6 +2967,7 @@ impl PhysnaApiClient {
         Ok(successful_assets)
     }
 
+    // Original function that works with path (for backward compatibility)
     async fn get_asset_dependencies_by_path_with_pagination<S: AsRef<str>>(
         &mut self,
         tenant_uuid: &Uuid,
@@ -3065,6 +3065,99 @@ impl PhysnaApiClient {
         }
     }
 
+    // New function that works with UUIDs (updated API endpoint)
+    async fn get_asset_dependencies_by_uuid_with_pagination(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+        page: usize,
+        per_page: usize,
+    ) -> Result<AssetDependenciesResponse, ApiError> {
+        debug!(
+            "Getting asset dependencies by UUID for tenant UUID: {}, asset UUID: {}",
+            tenant_uuid, asset_uuid
+        );
+
+        let url = format!(
+            "{}/tenants/{}/assets/{}/dependencies?page={}&per_page={}",
+            self.base_url, tenant_uuid, asset_uuid, page, per_page
+        );
+        debug!("Dependencies request URL: {}", url);
+
+        // Execute the GET request using the generic method
+        // Handle the case where an asset has no dependencies (which may return 404)
+        // The API returns 404 when no dependencies exist, which we now handle as a NotFoundError
+        match self.get(&url).await {
+            Ok(response) => Ok(response),
+            Err(ApiError::NotFoundError(error_msg)) => {
+                // Check if this is a "no dependencies found" error which is a valid response
+                if error_msg.contains("No dependencies found for asset") {
+                    debug!("Asset has no dependencies (404 with 'No dependencies found' message), returning empty response");
+                    Ok(AssetDependenciesResponse {
+                        dependencies: vec![],
+                        page_data: crate::model::PageData {
+                            current_page: page,
+                            per_page,
+                            total: 0,
+                            last_page: 1,
+                            start_index: 0,
+                            end_index: 0,
+                        },
+                        original_asset_path: asset_uuid.to_string(), // Store UUID as string for consistency
+                    })
+                } else {
+                    // Re-raise the original error if it's not related to missing dependencies
+                    Err(ApiError::NotFoundError(error_msg))
+                }
+            }
+            Err(ApiError::HttpError(reqwest_err)) => {
+                // Check if this is a 404 error which might indicate no dependencies
+                if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                    // Return an empty response instead of an error
+                    debug!("Asset has no dependencies (404 received), returning empty response");
+                    Ok(AssetDependenciesResponse {
+                        dependencies: vec![],
+                        page_data: crate::model::PageData {
+                            current_page: page,
+                            per_page,
+                            total: 0,
+                            last_page: 1,
+                            start_index: 0,
+                            end_index: 0,
+                        },
+                        original_asset_path: asset_uuid.to_string(), // Store UUID as string for consistency
+                    })
+                } else {
+                    // Re-raise the original error if it's not a 404
+                    Err(ApiError::HttpError(reqwest_err))
+                }
+            }
+            Err(ApiError::AuthError(msg)) => {
+                // Check if the auth error message contains indication of "no dependencies"
+                // This happens when the 404 gets converted to auth error during token refresh
+                if msg.contains("No dependencies found for asset") || msg.contains("404") {
+                    debug!("Asset has no dependencies (converted auth error), returning empty response");
+                    Ok(AssetDependenciesResponse {
+                        dependencies: vec![],
+                        page_data: crate::model::PageData {
+                            current_page: page,
+                            per_page,
+                            total: 0,
+                            last_page: 1,
+                            start_index: 0,
+                            end_index: 0,
+                        },
+                        original_asset_path: asset_uuid.to_string(), // Store UUID as string for consistency
+                    })
+                } else {
+                    // Re-raise the auth error if it's not related to missing dependencies
+                    Err(ApiError::AuthError(msg))
+                }
+            }
+            Err(e) => Err(e), // Re-raise any other error
+        }
+    }
+
     /// Public method to get asset dependencies list by path
     /// This method returns the raw dependencies response instead of building an assembly tree
     pub async fn get_asset_dependencies_list_by_path<S: AsRef<str>>(
@@ -3072,10 +3165,31 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         asset_path: S,
     ) -> Result<AssetDependenciesResponse, ApiError> {
-        // Use the existing pagination method with default page values
-        self.get_asset_dependencies_by_path_with_pagination(
+        // First, resolve the asset path to UUID
+        let asset = self.get_asset_by_path(tenant_uuid, asset_path.as_ref()).await?;
+
+        // Then use the UUID-based pagination method with default page values
+        self.get_asset_dependencies_by_uuid_with_pagination(
             tenant_uuid,
-            asset_path,
+            &asset.uuid(),
+            1,   // page 1
+            100, // 100 per page
+        )
+        .await
+    }
+
+    /// Public method to get asset dependencies list by UUID
+    ///
+    /// This method returns the raw dependencies response instead of building an assembly tree
+    pub async fn get_asset_dependencies_list_by_uuid(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+    ) -> Result<AssetDependenciesResponse, ApiError> {
+        // Use the UUID-based pagination method with default page values
+        self.get_asset_dependencies_by_uuid_with_pagination(
+            tenant_uuid,
+            asset_uuid,
             1,   // page 1
             100, // 100 per page
         )
@@ -3091,15 +3205,14 @@ impl PhysnaApiClient {
         let mut page: usize = 1;
         let per_page: usize = 100;
 
-        // IMPORTANT: do not hold a borrow of `root` across `.await`.
-        // Take the path as an owned String up-front.
-        let root_path = root.asset().path().to_string();
+        // Get the asset to determine its UUID for the new API endpoint
+        let root_uuid = root.asset().uuid();
 
         loop {
             let response = self
-                .get_asset_dependencies_by_path_with_pagination(
+                .get_asset_dependencies_by_uuid_with_pagination(
                     tenant_uuid,
-                    root_path.as_str(),
+                    &root_uuid,
                     page,
                     per_page,
                 )
@@ -3152,6 +3265,150 @@ impl PhysnaApiClient {
         Ok(())
     }
 
+    #[async_recursion]
+    async fn populate_asset_dependencies_recursive_by_uuid(
+        &mut self,
+        tenant_uuid: &Uuid,
+        root: &mut AssemblyNode,
+        root_uuid: &Uuid,
+    ) -> Result<(), ApiError> {
+        let mut page: usize = 1;
+        let per_page: usize = 100;
+
+        loop {
+            // Use the UUID-based pagination method
+            let response = self
+                .get_asset_dependencies_by_uuid_with_pagination(
+                    tenant_uuid,
+                    root_uuid,
+                    page,
+                    per_page,
+                )
+                .await?;
+
+            for dependency in response.dependencies {
+                // Convert dependency asset once, but only if it exists
+                let child_asset: Asset = if let Some(asset_response) = dependency.asset {
+                    asset_response.into()
+                } else {
+                    // Create a minimal Asset when full details are not available
+                    // Use the path to extract a name
+                    let name = dependency
+                        .path
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(&dependency.path)
+                        .to_string();
+                    Asset::new(
+                        Uuid::nil(), // Use nil UUID when not available
+                        name,
+                        dependency.path.clone(),
+                        None,                        // file_size
+                        None,                        // file_type
+                        Some("missing".to_string()), // processing_status
+                        None,                        // created_at
+                        None,                        // updated_at
+                        None,                        // metadata
+                        false, // is_assembly - default to false for missing dependencies
+                    )
+                };
+
+                // Insert into tree and get a mutable reference to the stored node
+                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset.clone()); // Clone the asset to avoid moving it
+
+                // Recurse on the stored child node if it has dependencies
+                if dependency.has_dependencies {
+                    self.populate_asset_dependencies_recursive_by_uuid(
+                        tenant_uuid,
+                        child_node,
+                        &child_asset.uuid(),
+                    )
+                    .await?;
+                }
+            }
+
+            // Pagination: stop when we've reached the last page
+            if page >= response.page_data.last_page {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(())
+    }
+
+    #[async_recursion]
+    async fn populate_asset_dependencies_recursive_by_path(
+        &mut self,
+        tenant_uuid: &Uuid,
+        root: &mut AssemblyNode,
+        root_path: &str,
+    ) -> Result<(), ApiError> {
+        let mut page: usize = 1;
+        let per_page: usize = 100;
+
+        loop {
+            // Use the path-based pagination method
+            let response = self
+                .get_asset_dependencies_by_path_with_pagination(
+                    tenant_uuid,
+                    root_path,
+                    page,
+                    per_page,
+                )
+                .await?;
+
+            for dependency in response.dependencies {
+                // Convert dependency asset once, but only if it exists
+                let child_asset: Asset = if let Some(asset_response) = dependency.asset {
+                    asset_response.into()
+                } else {
+                    // Create a minimal Asset when full details are not available
+                    // Use the path to extract a name
+                    let name = dependency
+                        .path
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(&dependency.path)
+                        .to_string();
+                    Asset::new(
+                        Uuid::nil(), // Use nil UUID when not available
+                        name,
+                        dependency.path.clone(),
+                        None,                        // file_size
+                        None,                        // file_type
+                        Some("missing".to_string()), // processing_status
+                        None,                        // created_at
+                        None,                        // updated_at
+                        None,                        // metadata
+                        false, // is_assembly - default to false for missing dependencies
+                    )
+                };
+
+                // Insert into tree and get a mutable reference to the stored node
+                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset.clone()); // Clone the asset to avoid moving it
+
+                // Recurse on the stored child node if it has dependencies
+                if dependency.has_dependencies {
+                    self.populate_asset_dependencies_recursive_by_path(
+                        tenant_uuid,
+                        child_node,
+                        &dependency.path, // Use the dependency's path for recursion
+                    )
+                    .await?;
+                }
+            }
+
+            // Pagination: stop when we've reached the last page
+            if page >= response.page_data.last_page {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(())
+    }
+
     pub async fn get_asset_dependencies_by_path<S: AsRef<str>>(
         &mut self,
         tenant_uuid: &Uuid,
@@ -3161,8 +3418,40 @@ impl PhysnaApiClient {
         let asset = self.get_asset_by_path(tenant_uuid, asset_path).await?;
 
         let mut tree = AssemblyTree::new(asset);
-        self.populate_asset_dependencies_recursive(tenant_uuid, tree.root_mut())
+        // Use the path-based recursive function to populate dependencies
+        self.populate_asset_dependencies_recursive_by_path(tenant_uuid, tree.root_mut(), asset_path)
             .await?;
+        Ok(tree)
+    }
+
+    /// Get asset dependencies by UUID
+    ///
+    /// This method retrieves the dependencies of an asset using its UUID directly,
+    /// which is more efficient than resolving the path to UUID first.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_uuid` - The UUID of the tenant that owns the asset
+    /// * `asset_uuid` - The UUID of the asset to get dependencies for
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(AssemblyTree)` - Successfully built assembly tree with dependencies
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn get_asset_dependencies_by_uuid(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+    ) -> Result<AssemblyTree, ApiError> {
+        let asset = self.get_asset_by_uuid(tenant_uuid, asset_uuid).await?;
+
+        let mut tree = AssemblyTree::new(asset);
+        self.populate_asset_dependencies_recursive_by_uuid(
+            tenant_uuid,
+            tree.root_mut(),
+            asset_uuid,
+        )
+        .await?;
         Ok(tree)
     }
 
@@ -3439,20 +3728,20 @@ impl PhysnaApiClient {
                     // Create an appropriate error based on the response status
                     match retry_status {
                         reqwest::StatusCode::UNAUTHORIZED => {
-                            return Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid even after refresh".to_string()));
+                            Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid even after refresh".to_string()))
                         }
                         reqwest::StatusCode::FORBIDDEN => {
-                            return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
+                            Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()))
                         }
                         reqwest::StatusCode::NOT_FOUND => {
-                            return Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", retry_error_body)));
+                            Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", retry_error_body)))
                         }
                         _ => {
                             // For other error statuses, we return the error body that we captured earlier
-                            return Err(ApiError::ConflictError(format!(
+                            Err(ApiError::ConflictError(format!(
                                 "HTTP {} - {} (after retry)",
                                 retry_status, retry_error_body
-                            )));
+                            )))
                         }
                     }
                 }
@@ -3463,31 +3752,31 @@ impl PhysnaApiClient {
                     reqwest::StatusCode::UNAUTHORIZED => {
                         // Check if we have an access token - if not, this is a general auth error
                         if self.access_token.is_none() {
-                            return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
+                            Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
                         } else {
-                            return Err(ApiError::AuthError(
+                            Err(ApiError::AuthError(
                                 "Unauthorized access - access token may have expired or is invalid"
                                     .to_string(),
-                            ));
+                            ))
                         }
                     }
                     reqwest::StatusCode::FORBIDDEN => {
                         // Check if we have an access token - if not, this is a general auth error
                         if self.access_token.is_none() {
-                            return Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()));
+                            Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
                         } else {
-                            return Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()));
+                            Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()))
                         }
                     }
                     reqwest::StatusCode::NOT_FOUND => {
-                        return Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", error_body)));
+                        Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", error_body)))
                     }
                     _ => {
                         // For other error statuses, we return the error body that we captured earlier
-                        return Err(ApiError::ConflictError(format!(
+                        Err(ApiError::ConflictError(format!(
                             "HTTP {} - {}",
                             status, error_body
-                        )));
+                        )))
                     }
                 }
             }
@@ -3574,28 +3863,28 @@ impl PhysnaApiClient {
                 reqwest::StatusCode::UNAUTHORIZED => {
                     // Check if we have an access token - if not, this is a general auth error
                     if self.access_token.is_none() {
-                        return Err(ApiError::AuthError(format!("Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.", asset_display)));
+                        Err(ApiError::AuthError(format!("Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.", asset_display)))
                     } else {
-                        return Err(ApiError::AuthError(format!("Unauthorized access for asset {}: Access token may have expired or is invalid.", asset_display)));
+                        Err(ApiError::AuthError(format!("Unauthorized access for asset {}: Access token may have expired or is invalid.", asset_display)))
                     }
                 }
                 reqwest::StatusCode::FORBIDDEN => {
                     // Check if we have an access token - if not, this is a general auth error
                     if self.access_token.is_none() {
-                        return Err(ApiError::AuthError(format!("Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.", asset_display)));
+                        Err(ApiError::AuthError(format!("Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.", asset_display)))
                     } else {
-                        return Err(ApiError::AuthError(format!("Access forbidden for asset {}: You don't have permission to download this asset.", asset_display)));
+                        Err(ApiError::AuthError(format!("Access forbidden for asset {}: You don't have permission to download this asset.", asset_display)))
                     }
                 }
                 reqwest::StatusCode::NOT_FOUND => {
-                    return Err(ApiError::ConflictError(format!("Asset not found - the asset {} may have been deleted or the path is incorrect. API Response: {}", asset_display, error_body)));
+                    Err(ApiError::ConflictError(format!("Asset not found - the asset {} may have been deleted or the path is incorrect. API Response: {}", asset_display, error_body)))
                 }
                 _ => {
                     // For other error statuses, we return the error body that we captured earlier
-                    return Err(ApiError::ConflictError(format!(
+                    Err(ApiError::ConflictError(format!(
                         "HTTP {} - {} for asset: {}",
                         status, error_body, asset_display
-                    )));
+                    )))
                 }
             }
         }
@@ -3726,10 +4015,7 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         asset_uuid: &Uuid,
     ) -> Result<(), ApiError> {
-        let url = format!(
-            "{}/tenants/{}/assets/reprocess",
-            self.base_url, tenant_uuid
-        );
+        let url = format!("{}/tenants/{}/assets/reprocess", self.base_url, tenant_uuid);
 
         // Create the request body with a single asset ID in the array
         let body = serde_json::json!({

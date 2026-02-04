@@ -284,7 +284,7 @@ impl Folder {
 impl From<FolderResponse> for Folder {
     fn from(fr: FolderResponse) -> Folder {
         Folder {
-            uuid: fr.uuid.clone(),
+            uuid: fr.uuid,
             name: fr.name.clone(),
             path: "".to_string(),
             assets_count: fr.assets_count,
@@ -296,7 +296,7 @@ impl From<FolderResponse> for Folder {
 impl From<SingleFolderResponse> for Folder {
     fn from(fr: SingleFolderResponse) -> Folder {
         Folder {
-            uuid: fr.folder.uuid.clone(),
+            uuid: fr.folder.uuid,
             name: fr.folder.name.clone(),
             path: "".to_string(),
             assets_count: fr.folder.assets_count,
@@ -443,7 +443,7 @@ impl FolderBuilder {
     /// * `Err(ModelError)` - If required properties are missing
     pub fn build(&self) -> Result<Folder, ModelError> {
         let uuid = match &self.uuid {
-            Some(uuid) => uuid.clone(),
+            Some(uuid) => *uuid,
             None => {
                 return Err(ModelError::MissingPropertyValue {
                     name: "uuid".to_string(),
@@ -609,7 +609,7 @@ impl OutputFormatter for FolderList {
         match format {
             OutputFormat::Json(options) => {
                 // convert to a simple vector for output, sorted by name
-                let mut folders: Vec<Folder> = self.folders.iter().cloned().collect();
+                let mut folders: Vec<Folder> = self.folders.to_vec();
                 folders.sort_by_key(|a| a.name());
                 let json = if options.pretty {
                     serde_json::to_string_pretty(&folders)
@@ -648,7 +648,7 @@ impl OutputFormatter for FolderList {
                 // For folder list, tree format is the same as JSON
                 // In practice, tree format should be handled at the command level
                 // where we have access to the full hierarchy
-                let mut folders: Vec<Folder> = self.folders.iter().cloned().collect();
+                let mut folders: Vec<Folder> = self.folders.to_vec();
                 folders.sort_by_key(|a| a.name());
                 let json = serde_json::to_string_pretty(&folders);
                 match json {
@@ -879,7 +879,7 @@ impl OutputFormatter for TenantList {
         match format {
             OutputFormat::Json(options) => {
                 // convert to a simple vector for output, sorted by name
-                let mut tenants: Vec<Tenant> = self.tenants.iter().cloned().collect();
+                let mut tenants: Vec<Tenant> = self.tenants.to_vec();
                 tenants.sort_by_key(|a| a.name.clone());
                 let json = if options.pretty {
                     serde_json::to_string_pretty(&tenants)
@@ -1202,6 +1202,12 @@ pub struct AssetMetadata {
     meta: HashMap<String, String>,
 }
 
+impl Default for AssetMetadata {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AssetMetadata {
     pub fn new() -> Self {
         Self {
@@ -1519,9 +1525,9 @@ impl CsvRecordProducer for Asset {
 
     /// Get the extended CSV header row for Asset records including metadata
     fn csv_header_with_metadata() -> Vec<String> {
-        let header = Self::csv_header();
+        
         // We'll add metadata columns dynamically when we know what metadata keys exist
-        header
+        Self::csv_header()
     }
 
     /// Convert the Asset to CSV records including metadata
@@ -1865,7 +1871,7 @@ impl FromIterator<Asset> for AssetList {
 
 impl From<Vec<Asset>> for AssetList {
     fn from(assets: Vec<Asset>) -> Self {
-        AssetList::from_iter(assets.into_iter())
+        AssetList::from_iter(assets)
     }
 }
 
@@ -3185,7 +3191,7 @@ impl From<AssetDependenciesResponse> for AssetDependencyList {
         let dependencies = response
             .dependencies
             .into_iter()
-            .map(|api_dep| AssetDependency::from(api_dep))
+            .map(AssetDependency::from)
             .collect();
 
         Self {
@@ -3960,7 +3966,7 @@ impl CsvRecordProducer for TextMatch {
             .asset
             .path
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or(&self.asset.path);
 
         // Build the asset URL using the template: {baseUrl}/tenants/{tenantId}/asset/{assetUuid}
@@ -4098,7 +4104,7 @@ impl CsvRecordProducer for TextMatchPair {
             .reference_asset
             .path
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or(&self.reference_asset.path);
 
         // Build the asset URL using the template: {baseUrl}/tenants/{tenantId}/asset/{assetUuid}

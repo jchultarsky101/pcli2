@@ -19,8 +19,9 @@ use pcli2::{
             create_asset, create_asset_batch, create_asset_metadata_batch, delete_asset,
             delete_asset_metadata, download_asset, geometric_match_asset, geometric_match_folder,
             list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset,
-            print_asset_dependencies, print_asset_metadata, print_folder_dependencies, reprocess_asset,
-            text_match, update_asset_metadata, visual_match_asset, visual_match_folder,
+            print_asset_dependencies, print_asset_metadata, print_folder_dependencies,
+            reprocess_asset, text_match, update_asset_metadata, visual_match_asset,
+            visual_match_folder,
         },
         folders::{
             create_folder, delete_folder, download_folder, list_folders, move_folder,
@@ -38,8 +39,8 @@ use pcli2::{
             COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE,
             COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET,
             COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT,
-            COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_STATE, COMMAND_TENANT,
-            COMMAND_TEXT_MATCH, COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH,
+            COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_STATE,
+            COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH,
             PARAMETER_API_URL, PARAMETER_AUTH_URL, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET,
             PARAMETER_FILE, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT,
             PARAMETER_PRETTY, PARAMETER_UI_URL,
@@ -72,7 +73,7 @@ fn decode_jwt_expiration(token: &str) -> Result<TokenExpirationInfo, Box<dyn std
     let mut padded_payload = payload.to_string();
     match payload.len() % 4 {
         2 => padded_payload.push_str("=="),
-        3 => padded_payload.push_str("="),
+        3 => padded_payload.push('='),
         _ => {} // 0 remainder means no padding needed, 1 remainder is invalid
     }
 
@@ -887,7 +888,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                                     pcli2::configuration::default_api_base_url()
                                 }),
                                 ui_base_url: ui_url
-                                    .unwrap_or_else(|| pcli2::configuration::default_ui_base_url()),
+                                    .unwrap_or_else(pcli2::configuration::default_ui_base_url),
                                 auth_base_url: auth_url.unwrap_or_else(|| {
                                     pcli2::configuration::default_auth_base_url()
                                 }),

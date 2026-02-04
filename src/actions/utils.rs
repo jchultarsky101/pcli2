@@ -69,7 +69,7 @@ pub async fn resolve_folder<'a>(
             .get_folder(&tenant.uuid, uuid)
             .await
             .map_err(CliError::PhysnaExtendedApiError)?;
-        Ok(folder_response.into())
+        Ok(folder_response)
     } else if let Some(path) = path_param {
         let normalized_path = crate::model::normalize_path(path);
         if normalized_path == "/" {
@@ -80,7 +80,7 @@ pub async fn resolve_folder<'a>(
                 .get_folder(&tenant.uuid, &folder_uuid)
                 .await
                 .map_err(CliError::PhysnaExtendedApiError)?;
-            Ok(folder_response.into())
+            Ok(folder_response)
         } else {
             let folder_uuid =
                 super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;
@@ -88,7 +88,7 @@ pub async fn resolve_folder<'a>(
                 .get_folder(&tenant.uuid, &folder_uuid)
                 .await
                 .map_err(CliError::PhysnaExtendedApiError)?;
-            let mut folder: Folder = folder_response.into();
+            let mut folder: Folder = folder_response;
             folder.set_path(path.to_owned());
             Ok(folder)
         }

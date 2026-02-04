@@ -102,6 +102,12 @@ pub struct FormatOptionsBuilder {
     pretty: bool,
 }
 
+impl Default for FormatOptionsBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FormatOptionsBuilder {
     pub fn new() -> Self {
         Self {

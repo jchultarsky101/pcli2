@@ -42,21 +42,13 @@ pub enum FormattingError {
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Default)]
 pub struct OutputFormatOptions {
     pub with_metadata: bool,
     pub with_headers: bool,
     pub pretty: bool,
 }
 
-impl Default for OutputFormatOptions {
-    fn default() -> Self {
-        OutputFormatOptions {
-            with_metadata: false,
-            with_headers: false,
-            pretty: false,
-        }
-    }
-}
 
 /// Enum representing the supported output formats
 #[derive(Debug, Clone, PartialEq, PartialOrd, EnumIter)]

@@ -66,7 +66,7 @@ impl Formattable for ContextInfo {
                 let mut wtr = csv::Writer::from_writer(vec![]);
 
                 if options.with_headers {
-                    wtr.write_record(&[
+                    wtr.write_record([
                         "ACTIVE_TENANT_UUID",
                         "ACTIVE_TENANT_SHORT_NAME",
                         "ACTIVE_TENANT_DISPLAY_NAME",
@@ -122,7 +122,7 @@ pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionE
     };
 
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(|e| CliActionError::FormattingError(e))?;
+        .map_err(CliActionError::FormattingError)?;
 
     let mut api = PhysnaApiClient::try_default()?;
 
@@ -175,7 +175,7 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
     // Get tenants from cache or API depending on refresh flag
     let tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, refresh)
         .await
-        .map_err(|e| CliActionError::ApiError(e))?;
+        .map_err(CliActionError::ApiError)?;
 
     // If no name was provided, show interactive selection
     let selected_tenant = if let Some(name) = name {
@@ -308,7 +308,7 @@ pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActio
 
             let format =
                 crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-                    .map_err(|e| CliActionError::FormattingError(e))?;
+                    .map_err(CliActionError::FormattingError)?;
 
             println!("{}", tenant.format(&format)?);
         }
@@ -358,7 +358,7 @@ pub async fn print_active_tenant_name_with_format(
     };
 
     let format = crate::format::OutputFormat::from_string_with_options(format_str, format_options)
-        .map_err(|e| CliActionError::FormattingError(e))?;
+        .map_err(CliActionError::FormattingError)?;
 
     let configuration = Configuration::load_default()?;
 
@@ -453,11 +453,11 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
     };
 
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(|e| CliActionError::FormattingError(e))?;
+        .map_err(CliActionError::FormattingError)?;
 
     let configuration =
-        Configuration::load_default().map_err(|e| CliActionError::ConfigurationError(e))?;
-    let mut api = PhysnaApiClient::try_default().map_err(|e| CliActionError::ApiError(e))?;
+        Configuration::load_default().map_err(CliActionError::ConfigurationError)?;
+    let mut api = PhysnaApiClient::try_default().map_err(CliActionError::ApiError)?;
     let tenant = crate::param_utils::get_tenant(&mut api, sub_matches, &configuration)
         .await
         .map_err(|e| match e {

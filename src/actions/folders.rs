@@ -145,7 +145,7 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     .await?;
 
     // Check if trying to rename the root folder
-    if folder_path_param.map_or(false, |p| crate::model::normalize_path(p) == "/") {
+    if folder_path_param.is_some_and(|p| crate::model::normalize_path(p) == "/") {
         return Err(CliError::MissingRequiredArgument(
             "Cannot rename the root folder".to_string(),
         ));
@@ -202,18 +202,16 @@ pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Resolve folder ID from either ID parameter or path
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        uuid.clone()
+        *uuid
     } else if let Some(path) = folder_path_param {
         resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
     } else {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Missing folder identifier"
-        )));
+        return Err(CliError::MissingRequiredArgument("Missing folder identifier".to_string()));
     };
 
     // Resolve parent folder ID from either ID parameter or path
     let parent_folder_uuid: Option<Uuid> = if let Some(uuid) = parent_folder_uuid_param {
-        Some(uuid.clone())
+        Some(*uuid)
     } else if let Some(path) = parent_folder_path_param {
         // Use get_folder_uuid_by_path to get the actual UUID, then handle root case separately
         let normalized_path = crate::model::normalize_path(path);
@@ -262,7 +260,7 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Resolve parent folder ID from either ID parameter or path
     let parent_folder_uuid = if let Some(uuid) = parent_folder_uuid_param {
-        Some(uuid.clone())
+        Some(*uuid)
     } else if let Some(path) = parent_folder_path_param {
         let normalized_path = crate::model::normalize_path(path);
         if normalized_path == "/" {
@@ -299,7 +297,7 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Resolve parent folder ID from either ID parameter or path
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        uuid.clone()
+        *uuid
     } else if let Some(path) = folder_path_param {
         let normalized_path = crate::model::normalize_path(path);
         if normalized_path == "/" {
@@ -311,9 +309,7 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
         }
     } else {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Missing folder path"
-        )));
+        return Err(CliError::MissingRequiredArgument("Missing folder path".to_string()));
     };
 
     match api
@@ -326,7 +322,7 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             if api_error.to_string().contains("404 Not Found") && !force_flag {
                 // The folder exists (we resolved the UUID successfully) but can't be deleted because it's not empty
                 return Err(CliError::ActionError(crate::actions::CliActionError::BusinessLogicError(
-                    format!("Folder is not empty. Use --force flag to delete the folder and all its contents recursively.")
+                    "Folder is not empty. Use --force flag to delete the folder and all its contents recursively.".to_string()
                 )));
             }
             Err(CliError::PhysnaExtendedApiError(api_error))
@@ -433,7 +429,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         } else {
             // If the folder was specified by UUID, get the folder details to determine the name
             let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-            let folder: crate::model::Folder = folder.into();
+            let folder: crate::model::Folder = folder;
 
             let folder_path = folder.path();
             // Special handling for root folder
@@ -476,7 +472,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Get the root folder details to determine its path
     let root_folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let root_folder: crate::model::Folder = root_folder.into();
+    let root_folder: crate::model::Folder = root_folder;
     let root_folder_path = root_folder.path();
 
     // Start BFS with the specified folder
@@ -487,7 +483,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let assets_response = api
             .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid))
             .await?;
-        let asset_list: crate::model::AssetList = assets_response.into();
+        let asset_list: crate::model::AssetList = assets_response;
 
         // Add assets with their relative paths
         for asset in asset_list.get_all_assets() {
@@ -549,8 +545,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             .await?;
         for folder in subfolders_response.folders() {
             // Get the full folder details to get the name
-            let folder_detail = api.get_folder(&tenant.uuid, &folder.uuid()).await?;
-            let folder_detail: crate::model::Folder = folder_detail.into();
+            let folder_detail = api.get_folder(&tenant.uuid, folder.uuid()).await?;
+            let folder_detail: crate::model::Folder = folder_detail;
 
             // Get the folder path by appending the folder name to the current path
             let folder_path = if current_folder_path.ends_with('/') {
@@ -594,7 +590,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let resume_flag = sub_matches.get_flag(crate::commands::params::PARAMETER_RESUME);
 
     // Validate concurrent parameter
-    if concurrent_param < 1 || concurrent_param > 10 {
+    if !(1..=10).contains(&concurrent_param) {
         return Err(CliError::MissingRequiredArgument(format!(
             "Invalid value for '--concurrent': must be between 1 and 10, got {}",
             concurrent_param
@@ -656,7 +652,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
                     individual_pb.set_style(
                         ProgressStyle::default_bar()
-                            .template(&format!("{{spinner:.yellow}} {{msg}}"))
+                            .template(&"{spinner:.yellow} {msg}".to_string())
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Downloading: {}", asset_name));
@@ -690,10 +686,10 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 Ok(client) => client,
                 Err(e) => {
                     if continue_on_error_clone {
-                        return Ok(Err((asset_name, physna_path, ApiError::from(e), true)));
+                        return Ok(Err((asset_name, physna_path, e, true)));
                     // true indicates it's a recoverable error
                     } else {
-                        return Err(CliError::PhysnaExtendedApiError(ApiError::from(e)));
+                        return Err(CliError::PhysnaExtendedApiError(e));
                     }
                 }
             };
@@ -782,8 +778,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                                     return Ok(Err((
                                         asset_name,
                                         physna_path,
-                                        ApiError::IoError(std::io::Error::new(
-                                            std::io::ErrorKind::Other,
+                                        ApiError::IoError(std::io::Error::other(
                                             format!("Failed to extract ZIP file: {}", e),
                                         )),
                                         true,
@@ -791,8 +786,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                                 } else {
                                     return Err(CliError::ActionError(
                                         crate::actions::CliActionError::IoError(
-                                            std::io::Error::new(
-                                                std::io::ErrorKind::Other,
+                                            std::io::Error::other(
                                                 format!("Failed to extract ZIP file: {}", e),
                                             ),
                                         ),
@@ -880,8 +874,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     eprintln!("⚠️  Warning: Task failed to execute: {}", join_error);
                 } else {
                     return Err(CliError::ActionError(
-                        crate::actions::CliActionError::IoError(std::io::Error::new(
-                            std::io::ErrorKind::Other,
+                        crate::actions::CliActionError::IoError(std::io::Error::other(
                             join_error.to_string(),
                         )),
                     ));
@@ -909,7 +902,10 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     }
     println!("📁 Total assets processed: {}", total_assets);
     println!("⏳ Operation completed successfully!");
-    println!("\n📁 Files downloaded to destination directory: {:?}", dest_dir);
+    println!(
+        "\n📁 Files downloaded to destination directory: {:?}",
+        dest_dir
+    );
 
     Ok(())
 }
@@ -1081,7 +1077,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         .unwrap_or(0);
 
     // Validate concurrent parameter
-    if concurrent_param < 1 || concurrent_param > 10 {
+    if !(1..=10).contains(&concurrent_param) {
         return Err(CliError::MissingRequiredArgument(format!(
             "Invalid value for '--concurrent': must be between 1 and 10, got {}",
             concurrent_param
@@ -1190,7 +1186,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 Ok(client) => client,
                 Err(e) => {
                     return Err(CliError::PhysnaExtendedApiError(
-                        crate::physna_v3::ApiError::from(e),
+                        e,
                     ));
                 }
             };
@@ -1201,7 +1197,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 .await;
             let asset_exists = match assets_response {
                 Ok(response) => {
-                    let asset_list: crate::model::AssetList = response.into();
+                    let asset_list: crate::model::AssetList = response;
                     asset_list
                         .get_all_assets()
                         .iter()
@@ -1354,8 +1350,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 // If continue_on_error is true, we continue processing other assets
                 if !continue_on_error {
                     return Err(CliError::ActionError(
-                        crate::actions::CliActionError::IoError(std::io::Error::new(
-                            std::io::ErrorKind::Other,
+                        crate::actions::CliActionError::IoError(std::io::Error::other(
                             join_error.to_string(),
                         )),
                     ));
@@ -1397,7 +1392,7 @@ fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Er
 
     // Extract all files to the same directory as the ZIP file
     let parent_dir = zip_path.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::Other, "Could not get parent directory")
+        std::io::Error::other("Could not get parent directory")
     })?;
 
     for i in 0..archive.len() {

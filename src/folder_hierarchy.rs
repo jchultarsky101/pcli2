@@ -114,21 +114,21 @@ impl FolderHierarchy {
 
             // Add all folders to the hierarchy
             for folder in response.folders {
-                let folder_uuid = folder.uuid.clone();
-                let parent_uuid = folder.parent_folder_uuid.clone();
+                let folder_uuid = folder.uuid;
+                let parent_uuid = folder.parent_folder_uuid;
 
                 // Create node and add to hierarchy
                 let node = FolderNode::new(folder);
-                hierarchy.nodes.insert(folder_uuid.clone(), node);
+                hierarchy.nodes.insert(folder_uuid, node);
 
                 // If folder has a parent, add it as child to the parent
                 if let Some(parent_uuid) = &parent_uuid {
                     if let Some(parent_node) = hierarchy.nodes.get_mut(parent_uuid) {
-                        parent_node.children.push(folder_uuid.clone());
+                        parent_node.children.push(folder_uuid);
                     }
                 } else {
                     // No parent - this is a root folder
-                    hierarchy.root_uuids.push(folder_uuid.clone());
+                    hierarchy.root_uuids.push(folder_uuid);
                 }
             }
 
@@ -153,7 +153,7 @@ impl FolderHierarchy {
             .filter_map(|uuid| {
                 if let Some(node) = hierarchy.nodes.get(uuid) {
                     if let Some(parent_uuid) = node.parent_uuid() {
-                        return Some((parent_uuid.clone(), uuid.clone()));
+                        return Some((*parent_uuid, *uuid));
                     }
                 }
                 None
@@ -374,11 +374,11 @@ impl FolderHierarchy {
             new_node.folder = new_folder;
 
             // Add this node to root_ids since it's the root of our filtered hierarchy
-            hierarchy.root_uuids.push(node.uuid().clone());
+            hierarchy.root_uuids.push(*node.uuid());
         }
 
         // Add the current node
-        hierarchy.nodes.insert(node.uuid().clone(), new_node);
+        hierarchy.nodes.insert(*node.uuid(), new_node);
 
         // Recursively add all children
         for child_id in &node.children {

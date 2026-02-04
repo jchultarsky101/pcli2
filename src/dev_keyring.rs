@@ -103,7 +103,7 @@ impl DevKeyring {
 
     pub fn get(&mut self, tenant: &str, key: String) -> Result<Option<String>, DevKeyringError> {
         // Don't fail if loading credentials fails, just return None
-        if let Err(_) = self.load_credentials() {
+        if self.load_credentials().is_err() {
             // If we can't load credentials, return None for the requested key
             return match key.as_str() {
                 "access-token" => Ok(None),

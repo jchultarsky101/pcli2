@@ -61,6 +61,7 @@ pub enum ConfigurationError {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Configuration {
     #[serde(skip_serializing_if = "Option::is_none")]
     active_tenant_uuid: Option<Uuid>,
@@ -82,18 +83,6 @@ pub struct Configuration {
     environments: HashMap<String, EnvironmentConfig>,
 }
 
-impl Default for Configuration {
-    fn default() -> Self {
-        Self {
-            active_tenant_uuid: None,
-            api_base_url: None,
-            ui_base_url: None,
-            auth_base_url: None,
-            active_environment: None,
-            environments: HashMap::new(),
-        }
-    }
-}
 
 impl Configuration {
     pub fn active_tenant_uuid(&self) -> Option<&Uuid> {
@@ -244,7 +233,7 @@ impl Configuration {
 
     // Context management methods
     pub fn get_active_tenant_uuid(&self) -> Option<Uuid> {
-        self.active_tenant_uuid.clone()
+        self.active_tenant_uuid
     }
 
     pub fn set_active_tenant(&mut self, tenant: &Tenant) {

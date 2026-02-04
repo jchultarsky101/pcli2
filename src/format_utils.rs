@@ -225,6 +225,7 @@ pub trait EnhancedOutputFormatter: crate::format::OutputFormatter {
     }
 
     /// Format with conditional metadata inclusion
+    #[allow(clippy::result_large_err)]
     fn format_with_conditional_metadata(
         &self,
         format: OutputFormat,
@@ -257,7 +258,6 @@ mod tests {
     fn test_format_params_creation() {
         // This test verifies that FormatParams can be created
         // Actual testing would require mocking ArgMatches
-        assert!(true);
     }
 
     #[test]

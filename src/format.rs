@@ -15,6 +15,7 @@ pub const TREE: &str = "tree";
 
 /// Error types that can occur during formatting operations
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::large_enum_variant, clippy::result_large_err)]
 pub enum FormattingError {
     /// Error when an unsupported output format is requested
     #[error("invalid output format {0}")]
@@ -41,14 +42,12 @@ pub enum FormattingError {
     CsvIntoInnerError(#[from] csv::IntoInnerError<csv::Writer<Vec<u8>>>),
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
 pub struct OutputFormatOptions {
     pub with_metadata: bool,
     pub with_headers: bool,
     pub pretty: bool,
 }
-
 
 /// Enum representing the supported output formats
 #[derive(Debug, Clone, PartialEq, PartialOrd, EnumIter)]
@@ -67,6 +66,7 @@ impl OutputFormat {
         vec![JSON, CSV, TREE]
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn from_string_with_options(
         format_str: &str,
         options: OutputFormatOptions,
@@ -84,6 +84,7 @@ impl OutputFormat {
     }
 
     /// Enhanced format validation with better error handling and recovery
+    #[allow(clippy::result_large_err)]
     pub fn from_string_with_options_safe(
         format_str: &str,
         options: OutputFormatOptions,
@@ -151,6 +152,7 @@ impl FromStr for OutputFormat {
 }
 
 /// Trait for formatting data in different output formats
+#[allow(clippy::result_large_err)]
 pub trait OutputFormatter {
     /// The type of item being formatted
     type Item;
@@ -178,16 +180,19 @@ pub trait CsvRecordProducer {
     }
 
     /// Produces CSV output with a header row
+    #[allow(clippy::result_large_err)]
     fn to_csv_with_header(&self) -> Result<String, FormattingError> {
         self.to_csv(true)
     }
 
     /// Produces CSV output without a header row
+    #[allow(clippy::result_large_err)]
     fn to_csv_without_header(&self) -> Result<String, FormattingError> {
         self.to_csv(false)
     }
 
     /// Produces CSV output with or without a header row based on the parameter
+    #[allow(clippy::result_large_err)]
     fn to_csv(&self, with_header: bool) -> Result<String, FormattingError> {
         let buf = BufWriter::new(Vec::new());
         let mut wtr = Writer::from_writer(buf);
@@ -209,5 +214,6 @@ pub trait CsvRecordProducer {
 }
 
 pub trait Formattable {
+    #[allow(clippy::result_large_err)]
     fn format(&self, f: &OutputFormat) -> Result<String, FormattingError>;
 }

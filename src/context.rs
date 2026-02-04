@@ -75,6 +75,5 @@ mod tests {
     fn test_context_builder_exists() {
         // This test verifies that the ExecutionContext struct exists
         // More comprehensive tests would require mocking
-        assert!(true);
     }
 }

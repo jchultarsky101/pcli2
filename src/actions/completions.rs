@@ -6,6 +6,7 @@ use crate::error::CliError;
 use std::io;
 
 /// Generate completions for the specified shell and write to stdout.
+#[allow(clippy::result_large_err)]
 pub fn generate_completions(shell: &str) -> Result<(), CliError> {
     // We need to get the full CLI command structure, not just the completions command
     let mut cmd = crate::commands::create_full_command();

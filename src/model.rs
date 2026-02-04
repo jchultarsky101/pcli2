@@ -1336,7 +1336,7 @@ impl Eq for Asset {}
 // Ordering is determined solely by name
 impl PartialOrd for Asset {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.name.cmp(&other.name))
+        Some(self.cmp(other))
     }
 }
 
@@ -1359,6 +1359,7 @@ impl Asset {
     /// * `created_at` - Optional creation timestamp of the asset
     /// * `updated_at` - Optional last update timestamp of the asset
     /// * `metadata` - Optional metadata key-value pairs for the asset
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         uuid: Uuid,
         name: String,
@@ -1525,7 +1526,6 @@ impl CsvRecordProducer for Asset {
 
     /// Get the extended CSV header row for Asset records including metadata
     fn csv_header_with_metadata() -> Vec<String> {
-        
         // We'll add metadata columns dynamically when we know what metadata keys exist
         Self::csv_header()
     }
@@ -1553,6 +1553,7 @@ impl CsvRecordProducer for Asset {
 
 impl Asset {
     /// Generate CSV output with metadata columns
+    #[allow(clippy::result_large_err)]
     pub fn to_csv_with_metadata(&self, with_headers: bool) -> Result<String, FormattingError> {
         let mut wtr = Writer::from_writer(vec![]);
 
@@ -1625,6 +1626,7 @@ impl Asset {
     }
 
     /// Generate tree output with metadata
+    #[allow(clippy::result_large_err)]
     pub fn to_tree_with_metadata(
         &self,
         _options: crate::format::OutputFormatOptions,
@@ -1645,6 +1647,7 @@ impl Asset {
     }
 
     /// Generate tree output without metadata
+    #[allow(clippy::result_large_err)]
     pub fn to_tree(
         &self,
         _options: crate::format::OutputFormatOptions,
@@ -1681,6 +1684,7 @@ impl OutputFormatter for Asset {
 
 impl Asset {
     /// Format the Asset with consideration for metadata flag
+    #[allow(clippy::result_large_err)]
     pub fn format_with_metadata_flag(
         &self,
         f: OutputFormat,
@@ -2195,6 +2199,7 @@ impl OutputFormatter for EnhancedPartSearchResponse {
     /// - JSON: Outputs as JSON with optional pretty printing
     /// - CSV: Outputs as CSV with optional headers
     /// - Tree: Not supported for this type
+    #[allow(clippy::result_large_err)]
     fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
         // Extract the metadata flag from the format options
         let with_metadata = match &f {
@@ -2209,6 +2214,7 @@ impl OutputFormatter for EnhancedPartSearchResponse {
 
 impl EnhancedPartSearchResponse {
     /// Format the EnhancedPartSearchResponse with consideration for metadata flag
+    #[allow(clippy::result_large_err)]
     pub fn format_with_metadata_flag(
         &self,
         f: OutputFormat,
@@ -2974,6 +2980,7 @@ impl EnhancedGeometricSearchResponse {
     /// # Returns
     /// * `Ok(String)` - The formatted output
     /// * `Err(FormattingError)` - If formatting fails
+    #[allow(clippy::result_large_err)]
     pub fn format_with_metadata_option(&self, f: OutputFormat) -> Result<String, FormattingError> {
         match f {
             OutputFormat::Json(options) => {
@@ -3489,7 +3496,7 @@ impl OutputFormatter for AssetDependencyList {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssemblyNode {
     asset: Asset,
-    children: Option<Box<Vec<AssemblyNode>>>,
+    children: Option<Vec<AssemblyNode>>,
 }
 
 impl AssemblyNode {
@@ -3505,7 +3512,7 @@ impl AssemblyNode {
     }
 
     pub fn add_child_mut(&mut self, asset: Asset) -> &mut AssemblyNode {
-        let children = self.children.get_or_insert_with(|| Box::new(Vec::new()));
+        let children = self.children.get_or_insert_with(Vec::new);
         children.push(AssemblyNode::new(asset));
         children.last_mut().expect("just pushed")
     }
@@ -3516,13 +3523,13 @@ impl AssemblyNode {
 
     pub fn children(&self) -> std::slice::Iter<'_, AssemblyNode> {
         self.children
-            .as_deref() // Option<&Vec<AssemblyNode>>
+            .as_ref() // Option<&Vec<AssemblyNode>>
             .map(|v| v.iter()) // Option<Iter<AssemblyNode>>
             .unwrap_or_else(|| [].iter())
     }
 
     pub fn children_len(&self) -> usize {
-        self.children.as_deref().map_or(0, |v| v.len())
+        self.children.as_ref().map_or(0, |v| v.len())
     }
 }
 
@@ -3600,6 +3607,7 @@ impl OutputFormatter for AssemblyNode {
 
 impl AssemblyNode {
     /// Helper method to create CSV records recursively for all nodes in the tree
+    #[allow(clippy::result_large_err)]
     fn as_csv_records_recursive(&self) -> Result<Vec<Vec<String>>, FormattingError> {
         let mut records = Vec::new();
 
@@ -3721,7 +3729,7 @@ impl AssemblyTreeWithCache {
         let mut count = 1; // Count this node
 
         if let Some(children) = &node.children {
-            for child in children.iter() {
+            for child in children {
                 count += self.count_assets_recursive(child);
             }
         }

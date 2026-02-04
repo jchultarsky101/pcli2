@@ -40,6 +40,7 @@ pub fn default_auth_base_url() -> String {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum ConfigurationError {
     #[error("failed to resolve the configuration directory")]
     FailedToFindConfigurationDirectory,
@@ -56,12 +57,11 @@ pub enum ConfigurationError {
     #[error("{cause:?}")]
     FormattingError {
         #[from]
-        cause: FormattingError,
+        cause: Box<FormattingError>,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Configuration {
     #[serde(skip_serializing_if = "Option::is_none")]
     active_tenant_uuid: Option<Uuid>,
@@ -82,7 +82,6 @@ pub struct Configuration {
     #[serde(default)]
     environments: HashMap<String, EnvironmentConfig>,
 }
-
 
 impl Configuration {
     pub fn active_tenant_uuid(&self) -> Option<&Uuid> {

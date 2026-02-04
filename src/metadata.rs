@@ -160,7 +160,7 @@ pub fn convert_single_metadata_to_json_value(
             };
             serde_json::Value::Bool(bool_val)
         }
-        "text" | _ => {
+        _ => {
             // Default to text/string type, with sanitization
             let sanitized_value = sanitize_metadata_value(value);
             serde_json::Value::String(sanitized_value)

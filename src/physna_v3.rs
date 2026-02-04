@@ -855,7 +855,7 @@ impl PhysnaApiClient {
         self.get(&url).await
     }
 
-    /// List folders in a specific parent folder with optional pagination
+    ///   List folders in a specific parent folder with optional pagination
     ///
     /// This method lists folders that have a specific parent folder, allowing
     /// for efficient traversal of the folder hierarchy without fetching all folders.
@@ -869,8 +869,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderListResponse)` - List of folders in the parent
     /// * `Err(ApiError)` - If there was an error during API calls
-
-    /// Get details for a specific folder by ID
+    ///   Get details for a specific folder by ID
     ///
     /// This method fetches detailed information about a specific folder by its ID.
     /// The response includes folder metadata such as name, creation date, asset count, etc.
@@ -878,8 +877,7 @@ impl PhysnaApiClient {
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant that owns the folder
     /// * `folder_id` - The UUID of the folder to retrieve
-
-    /// List folders in a specific parent folder with optional pagination
+    ///   List folders in a specific parent folder with optional pagination
     ///
     /// This method lists folders that have a specific parent folder, allowing
     /// for efficient traversal of the folder hierarchy without fetching all folders.
@@ -1356,8 +1354,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(FolderListResponse)` - List of folders in the parent
     /// * `Err(ApiError)` - If there was an error during API calls
-
-    /// Get contents of root folder by tenant ID, filtered by content type
+    ///   Get contents of root folder by tenant ID, filtered by content type
     ///
     /// This method gets contents of the root folder with a specific content type (folders only, assets only, or all).
     ///
@@ -2077,7 +2074,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(crate::model::AssetResponse)` - Successfully created asset details from the API
     /// * `Err(ApiError)` - If there's an HTTP error, IO error, authentication issue, or other API error
-    ///                     including conflict errors if the asset already exists
+    ///   including conflict errors if the asset already exists
     ///
     /// # Example
     /// ```no_run
@@ -2301,7 +2298,7 @@ impl PhysnaApiClient {
     /// * `tenant_id` - The ID of the tenant that owns the reference asset
     /// * `asset_id` - The UUID of the reference asset to search for similar matches
     /// * `threshold` - The similarity threshold as a percentage (0.00 to 100.00)
-    ///                Lower values return more matches, higher values return fewer but more similar matches
+    ///   Lower values return more matches, higher values return fewer but more similar matches
     ///
     /// # Returns
     /// * `Ok(crate::model::GeometricSearchResponse)` - The search results containing similar assets
@@ -2424,7 +2421,7 @@ impl PhysnaApiClient {
     /// * `tenant_uuid` - The UUID of the tenant containing the assets
     /// * `asset_uuid` - The UUID of the reference asset to search for matches
     /// * `threshold` - The similarity threshold as a percentage (0.00 to 100.00)
-    ///                Lower values return more matches, higher values return fewer but more similar matches
+    ///   Lower values return more matches, higher values return fewer but more similar matches
     ///
     /// # Returns
     /// * `Ok(GeometricSearchResponse)` - The search results containing similar assets
@@ -3166,7 +3163,9 @@ impl PhysnaApiClient {
         asset_path: S,
     ) -> Result<AssetDependenciesResponse, ApiError> {
         // First, resolve the asset path to UUID
-        let asset = self.get_asset_by_path(tenant_uuid, asset_path.as_ref()).await?;
+        let asset = self
+            .get_asset_by_path(tenant_uuid, asset_path.as_ref())
+            .await?;
 
         // Then use the UUID-based pagination method with default page values
         self.get_asset_dependencies_by_uuid_with_pagination(
@@ -3197,6 +3196,7 @@ impl PhysnaApiClient {
     }
 
     #[async_recursion]
+    #[allow(dead_code)]
     async fn populate_asset_dependencies_recursive(
         &mut self,
         tenant_uuid: &Uuid,
@@ -3419,8 +3419,12 @@ impl PhysnaApiClient {
 
         let mut tree = AssemblyTree::new(asset);
         // Use the path-based recursive function to populate dependencies
-        self.populate_asset_dependencies_recursive_by_path(tenant_uuid, tree.root_mut(), asset_path)
-            .await?;
+        self.populate_asset_dependencies_recursive_by_path(
+            tenant_uuid,
+            tree.root_mut(),
+            asset_path,
+        )
+        .await?;
         Ok(tree)
     }
 
@@ -3459,8 +3463,6 @@ impl PhysnaApiClient {
     ///
     /// This method returns the raw dependencies response from the API, which includes
     /// both existing assets and missing dependencies (assets that are referenced but not present in Physna)
-    ///
-
     /// Get asset state counts from the Physna API
     ///
     /// This function retrieves the count of assets in each state (processing, ready, failed, deleted) for a specific tenant.
@@ -4073,6 +4075,12 @@ mod tests {
     }
 }
 
+#[allow(
+    clippy::items_after_test_module,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items,
+    clippy::empty_line_after_doc_comments
+)]
 impl PhysnaApiClient {
     /// Save the current access token to the keyring
     ///

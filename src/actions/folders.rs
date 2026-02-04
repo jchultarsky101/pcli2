@@ -206,7 +206,9 @@ pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     } else if let Some(path) = folder_path_param {
         resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
     } else {
-        return Err(CliError::MissingRequiredArgument("Missing folder identifier".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Missing folder identifier".to_string(),
+        ));
     };
 
     // Resolve parent folder ID from either ID parameter or path
@@ -309,7 +311,9 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
         }
     } else {
-        return Err(CliError::MissingRequiredArgument("Missing folder path".to_string()));
+        return Err(CliError::MissingRequiredArgument(
+            "Missing folder path".to_string(),
+        ));
     };
 
     match api
@@ -652,7 +656,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
                     individual_pb.set_style(
                         ProgressStyle::default_bar()
-                            .template(&"{spinner:.yellow} {msg}".to_string())
+                            .template("{spinner:.yellow} {msg}")
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Downloading: {}", asset_name));
@@ -778,17 +782,19 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                                     return Ok(Err((
                                         asset_name,
                                         physna_path,
-                                        ApiError::IoError(std::io::Error::other(
-                                            format!("Failed to extract ZIP file: {}", e),
-                                        )),
+                                        ApiError::IoError(std::io::Error::other(format!(
+                                            "Failed to extract ZIP file: {}",
+                                            e
+                                        ))),
                                         true,
                                     )));
                                 } else {
                                     return Err(CliError::ActionError(
                                         crate::actions::CliActionError::IoError(
-                                            std::io::Error::other(
-                                                format!("Failed to extract ZIP file: {}", e),
-                                            ),
+                                            std::io::Error::other(format!(
+                                                "Failed to extract ZIP file: {}",
+                                                e
+                                            )),
                                         ),
                                     ));
                                 }
@@ -1185,9 +1191,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             let mut api_task = match crate::physna_v3::PhysnaApiClient::try_default() {
                 Ok(client) => client,
                 Err(e) => {
-                    return Err(CliError::PhysnaExtendedApiError(
-                        e,
-                    ));
+                    return Err(CliError::PhysnaExtendedApiError(e));
                 }
             };
 
@@ -1391,9 +1395,9 @@ fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Er
     let mut archive = zip::ZipArchive::new(cursor)?;
 
     // Extract all files to the same directory as the ZIP file
-    let parent_dir = zip_path.parent().ok_or_else(|| {
-        std::io::Error::other("Could not get parent directory")
-    })?;
+    let parent_dir = zip_path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("Could not get parent directory"))?;
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;

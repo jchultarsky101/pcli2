@@ -29,6 +29,7 @@ use exit_codes::PcliExitCode;
 
 /// Error types that can occur in the main application
 #[derive(Error, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum MainError {
     /// Error related to configuration loading or management
     #[error(transparent)]

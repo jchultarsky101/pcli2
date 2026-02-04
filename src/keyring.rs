@@ -113,6 +113,7 @@ mod implementation {
 
         /// Get multiple credential values for an environment in a single operation
         /// This helps reduce multiple keyring access calls that might trigger multiple authorization prompts
+        #[allow(clippy::type_complexity)]
         pub fn get_environment_credentials(
             &mut self,
             tenant: &str,

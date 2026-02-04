@@ -250,7 +250,9 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Check if the folder exists
     let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
     let mut folder: Folder = folder;
-    if let Some(path) = folder_path_param { folder.set_path(path.to_owned()) }
+    if let Some(path) = folder_path_param {
+        folder.set_path(path.to_owned())
+    }
 
     let file_path = sub_matches
         .get_one::<PathBuf>(PARAMETER_FILE)
@@ -326,7 +328,9 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     // Check if the folder exists
     let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
     let mut folder: Folder = folder;
-    if let Some(path) = folder_path_param { folder.set_path(path.to_owned()) }
+    if let Some(path) = folder_path_param {
+        folder.set_path(path.to_owned())
+    }
 
     let assets = api
         .create_assets_batch(
@@ -542,7 +546,9 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
     )
     .await?;
 
-    if let Some(metadata) = asset.metadata() { println!("{}", metadata.format(format)?) };
+    if let Some(metadata) = asset.metadata() {
+        println!("{}", metadata.format(format)?)
+    };
 
     Ok(())
 }
@@ -655,6 +661,7 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError> {
     use std::io::Cursor;
 
@@ -1371,7 +1378,6 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
             // For CSV with metadata, we need to create a custom implementation
             let mut wtr = csv::Writer::from_writer(vec![]);
-            
 
             // Pre-calculate the metadata keys that will be used for headers and all records
             let mut header_metadata_keys = Vec::new();
@@ -1888,7 +1894,6 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
             // For CSV with metadata, we need to create a custom implementation
             let mut wtr = csv::Writer::from_writer(vec![]);
-            
 
             // Pre-calculate the metadata keys that will be used for headers and all records
             let mut header_metadata_keys = Vec::new();
@@ -2641,7 +2646,6 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
             // For CSV with metadata, we need to create a custom implementation
             let mut wtr = csv::Writer::from_writer(vec![]);
-            
 
             // Pre-calculate the metadata keys that will be used for headers and all records
             let mut header_metadata_keys = Vec::new();

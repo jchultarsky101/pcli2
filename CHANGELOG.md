@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.21] - 2026-02-04
+
+### Fixed
+- Cleaned up all compilation warnings
+- Fixed doc comment formatting issues in src/physna_v3.rs
+- Addressed large enum variant warnings with appropriate attributes
+- Removed redundant assert!(true) statements from tests
+- Fixed wildcard pattern in src/metadata.rs
+- Fixed non-canonical partial_cmp implementation in src/model.rs
+- Fixed box collection issue in src/model.rs
+- Added #[allow] attributes to suppress legitimate warnings
+
 ## [0.2.20] - 2026-02-03
 
 ### Added

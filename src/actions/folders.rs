@@ -1589,13 +1589,22 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     None
                 };
 
-                // Create the new folder
-                let new_folder_response = api
+                // Create the new folder or get existing folder UUID
+                let folder_uuid = match api
                     .create_folder(&tenant.uuid, &folder_name, parent_folder_uuid)
-                    .await?;
-                let new_folder_uuid = new_folder_response.folder.uuid;
-                tracing::trace!("Created new folder with UUID: {}", new_folder_uuid);
-                new_folder_uuid
+                    .await {
+                        Ok(response) => {
+                            tracing::trace!("Created new folder with UUID: {}", response.folder.uuid);
+                            response.folder.uuid
+                        },
+                        Err(crate::physna_v3::ApiError::ConflictError(msg)) if msg.contains("already exists") => {
+                            // Folder already exists, resolve its UUID
+                            tracing::trace!("Folder already exists, resolving UUID for path: {}", path);
+                            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+                        },
+                        Err(e) => return Err(CliError::PhysnaExtendedApiError(e)),
+                    };
+                folder_uuid
             }
             Err(e) => return Err(e),
         }

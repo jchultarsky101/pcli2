@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Added asset thumbnail command to download asset thumbnails from Physna
+- Implemented thumbnail API method to call the /tenants/{tenantId}/assets/{assetId}/thumbnail.png endpoint
+- Added command-line interface for thumbnail with --uuid and --path parameters
+- Added constants for thumbnail command following existing patterns
+- Updated README.md with documentation for the new thumbnail command
+- Added folder thumbnail command to download thumbnails for all assets in a folder and its subfolders
+- Implemented concurrent thumbnail download with progress tracking, error handling, and retry logic
+- Added command-line interface for folder thumbnail with --progress, --concurrent, --delay, and --continue-on-error parameters
+- Updated README.md with documentation for the new folder thumbnail command
+
 ## [0.2.20] - 2026-02-03
 
 ### Added

@@ -427,7 +427,7 @@ pub fn folder_command() -> Command {
                         .long(crate::commands::params::PARAMETER_OUTPUT)
                         .num_args(1)
                         .required(false)
-                        .help("Output directory path (default: <folder_name>_thumbnails directory in the current directory)")
+                        .help("Output directory path (default: <folder_name> directory in the current directory)")
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
                 .arg(

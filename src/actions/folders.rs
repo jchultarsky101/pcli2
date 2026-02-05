@@ -969,13 +969,13 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             // Special handling for root folder "/"
             if path.trim() == "/" {
                 // Use tenant name for root folder
-                format!("{}_thumbnails", tenant.name)
+                tenant.name.clone()
             } else {
                 let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
                 if path_segments.is_empty() {
-                    "untitled_thumbnails".to_string()
+                    "untitled".to_string()
                 } else {
-                    format!("{}_thumbnails", path_segments.last().unwrap().to_string())
+                    path_segments.last().unwrap().to_string()
                 }
             }
         } else {
@@ -987,14 +987,14 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             // Special handling for root folder
             if folder_path.trim() == "/" {
                 // Use tenant name for root folder
-                format!("{}_thumbnails", tenant.name)
+                tenant.name.clone()
             } else {
                 let path_segments: Vec<&str> =
                     folder_path.split('/').filter(|s| !s.is_empty()).collect();
                 if path_segments.is_empty() {
-                    "untitled_thumbnails".to_string()
+                    "untitled".to_string()
                 } else {
-                    format!("{}_thumbnails", path_segments.last().unwrap().to_string())
+                    path_segments.last().unwrap().to_string()
                 }
             }
         };

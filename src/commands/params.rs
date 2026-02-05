@@ -32,6 +32,7 @@ pub const COMMAND_INFERENCE: &str = "inference"; // Allow non snake case since i
 pub const COMMAND_DEPENDENCIES: &str = "dependencies";
 pub const COMMAND_DOWNLOAD: &str = "download";
 pub const COMMAND_DOWNLOAD_FOLDER: &str = "download-folder";
+pub const COMMAND_THUMBNAIL: &str = "thumbnail";
 
 // Auth commands
 pub const COMMAND_AUTH: &str = "auth";
@@ -343,7 +344,7 @@ pub fn path_parameter() -> Arg {
         .long(PARAMETER_PATH)
         .num_args(1)
         .required(false)
-        .help("Folder path (e.g., /Root/Child/Grandchild)")
+        .help("Resource path (e.g., /Root/Folder/Asset.stl)")
 }
 
 /// Create the refresh parameter.

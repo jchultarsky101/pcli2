@@ -664,6 +664,60 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     Ok(())
 }
 
+pub async fn download_asset_thumbnail(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    trace!("Executing \"asset thumbnail\" command...");
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
+    let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
+
+    // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
+    let tenant_uuid = *ctx.tenant_uuid();
+
+    // Resolve asset ID from either UUID parameter or path using the helper function
+    let asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        asset_uuid_param,
+        asset_path_param,
+    )
+    .await?;
+
+    // Get the output file path
+    let output_file_path = if let Some(output_path) =
+        sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE)
+    {
+        output_path.clone()
+    } else {
+        // Use the asset name as the default output file name with .png extension
+        let asset_name = asset.name();
+
+        // Get the stem of the asset name (without extension) and add .png
+        let path_stem = std::path::Path::new(&asset_name)
+            .file_stem()
+            .unwrap_or(std::ffi::OsStr::new(&asset_name))
+            .to_string_lossy()
+            .to_string();
+
+        let mut path = std::path::PathBuf::new();
+        path.push(format!("{}.png", path_stem));
+        path
+    };
+
+    // Download the asset thumbnail
+    let thumbnail_content = ctx
+        .api()
+        .download_asset_thumbnail(&tenant_uuid.to_string(), &asset.uuid().to_string())
+        .await
+        .map_err(CliActionError::ApiError)?;
+
+    // Write the thumbnail content to the output file
+    std::fs::write(&output_file_path, thumbnail_content).map_err(CliActionError::IoError)?;
+
+    Ok(())
+}
+
 fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError> {
     use std::io::Cursor;
 
@@ -1001,7 +1055,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // Get folder paths
     let folder_paths: Vec<String> = sub_matches
         .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(crate::commands::params::PARAMETER_FOLDER_PATH.to_string()))?
+        .ok_or(CliError::MissingRequiredArgument(
+            crate::commands::params::PARAMETER_FOLDER_PATH.to_string(),
+        ))?
         .map(|s| s.to_string())
         .collect();
 
@@ -1510,7 +1566,9 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     // Get folder paths
     let folder_paths: Vec<String> = sub_matches
         .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(crate::commands::params::PARAMETER_FOLDER_PATH.to_string()))?
+        .ok_or(CliError::MissingRequiredArgument(
+            crate::commands::params::PARAMETER_FOLDER_PATH.to_string(),
+        ))?
         .cloned()
         .collect();
 
@@ -2272,7 +2330,9 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     // Get folder paths
     let folder_paths: Vec<String> = sub_matches
         .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(crate::commands::params::PARAMETER_FOLDER_PATH.to_string()))?
+        .ok_or(CliError::MissingRequiredArgument(
+            crate::commands::params::PARAMETER_FOLDER_PATH.to_string(),
+        ))?
         .cloned()
         .collect();
 

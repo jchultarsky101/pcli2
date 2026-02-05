@@ -909,7 +909,10 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     }
     println!("📁 Total assets processed: {}", total_assets);
     println!("⏳ Operation completed successfully!");
-    println!("\n📁 Files downloaded to destination directory: {:?}", dest_dir);
+    println!(
+        "\n📁 Files downloaded to destination directory: {:?}",
+        dest_dir
+    );
 
     Ok(())
 }

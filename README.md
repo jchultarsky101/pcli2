@@ -16,7 +16,7 @@ pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
 pcli2 auth get
 
 # 3. Start managing your assets and folders
-pcli2 asset list --format tree
+pcli2 folder list --format tree
 ```
 
 ## 📋 Table of Contents
@@ -185,6 +185,13 @@ pcli2 asset get --path "/Root/Models/model.stl" --metadata
 pcli2 asset reprocess --path "/Root/Models/model.stl"
 # or
 pcli2 asset reprocess --uuid 550e8400-e29b-41d4-a716-446655440000
+
+# Download asset thumbnail
+pcli2 asset thumbnail --path "/Root/Models/model.stl"
+# or
+pcli2 asset thumbnail --uuid 550e8400-e29b-41d4-a716-446655440000
+# Specify custom output file
+pcli2 asset thumbnail --uuid 550e8400-e29b-41d4-a716-446655440000 --file "my_thumbnail.png"
 ```
 
 ### 🔍 Geometric Matching
@@ -358,6 +365,7 @@ pcli2 asset part-match       # Find part matches for an asset
 pcli2 asset visual-match     # Find visually similar assets
 pcli2 asset text-match       # Find assets using text search
 pcli2 asset reprocess        # Reprocess an asset to refresh its analysis
+pcli2 asset thumbnail        # Download asset thumbnail
 pcli2 asset metadata         # Manage asset metadata
 ```
 

@@ -1281,6 +1281,29 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
 
                     Ok(Ok(asset_name))
                 }
+                Err(ApiError::ConflictError(msg)) if msg.contains("Asset thumbnail not found") => {
+                    // Update individual progress bar for skipped asset
+                    if let Some(ref ipb) = individual_pb {
+                        ipb.set_message(format!("Skipped thumbnail (not found): {}", asset_name));
+                        ipb.finish_and_clear(); // Clear the spinner for this individual download
+                    }
+
+                    // Log that the thumbnail was not found but continue processing
+                    tracing::debug!(
+                        "Thumbnail not found for asset '{}' (Asset UUID: {}, Physna path: {}): {}",
+                        asset_name,
+                        asset_id,
+                        physna_path,
+                        msg
+                    );
+
+                    // Treat this as a successful operation (the "success" is that we handled the missing thumbnail gracefully)
+                    if let Some(ref pb) = progress_bar_clone {
+                        pb.inc(1);
+                    }
+                    
+                    Ok(Ok(asset_name)) // Return success to continue processing other assets
+                }
                 Err(e) => {
                     // Update individual progress bar for error
                     if let Some(ref ipb) = individual_pb {
@@ -1394,6 +1417,12 @@ async fn download_asset_thumbnail_with_retry(
     loop {
         match api.download_asset_thumbnail(tenant_id, asset_id).await {
             Ok(content) => return Ok(content),
+            Err(ApiError::ConflictError(msg)) if msg.contains("Asset thumbnail not found") => {
+                // If the thumbnail doesn't exist for this asset, return an error that indicates
+                // this is not retryable, so the caller can skip this asset
+                tracing::debug!("Thumbnail not found for asset '{}', skipping: {}", asset_name, msg);
+                return Err(ApiError::ConflictError(msg));
+            }
             Err(ApiError::AuthError(_)) if attempts < max_attempts => {
                 // For auth errors, try to refresh the token and retry
                 tracing::debug!("Auth error for asset thumbnail '{}', attempting to refresh token (attempt {}/{})", asset_name, attempts + 1, max_attempts);

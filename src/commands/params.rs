@@ -46,6 +46,7 @@ pub const COMMAND_TENANT: &str = "tenant";
 // Folder commands
 pub const COMMAND_FOLDER: &str = "folder";
 pub const COMMAND_FILE: &str = "file";
+pub const COMMAND_THUMBNAIL: &str = "thumbnail";
 pub const COMMAND_UPLOAD: &str = "upload";
 
 // Context commands have been moved to tenant command
@@ -343,7 +344,7 @@ pub fn path_parameter() -> Arg {
         .long(PARAMETER_PATH)
         .num_args(1)
         .required(false)
-        .help("Folder path (e.g., /Root/Child/Grandchild)")
+        .help("Resource path (e.g., /Root/Folder/Asset.stl)")
 }
 
 /// Create the refresh parameter.

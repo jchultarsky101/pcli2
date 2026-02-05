@@ -317,7 +317,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(())` - Token successfully refreshed
     /// * `Err(ApiError::AuthError)` - Failed to refresh token or no credentials available
-    async fn refresh_token(&mut self) -> Result<(), ApiError> {
+    pub async fn refresh_token(&mut self) -> Result<(), ApiError> {
         // Since the token refresh mechanism is not working reliably with this Cognito setup,
         // we'll automatically attempt to re-authenticate using the cached client credentials.
         // If this automatic re-authentication fails, we'll prompt the user to run 'pcli2 auth login'.
@@ -3887,6 +3887,109 @@ impl PhysnaApiClient {
                         "HTTP {} - {} for asset: {}",
                         status, error_body, asset_display
                     )))
+                }
+            }
+        }
+    }
+
+    /// Download asset thumbnail
+    ///
+    /// This function downloads the thumbnail image for a specific asset.
+    ///
+    /// # Arguments
+    /// * `tenant_id` - The ID of the tenant that owns the asset
+    /// * `asset_id` - The UUID of the asset to download the thumbnail for
+    ///
+    /// # Returns
+    /// * `Ok(Vec<u8>)` - Thumbnail image content as bytes
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn download_asset_thumbnail(
+        &mut self,
+        tenant_id: &str,
+        asset_id: &str,
+    ) -> Result<Vec<u8>, ApiError> {
+        debug!(
+            "Downloading asset thumbnail for tenant_id: {}, asset_id: {}",
+            tenant_id, asset_id
+        );
+
+        let url = format!(
+            "{}/tenants/{}/assets/{}/thumbnail.png",
+            self.base_url, tenant_id, asset_id
+        );
+        debug!("Download asset thumbnail request URL: {}", url);
+
+        // Make the request to download the thumbnail
+        let response = self
+            .http_client
+            .client
+            .get(&url)
+            .header(
+                "Authorization",
+                format!(
+                    "Bearer {}",
+                    self.access_token
+                        .as_ref()
+                        .ok_or_else(|| ApiError::AuthError(
+                            "No access token available for thumbnail download".to_string()
+                        ))?
+                ),
+            )
+            .send()
+            .await
+            .map_err(|e| {
+                debug!("Failed to send thumbnail download request: {}", e);
+                ApiError::from(e)
+            })?;
+
+        // Check if the response was successful
+        if response.status().is_success() {
+            // For successful responses, get the thumbnail content as bytes
+            let bytes_result = response.bytes().await;
+            match bytes_result {
+                Ok(bytes) => {
+                    debug!("Successfully downloaded thumbnail for asset: {}", asset_id);
+                    Ok(bytes.to_vec())
+                }
+                Err(e) => {
+                    debug!("Failed to read thumbnail response bytes: {}", e);
+                    Err(ApiError::from(e))
+                }
+            }
+        } else {
+            // Handle error case
+            let status = response.status();
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            debug!(
+                "Thumbnail download request failed for asset: {} with status: {}, body: {}",
+                asset_id, status, error_body
+            );
+
+            // Create an appropriate error based on the response status
+            match status {
+                reqwest::StatusCode::UNAUTHORIZED => {
+                    // Check if we have an access token - if not, this is a general auth error
+                    if self.access_token.is_none() {
+                        return Err(ApiError::AuthError(format!("Authentication required for asset thumbnail: No access token available. Please log in with 'pcli2 auth login'.", )));
+                    } else {
+                        return Err(ApiError::AuthError(format!("Unauthorized access for asset thumbnail: Access token may have expired or is invalid.")));
+                    }
+                }
+                reqwest::StatusCode::FORBIDDEN => {
+                    return Err(ApiError::AuthError(format!("Access forbidden for asset thumbnail: You don't have permission to download this asset's thumbnail.")));
+                }
+                reqwest::StatusCode::NOT_FOUND => {
+                    return Err(ApiError::ConflictError(format!("Asset thumbnail not found - the asset {} may not have a thumbnail or the asset ID is incorrect. API Response: {}", asset_id, error_body)));
+                }
+                _ => {
+                    // For other error statuses, we return the error body that we captured earlier
+                    return Err(ApiError::ConflictError(format!(
+                        "HTTP {} - {} for asset thumbnail: {}",
+                        status, error_body, asset_id
+                    )));
                 }
             }
         }

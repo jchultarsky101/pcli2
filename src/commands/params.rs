@@ -32,7 +32,6 @@ pub const COMMAND_INFERENCE: &str = "inference"; // Allow non snake case since i
 pub const COMMAND_DEPENDENCIES: &str = "dependencies";
 pub const COMMAND_DOWNLOAD: &str = "download";
 pub const COMMAND_DOWNLOAD_FOLDER: &str = "download-folder";
-pub const COMMAND_THUMBNAIL: &str = "thumbnail";
 
 // Auth commands
 pub const COMMAND_AUTH: &str = "auth";
@@ -47,6 +46,7 @@ pub const COMMAND_TENANT: &str = "tenant";
 // Folder commands
 pub const COMMAND_FOLDER: &str = "folder";
 pub const COMMAND_FILE: &str = "file";
+pub const COMMAND_THUMBNAIL: &str = "thumbnail";
 pub const COMMAND_UPLOAD: &str = "upload";
 
 // Context commands have been moved to tenant command

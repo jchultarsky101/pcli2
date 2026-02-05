@@ -162,6 +162,9 @@ pcli2 folder create --name "New Folder" --parent-folder-path "/Root/Parent"
 
 # Download all assets from a folder
 pcli2 folder download --folder-path "/Root/MyFolder" --output "backup" --resume
+
+# Download thumbnails for all assets in a folder
+pcli2 folder thumbnail --folder-path "/Root/MyFolder" --output "thumbnails" --progress
 ```
 
 ### 📦 Asset Management
@@ -236,6 +239,9 @@ pcli2 folder download --folder-path "/Root/Folder/" --delay 2
 
 # Continue on errors
 pcli2 folder download --folder-path "/Root/Folder/" --continue-on-error
+
+# Download thumbnails for all assets in a folder
+pcli2 folder thumbnail --folder-path "/Root/Folder/" --progress --concurrent 3
 ```
 
 ### 🔄 Resume Interrupted Downloads
@@ -419,6 +425,7 @@ pcli2 folder dependencies     # Get dependencies for all assembly assets in fold
 pcli2 folder geometric-match  # Find geometrically similar assets for all assets in folder
 pcli2 folder part-match       # Find part matches for all assets in folder
 pcli2 folder visual-match     # Find visually similar assets for all assets in folder
+pcli2 folder thumbnail        # Download thumbnails for all assets in a folder
 ```
 
 **Important Note**: Folder paths are case-sensitive. Make sure to use the exact capitalization when specifying folder paths.

@@ -24,7 +24,7 @@ use pcli2::{
             visual_match_asset, visual_match_folder,
         },
         folders::{
-            create_folder, delete_folder, download_folder, list_folders, move_folder,
+            create_folder, delete_folder, download_folder, download_folder_thumbnails, list_folders, move_folder,
             print_folder_details, rename_folder, resolve_folder, upload_folder,
         },
         tenants::{
@@ -266,6 +266,11 @@ pub async fn execute_command() -> Result<(), CliError> {
                 Some((COMMAND_UPLOAD, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_UPLOAD);
                     upload_folder(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_THUMBNAIL, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_FOLDER, COMMAND_THUMBNAIL);
+                    download_folder_thumbnails(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

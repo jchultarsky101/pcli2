@@ -317,7 +317,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(())` - Token successfully refreshed
     /// * `Err(ApiError::AuthError)` - Failed to refresh token or no credentials available
-    async fn refresh_token(&mut self) -> Result<(), ApiError> {
+    pub async fn refresh_token(&mut self) -> Result<(), ApiError> {
         // Since the token refresh mechanism is not working reliably with this Cognito setup,
         // we'll automatically attempt to re-authenticate using the cached client credentials.
         // If this automatic re-authentication fails, we'll prompt the user to run 'pcli2 auth login'.

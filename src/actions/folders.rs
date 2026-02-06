@@ -1805,6 +1805,12 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
 
             if asset_exists {
                 if skip_existing_clone {
+                    // Update individual progress bar for skipped asset
+                    if let Some(ref ipb) = individual_pb {
+                        ipb.set_message(format!("Skipped (exists): {}", file_name_str));
+                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
+                    }
+                    
                     println!("Skipping existing asset: {}", file_name_str);
                     // Update overall progress bar if present
                     if let Some(ref pb) = progress_bar_clone {

@@ -35,6 +35,7 @@ pub fn asset_command() -> Command {
         )
         .subcommand(
             Command::new(COMMAND_CREATE)
+                .visible_alias("upload")
                 .about("Create a new asset by uploading a file")
                 .arg(tenant_parameter())
                 .arg(file_parameter())

@@ -94,6 +94,7 @@ pub const PARAMETER_PARENT_FOLDER_UUID: &str = "parent-folder-uuid";
 pub const PARAMETER_PARENT_FOLDER_PATH: &str = "parent-folder-path";
 pub const PARAMETER_PATH: &str = "path";
 pub const PARAMETER_REFRESH: &str = "refresh";
+pub const PARAMETER_RELOAD: &str = "reload";
 pub const PARAMETER_RECURSIVE: &str = "recursive";
 pub const PARAMETER_CONCURRENT: &str = "concurrent";
 pub const PARAMETER_PROGRESS: &str = "progress";
@@ -229,6 +230,15 @@ pub fn folder_path_parameter() -> Arg {
         .num_args(1)
         .required(true)
         .help("Folder path (e.g., /Root/Child/Grandchild)")
+}
+
+/// Create the reload parameter.
+pub fn reload_parameter() -> Arg {
+    Arg::new(PARAMETER_RELOAD)
+        .long(PARAMETER_RELOAD)
+        .action(clap::ArgAction::SetTrue)
+        .required(false)
+        .help("Reload folder cache from server")
 }
 
 /// Create the parent folder UUID parameter.

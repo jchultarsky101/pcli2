@@ -24,8 +24,9 @@ use pcli2::{
             visual_match_asset, visual_match_folder,
         },
         folders::{
-            create_folder, delete_folder, download_folder, download_folder_thumbnails, list_folders, move_folder,
-            print_folder_details, rename_folder, resolve_folder, upload_folder,
+            create_folder, delete_folder, download_folder, download_folder_thumbnails,
+            list_folders, move_folder, print_folder_details, rename_folder, resolve_folder,
+            upload_folder,
         },
         tenants::{
             clear_active_tenant, get_tenant_details, list_all_tenants,

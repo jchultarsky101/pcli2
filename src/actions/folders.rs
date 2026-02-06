@@ -59,6 +59,15 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
     trace!("Path requested: \"{}\"", &path);
 
+    // Check if reload flag is set to clear the cache
+    let reload_cache = sub_matches.get_flag(crate::commands::params::PARAMETER_RELOAD);
+    if reload_cache {
+        trace!("Reload flag set, clearing folder cache...");
+        crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(|e| {
+            tracing::debug!("Failed to invalidate folder cache: {}", e);
+        });
+    }
+
     // It is not efficient, but the only option is to read the full directory hieratchy from the API
     let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
 
@@ -1074,7 +1083,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             .await?;
         for folder in subfolders_response.folders() {
             // Get the full folder details to get the name
-            let folder_detail = api.get_folder(&tenant.uuid, &folder.uuid()).await?;
+            let folder_detail = api.get_folder(&tenant.uuid, folder.uuid()).await?;
             let folder_detail: crate::model::Folder = folder_detail.into();
 
             // Get the folder path by appending the folder name to the current path
@@ -1118,7 +1127,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         .unwrap_or(0);
 
     // Validate concurrent parameter
-    if concurrent_param < 1 || concurrent_param > 10 {
+    if !(1..=10).contains(&concurrent_param) {
         return Err(CliError::MissingRequiredArgument(format!(
             "Invalid value for '--concurrent': must be between 1 and 10, got {}",
             concurrent_param
@@ -1180,7 +1189,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                     let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
                     individual_pb.set_style(
                         ProgressStyle::default_bar()
-                            .template(&format!("{{spinner:.yellow}} {{msg}}"))
+                            .template("{spinner:.yellow} {msg}")
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Downloading thumbnail: {}", asset_name));
@@ -1202,15 +1211,22 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                 Ok(client) => client.for_download_operations(), // Use download-optimized client
                 Err(e) => {
                     if continue_on_error_clone {
-                        return Ok(Err((asset_name, physna_path, ApiError::from(e), true))); // true indicates it's a recoverable error
+                        return Ok(Err((asset_name, physna_path, e, true)));
+                    // true indicates it's a recoverable error
                     } else {
-                        return Err(CliError::PhysnaExtendedApiError(ApiError::from(e)));
+                        return Err(CliError::PhysnaExtendedApiError(e));
                     }
                 }
             };
 
             // Download the asset thumbnail with retry logic
-            let thumbnail_content = download_asset_thumbnail_with_retry(&mut api_task, &tenant_id, &asset_id, &asset_name).await;
+            let thumbnail_content = download_asset_thumbnail_with_retry(
+                &mut api_task,
+                &tenant_id,
+                &asset_id,
+                &asset_name,
+            )
+            .await;
 
             match thumbnail_content {
                 Ok(thumbnail_content) => {
@@ -1300,7 +1316,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                     if let Some(ref pb) = progress_bar_clone {
                         pb.inc(1);
                     }
-                    
+
                     Ok(Ok(asset_name)) // Return success to continue processing other assets
                 }
                 Err(e) => {
@@ -1340,42 +1356,39 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
     // Wait for all tasks to complete
     for task in tasks {
         match task.await {
-            Ok(task_result) => {
-                match task_result {
-                    Ok(asset_result) => match asset_result {
-                        Ok(_asset_name) => {
-                            success_count += 1;
-                        }
-                        Err((asset_name, physna_path, error, is_recoverable)) => {
-                            if is_recoverable {
-                                error_count += 1;
-                                eprintln!("⚠️  Warning: Failed to download thumbnail for asset '{}' (Physna path: {}): {}", asset_name, physna_path, error);
-                            } else {
-                                return Err(CliError::PhysnaExtendedApiError(error));
-                            }
-                        }
-                    },
-                    Err(cli_error) => {
-                        if continue_on_error {
+            Ok(task_result) => match task_result {
+                Ok(asset_result) => match asset_result {
+                    Ok(_asset_name) => {
+                        success_count += 1;
+                    }
+                    Err((asset_name, physna_path, error, is_recoverable)) => {
+                        if is_recoverable {
                             error_count += 1;
-                            eprintln!(
-                                "⚠️  Warning: Failed to download thumbnail due to CLI error: {}",
-                                cli_error
-                            );
+                            eprintln!("⚠️  Warning: Failed to download thumbnail for asset '{}' (Physna path: {}): {}", asset_name, physna_path, error);
                         } else {
-                            return Err(cli_error);
+                            return Err(CliError::PhysnaExtendedApiError(error));
                         }
                     }
+                },
+                Err(cli_error) => {
+                    if continue_on_error {
+                        error_count += 1;
+                        eprintln!(
+                            "⚠️  Warning: Failed to download thumbnail due to CLI error: {}",
+                            cli_error
+                        );
+                    } else {
+                        return Err(cli_error);
+                    }
                 }
-            }
+            },
             Err(join_error) => {
                 if continue_on_error {
                     error_count += 1;
                     eprintln!("⚠️  Warning: Task failed to execute: {}", join_error);
                 } else {
                     return Err(CliError::ActionError(
-                        crate::actions::CliActionError::IoError(std::io::Error::new(
-                            std::io::ErrorKind::Other,
+                        crate::actions::CliActionError::IoError(std::io::Error::other(
                             join_error.to_string(),
                         )),
                     ));
@@ -1419,35 +1432,60 @@ async fn download_asset_thumbnail_with_retry(
             Err(ApiError::ConflictError(msg)) if msg.contains("Asset thumbnail not found") => {
                 // If the thumbnail doesn't exist for this asset, return an error that indicates
                 // this is not retryable, so the caller can skip this asset
-                tracing::debug!("Thumbnail not found for asset '{}', skipping: {}", asset_name, msg);
+                tracing::debug!(
+                    "Thumbnail not found for asset '{}', skipping: {}",
+                    asset_name,
+                    msg
+                );
                 return Err(ApiError::ConflictError(msg));
             }
             Err(ApiError::AuthError(_)) if attempts < max_attempts => {
                 // For auth errors, try to refresh the token and retry
                 tracing::debug!("Auth error for asset thumbnail '{}', attempting to refresh token (attempt {}/{})", asset_name, attempts + 1, max_attempts);
-                
+
                 match api.refresh_token().await {
                     Ok(_) => {
                         attempts += 1;
-                        tracing::debug!("Token refreshed, retrying thumbnail download for asset '{}'", asset_name);
+                        tracing::debug!(
+                            "Token refreshed, retrying thumbnail download for asset '{}'",
+                            asset_name
+                        );
                         continue; // Retry the download with the refreshed token
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to refresh token for asset thumbnail '{}': {}", asset_name, e);
-                        return Err(ApiError::AuthError(format!("Failed to refresh token after {} attempts: {}", max_attempts, e)));
+                        tracing::warn!(
+                            "Failed to refresh token for asset thumbnail '{}': {}",
+                            asset_name,
+                            e
+                        );
+                        return Err(ApiError::AuthError(format!(
+                            "Failed to refresh token after {} attempts: {}",
+                            max_attempts, e
+                        )));
                     }
                 }
             }
             Err(e) if attempts < max_attempts => {
                 // For other errors, retry up to max_attempts
                 attempts += 1;
-                tracing::debug!("Retrying thumbnail download for asset '{}' (attempt {}/{}) due to error: {}", asset_name, attempts, max_attempts, e);
+                tracing::debug!(
+                    "Retrying thumbnail download for asset '{}' (attempt {}/{}) due to error: {}",
+                    asset_name,
+                    attempts,
+                    max_attempts,
+                    e
+                );
                 tokio::time::sleep(Duration::from_millis(500)).await; // Wait 500ms before retry
                 continue;
             }
             Err(e) => {
                 // Return the final error after max attempts
-                tracing::error!("Failed to download thumbnail for asset '{}' after {} attempts: {}", asset_name, max_attempts, e);
+                tracing::error!(
+                    "Failed to download thumbnail for asset '{}' after {} attempts: {}",
+                    asset_name,
+                    max_attempts,
+                    e
+                );
                 return Err(e);
             }
         }
@@ -1592,18 +1630,23 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 // Create the new folder or get existing folder UUID
                 let folder_uuid = match api
                     .create_folder(&tenant.uuid, &folder_name, parent_folder_uuid)
-                    .await {
-                        Ok(response) => {
-                            tracing::trace!("Created new folder with UUID: {}", response.folder.uuid);
-                            response.folder.uuid
-                        },
-                        Err(crate::physna_v3::ApiError::ConflictError(msg)) if msg.contains("already exists") => {
-                            // Folder already exists, resolve its UUID
-                            tracing::trace!("Folder already exists, resolving UUID for path: {}", path);
-                            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-                        },
-                        Err(e) => return Err(CliError::PhysnaExtendedApiError(e)),
-                    };
+                    .await
+                {
+                    Ok(response) => {
+                        tracing::trace!("Created new folder with UUID: {}", response.folder.uuid);
+                        response.folder.uuid
+                    }
+                    Err(crate::physna_v3::ApiError::ConflictError(msg))
+                        if msg.contains("already exists") =>
+                    {
+                        // Folder already exists, invalidate the cache and resolve its UUID
+                        tracing::trace!("Folder already exists, invalidating cache and resolving UUID for path: {}", path);
+                        let _ =
+                            crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()); // Ignore error during cache invalidation
+                        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
+                    }
+                    Err(e) => return Err(CliError::PhysnaExtendedApiError(e)),
+                };
                 folder_uuid
             }
             Err(e) => return Err(e),
@@ -1789,14 +1832,15 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
             // Construct the asset path using the original folder path and file name
-            // Use the original folder path provided to the command to ensure correct asset path
-            let asset_path = if original_folder_path_clone.ends_with('/') {
-                format!("{}{}", original_folder_path_clone, file_name_str)
+            // Remove leading slash if present to avoid path conflicts
+            let clean_folder_path = original_folder_path_clone.strip_prefix('/').unwrap_or(&original_folder_path_clone);
+            let asset_path = if clean_folder_path.ends_with('/') {
+                format!("{}{}", clean_folder_path, file_name_str)
             } else {
-                format!("{}/{}", original_folder_path_clone, file_name_str)
+                format!("{}/{}", clean_folder_path, file_name_str)
             };
 
-            // Upload the asset to the specified folder
+            // Upload the asset to the specified folder using the full path
             let upload_result = api_task
                 .create_asset(
                     &tenant_clone.uuid,

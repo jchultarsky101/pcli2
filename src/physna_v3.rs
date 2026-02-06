@@ -2115,7 +2115,7 @@ impl PhysnaApiClient {
             .to_string_lossy()
             .into_owned(); // It is save to unwrap because we already confired the file exists
 
-        trace!("Derived asset path: {}", &asset_path);
+        trace!("Uploading file: {}, with full path: {}", file_name, asset_path);
 
         // Open the file for streaming upload
         let file = tokio::fs::File::open(file_path)
@@ -2131,14 +2131,12 @@ impl PhysnaApiClient {
             .unwrap();
 
         // Build the multipart form with file part and required parameters
-        let mut form = reqwest::multipart::Form::new()
+        // Send the full asset path and let the API handle folder creation
+        let form = reqwest::multipart::Form::new()
             .part("file", file_part)
-            .text("path", asset_path.clone()) // Use the full asset path including folder
-            .text("metadata", "") // Empty metadata as in the working example
-            .text("createMissingFolders", ""); // Empty createMissingFolders as in the working example
-
-        // Add folder ID if provided
-        form = form.text("folderId", folder_uuid.to_string());
+            .text("path", asset_path.clone()) // Full asset path including folder structure
+            .text("metadata", "") // Empty metadata
+            .text("createMissingFolders", "true"); // Enable creating missing folders
 
         debug!("Creating asset with path: {}", asset_path);
 
@@ -2238,10 +2236,14 @@ impl PhysnaApiClient {
                         Err(ApiError::ConflictError("File is too large. Please check the file size limits and try again.".to_string()))
                     }
                     _ => {
+                        // Capture and log the error response body for better debugging
+                        let error_status = retry_response.status();
+                        let error_body = retry_response.text().await.unwrap_or_else(|_| "Unable to read error response body".to_string());
+                        debug!("HTTP {} error response body: {}", error_status, error_body);
                         Err(ApiError::RetryFailed(format!(
                             "Original error: {}, Retry failed with status: {}",
                             response.status(),
-                            retry_response.status()
+                            error_status
                         )))
                     }
                 }
@@ -2279,7 +2281,26 @@ impl PhysnaApiClient {
                     Err(ApiError::ConflictError("File is too large. Please check the file size limits and try again.".to_string()))
                 }
                 _ => {
-                    Err(ApiError::HttpError(response.error_for_status().unwrap_err()))
+                    // Capture and log the error response body for better debugging
+                    let error_status = response.status();
+                    let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response body".to_string());
+                    debug!("HTTP {} error response body: {}", error_status, error_text);
+                    
+                    // Check if this is the "Invalid path extension" error which means unsupported file type
+                    if error_text.contains("Invalid path extension:") {
+                        // Extract the file extension from the error message if possible
+                        let file_ext = extract_file_extension_from_error(&error_text);
+                        let user_friendly_msg = if !file_ext.is_empty() {
+                            format!("Unsupported file type: {} is not supported by Physna. Supported file types may include formats like .sldprt, .step, .stl, etc.", file_ext)
+                        } else {
+                            "Unsupported file type: This file format is not supported by Physna. Please use a supported format like .sldprt, .step, .stl, etc.".to_string()
+                        };
+                        
+                        Err(ApiError::ConflictError(user_friendly_msg))
+                    } else {
+                        // Return the original error for other cases
+                        Err(ApiError::ConflictError(format!("HTTP {} - Response: {}", error_status, error_text)))
+                    }
                 }
             }
         }
@@ -4220,4 +4241,20 @@ impl PhysnaApiClient {
     fn save_current_token_to_keyring_internal(&self) -> Result<(), ApiError> {
         self.save_current_token_to_keyring(&self.environment_name)
     }
+}
+
+/// Helper function to extract file extension from error message
+fn extract_file_extension_from_error(error_msg: &str) -> String {
+    // Look for the last '.' in the error message to extract the file extension
+    // The error message format is: "Invalid path extension: 'path/to/file.ext'"
+    if let Some(start) = error_msg.find('\'') {
+        if let Some(end) = error_msg[start + 1..].find('\'') {
+            let path_str = &error_msg[start + 1..start + 1 + end];
+            if let Some(ext_pos) = path_str.rfind('.') {
+                return path_str[ext_pos..].to_string();
+            }
+        }
+    }
+    // If we can't extract the extension, return an empty string
+    String::new()
 }

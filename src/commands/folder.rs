@@ -56,6 +56,7 @@ pub fn folder_command() -> Command {
                         .help("Resource's folder UUID")
                 )
                 .arg(folder_path_parameter().required(false))
+                .arg(crate::commands::params::reload_parameter())
                 .group(
                     clap::ArgGroup::new("folder-identifier")
                         .args([crate::commands::params::PARAMETER_FOLDER_UUID, crate::commands::params::PARAMETER_FOLDER_PATH])

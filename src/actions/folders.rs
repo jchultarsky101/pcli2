@@ -1808,7 +1808,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     // Update individual progress bar for skipped asset
                     if let Some(ref ipb) = individual_pb {
                         ipb.set_message(format!("Skipped (exists): {}", file_name_str));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
+                        ipb.finish_using_style(); // Finish with the current style
                     }
                     
                     println!("Skipping existing asset: {}", file_name_str);
@@ -1867,7 +1867,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     // Update individual progress bar
                     if let Some(ref ipb) = individual_pb {
                         ipb.set_message(format!("Uploaded: {}", file_name_str));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
+                        ipb.finish_using_style(); // Finish with the current style
                     }
 
                     // Update overall progress bar if present
@@ -1881,7 +1881,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     // Update individual progress bar for error
                     if let Some(ref ipb) = individual_pb {
                         ipb.set_message(format!("Failed: {} - {}", file_name_str, e));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
+                        ipb.finish_using_style(); // Finish with the current style
                     }
 
                     // Log the detailed error for debugging

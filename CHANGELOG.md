@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.24] - 2026-02-05
+
+### Added
+- Added detailed statistics report to folder upload command matching the format used in folder download
+- Added --reload flag to folder list command to clear cache and reload from server
+- Added visible alias "upload" for "asset create" command for better user experience
+- Enhanced error handling for unsupported file types with user-friendly messages
+
+### Fixed
+- Fixed issue where folder upload command would fail when Physna folder already existed instead of using existing folder
+- Fixed cache staleness issue that prevented folder resolution when folder creation conflicted
+- Fixed API parameter conflicts that caused 400 Bad Request errors during asset creation
+- Fixed typo in concurrent upload progress message ("Starging" to "Uploading")
+- Fixed progress bar handling for skipped assets in concurrent uploads to prevent accumulation of unfinished progress bars
+- Fixed individual progress bar management in concurrent operations to prevent visual artifacts
+
+### Changed
+- Improved folder upload logic to check if folder exists, create if needed, or use existing folder
+- Enhanced error messages for unsupported file types with specific guidance for users
+- Updated README.md to document new upload statistics report and folder upload functionality
+
 ## [0.2.23] - 2026-02-05
 
 ### Added

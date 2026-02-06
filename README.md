@@ -163,6 +163,9 @@ pcli2 folder create --name "New Folder" --parent-folder-path "/Root/Parent"
 # Download all assets from a folder
 pcli2 folder download --folder-path "/Root/MyFolder" --output "backup" --resume
 
+# Upload all assets from a local directory to a Physna folder
+pcli2 folder upload --local-path "./local_models" --folder-path "/Root/MyFolder" --skip-existing
+
 # Download thumbnails for all assets in a folder
 pcli2 folder thumbnail --folder-path "/Root/MyFolder" --output "thumbnails" --progress
 ```
@@ -253,10 +256,11 @@ Skip existing files to resume large downloads:
 pcli2 folder download --folder-path "/Root/LargeFolder/" --resume --progress
 ```
 
-### 📊 Download Statistics Report
+### 📊 Download and Upload Statistics Reports
 
-When using folder download commands, you'll receive a detailed statistics report:
+When using folder download and upload commands, you'll receive detailed statistics reports:
 
+**Download Statistics Report:**
 ```
 📊 Download Statistics Report
 ===========================
@@ -264,6 +268,17 @@ When using folder download commands, you'll receive a detailed statistics report
 ⏭️  Skipped (already existed): 75 assets
 ❌ Failed downloads: 2 assets
 📁 Total assets processed: 202 assets
+⏳ Operation completed successfully!
+```
+
+**Upload Statistics Report:**
+```
+📊 Upload Statistics Report
+==========================
+✅ Successfully uploaded: 150 assets
+⏭️  Skipped (already existed): 0 assets
+❌ Failed uploads: 1 asset
+📁 Total assets processed: 151 assets
 ⏳ Operation completed successfully!
 ```
 

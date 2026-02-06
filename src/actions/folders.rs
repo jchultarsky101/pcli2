@@ -1694,13 +1694,16 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
+    // Store the total count before moving entries
+    let total_entries_count = entries.len();
+
     // Use a semaphore to limit concurrent operations
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent_param));
 
     // Create progress bars if requested
     let (progress_bar, multi_progress) = if show_progress {
         let mp = indicatif::MultiProgress::new();
-        let pb = mp.add(indicatif::ProgressBar::new(entries.len() as u64));
+        let pb = mp.add(indicatif::ProgressBar::new(total_entries_count as u64));
         pb.set_style(indicatif::ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall progress")
             .unwrap()
@@ -1899,7 +1902,6 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // Wait for all tasks to complete
     let mut success_count = 0;
     let mut error_count = 0;
-    let mut errors_occurred = false;
 
     for task in tasks {
         match task.await {
@@ -1917,7 +1919,6 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                             }
                             Err(cli_error) => {
                                 error_count += 1;
-                                errors_occurred = true;
                                 // If continue_on_error is true, we continue processing other assets
                                 if !continue_on_error {
                                     return Err(cli_error);
@@ -1929,7 +1930,6 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     }
                     Err(cli_error) => {
                         error_count += 1;
-                        errors_occurred = true;
                         // If continue_on_error is true, we continue processing other assets
                         if !continue_on_error {
                             return Err(cli_error);
@@ -1941,7 +1941,6 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             }
             Err(join_error) => {
                 error_count += 1;
-                errors_occurred = true;
                 // If continue_on_error is true, we continue processing other assets
                 if !continue_on_error {
                     return Err(CliError::ActionError(
@@ -1956,15 +1955,31 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         }
     }
 
-    // Print summary if there were errors or if no progress bar was shown
-    if errors_occurred {
-        eprintln!(
-            "❌ Uploaded {} assets successfully, {} assets failed",
-            success_count, error_count
-        );
-    } else if !show_progress {
-        println!("✅ Successfully uploaded {} assets", success_count);
+    // Calculate total assets processed
+    let total_assets = total_entries_count;
+    let skipped_count = total_assets - success_count - error_count;
+
+    // Print detailed statistics report
+    println!("\n📊 Upload Statistics Report");
+    println!("===========================");
+    println!("✅ Successfully uploaded: {}", success_count);
+    if skip_existing {
+        println!("⏭️  Skipped (already existed): {}", skipped_count);
+    } else {
+        println!("⏭️  Skipped (already existed): 0");
     }
+    if error_count > 0 {
+        println!("❌ Failed uploads: {}", error_count);
+    } else {
+        println!("❌ Failed uploads: 0");
+    }
+    println!("📁 Total assets processed: {}", total_assets);
+    println!("⏳ Operation completed successfully!");
+    println!(
+        "\n📁 Source directory: {:?}",
+        local_dir_path
+    );
+    println!("📁 Destination folder: {}", original_folder_path);
 
     // Finish progress bar if present
     if let Some(pb) = progress_bar {

@@ -1766,7 +1766,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                             .template("{spinner:.yellow} {msg}")
                             .unwrap(),
                     );
-                    individual_pb.set_message(format!("Starting upload: {}", file_name_str));
+                    individual_pb.set_message(format!("Uploading: {}", file_name_str));
                     Some(individual_pb)
                 } else {
                     None

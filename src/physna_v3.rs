@@ -2115,7 +2115,11 @@ impl PhysnaApiClient {
             .to_string_lossy()
             .into_owned(); // It is save to unwrap because we already confired the file exists
 
-        trace!("Uploading file: {}, with full path: {}", file_name, asset_path);
+        trace!(
+            "Uploading file: {}, with full path: {}",
+            file_name,
+            asset_path
+        );
 
         // Open the file for streaming upload
         let file = tokio::fs::File::open(file_path)

@@ -63,9 +63,11 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let reload_cache = sub_matches.get_flag(crate::commands::params::PARAMETER_RELOAD);
     if reload_cache {
         trace!("Reload flag set, clearing folder cache...");
-        crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(|e| {
-            tracing::debug!("Failed to invalidate folder cache: {}", e);
-        });
+        crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(
+            |e| {
+                tracing::debug!("Failed to invalidate folder cache: {}", e);
+            },
+        );
     }
 
     // It is not efficient, but the only option is to read the full directory hieratchy from the API
@@ -1810,7 +1812,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                         ipb.set_message(format!("Skipped (exists): {}", file_name_str));
                         ipb.finish_and_clear(); // Clear the spinner for this individual upload
                     }
-                    
+
                     println!("Skipping existing asset: {}", file_name_str);
                     // Update overall progress bar if present
                     if let Some(ref pb) = progress_bar_clone {
@@ -1842,7 +1844,9 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
 
             // Construct the asset path using the original folder path and file name
             // Remove leading slash if present to avoid path conflicts
-            let clean_folder_path = original_folder_path_clone.strip_prefix('/').unwrap_or(&original_folder_path_clone);
+            let clean_folder_path = original_folder_path_clone
+                .strip_prefix('/')
+                .unwrap_or(&original_folder_path_clone);
             let asset_path = if clean_folder_path.ends_with('/') {
                 format!("{}{}", clean_folder_path, file_name_str)
             } else {
@@ -1981,10 +1985,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     }
     println!("📁 Total assets processed: {}", total_assets);
     println!("⏳ Operation completed successfully!");
-    println!(
-        "\n📁 Source directory: {:?}",
-        local_dir_path
-    );
+    println!("\n📁 Source directory: {:?}", local_dir_path);
     println!("📁 Destination folder: {}", original_folder_path);
 
     // Finish progress bar if present

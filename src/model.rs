@@ -1537,6 +1537,7 @@ impl CsvRecordProducer for Asset {
             self.path(),
             self.file_type().cloned().unwrap_or_default(),
             self.processing_status().cloned().unwrap_or_default(),
+            self.is_assembly().to_string(),
             self.uuid().to_string(),
         ];
 
@@ -1832,6 +1833,7 @@ impl AssetList {
                 asset.path(),
                 asset.file_type().cloned().unwrap_or_default(),
                 asset.processing_status().cloned().unwrap_or_default(),
+                asset.is_assembly().to_string(),
                 asset.uuid().to_string(),
             ];
 

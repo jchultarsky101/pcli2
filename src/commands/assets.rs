@@ -91,6 +91,13 @@ pub fn asset_command() -> Command {
                 .visible_alias("ls")
                 .arg(tenant_parameter())
                 .arg(folder_path_parameter())
+                .arg(
+                    Arg::new("thumbnails")
+                        .long("thumbnails")
+                        .action(ArgAction::SetTrue)
+                        .required(false)
+                        .help("Include thumbnail URLs in the output"),
+                )
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())

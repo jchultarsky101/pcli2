@@ -10,7 +10,7 @@ use crate::{
     error_utils,
     format::{CsvRecordProducer, OutputFormatter},
     metadata::convert_single_metadata_to_json_value,
-    model::{normalize_path, AssetList, Folder},
+    model::{normalize_path, AssetList, Folder, AssetWithThumbnail, AssetListWithThumbnails},
     param_utils::{get_format_parameter_value, get_tenant},
     physna_v3::{PhysnaApiClient, TryDefault},
 };
@@ -27,6 +27,7 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let configuration = Configuration::load_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
+    let include_thumbnails = sub_matches.get_flag("thumbnails");
 
     // If a path is specified, get assets filtered by folder path
     if let Some(path) = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH) {
@@ -39,7 +40,50 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
             .list_assets_by_parent_folder_path(&tenant.uuid, path.as_str())
             .await?;
 
-        println!("{}", assets.format(format)?);
+        if include_thumbnails {
+            // Convert assets to assets with thumbnails
+            let assets_with_thumbnails: Vec<AssetWithThumbnail> = assets
+                .get_all_assets()
+                .into_iter()
+                .map(|asset| {
+                    let thumbnail_url = asset.thumbnail_url_from_api(&api, &tenant.uuid.to_string());
+                    AssetWithThumbnail::new(asset.clone(), thumbnail_url)
+                })
+                .collect();
+            
+            let asset_list_with_thumbnails = AssetListWithThumbnails {
+                assets: assets_with_thumbnails,
+            };
+            
+            println!("{}", asset_list_with_thumbnails.format(format)?);
+        } else {
+            println!("{}", assets.format(format)?);
+        }
+    } else {
+        // List all assets in the tenant (without filtering by folder)
+        let assets = api
+            .list_assets_by_parent_folder_uuid(&tenant.uuid, None)
+            .await?;
+
+        if include_thumbnails {
+            // Convert assets to assets with thumbnails
+            let assets_with_thumbnails: Vec<AssetWithThumbnail> = assets
+                .get_all_assets()
+                .into_iter()
+                .map(|asset| {
+                    let thumbnail_url = asset.thumbnail_url_from_api(&api, &tenant.uuid.to_string());
+                    AssetWithThumbnail::new(asset.clone(), thumbnail_url)
+                })
+                .collect();
+            
+            let asset_list_with_thumbnails = AssetListWithThumbnails {
+                assets: assets_with_thumbnails,
+            };
+            
+            println!("{}", asset_list_with_thumbnails.format(format)?);
+        } else {
+            println!("{}", assets.format(format)?);
+        }
     };
 
     Ok(())

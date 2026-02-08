@@ -1259,11 +1259,24 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
+                        // For exclusive mode, both reference and candidate assets must be in specified folders
                         let candidate_in_specified_folders = folder_paths_clone
                             .iter()
-                            .any(|folder_path| match_result.asset.path.starts_with(folder_path));
+                            .any(|folder_path| {
+                                let normalized_folder_path = crate::model::normalize_path(folder_path);
+                                let normalized_candidate_path = crate::model::normalize_path(&match_result.asset.path);
+                                normalized_candidate_path.starts_with(&normalized_folder_path)
+                            });
+                        
+                        let reference_in_specified_folders = folder_paths_clone
+                            .iter()
+                            .any(|folder_path| {
+                                let normalized_folder_path = crate::model::normalize_path(folder_path);
+                                let normalized_reference_path = crate::model::normalize_path(asset_clone.path());
+                                normalized_reference_path.starts_with(&normalized_folder_path)
+                            });
 
-                        if exclusive && !candidate_in_specified_folders {
+                        if exclusive && (!candidate_in_specified_folders || !reference_in_specified_folders) {
                             continue;
                         }
 
@@ -1780,11 +1793,24 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
+                        // For exclusive mode, both reference and candidate assets must be in specified folders
                         let candidate_in_specified_folders = folder_paths_clone
                             .iter()
-                            .any(|folder_path| match_result.asset.path.starts_with(folder_path));
+                            .any(|folder_path| {
+                                let normalized_folder_path = crate::model::normalize_path(folder_path);
+                                let normalized_candidate_path = crate::model::normalize_path(&match_result.asset.path);
+                                normalized_candidate_path.starts_with(&normalized_folder_path)
+                            });
+                        
+                        let reference_in_specified_folders = folder_paths_clone
+                            .iter()
+                            .any(|folder_path| {
+                                let normalized_folder_path = crate::model::normalize_path(folder_path);
+                                let normalized_reference_path = crate::model::normalize_path(asset_clone.path());
+                                normalized_reference_path.starts_with(&normalized_folder_path)
+                            });
 
-                        if exclusive && !candidate_in_specified_folders {
+                        if exclusive && (!candidate_in_specified_folders || !reference_in_specified_folders) {
                             continue;
                         }
 
@@ -2531,11 +2557,24 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
+                        // For exclusive mode, both reference and candidate assets must be in specified folders
                         let candidate_in_specified_folders = folder_paths_clone
                             .iter()
-                            .any(|folder_path| match_result.asset.path.starts_with(folder_path));
+                            .any(|folder_path| {
+                                let normalized_folder_path = crate::model::normalize_path(folder_path);
+                                let normalized_candidate_path = crate::model::normalize_path(&match_result.asset.path);
+                                normalized_candidate_path.starts_with(&normalized_folder_path)
+                            });
+                        
+                        let reference_in_specified_folders = folder_paths_clone
+                            .iter()
+                            .any(|folder_path| {
+                                let normalized_folder_path = crate::model::normalize_path(folder_path);
+                                let normalized_reference_path = crate::model::normalize_path(asset_clone.path());
+                                normalized_reference_path.starts_with(&normalized_folder_path)
+                            });
 
-                        if exclusive && !candidate_in_specified_folders {
+                        if exclusive && (!candidate_in_specified_folders || !reference_in_specified_folders) {
                             continue;
                         }
 

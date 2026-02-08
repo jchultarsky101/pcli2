@@ -210,7 +210,18 @@ pcli2 asset geometric-match --path "/Root/Models/reference.stl" --threshold 85.0
 
 # Bulk matching across folders
 pcli2 folder geometric-match --folder-path "/Root/SearchFolder/" --threshold 90.0 --progress
+
+# Exclusive matching - only show matches where both assets belong to the specified paths
+pcli2 folder geometric-match --folder-path "/Root/SearchFolder/" --threshold 90.0 --exclusive
 ```
+
+#### Exclusive Matching
+
+The `--exclusive` flag restricts results to only show matches where **both** the reference asset and the matched asset belong to the specified folder paths. Without this flag, matches between assets in the specified folder and assets in other folders will also be included.
+
+For example:
+- Without `--exclusive`: Assets in `/FolderA` can match assets in `/FolderB`
+- With `--exclusive`: Only assets in `/FolderA` matching other assets in `/FolderA` will be shown
 
 ### 🏷️ Metadata Operations
 

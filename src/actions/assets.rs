@@ -66,57 +66,37 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     Ok(())
 }
 
-/// List assets in a folder and all its subfolders (iterative approach)
+/// List assets in a folder and all its subfolders using folder hierarchy
 async fn list_assets_recursively(
     api: &mut PhysnaApiClient,
     tenant_id: &Uuid,
     folder_path: &str,
 ) -> Result<AssetList, CliError> {
-    use std::collections::VecDeque;
+    use crate::folder_hierarchy::FolderHierarchy;
+    
+    // Build the complete folder hierarchy for the tenant
+    let hierarchy = FolderHierarchy::build_from_api(api, tenant_id).await?;
+    
+    // Filter the hierarchy to only include the specified path and its subfolders
+    let filtered_hierarchy = hierarchy.filter_by_path(folder_path)
+        .ok_or_else(|| CliError::FolderNotFound(folder_path.to_string()))?;
     
     let mut all_assets = AssetList::empty();
-    let mut folder_queue: VecDeque<String> = VecDeque::new();
     
-    // Start with the initial folder
-    folder_queue.push_back(folder_path.to_string());
-    
-    while let Some(current_path) = folder_queue.pop_front() {
-        // Get assets in the current folder
-        let current_folder_assets = api
-            .list_assets_by_parent_folder_path(tenant_id, &current_path)
+    // Process each folder in the filtered hierarchy to get its assets
+    for (folder_uuid, folder_node) in &filtered_hierarchy.nodes {
+        // Get the path for this folder from the hierarchy
+        let folder_path = filtered_hierarchy.get_path_for_folder(folder_uuid)
+            .unwrap_or_else(|| folder_node.name().to_string());
+        
+        // List assets in this specific folder
+        let folder_assets = api
+            .list_assets_by_parent_folder_path(tenant_id, &folder_path)
             .await?;
         
-        // Add assets from current folder to the result
-        for asset in current_folder_assets.get_all_assets() {
+        // Add assets from this folder to the result
+        for asset in folder_assets.get_all_assets() {
             all_assets.insert(asset.clone());
-        }
-        
-        // Get the UUID of the current folder to find its direct children
-        let folder_uuid_opt = api.resolve_folder_uuid_by_path(tenant_id, &current_path).await?;
-        
-        // Handle the case where the path is root ("/") - resolve_folder_uuid_by_path returns None for root
-        let subfolders = if current_path == "/" || current_path == "" {
-            // For root path, list folders without parent ID
-            api.list_folders_in_parent(tenant_id, None, None, None).await?
-        } else if let Some(folder_uuid) = folder_uuid_opt {
-            // For non-root paths, use the folder UUID to list its direct child folders
-            api.list_folders_in_parent(tenant_id, Some(folder_uuid.to_string().as_str()), None, None).await?
-        } else {
-            // If we can't resolve the folder UUID and it's not root, skip subfolder processing
-            continue;
-        };
-        
-        // Add subfolders to the queue for processing
-        for folder_response in subfolders.folders {
-            // The folder_response contains the folder's name directly
-            // The correct path is the parent path plus the folder name
-            let subfolder_path = if current_path == "/" || current_path == "" {
-                format!("/{}", folder_response.name)
-            } else {
-                format!("{}/{}", current_path, folder_response.name)
-            };
-            
-            folder_queue.push_back(subfolder_path);
         }
     }
     

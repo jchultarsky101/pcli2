@@ -10,7 +10,7 @@ use crate::{
     error_utils,
     format::{CsvRecordProducer, OutputFormatter},
     metadata::convert_single_metadata_to_json_value,
-    model::{normalize_path, AssetList, Folder, AssetWithThumbnail, AssetListWithThumbnails},
+    model::{normalize_path, AssetList, Folder},
     param_utils::{get_format_parameter_value, get_tenant},
     physna_v3::{PhysnaApiClient, TryDefault},
 };
@@ -27,7 +27,16 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let configuration = Configuration::load_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-    let include_thumbnails = sub_matches.get_flag("thumbnails");
+    let is_recursive = sub_matches.get_flag("recursive");
+
+    // Require a folder path when using the recursive flag
+    if is_recursive {
+        if !sub_matches.contains_id(PARAMETER_FOLDER_PATH) {
+            return Err(CliError::MissingRequiredArgument(
+                "Folder path must be specified when using --recursive flag".to_string(),
+            ));
+        }
+    }
 
     // If a path is specified, get assets filtered by folder path
     if let Some(path) = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH) {
@@ -36,57 +45,73 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let path = normalize_path(path);
         trace!("Normalized folder path: {}", &path);
 
-        let assets = api
-            .list_assets_by_parent_folder_path(&tenant.uuid, path.as_str())
-            .await?;
-
-        if include_thumbnails {
-            // Convert assets to assets with thumbnails
-            let assets_with_thumbnails: Vec<AssetWithThumbnail> = assets
-                .get_all_assets()
-                .into_iter()
-                .map(|asset| {
-                    let thumbnail_url = asset.thumbnail_url_from_api(&api, &tenant.uuid.to_string());
-                    AssetWithThumbnail::new(asset.clone(), thumbnail_url)
-                })
-                .collect();
-            
-            let asset_list_with_thumbnails = AssetListWithThumbnails {
-                assets: assets_with_thumbnails,
-            };
-            
-            println!("{}", asset_list_with_thumbnails.format(format)?);
+        if is_recursive {
+            // Recursively list assets in the folder and all subfolders
+            let all_assets = list_assets_recursively(&mut api, &tenant.uuid, &path).await?;
+            println!("{}", all_assets.format(format)?);
         } else {
+            let assets = api
+                .list_assets_by_parent_folder_path(&tenant.uuid, path.as_str())
+                .await?;
             println!("{}", assets.format(format)?);
         }
     } else {
-        // List all assets in the tenant (without filtering by folder)
+        // Without a folder path, just list top-level assets (non-recursive)
         let assets = api
             .list_assets_by_parent_folder_uuid(&tenant.uuid, None)
             .await?;
-
-        if include_thumbnails {
-            // Convert assets to assets with thumbnails
-            let assets_with_thumbnails: Vec<AssetWithThumbnail> = assets
-                .get_all_assets()
-                .into_iter()
-                .map(|asset| {
-                    let thumbnail_url = asset.thumbnail_url_from_api(&api, &tenant.uuid.to_string());
-                    AssetWithThumbnail::new(asset.clone(), thumbnail_url)
-                })
-                .collect();
-            
-            let asset_list_with_thumbnails = AssetListWithThumbnails {
-                assets: assets_with_thumbnails,
-            };
-            
-            println!("{}", asset_list_with_thumbnails.format(format)?);
-        } else {
-            println!("{}", assets.format(format)?);
-        }
+        println!("{}", assets.format(format)?);
     };
 
     Ok(())
+}
+
+/// List assets in a folder and all its subfolders (iterative approach)
+async fn list_assets_recursively(
+    api: &mut PhysnaApiClient,
+    tenant_id: &Uuid,
+    folder_path: &str,
+) -> Result<AssetList, CliError> {
+    use std::collections::VecDeque;
+    
+    let mut all_assets = AssetList::empty();
+    let mut folder_queue: VecDeque<String> = VecDeque::new();
+    
+    // Start with the initial folder
+    folder_queue.push_back(folder_path.to_string());
+    
+    while let Some(current_path) = folder_queue.pop_front() {
+        // Get assets in the current folder
+        let current_folder_assets = api
+            .list_assets_by_parent_folder_path(tenant_id, &current_path)
+            .await?;
+        
+        // Add assets from current folder to the result
+        for asset in current_folder_assets.get_all_assets() {
+            all_assets.insert(asset.clone());
+        }
+        
+        // Get subfolders in the current folder
+        let folder_uuid_opt = api.resolve_folder_uuid_by_path(tenant_id, &current_path).await?;
+        if let Some(folder_uuid) = folder_uuid_opt {
+            let subfolders = api
+                .list_folders_in_parent(tenant_id, Some(folder_uuid.to_string().as_str()), None, None)
+                .await?;
+            
+            // Add subfolders to the queue for processing
+            for folder_response in subfolders.folders {
+                // Get the full folder details to get the name
+                let folder_detail = api.get_folder(tenant_id, &folder_response.uuid).await?;
+                let folder_detail: crate::model::Folder = folder_detail;
+
+                // Construct the folder path
+                let subfolder_path = format!("{}/{}", current_path, folder_detail.name());
+                folder_queue.push_back(subfolder_path);
+            }
+        }
+    }
+    
+    Ok(all_assets)
 }
 
 pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {

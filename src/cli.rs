@@ -29,7 +29,7 @@ use pcli2::{
             upload_folder,
         },
         tenants::{
-            clear_active_tenant, get_tenant_details, list_all_tenants,
+            clear_active_tenant, list_all_tenants,
             print_active_tenant_name_with_format, set_active_tenant,
         },
     },
@@ -159,7 +159,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                 Some((COMMAND_GET, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_TENANT, COMMAND_GET);
 
-                    get_tenant_details(sub_matches).await?;
+                    print_active_tenant_name_with_format(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_USE, sub_matches)) => {

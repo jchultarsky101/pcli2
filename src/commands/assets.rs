@@ -92,11 +92,11 @@ pub fn asset_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(folder_path_parameter())
                 .arg(
-                    Arg::new("thumbnails")
-                        .long("thumbnails")
+                    Arg::new("recursive")
+                        .long("recursive")
                         .action(ArgAction::SetTrue)
                         .required(false)
-                        .help("Include thumbnail URLs in the output"),
+                        .help("Recursively list assets in subfolders"),
                 )
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())

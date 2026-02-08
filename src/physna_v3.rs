@@ -107,7 +107,7 @@ pub trait TryDefault: Sized {
 ///     let mut client = PhysnaApiClient::new()
 ///         .with_access_token("your_access_token".to_string())
 ///         .with_client_credentials("your_client_id".to_string(), "your_client_secret".to_string());
-///     
+///
 ///     let tenants = client.list_tenants().await?;
 ///     Ok(())
 /// }
@@ -2289,7 +2289,7 @@ impl PhysnaApiClient {
                     let error_status = response.status();
                     let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response body".to_string());
                     debug!("HTTP {} error response body: {}", error_status, error_text);
-                    
+
                     // Check if this is the "Invalid path extension" error which means unsupported file type
                     if error_text.contains("Invalid path extension:") {
                         // Extract the file extension from the error message if possible
@@ -2299,7 +2299,7 @@ impl PhysnaApiClient {
                         } else {
                             "Unsupported file type: This file format is not supported by Physna. Please use a supported format like .sldprt, .step, .stl, etc.".to_string()
                         };
-                        
+
                         Err(ApiError::ConflictError(user_friendly_msg))
                     } else {
                         // Return the original error for other cases

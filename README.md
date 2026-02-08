@@ -181,6 +181,9 @@ pcli2 asset create --file path/to/model.stl --path "/Root/Models/"
 # List assets in a folder
 pcli2 asset list --path "/Root/Models/" --format json
 
+# Recursively list assets in subfolders
+pcli2 asset list --path "/Root/Models/" --recursive --format csv --headers
+
 # Download an asset
 pcli2 asset download --path "/Root/Models/model.stl"
 
@@ -304,6 +307,9 @@ pcli2 asset list --format json
 # CSV for spreadsheets
 pcli2 asset list --format csv --headers
 
+# Recursively list assets in subfolders
+pcli2 asset list --folder-path "/Root/Models/" --recursive --format csv --headers
+
 # Tree for visual hierarchy
 pcli2 folder list --format tree
 ```
@@ -387,7 +393,7 @@ Manage individual assets in your Physna tenant.
 ```
 pcli2 asset create           # Upload a file as an asset
 pcli2 asset create-batch     # Upload multiple files as assets using glob patterns
-pcli2 asset list             # List assets in a folder
+pcli2 asset list             # List assets in a folder with optional recursive listing (--recursive)
 pcli2 asset get              # Get asset details
 pcli2 asset download         # Download an asset
 pcli2 asset delete           # Delete an asset

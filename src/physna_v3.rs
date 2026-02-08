@@ -3928,6 +3928,14 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(Vec<u8>)` - Thumbnail image content as bytes
     /// * `Err(ApiError)` - If there was an error during API calls
+    /// Generate the thumbnail URL for an asset
+    pub fn generate_asset_thumbnail_url(&self, tenant_id: &str, asset_id: &str) -> String {
+        format!(
+            "{}/tenants/{}/assets/{}/thumbnail.png",
+            self.base_url, tenant_id, asset_id
+        )
+    }
+
     pub async fn download_asset_thumbnail(
         &mut self,
         tenant_id: &str,
@@ -3938,10 +3946,7 @@ impl PhysnaApiClient {
             tenant_id, asset_id
         );
 
-        let url = format!(
-            "{}/tenants/{}/assets/{}/thumbnail.png",
-            self.base_url, tenant_id, asset_id
-        );
+        let url = self.generate_asset_thumbnail_url(tenant_id, asset_id);
         debug!("Download asset thumbnail request URL: {}", url);
 
         // Make the request to download the thumbnail

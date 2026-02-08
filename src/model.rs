@@ -14,6 +14,7 @@
 //! output formatting capabilities, and appropriate error handling.
 
 use crate::format::{CsvRecordProducer, FormattingError, OutputFormat, OutputFormatter};
+use crate::physna_v3::PhysnaApiClient;
 use csv::Writer;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -28,6 +29,26 @@ pub enum ModelError {
     /// Error when a required property value is missing
     #[error("missing property value {name:?}")]
     MissingPropertyValue { name: String },
+    
+    /// Error when serializing to JSON
+    #[error("serialization error: {source}")]
+    SerializationError {
+        #[from]
+        source: serde_json::Error,
+    },
+    
+    /// Error when working with CSV
+    #[error("CSV error: {msg}")]
+    CsvError {
+        msg: String,
+    },
+    
+    /// Error when working with IO
+    #[error("IO error: {source}")]
+    IoError {
+        #[from]
+        source: std::io::Error,
+    },
 }
 
 /// Normalize a path with these rules:
@@ -1460,6 +1481,250 @@ impl Asset {
     pub fn is_assembly(&self) -> bool {
         self.is_assembly
     }
+
+    /// Generate the thumbnail URL for this asset
+    pub fn thumbnail_url(&self, base_url: &str, tenant_id: &str) -> String {
+        format!(
+            "{}/tenants/{}/assets/{}/thumbnail.png",
+            base_url, tenant_id, self.uuid()
+        )
+    }
+    
+    /// Generate the thumbnail URL for this asset using an API client
+    pub fn thumbnail_url_from_api(&self, api_client: &PhysnaApiClient, tenant_id: &str) -> String {
+        api_client.generate_asset_thumbnail_url(tenant_id, &self.uuid().to_string())
+    }
+}
+
+/// Asset with thumbnail URL
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetWithThumbnail {
+    #[serde(flatten)]
+    pub asset: Asset,
+    pub thumbnail_url: String,
+}
+
+impl AssetWithThumbnail {
+    /// Create a new AssetWithThumbnail instance
+    pub fn new(asset: Asset, thumbnail_url: String) -> Self {
+        AssetWithThumbnail { asset, thumbnail_url }
+    }
+}
+
+impl CsvRecordProducer for AssetWithThumbnail {
+    /// Get the CSV header row for AssetWithThumbnail records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "NAME".to_string(),
+            "PATH".to_string(),
+            "TYPE".to_string(),
+            "STATE".to_string(),
+            "IS_ASSEMBLY".to_string(),
+            "UUID".to_string(),
+            "THUMBNAIL_URL".to_string(),
+        ]
+    }
+
+    /// Convert the AssetWithThumbnail to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.asset.name(),
+            self.asset.path(),
+            self.asset.file_type().cloned().unwrap_or_default(),
+            self.asset.processing_status().cloned().unwrap_or_default(),
+            self.asset.is_assembly().to_string(),
+            self.asset.uuid().to_string(),
+            self.thumbnail_url.clone(),
+        ]]
+    }
+
+    /// Get the extended CSV header row for AssetWithThumbnail records including metadata
+    fn csv_header_with_metadata() -> Vec<String> {
+        // We'll add metadata columns dynamically when we know what metadata keys exist
+        Self::csv_header()
+    }
+}
+
+impl OutputFormatter for AssetWithThumbnail {
+    type Item = AssetWithThumbnail;
+
+    /// Format the AssetWithThumbnail according to the specified output format
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    serde_json::to_string_pretty(self).map_err(FormattingError::JsonSerializationError)
+                } else {
+                    serde_json::to_string(self).map_err(FormattingError::JsonSerializationError)
+                }
+            }
+            OutputFormat::Csv(options) => {
+                let buf = BufWriter::new(Vec::new());
+                let mut wtr = Writer::from_writer(buf);
+                
+                if options.with_headers {
+                    wtr.write_record(Self::csv_header())
+                        .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
+                }
+                
+                for record in self.as_csv_records() {
+                    wtr.write_record(&record)
+                        .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+                }
+                
+                wtr.flush()
+                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to flush CSV writer: {}", e)))?;
+                    
+                let data = wtr.into_inner()
+                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to get inner data from CSV writer: {}", e)))?;
+                let bytes = data.into_inner()
+                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to get inner buffer: {}", e)))?;
+                String::from_utf8(bytes).map_err(FormattingError::Utf8Error)
+            }
+            OutputFormat::Tree(options) => {
+                // For single asset with thumbnail, tree format is the same as JSON
+                if options.pretty {
+                    serde_json::to_string_pretty(self).map_err(FormattingError::JsonSerializationError)
+                } else {
+                    serde_json::to_string(self).map_err(FormattingError::JsonSerializationError)
+                }
+            }
+        }
+    }
+}
+
+/// Asset list with thumbnail URLs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetListWithThumbnails {
+    pub assets: Vec<AssetWithThumbnail>,
+}
+
+impl AssetListWithThumbnails {
+    /// Create a new empty AssetListWithThumbnails
+    pub fn empty() -> AssetListWithThumbnails {
+        AssetListWithThumbnails {
+            assets: Vec::new(),
+        }
+    }
+
+    /// Check if the AssetListWithThumbnails is empty
+    pub fn is_empty(&self) -> bool {
+        self.assets.is_empty()
+    }
+
+    /// Get the number of assets in the AssetListWithThumbnails
+    pub fn len(&self) -> usize {
+        self.assets.len()
+    }
+}
+
+impl CsvRecordProducer for AssetListWithThumbnails {
+    /// Get the CSV header row for AssetListWithThumbnails records
+    fn csv_header() -> Vec<String> {
+        AssetWithThumbnail::csv_header()
+    }
+
+    /// Convert the AssetListWithThumbnails to CSV records
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        let mut records: Vec<Vec<String>> = Vec::new();
+
+        for asset_with_thumbnail in &self.assets {
+            records.push(asset_with_thumbnail.as_csv_records()[0].clone());
+        }
+
+        records
+    }
+
+    /// Get the extended CSV header row for AssetListWithThumbnails records including metadata
+    fn csv_header_with_metadata() -> Vec<String> {
+        // We'll add metadata columns dynamically when we know what metadata keys exist
+        Self::csv_header()
+    }
+}
+
+impl OutputFormatter for AssetListWithThumbnails {
+    type Item = AssetListWithThumbnails;
+
+    /// Format the AssetListWithThumbnails according to the specified output format
+    fn format(&self, format: OutputFormat) -> Result<String, FormattingError> {
+        match format {
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    serde_json::to_string_pretty(&self.assets).map_err(FormattingError::JsonSerializationError)
+                } else {
+                    serde_json::to_string(&self.assets).map_err(FormattingError::JsonSerializationError)
+                }
+            }
+            OutputFormat::Csv(options) => {
+                let buf = BufWriter::new(Vec::new());
+                let mut wtr = Writer::from_writer(buf);
+
+                if options.with_headers {
+                    wtr.write_record(Self::csv_header())
+                        .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
+                }
+
+                for asset_with_thumbnail in &self.assets {
+                    for record in asset_with_thumbnail.as_csv_records() {
+                        wtr.write_record(&record)
+                            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+                    }
+                }
+
+                wtr.flush()
+                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to flush CSV writer: {}", e)))?;
+                    
+                let data = wtr.into_inner()
+                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to get inner data from CSV writer: {}", e)))?;
+                let bytes = data.into_inner()
+                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to get inner buffer: {}", e)))?;
+                String::from_utf8(bytes).map_err(FormattingError::Utf8Error)
+            }
+            OutputFormat::Tree(_options) => {
+                // For asset list with thumbnails, tree format is the same as JSON
+                serde_json::to_string_pretty(&self.assets).map_err(FormattingError::JsonSerializationError)
+            }
+        }
+    }
+}
+
+impl FromIterator<AssetWithThumbnail> for AssetListWithThumbnails {
+    /// Create an AssetListWithThumbnails from an iterator of AssetWithThumbnail instances
+    fn from_iter<I: IntoIterator<Item = AssetWithThumbnail>>(iter: I) -> AssetListWithThumbnails {
+        let mut assets = AssetListWithThumbnails::empty();
+        for asset in iter {
+            assets.assets.push(asset);
+        }
+        assets
+    }
+}
+
+impl From<Vec<AssetWithThumbnail>> for AssetListWithThumbnails {
+    fn from(assets: Vec<AssetWithThumbnail>) -> Self {
+        AssetListWithThumbnails { assets }
+    }
+}
+
+// Note: Converting AssetList to AssetListWithThumbnails requires base_url and tenant_id
+// which are not available in this context. This conversion is handled in the action layer.
+
+impl From<AssetListWithThumbnails> for Vec<AssetWithThumbnail> {
+    fn from(asset_list: AssetListWithThumbnails) -> Self {
+        asset_list.assets
+    }
+}
+
+impl From<AssetListWithThumbnails> for AssetList {
+    fn from(_asset_list: AssetListWithThumbnails) -> Self {
+        // This conversion is not directly possible since we'd lose the thumbnail info
+        AssetList::empty()
+    }
+}
+
+impl From<AssetListResponse> for AssetList {
+    fn from(response: AssetListResponse) -> Self {
+        response.to_asset_list()
+    }
 }
 
 impl From<&AssetResponse> for Asset {
@@ -1468,24 +1733,16 @@ impl From<&AssetResponse> for Asset {
         let name = asset_response
             .path
             .split('/')
-            .next_back()
-            .unwrap_or(&asset_response.path)
-            .to_string();
-
-        // Normalize the state: convert "missing-dependencies" to "missing"
-        let normalized_state = if asset_response.state == "missing-dependencies" {
-            "missing".to_string()
-        } else {
-            asset_response.state.clone()
-        };
+            .last()
+            .unwrap_or(&asset_response.path);
 
         Asset::new(
             asset_response.uuid.to_owned(),
-            name,
+            name.to_string(),
             asset_response.path.clone(),
             None, // file_size not in current API response
             Some(asset_response.asset_type.clone()),
-            Some(normalized_state),
+            Some(asset_response.state.clone()),
             Some(asset_response.created_at.clone()),
             Some(asset_response.updated_at.clone()),
             Some(asset_response.metadata.clone().into()),
@@ -1493,6 +1750,7 @@ impl From<&AssetResponse> for Asset {
         )
     }
 }
+
 impl From<AssetResponse> for Asset {
     fn from(asset_response: AssetResponse) -> Self {
         <Asset as From<&AssetResponse>>::from(&asset_response)
@@ -1878,12 +2136,6 @@ impl FromIterator<Asset> for AssetList {
 impl From<Vec<Asset>> for AssetList {
     fn from(assets: Vec<Asset>) -> Self {
         AssetList::from_iter(assets)
-    }
-}
-
-impl From<AssetListResponse> for AssetList {
-    fn from(response: AssetListResponse) -> Self {
-        response.to_asset_list()
     }
 }
 

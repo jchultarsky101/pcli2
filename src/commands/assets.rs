@@ -91,6 +91,13 @@ pub fn asset_command() -> Command {
                 .visible_alias("ls")
                 .arg(tenant_parameter())
                 .arg(folder_path_parameter())
+                .arg(
+                    Arg::new("recursive")
+                        .long("recursive")
+                        .action(ArgAction::SetTrue)
+                        .required(false)
+                        .help("Recursively list assets in subfolders"),
+                )
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())

@@ -4,7 +4,7 @@
 
 use crate::commands::params::{
     format_parameter, format_pretty_parameter, format_with_headers_parameter,
-    tenant_identifier_group, tenant_name_parameter, tenant_uuid_parameter, COMMAND_CLEAR,
+    tenant_name_parameter, COMMAND_CLEAR,
     COMMAND_GET, COMMAND_LIST, COMMAND_TENANT, COMMAND_USE,
 };
 use clap::Command;
@@ -14,16 +14,6 @@ pub fn tenant_command() -> Command {
     Command::new(COMMAND_TENANT)
         .about("Manage tenants")
         .subcommand_required(true)
-        .subcommand(
-            Command::new(COMMAND_GET)
-                .about("Get tenant details")
-                .arg(tenant_uuid_parameter()) // --tenant-uuid (tenant UUID)
-                .arg(tenant_name_parameter()) // --name (tenant short name, using existing PARAMETER_TENANT_NAME)
-                .arg(format_parameter().value_parser(["json", "csv"]))
-                .arg(format_pretty_parameter())
-                .arg(format_with_headers_parameter())
-                .group(tenant_identifier_group()), // Group to ensure only one of --tenant-uuid or --name is provided
-        )
         .subcommand(
             Command::new(COMMAND_LIST)
                 .about("List all tenants")
@@ -50,7 +40,8 @@ pub fn tenant_command() -> Command {
                 .arg(format_with_headers_parameter()),
         )
         .subcommand(
-            Command::new("current")
+            Command::new(COMMAND_GET)
+                .visible_alias("current")
                 .about("Get the active tenant")
                 .arg(format_parameter().value_parser(["json", "csv", "tree"]))
                 .arg(format_pretty_parameter())

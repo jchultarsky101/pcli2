@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.27] - 2026-02-08
+
+### Fixed
+- Fixed --exclusive flag logic for folder geometric-match, part-match, and visual-match commands to properly check if both reference and candidate assets belong to specified folder paths
+- Added path normalization to ensure accurate folder comparisons with the --exclusive flag
+
+### Changed
+- Updated README.md to document the behavior of the --exclusive flag
+
 ## [0.2.25] - 2026-02-06
 
 ### Fixed

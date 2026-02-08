@@ -91,7 +91,7 @@ async fn list_assets_recursively(
             all_assets.insert(asset.clone());
         }
         
-        // Get subfolders in the current folder
+        // Get the UUID of the current folder to find its direct children
         let folder_uuid_opt = api.resolve_folder_uuid_by_path(tenant_id, &current_path).await?;
         
         // Handle the case where the path is root ("/") - resolve_folder_uuid_by_path returns None for root
@@ -99,7 +99,7 @@ async fn list_assets_recursively(
             // For root path, list folders without parent ID
             api.list_folders_in_parent(tenant_id, None, None, None).await?
         } else if let Some(folder_uuid) = folder_uuid_opt {
-            // For non-root paths, use the folder UUID to list child folders
+            // For non-root paths, use the folder UUID to list its direct child folders
             api.list_folders_in_parent(tenant_id, Some(folder_uuid.to_string().as_str()), None, None).await?
         } else {
             // If we can't resolve the folder UUID and it's not root, skip subfolder processing
@@ -108,16 +108,14 @@ async fn list_assets_recursively(
         
         // Add subfolders to the queue for processing
         for folder_response in subfolders.folders {
-            // Get the full folder details to get the name
-            let folder_detail = api.get_folder(tenant_id, &folder_response.uuid).await?;
-            let folder_detail: crate::model::Folder = folder_detail;
-
-            // Construct the folder path
+            // The folder_response contains the folder's name directly
+            // The correct path is the parent path plus the folder name
             let subfolder_path = if current_path == "/" || current_path == "" {
-                format!("/{}", folder_detail.name())
+                format!("/{}", folder_response.name)
             } else {
-                format!("{}/{}", current_path, folder_detail.name())
+                format!("{}/{}", current_path, folder_response.name)
             };
+            
             folder_queue.push_back(subfolder_path);
         }
     }

@@ -35,11 +35,15 @@ pcli2 folder list --format tree
 - **Comprehensive Asset Management** - Create, list, get, delete, and analyze
 - **Folder Operations** - Organize assets with full folder management
 - **Geometric Matching** - Find similar 3D geometries
+- **Part Matching** - Find part matches within assemblies
+- **Visual Matching** - Find visually similar assets
+- **Text Matching** - Find assets using text search
 - **Metadata Operations** - Manage custom properties efficiently
 - **Bulk Operations** - Process multiple assets with batch commands
 - **Secure Authentication** - OAuth2 with system keyring integration
 - **Flexible Output Formats** - JSON, CSV, and tree views
 - **Resume Capability** - Continue interrupted downloads seamlessly
+- **Performance Optimizations** - Concurrent operations and caching for faster processing
 
 ## 💻 Installation
 
@@ -607,6 +611,15 @@ Need help?
    - The command you're executing
    - The error message received
    - Steps to reproduce the issue
+
+## 🛠️ Code Quality
+
+This project maintains high code quality standards:
+
+- **Clean Code**: All code passes Rust clippy with `-D warnings` (deny warnings)
+- **Formatted**: All code follows Rust fmt standards
+- **Well Tested**: Comprehensive unit and integration tests
+- **Documented**: Thorough documentation for all public APIs
 
 ## 📄 License
 

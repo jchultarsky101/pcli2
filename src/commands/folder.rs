@@ -447,7 +447,7 @@ pub fn folder_command() -> Command {
                         .help("Maximum number of concurrent downloads (range: 1-10)")
                         .value_parser(|s: &str| -> Result<usize, String> {
                             let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if val < 1 || val > 10 {
+                            if !(1..=10).contains(&val) {
                                 Err("Value must be between 1 and 10".to_string())
                             } else {
                                 Ok(val)

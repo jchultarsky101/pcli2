@@ -10,7 +10,7 @@ use crate::{
     error_utils,
     format::{CsvRecordProducer, OutputFormatter},
     metadata::convert_single_metadata_to_json_value,
-    model::{normalize_path, AssetList, Folder},
+    model::{normalize_path, AssetList},
     param_utils::{get_format_parameter_value, get_tenant},
     physna_v3::{PhysnaApiClient, TryDefault},
 };
@@ -30,12 +30,10 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let is_recursive = sub_matches.get_flag("recursive");
 
     // Require a folder path when using the recursive flag
-    if is_recursive {
-        if !sub_matches.contains_id(PARAMETER_FOLDER_PATH) {
-            return Err(CliError::MissingRequiredArgument(
-                "Folder path must be specified when using --recursive flag".to_string(),
-            ));
-        }
+    if is_recursive && !sub_matches.contains_id(PARAMETER_FOLDER_PATH) {
+        return Err(CliError::MissingRequiredArgument(
+            "Folder path must be specified when using --recursive flag".to_string(),
+        ));
     }
 
     // If a path is specified, get assets filtered by folder path
@@ -73,33 +71,35 @@ async fn list_assets_recursively(
     folder_path: &str,
 ) -> Result<AssetList, CliError> {
     use crate::folder_hierarchy::FolderHierarchy;
-    
+
     // Build the complete folder hierarchy for the tenant
     let hierarchy = FolderHierarchy::build_from_api(api, tenant_id).await?;
-    
+
     // Filter the hierarchy to only include the specified path and its subfolders
-    let filtered_hierarchy = hierarchy.filter_by_path(folder_path)
+    let filtered_hierarchy = hierarchy
+        .filter_by_path(folder_path)
         .ok_or_else(|| CliError::FolderNotFound(folder_path.to_string()))?;
-    
+
     let mut all_assets = AssetList::empty();
-    
+
     // Process each folder in the filtered hierarchy to get its assets
     for (folder_uuid, folder_node) in &filtered_hierarchy.nodes {
         // Get the path for this folder from the hierarchy
-        let folder_path = filtered_hierarchy.get_path_for_folder(folder_uuid)
+        let folder_path = filtered_hierarchy
+            .get_path_for_folder(folder_uuid)
             .unwrap_or_else(|| folder_node.name().to_string());
-        
+
         // List assets in this specific folder
         let folder_assets = api
             .list_assets_by_parent_folder_path(tenant_id, &folder_path)
             .await?;
-        
+
         // Add assets from this folder to the result
         for asset in folder_assets.get_all_assets() {
             all_assets.insert(asset.clone());
         }
     }
-    
+
     Ok(all_assets)
 }
 
@@ -123,6 +123,7 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         pretty,
     };
 
+    #[allow(clippy::needless_borrow)]
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(crate::actions::CliActionError::FormattingError)?;
 
@@ -307,7 +308,7 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Check if the folder exists
     let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let mut folder: Folder = folder.into();
+    let mut folder = folder;
     if let Some(path) = folder_path_param {
         folder.set_path(path.to_owned())
     }
@@ -384,7 +385,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
 
     // Check if the folder exists
     let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let mut folder: Folder = folder.into();
+    let mut folder = folder;
     if let Some(path) = folder_path_param {
         folder.set_path(path.to_owned())
     }
@@ -603,10 +604,9 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
     )
     .await?;
 
-    match asset.metadata() {
-        Some(metadata) => println!("{}", metadata.format(format)?),
-        None => (),
-    };
+    if let Some(metadata) = asset.metadata() {
+        println!("{}", metadata.format(format)?);
+    }
 
     Ok(())
 }
@@ -773,6 +773,7 @@ pub async fn download_asset_thumbnail(sub_matches: &ArgMatches) -> Result<(), Cl
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError> {
     use std::io::Cursor;
 
@@ -856,6 +857,7 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
         pretty,
     };
 
+    #[allow(clippy::needless_borrow)]
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(CliActionError::FormattingError)?;
 
@@ -994,6 +996,7 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
         pretty,
     };
 
+    #[allow(clippy::needless_borrow)]
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(CliActionError::FormattingError)?;
 
@@ -1138,6 +1141,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         pretty,
     };
 
+    #[allow(clippy::needless_borrow)]
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(CliActionError::FormattingError)?;
 
@@ -1318,23 +1322,27 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
                         // Check if we want to include matches based on exclusive flag
                         // For exclusive mode, both reference and candidate assets must be in specified folders
-                        let candidate_in_specified_folders = folder_paths_clone
-                            .iter()
-                            .any(|folder_path| {
-                                let normalized_folder_path = crate::model::normalize_path(folder_path);
-                                let normalized_candidate_path = crate::model::normalize_path(&match_result.asset.path);
+                        let candidate_in_specified_folders =
+                            folder_paths_clone.iter().any(|folder_path| {
+                                let normalized_folder_path =
+                                    crate::model::normalize_path(folder_path);
+                                let normalized_candidate_path =
+                                    crate::model::normalize_path(&match_result.asset.path);
                                 normalized_candidate_path.starts_with(&normalized_folder_path)
                             });
-                        
-                        let reference_in_specified_folders = folder_paths_clone
-                            .iter()
-                            .any(|folder_path| {
-                                let normalized_folder_path = crate::model::normalize_path(folder_path);
-                                let normalized_reference_path = crate::model::normalize_path(asset_clone.path());
+
+                        let reference_in_specified_folders =
+                            folder_paths_clone.iter().any(|folder_path| {
+                                let normalized_folder_path =
+                                    crate::model::normalize_path(folder_path);
+                                let normalized_reference_path =
+                                    crate::model::normalize_path(asset_clone.path());
                                 normalized_reference_path.starts_with(&normalized_folder_path)
                             });
 
-                        if exclusive && (!candidate_in_specified_folders || !reference_in_specified_folders) {
+                        if exclusive
+                            && (!candidate_in_specified_folders || !reference_in_specified_folders)
+                        {
                             continue;
                         }
 
@@ -1502,7 +1510,6 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
             // For CSV with metadata, we need to create a custom implementation
             let mut wtr = csv::Writer::from_writer(vec![]);
-            let output;
 
             // Pre-calculate the metadata keys that will be used for headers and all records
             let mut header_metadata_keys = Vec::new();
@@ -1593,7 +1600,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     )));
                 }
             };
-            output = match String::from_utf8(data) {
+            let output = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(
@@ -1670,6 +1677,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         pretty,
     };
 
+    #[allow(clippy::needless_borrow)]
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(CliActionError::FormattingError)?;
 
@@ -1852,23 +1860,27 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
                         // Check if we want to include matches based on exclusive flag
                         // For exclusive mode, both reference and candidate assets must be in specified folders
-                        let candidate_in_specified_folders = folder_paths_clone
-                            .iter()
-                            .any(|folder_path| {
-                                let normalized_folder_path = crate::model::normalize_path(folder_path);
-                                let normalized_candidate_path = crate::model::normalize_path(&match_result.asset.path);
+                        let candidate_in_specified_folders =
+                            folder_paths_clone.iter().any(|folder_path| {
+                                let normalized_folder_path =
+                                    crate::model::normalize_path(folder_path);
+                                let normalized_candidate_path =
+                                    crate::model::normalize_path(&match_result.asset.path);
                                 normalized_candidate_path.starts_with(&normalized_folder_path)
                             });
-                        
-                        let reference_in_specified_folders = folder_paths_clone
-                            .iter()
-                            .any(|folder_path| {
-                                let normalized_folder_path = crate::model::normalize_path(folder_path);
-                                let normalized_reference_path = crate::model::normalize_path(asset_clone.path());
+
+                        let reference_in_specified_folders =
+                            folder_paths_clone.iter().any(|folder_path| {
+                                let normalized_folder_path =
+                                    crate::model::normalize_path(folder_path);
+                                let normalized_reference_path =
+                                    crate::model::normalize_path(asset_clone.path());
                                 normalized_reference_path.starts_with(&normalized_folder_path)
                             });
 
-                        if exclusive && (!candidate_in_specified_folders || !reference_in_specified_folders) {
+                        if exclusive
+                            && (!candidate_in_specified_folders || !reference_in_specified_folders)
+                        {
                             continue;
                         }
 
@@ -2032,7 +2044,6 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
             // For CSV with metadata, we need to create a custom implementation
             let mut wtr = csv::Writer::from_writer(vec![]);
-            let output;
 
             // Pre-calculate the metadata keys that will be used for headers and all records
             let mut header_metadata_keys = Vec::new();
@@ -2128,7 +2139,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     )));
                 }
             };
-            output = match String::from_utf8(data) {
+            let output = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(
@@ -2189,6 +2200,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         pretty,
     };
 
+    #[allow(clippy::needless_borrow)]
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(CliActionError::FormattingError)?;
 
@@ -2441,6 +2453,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         pretty,
     };
 
+    #[allow(clippy::needless_borrow)]
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(CliActionError::FormattingError)?;
 
@@ -2616,23 +2629,27 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
                         // Check if we want to include matches based on exclusive flag
                         // For exclusive mode, both reference and candidate assets must be in specified folders
-                        let candidate_in_specified_folders = folder_paths_clone
-                            .iter()
-                            .any(|folder_path| {
-                                let normalized_folder_path = crate::model::normalize_path(folder_path);
-                                let normalized_candidate_path = crate::model::normalize_path(&match_result.asset.path);
+                        let candidate_in_specified_folders =
+                            folder_paths_clone.iter().any(|folder_path| {
+                                let normalized_folder_path =
+                                    crate::model::normalize_path(folder_path);
+                                let normalized_candidate_path =
+                                    crate::model::normalize_path(&match_result.asset.path);
                                 normalized_candidate_path.starts_with(&normalized_folder_path)
                             });
-                        
-                        let reference_in_specified_folders = folder_paths_clone
-                            .iter()
-                            .any(|folder_path| {
-                                let normalized_folder_path = crate::model::normalize_path(folder_path);
-                                let normalized_reference_path = crate::model::normalize_path(asset_clone.path());
+
+                        let reference_in_specified_folders =
+                            folder_paths_clone.iter().any(|folder_path| {
+                                let normalized_folder_path =
+                                    crate::model::normalize_path(folder_path);
+                                let normalized_reference_path =
+                                    crate::model::normalize_path(asset_clone.path());
                                 normalized_reference_path.starts_with(&normalized_folder_path)
                             });
 
-                        if exclusive && (!candidate_in_specified_folders || !reference_in_specified_folders) {
+                        if exclusive
+                            && (!candidate_in_specified_folders || !reference_in_specified_folders)
+                        {
                             continue;
                         }
 
@@ -2798,7 +2815,6 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
             // For CSV with metadata, we need to create a custom implementation
             let mut wtr = csv::Writer::from_writer(vec![]);
-            let output;
 
             // Pre-calculate the metadata keys that will be used for headers and all records
             let mut header_metadata_keys = Vec::new();
@@ -2888,7 +2904,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     )));
                 }
             };
-            output = match String::from_utf8(data) {
+            let output = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(
@@ -3023,7 +3039,6 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         } else {
             // If the folder was specified by UUID, get the folder details to determine the name
             let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-            let folder: crate::model::Folder = folder.into();
 
             let folder_path = folder.path();
             let path_segments: Vec<&str> =
@@ -3382,7 +3397,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
             let mut wtr = csv::Writer::from_writer(vec![]);
 
             if options.with_headers {
-                if let Err(e) = wtr.serialize(&[
+                if let Err(e) = wtr.serialize([
                     "REFERENCE_ASSET_PATH",
                     "CANDIDATE_ASSET_PATH",
                     "FIELD_NAME",
@@ -3489,6 +3504,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
         pretty,
     };
 
+    #[allow(clippy::needless_borrow)]
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(CliActionError::FormattingError)?;
 
@@ -3582,10 +3598,9 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                         match_result
                             .asset
                             .path
-                            .split('/')
-                            .last()
-                            .unwrap_or(&match_result.asset.path)
-                            .to_string(), // ASSET_NAME
+                            .rsplit_once('/')
+                            .map(|(_, name)| name.to_string())
+                            .unwrap_or(match_result.asset.path.clone()), // ASSET_NAME
                         match_result.asset.path.clone(), // ASSET_PATH
                         match_result.asset.asset_type.clone(), // TYPE
                         match_result.asset.state.clone(), // STATE
@@ -3645,7 +3660,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     )));
                 }
             };
-            let output = match String::from_utf8(data) {
+            let output: String = match String::from_utf8(data) {
                 Ok(s) => s,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(

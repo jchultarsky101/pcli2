@@ -258,7 +258,7 @@ impl FolderHierarchy {
             // This case is handled specially in filter_by_path
             return None;
         }
-        
+
         let clean_path = path.strip_prefix('/').unwrap_or(path);
         let path_parts: Vec<&str> = clean_path.split('/').collect();
 
@@ -351,7 +351,7 @@ impl FolderHierarchy {
             // For root path, return the entire hierarchy
             return Some(self.clone());
         }
-        
+
         // Find the folder node at the specified path
         let target_node = self.get_folder_by_path(path)?;
 

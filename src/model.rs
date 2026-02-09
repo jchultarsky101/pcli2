@@ -29,20 +29,18 @@ pub enum ModelError {
     /// Error when a required property value is missing
     #[error("missing property value {name:?}")]
     MissingPropertyValue { name: String },
-    
+
     /// Error when serializing to JSON
     #[error("serialization error: {source}")]
     SerializationError {
         #[from]
         source: serde_json::Error,
     },
-    
+
     /// Error when working with CSV
     #[error("CSV error: {msg}")]
-    CsvError {
-        msg: String,
-    },
-    
+    CsvError { msg: String },
+
     /// Error when working with IO
     #[error("IO error: {source}")]
     IoError {
@@ -1486,10 +1484,12 @@ impl Asset {
     pub fn thumbnail_url(&self, base_url: &str, tenant_id: &str) -> String {
         format!(
             "{}/tenants/{}/assets/{}/thumbnail.png",
-            base_url, tenant_id, self.uuid()
+            base_url,
+            tenant_id,
+            self.uuid()
         )
     }
-    
+
     /// Generate the thumbnail URL for this asset using an API client
     pub fn thumbnail_url_from_api(&self, api_client: &PhysnaApiClient, tenant_id: &str) -> String {
         api_client.generate_asset_thumbnail_url(tenant_id, &self.uuid().to_string())
@@ -1507,7 +1507,10 @@ pub struct AssetWithThumbnail {
 impl AssetWithThumbnail {
     /// Create a new AssetWithThumbnail instance
     pub fn new(asset: Asset, thumbnail_url: String) -> Self {
-        AssetWithThumbnail { asset, thumbnail_url }
+        AssetWithThumbnail {
+            asset,
+            thumbnail_url,
+        }
     }
 }
 
@@ -1553,7 +1556,8 @@ impl OutputFormatter for AssetWithThumbnail {
         match format {
             OutputFormat::Json(options) => {
                 if options.pretty {
-                    serde_json::to_string_pretty(self).map_err(FormattingError::JsonSerializationError)
+                    serde_json::to_string_pretty(self)
+                        .map_err(FormattingError::JsonSerializationError)
                 } else {
                     serde_json::to_string(self).map_err(FormattingError::JsonSerializationError)
                 }
@@ -1561,30 +1565,45 @@ impl OutputFormatter for AssetWithThumbnail {
             OutputFormat::Csv(options) => {
                 let buf = BufWriter::new(Vec::new());
                 let mut wtr = Writer::from_writer(buf);
-                
+
                 if options.with_headers {
-                    wtr.write_record(Self::csv_header())
-                        .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
+                    wtr.write_record(Self::csv_header()).map_err(|e| {
+                        FormattingError::CsvWriterError(format!(
+                            "Failed to write CSV header: {}",
+                            e
+                        ))
+                    })?;
                 }
-                
+
                 for record in self.as_csv_records() {
-                    wtr.write_record(&record)
-                        .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+                    wtr.write_record(&record).map_err(|e| {
+                        FormattingError::CsvWriterError(format!(
+                            "Failed to write CSV record: {}",
+                            e
+                        ))
+                    })?;
                 }
-                
-                wtr.flush()
-                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to flush CSV writer: {}", e)))?;
-                    
-                let data = wtr.into_inner()
-                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to get inner data from CSV writer: {}", e)))?;
-                let bytes = data.into_inner()
-                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to get inner buffer: {}", e)))?;
+
+                wtr.flush().map_err(|e| {
+                    FormattingError::CsvWriterError(format!("Failed to flush CSV writer: {}", e))
+                })?;
+
+                let data = wtr.into_inner().map_err(|e| {
+                    FormattingError::CsvWriterError(format!(
+                        "Failed to get inner data from CSV writer: {}",
+                        e
+                    ))
+                })?;
+                let bytes = data.into_inner().map_err(|e| {
+                    FormattingError::CsvWriterError(format!("Failed to get inner buffer: {}", e))
+                })?;
                 String::from_utf8(bytes).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(options) => {
                 // For single asset with thumbnail, tree format is the same as JSON
                 if options.pretty {
-                    serde_json::to_string_pretty(self).map_err(FormattingError::JsonSerializationError)
+                    serde_json::to_string_pretty(self)
+                        .map_err(FormattingError::JsonSerializationError)
                 } else {
                     serde_json::to_string(self).map_err(FormattingError::JsonSerializationError)
                 }
@@ -1602,9 +1621,7 @@ pub struct AssetListWithThumbnails {
 impl AssetListWithThumbnails {
     /// Create a new empty AssetListWithThumbnails
     pub fn empty() -> AssetListWithThumbnails {
-        AssetListWithThumbnails {
-            assets: Vec::new(),
-        }
+        AssetListWithThumbnails { assets: Vec::new() }
     }
 
     /// Check if the AssetListWithThumbnails is empty
@@ -1650,9 +1667,11 @@ impl OutputFormatter for AssetListWithThumbnails {
         match format {
             OutputFormat::Json(options) => {
                 if options.pretty {
-                    serde_json::to_string_pretty(&self.assets).map_err(FormattingError::JsonSerializationError)
+                    serde_json::to_string_pretty(&self.assets)
+                        .map_err(FormattingError::JsonSerializationError)
                 } else {
-                    serde_json::to_string(&self.assets).map_err(FormattingError::JsonSerializationError)
+                    serde_json::to_string(&self.assets)
+                        .map_err(FormattingError::JsonSerializationError)
                 }
             }
             OutputFormat::Csv(options) => {
@@ -1660,29 +1679,44 @@ impl OutputFormatter for AssetListWithThumbnails {
                 let mut wtr = Writer::from_writer(buf);
 
                 if options.with_headers {
-                    wtr.write_record(Self::csv_header())
-                        .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV header: {}", e)))?;
+                    wtr.write_record(Self::csv_header()).map_err(|e| {
+                        FormattingError::CsvWriterError(format!(
+                            "Failed to write CSV header: {}",
+                            e
+                        ))
+                    })?;
                 }
 
                 for asset_with_thumbnail in &self.assets {
                     for record in asset_with_thumbnail.as_csv_records() {
-                        wtr.write_record(&record)
-                            .map_err(|e| FormattingError::CsvWriterError(format!("Failed to write CSV record: {}", e)))?;
+                        wtr.write_record(&record).map_err(|e| {
+                            FormattingError::CsvWriterError(format!(
+                                "Failed to write CSV record: {}",
+                                e
+                            ))
+                        })?;
                     }
                 }
 
-                wtr.flush()
-                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to flush CSV writer: {}", e)))?;
-                    
-                let data = wtr.into_inner()
-                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to get inner data from CSV writer: {}", e)))?;
-                let bytes = data.into_inner()
-                    .map_err(|e| FormattingError::CsvWriterError(format!("Failed to get inner buffer: {}", e)))?;
+                wtr.flush().map_err(|e| {
+                    FormattingError::CsvWriterError(format!("Failed to flush CSV writer: {}", e))
+                })?;
+
+                let data = wtr.into_inner().map_err(|e| {
+                    FormattingError::CsvWriterError(format!(
+                        "Failed to get inner data from CSV writer: {}",
+                        e
+                    ))
+                })?;
+                let bytes = data.into_inner().map_err(|e| {
+                    FormattingError::CsvWriterError(format!("Failed to get inner buffer: {}", e))
+                })?;
                 String::from_utf8(bytes).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_options) => {
                 // For asset list with thumbnails, tree format is the same as JSON
-                serde_json::to_string_pretty(&self.assets).map_err(FormattingError::JsonSerializationError)
+                serde_json::to_string_pretty(&self.assets)
+                    .map_err(FormattingError::JsonSerializationError)
             }
         }
     }
@@ -1732,9 +1766,9 @@ impl From<&AssetResponse> for Asset {
         // Extract the name from the path (last part after the last slash)
         let name = asset_response
             .path
-            .split('/')
-            .last()
-            .unwrap_or(&asset_response.path);
+            .rsplit_once('/')
+            .map(|(_, name)| name.to_string())
+            .unwrap_or_else(|| asset_response.path.clone());
 
         Asset::new(
             asset_response.uuid.to_owned(),

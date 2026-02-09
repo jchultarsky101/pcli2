@@ -29,8 +29,8 @@ use pcli2::{
             upload_folder,
         },
         tenants::{
-            clear_active_tenant, list_all_tenants,
-            print_active_tenant_name_with_format, set_active_tenant,
+            clear_active_tenant, list_all_tenants, print_active_tenant_name_with_format,
+            set_active_tenant,
         },
     },
     commands::{
@@ -74,7 +74,7 @@ fn decode_jwt_expiration(token: &str) -> Result<TokenExpirationInfo, Box<dyn std
     let mut padded_payload = payload.to_string();
     match payload.len() % 4 {
         2 => padded_payload.push_str("=="),
-        3 => padded_payload.push_str("="),
+        3 => padded_payload.push('='),
         _ => {} // 0 remainder means no padding needed, 1 remainder is invalid
     }
 
@@ -899,7 +899,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                                     pcli2::configuration::default_api_base_url()
                                 }),
                                 ui_base_url: ui_url
-                                    .unwrap_or_else(|| pcli2::configuration::default_ui_base_url()),
+                                    .unwrap_or_else(pcli2::configuration::default_ui_base_url),
                                 auth_base_url: auth_url.unwrap_or_else(|| {
                                     pcli2::configuration::default_auth_base_url()
                                 }),

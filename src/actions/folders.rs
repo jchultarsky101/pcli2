@@ -991,7 +991,6 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         } else {
             // If the folder was specified by UUID, get the folder details to determine the name
             let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-            let folder: crate::model::Folder = folder.into();
 
             let folder_path = folder.path();
             // Special handling for root folder
@@ -1025,7 +1024,6 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
 
     // Get the root folder details to determine its path
     let root_folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let root_folder: crate::model::Folder = root_folder.into();
     let root_folder_path = root_folder.path();
 
     // Start BFS with the specified folder
@@ -1036,7 +1034,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         let assets_response = api
             .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid))
             .await?;
-        let asset_list: crate::model::AssetList = assets_response.into();
+        let asset_list = assets_response;
 
         // Add assets with their relative paths
         for asset in asset_list.get_all_assets() {
@@ -1086,7 +1084,6 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         for folder in subfolders_response.folders() {
             // Get the full folder details to get the name
             let folder_detail = api.get_folder(&tenant.uuid, folder.uuid()).await?;
-            let folder_detail: crate::model::Folder = folder_detail.into();
 
             // Get the folder path by appending the folder name to the current path
             let folder_path = if current_folder_path.ends_with('/') {

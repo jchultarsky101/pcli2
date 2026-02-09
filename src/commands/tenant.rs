@@ -4,8 +4,7 @@
 
 use crate::commands::params::{
     format_parameter, format_pretty_parameter, format_with_headers_parameter,
-    tenant_name_parameter, COMMAND_CLEAR,
-    COMMAND_GET, COMMAND_LIST, COMMAND_TENANT, COMMAND_USE,
+    tenant_name_parameter, COMMAND_CLEAR, COMMAND_GET, COMMAND_LIST, COMMAND_TENANT, COMMAND_USE,
 };
 use clap::Command;
 

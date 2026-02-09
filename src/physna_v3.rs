@@ -3928,7 +3928,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(Vec<u8>)` - Thumbnail image content as bytes
     /// * `Err(ApiError)` - If there was an error during API calls
-    /// Generate the thumbnail URL for an asset
+    ///   Generate the thumbnail URL for an asset
     pub fn generate_asset_thumbnail_url(&self, tenant_id: &str, asset_id: &str) -> String {
         format!(
             "{}/tenants/{}/assets/{}/thumbnail.png",
@@ -4003,23 +4003,23 @@ impl PhysnaApiClient {
                 reqwest::StatusCode::UNAUTHORIZED => {
                     // Check if we have an access token - if not, this is a general auth error
                     if self.access_token.is_none() {
-                        return Err(ApiError::AuthError(format!("Authentication required for asset thumbnail: No access token available. Please log in with 'pcli2 auth login'.", )));
+                        Err(ApiError::AuthError("Authentication required for asset thumbnail: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
                     } else {
-                        return Err(ApiError::AuthError(format!("Unauthorized access for asset thumbnail: Access token may have expired or is invalid.")));
+                        Err(ApiError::AuthError("Unauthorized access for asset thumbnail: Access token may have expired or is invalid.".to_string()))
                     }
                 }
                 reqwest::StatusCode::FORBIDDEN => {
-                    return Err(ApiError::AuthError(format!("Access forbidden for asset thumbnail: You don't have permission to download this asset's thumbnail.")));
+                    Err(ApiError::AuthError("Access forbidden for asset thumbnail: You don't have permission to download this asset's thumbnail.".to_string()))
                 }
                 reqwest::StatusCode::NOT_FOUND => {
-                    return Err(ApiError::ConflictError(format!("Asset thumbnail not found - the asset {} may not have a thumbnail or the asset ID is incorrect. API Response: {}", asset_id, error_body)));
+                    Err(ApiError::ConflictError(format!("Asset thumbnail not found - the asset {} may not have a thumbnail or the asset ID is incorrect. API Response: {}", asset_id, error_body)))
                 }
                 _ => {
                     // For other error statuses, we return the error body that we captured earlier
-                    return Err(ApiError::ConflictError(format!(
+                    Err(ApiError::ConflictError(format!(
                         "HTTP {} - {} for asset thumbnail: {}",
                         status, error_body, asset_id
-                    )));
+                    )))
                 }
             }
         }

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.29] - 2026-02-08
+
+### Added
+- Enhanced tenant state command with optional --type parameter to filter assets by state
+- Added support for filtering assets by states: indexing, finished, failed, unsupported, no-3d-data, missing-dependencies
+- Implemented pagination handling for the ListAssetsByState API endpoint
+
 ## [0.2.28] - 2026-02-08
 
 ### Changed

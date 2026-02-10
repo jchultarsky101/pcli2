@@ -743,6 +743,32 @@ pub async fn download_asset_thumbnail(sub_matches: &ArgMatches) -> Result<(), Cl
     let output_file_path = if let Some(output_path) =
         sub_matches.get_one::<PathBuf>(crate::commands::params::PARAMETER_FILE)
     {
+        // Validate the output file path
+        if output_path.as_os_str().is_empty() {
+            return Err(CliError::MissingRequiredArgument(
+                "Output file path cannot be empty".to_string(),
+            ));
+        }
+
+        // Check if the parent directory exists
+        if let Some(parent) = output_path.parent() {
+            if !parent.exists() {
+                return Err(CliError::MissingRequiredArgument(format!(
+                    "Parent directory does not exist: {}",
+                    parent.display()
+                )));
+            }
+        }
+
+        // Check if the file extension is .png (recommended for thumbnails)
+        if let Some(ext) = output_path.extension() {
+            if ext.to_string_lossy().to_lowercase() != "png" {
+                // Log a warning but allow the operation to continue
+                use tracing::warn;
+                warn!("Thumbnail file extension is not PNG. Recommended extension is .png");
+            }
+        }
+
         output_path.clone()
     } else {
         // Use the asset name as the default output file name with .png extension

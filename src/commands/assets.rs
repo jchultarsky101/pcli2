@@ -231,6 +231,7 @@ pub fn asset_command() -> Command {
             .arg(path_parameter())
             .arg(
                 clap::Arg::new(PARAMETER_FILE)
+                    .long(PARAMETER_FILE)
                     .num_args(1)
                     .required(false)
                     .help("Output file path (default: asset name with .png extension in current directory)")

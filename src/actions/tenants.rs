@@ -436,6 +436,9 @@ pub async fn print_current_context(sub_matches: &ArgMatches) -> Result<(), CliAc
 pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
     trace!("Executing tenant state command...");
 
+    // Check if the --type parameter was provided
+    let state_type = sub_matches.get_one::<String>("type");
+
     // Get format parameters directly from sub_matches
     let format_str = sub_matches
         .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
@@ -498,9 +501,15 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
             }
         })?;
 
-    // Get the asset state counts from the API
-    let state_counts = api.get_asset_state_counts(&tenant.uuid).await?;
+    if let Some(state) = state_type {
+        // Call the new function to list assets by state
+        let assets = api.list_assets_by_state(&tenant.uuid, state).await?;
+        println!("{}", assets.format(format)?);
+    } else {
+        // Get the asset state counts from the API (original behavior)
+        let state_counts = api.get_asset_state_counts(&tenant.uuid).await?;
+        println!("{}", state_counts.format(&format)?);
+    }
 
-    println!("{}", state_counts.format(&format)?);
     Ok(())
 }

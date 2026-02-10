@@ -78,6 +78,10 @@ pub enum ApiError {
         "Attempting to delete folder that is not empty. If you are sure, use the --force flag"
     )]
     FolderNotEmptyError,
+
+    /// Invalid parameter error with a descriptive message
+    #[error("Invalid parameter: {0}")]
+    InvalidParameterError(String),
 }
 
 pub trait TryDefault: Sized {
@@ -3520,6 +3524,114 @@ impl PhysnaApiClient {
         );
 
         Ok(response)
+    }
+
+    /// List assets by state from the Physna API
+    ///
+    /// This function retrieves a list of assets in a specific state (processing, ready, failed, deleted) for a specific tenant.
+    /// The endpoint supports pagination to handle large numbers of assets.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_uuid` - The UUID of the tenant to get assets for
+    /// * `state` - The state to filter assets by (indexing, finished, failed, unsupported, no-3d-data, missing-dependencies)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(AssetList)` - Successfully fetched list of assets in the specified state
+    /// * `Err(ApiError)` - If there was an error during API calls
+    pub async fn list_assets_by_state(
+        &mut self,
+        tenant_uuid: &Uuid,
+        state: &str,
+    ) -> Result<AssetList, ApiError> {
+        debug!(
+            "Getting assets by state for tenant_uuid: {}, state: {}",
+            tenant_uuid, state
+        );
+
+        // Validate the state parameter
+        match state {
+            "indexing" | "finished" | "failed" | "unsupported" | "no-3d-data" | "missing-dependencies" => {},
+            _ => return Err(ApiError::InvalidParameterError(format!("Invalid state: {}. Valid states are: indexing, finished, failed, unsupported, no-3d-data, missing-dependencies", state))),
+        }
+
+        // Initialize pagination variables
+        let mut page: usize = 1;
+        let per_page: usize = 100; // Reasonable page size for asset listings
+        let mut all_assets: Vec<Asset> = Vec::new();
+
+        // Loop through all pages to get all assets with the specified state
+        loop {
+            let url = format!(
+                "{}/tenants/{}/assets/state/{}?page={}&per_page={}",
+                self.base_url, tenant_uuid, state, page, per_page
+            );
+            debug!("Assets by state request URL: {}", url);
+
+            // Execute the GET request using the generic method
+            let response: AssetListResponse = match self.get(&url).await {
+                Ok(response) => response,
+                Err(e) => {
+                    // If we get a 404, it might mean there are no assets with that state
+                    match &e {
+                        ApiError::HttpError(reqwest_err) => {
+                            if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                debug!(
+                                    "No assets found with state: {} for tenant: {}",
+                                    state, tenant_uuid
+                                );
+                                // Return an empty response instead of an error
+                                AssetListResponse {
+                                    assets: vec![],
+                                    page_data: crate::model::PageData {
+                                        current_page: page,
+                                        per_page,
+                                        total: 0,
+                                        last_page: 1,
+                                        start_index: 0,
+                                        end_index: 0,
+                                    },
+                                }
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                        _ => return Err(e),
+                    }
+                }
+            };
+
+            // Extract assets from the current page
+            let current_page_assets: Vec<Asset> =
+                response.assets.iter().map(|a| a.into()).collect();
+            all_assets.extend(current_page_assets);
+
+            // Check if we've reached the last page
+            if page >= response.page_data.last_page as usize {
+                break;
+            }
+
+            // Increment the page number to avoid infinite loops
+            page += 1;
+
+            // Safety check to prevent infinite loops in case of API issues
+            if page > 1000 {
+                // Arbitrary large number to prevent infinite loops
+                debug!("Reached maximum page limit (1000) while fetching assets by state: {} for tenant: {}", state, tenant_uuid);
+                break;
+            }
+        }
+
+        debug!(
+            "Successfully retrieved {} assets by state: {} for tenant_uuid: {}",
+            all_assets.len(),
+            state,
+            tenant_uuid
+        );
+
+        // Convert the collected assets to an AssetList
+        Ok(all_assets.into())
     }
 
     /// Download asset file from the Physna API

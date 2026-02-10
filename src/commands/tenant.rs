@@ -25,6 +25,14 @@ pub fn tenant_command() -> Command {
             Command::new("state")
                 .about("Get asset state counts for the current tenant")
                 .arg(crate::commands::params::tenant_parameter())
+                .arg(
+                    clap::Arg::new("type")
+                        .long("type")
+                        .num_args(1)
+                        .required(false)
+                        .value_parser(["indexing", "finished", "failed", "unsupported", "no-3d-data", "missing-dependencies"])
+                        .help("Filter assets by state: indexing, finished, failed, unsupported, no-3d-data, or missing-dependencies"),
+                )
                 .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),

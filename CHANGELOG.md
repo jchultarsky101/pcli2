@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `asset list` command now supports a `--thumbnails` flag to include thumbnail information
+- `folder thumbnail` command to download thumbnails for all assets in a folder
+- Recursive asset listing using folder hierarchy approach
+- `asset thumbnail` command now supports a `--file` parameter to specify output file path
+
+### Changed
+- Updated README.md to document the new --thumbnails flag for asset list command
+- Improved error handling for missing thumbnails in folder thumbnail command
+- Changed default output directory name for folder thumbnail downloads
+- Changed the file parameter in asset thumbnail command from positional to named (--file)
+
+### Fixed
+- Various typos in documentation and help text
+- Validation for output file path in asset thumbnail command to ensure parent directory exists
+
 ## [0.2.29] - 2026-02-08
 
 ### Added

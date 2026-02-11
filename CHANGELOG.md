@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.31] - 2026-02-11
+
+### Added
+- `user list` command to list users in the current tenant with JSON and CSV output support
+- `user get` command to get details for a specific user with JSON and CSV output support
+- Proper pagination handling for user listing with safeguards against infinite loops
+
+### Fixed
+- Fixed async runtime interference caused by blocking operations in context module that was breaking folder resolution
+- Restored proper functionality of folder resolution and asset listing operations
+- Fixed issue where folder paths were not being found due to runtime conflicts
+
 ## [0.2.30] - 2026-02-10
 
 ### Added

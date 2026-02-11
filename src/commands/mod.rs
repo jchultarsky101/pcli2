@@ -15,6 +15,7 @@ pub mod folder;
 pub mod metadata;
 pub mod params;
 pub mod tenant;
+pub mod user;
 
 /// Create and configure all CLI commands and their arguments.
 ///
@@ -50,5 +51,6 @@ pub fn create_full_command() -> Command {
         .subcommand(auth::auth_command())
         .subcommand(assets::asset_command())
         .subcommand(config::config_command())
+        .subcommand(user::user_command())
         .subcommand(completions::completions_command())
 }

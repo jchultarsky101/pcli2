@@ -4,6 +4,7 @@ pub mod assets;
 pub mod completions;
 pub mod folders;
 pub mod tenants;
+pub mod users;
 pub mod utils;
 
 #[derive(Debug, Error)]

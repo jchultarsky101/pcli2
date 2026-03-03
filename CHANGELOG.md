@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.32] - 2026-03-03
+
+### Fixed
+- Assembly download now correctly preserves all files including the top-level assembly file (previously the assembly file was deleted during ZIP cleanup due to filename conflict)
+
 ## [0.2.31] - 2026-02-11
 
 ### Added

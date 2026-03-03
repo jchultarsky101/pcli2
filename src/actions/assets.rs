@@ -692,7 +692,6 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         output_path.clone()
     } else {
         // Use the asset name as the default output file name
-        // For assemblies, we still use the original name since we'll extract the ZIP contents
         let asset_name = asset.name();
 
         let mut path = std::path::PathBuf::new();
@@ -708,12 +707,30 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     )
     .await?;
 
-    // Write the file content to the output file
-    std::fs::write(&output_file_path, file_content).map_err(CliActionError::IoError)?;
+    // If the asset is an assembly, the downloaded file is a ZIP file
+    // Add .zip extension to avoid conflict with extracted assembly file
+    let zip_file_path = if asset.is_assembly() {
+        let mut zip_path = output_file_path.clone();
+        // Add .zip extension to the existing filename (e.g., sample17.asm -> sample17.asm.zip)
+        let zip_extension = if let Some(ext) = output_file_path.extension() {
+            format!("{}.zip", ext.to_string_lossy())
+        } else {
+            "zip".to_string()
+        };
+        zip_path.set_extension(zip_extension);
+        zip_path
+    } else {
+        output_file_path.clone()
+    };
 
-    // If the asset is an assembly, the downloaded file is a ZIP file that needs to be extracted
+    // Write the file content to the output file
+    std::fs::write(&zip_file_path, file_content).map_err(CliActionError::IoError)?;
+
+    // If the asset is an assembly, extract the ZIP file and cleanup
     if asset.is_assembly() {
-        extract_zip_and_cleanup(&output_file_path)?;
+        // DEBUG: Log the ZIP file path
+        tracing::debug!("Downloaded ZIP file to: {:?}", zip_file_path);
+        extract_zip_and_cleanup(&zip_file_path)?;
     }
 
     Ok(())
@@ -814,6 +831,15 @@ fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
 
+    // DEBUG: Log archive contents
+    tracing::debug!("ZIP archive contains {} files:", archive.len());
+    for i in 0..archive.len() {
+        let file = archive
+            .by_index(i)
+            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
+        tracing::debug!("  [{}] {} ({} bytes)", i, file.name(), file.size());
+    }
+
     // Extract all files to the same directory as the ZIP file
     let parent_dir = zip_path.parent().ok_or_else(|| {
         CliError::ActionError(crate::actions::CliActionError::IoError(
@@ -821,14 +847,20 @@ fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError
         ))
     })?;
 
+    tracing::debug!("Extracting to: {:?}", parent_dir);
+
     for i in 0..archive.len() {
         let mut file = archive
             .by_index(i)
             .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
 
+        let file_name = file.name().to_string();
         let file_path = parent_dir.join(file.mangled_name());
 
+        tracing::debug!("Extracting [{}]: {} -> {:?}", i, file_name, file_path);
+
         if file.is_dir() {
+            tracing::debug!("  Creating directory: {:?}", file_path);
             std::fs::create_dir_all(&file_path)
                 .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
         } else {
@@ -839,11 +871,18 @@ fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError
                 })?;
             }
 
+            tracing::debug!("  Creating file: {:?} ({} bytes)", file_path, file.size());
             let mut output_file = std::fs::File::create(&file_path)
                 .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
             std::io::copy(&mut file, &mut output_file)
                 .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+
+            tracing::debug!(
+                "  Extracted: {:?} ({} bytes)",
+                file_path,
+                output_file.metadata().map(|m| m.len()).unwrap_or(0)
+            );
         }
     }
 

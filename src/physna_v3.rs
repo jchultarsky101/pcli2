@@ -4272,6 +4272,140 @@ impl PhysnaApiClient {
         // Execute POST request to trigger reprocessing
         self.post_no_response(&url, &body).await
     }
+
+    /// List users in a specific tenant with pagination support
+    ///
+    /// This method fetches a list of users in the specified tenant.
+    /// It supports pagination through the optional `page` and `per_page` parameters.
+    /// The method implements safeguards to prevent infinite loops during pagination.
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The UUID of the tenant whose users to list
+    ///
+    /// # Returns
+    /// * `Ok(UserListResponse)` - Successfully fetched list of users with pagination metadata
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn list_tenant_users(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<crate::actions::users::UserListResponse, ApiError> {
+        // Initialize pagination variables
+        let mut page: usize = 1;
+        let per_page: usize = 100; // Reasonable page size for user listings
+        let mut all_users: Vec<crate::actions::users::User> = Vec::new();
+
+        // Track the maximum last_page value seen to prevent infinite loops
+        let mut max_last_page_seen = 0;
+        let max_pages_limit = 50; // Hard limit to prevent excessive API calls
+
+        loop {
+            // Check if we've hit the hard limit
+            if page > max_pages_limit {
+                debug!(
+                    "Reached hard page limit of {}, stopping to prevent excessive API calls",
+                    max_pages_limit
+                );
+                break;
+            }
+
+            let url = format!("{}/tenants/{}/users", self.base_url, tenant_uuid);
+
+            // Build query parameters for pagination
+            let query_params = vec![
+                ("page", page.to_string()),
+                ("perPage", per_page.to_string()),
+            ];
+
+            // Add query parameters to URL
+            let query_string = serde_urlencoded::to_string(&query_params).unwrap();
+            let url = format!("{}?{}", url, query_string);
+
+            debug!("Fetching users page {} for tenant {}", page, tenant_uuid);
+
+            // Execute GET request to fetch users
+            let mut response: crate::actions::users::UserListResponse = self.get(&url).await?;
+
+            // Extract users from the current page
+            let current_page_users = std::mem::take(&mut response.users);
+            all_users.extend(current_page_users);
+
+            // Check if we have pagination data
+            if let Some(page_data) = &response.page_data {
+                debug!(
+                    "Page {}/{} with {} total users",
+                    page_data.current_page, page_data.last_page, page_data.total
+                );
+
+                // Update the maximum last_page value seen
+                if page_data.last_page > max_last_page_seen {
+                    max_last_page_seen = page_data.last_page;
+                }
+
+                // Check if we've reached the last page or gone beyond what we've seen
+                if page_data.current_page >= page_data.last_page || page > max_last_page_seen {
+                    debug!("Reached last page of results or beyond max seen: current={}, last={}, requested={}",
+                           page_data.current_page, page_data.last_page, page);
+                    break;
+                }
+
+                // Move to next page
+                page += 1;
+            } else {
+                // No pagination data - just return the response as-is
+                debug!("No pagination data in response, returning single page");
+                return Ok(response);
+            }
+        }
+
+        // Create a response with all users and combined pagination data
+        let total_users = all_users.len();
+        let final_response = crate::actions::users::UserListResponse {
+            users: all_users,
+            page_data: Some(crate::model::PageData {
+                current_page: 1,
+                per_page,
+                total: total_users,
+                last_page: ((total_users as f64) / (per_page as f64)).ceil() as usize,
+                start_index: 0,
+                end_index: total_users,
+            }),
+        };
+
+        Ok(final_response)
+    }
+
+    /// Get details for a specific user
+    ///
+    /// This method fetches details for a specific user by their ID.
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The UUID of the tenant where the user belongs
+    /// * `user_id` - The ID of the user to retrieve
+    ///
+    /// # Returns
+    /// * `Ok(User)` - Successfully fetched user details
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    pub async fn get_user(
+        &mut self,
+        tenant_uuid: &Uuid,
+        user_id: &str,
+    ) -> Result<crate::actions::users::User, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/users/{}",
+            self.base_url, tenant_uuid, user_id
+        );
+
+        debug!(
+            "Fetching user details for user ID: {} in tenant: {}",
+            user_id, tenant_uuid
+        );
+
+        // Execute GET request to fetch the user response
+        let response: crate::actions::users::SingleUserResponse = self.get(&url).await?;
+
+        // Return the user from the response
+        Ok(response.user)
+    }
 }
 
 impl Default for PhysnaApiClient {

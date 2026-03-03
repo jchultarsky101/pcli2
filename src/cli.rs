@@ -1370,6 +1370,12 @@ pub async fn execute_command() -> Result<(), CliError> {
             pcli2::actions::completions::generate_completions(shell)?;
             Ok(())
         }
+        Some(("user", sub_matches)) => {
+            trace!("Command: user");
+
+            pcli2::commands::user::execute_user_command(sub_matches).await?;
+            Ok(())
+        }
         _ => Err(CliError::UnsupportedSubcommand(String::from("unknown"))),
     }
 }

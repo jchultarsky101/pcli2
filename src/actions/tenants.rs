@@ -487,7 +487,7 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
                 CliActionError::MissingRequiredArgument(msg)
             }
             crate::error::CliError::JsonError(json_error) => CliActionError::JsonError(json_error),
-            crate::error::CliError::FolderNotFound(path) => {
+            crate::error::CliError::FolderNotFound(path, _) => {
                 CliActionError::MissingRequiredArgument(format!("Folder not found: {}", path))
             }
             crate::error::CliError::FolderListError(_) => {

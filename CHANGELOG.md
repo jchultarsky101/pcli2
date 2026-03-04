@@ -5,7 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.32] - 2026-03-03
+## [0.2.35] - 2026-03-04
+
+### Added
+- Comprehensive regression test suite with 85 new tests
+  - 41 tests for error types, conversions, and error handling utilities
+  - 44 tests for format utilities, OutputFormat, and path normalization
+  - Tests provide protection against regressions during future refactoring
+- **Fuzzy path matching** for folder-not-found errors
+  - Case-insensitive folder path detection
+  - Levenshtein distance-based similarity scoring
+  - "Did you mean?" suggestions for all folder commands
+  - Works across `asset list`, `folder get`, `folder download`, `folder upload`, and more
+
+### Changed
+- **Major code reorganization** - Split large modules for better maintainability
+  - Split `actions/assets.rs` (3,828 lines) into 8 focused modules
+  - Extracted formatting implementations from `model.rs` into `format/impls/`
+  - Reduced `model.rs` from 4,582 to 2,352 lines (-49%)
+- **Format parameter handling consolidated** - All format parsing now uses `FormatParams::from_args()` for consistency
+  - Updated 8 functions in `actions/assets.rs`
+  - Removed ~100 lines of duplicated format parsing code
+- **Improved error handling** - Replaced `.unwrap()` calls with proper error propagation
+  - 5 `.unwrap()` calls in `cli.rs` replaced with `?` operator
+  - Better error messages with actionable suggestions
+
+### Fixed
+- Folder not found errors now preserve helpful path suggestions instead of generic messages
+
+### Technical Details
+- 151 tests passing (from 64)
+- Zero clippy warnings
+- Net reduction of ~1,097 lines (-15%)
+- No breaking changes - all changes are backward compatible
+
+## [0.2.34] - 2026-03-03
 
 ### Fixed
 - Assembly download now correctly preserves all files including the top-level assembly file (previously the assembly file was deleted during ZIP cleanup due to filename conflict)

@@ -22,6 +22,7 @@ use crate::{
     format::{OutputFormat, OutputFormatter},
     model::{normalize_path, Folder, Tenant},
     param_utils::{get_format_parameter_value, get_tenant},
+    path_utils::find_similar_paths,
     physna_v3::{PhysnaApiClient, TryDefault},
 };
 
@@ -35,7 +36,24 @@ pub async fn resolve_folder_uuid_by_path(
     // Root path should be handled separately by the calling function, so this function is only for non-root paths
     match api.get_folder_uuid_by_path(&tenant.uuid, path).await {
         Ok(Some(folder_uuid)) => Ok(folder_uuid),
-        Ok(None) => Err(CliError::FolderNotFound(path.to_string())),
+        Ok(None) => {
+            // Folder not found - try to provide helpful suggestions
+            let hierarchy = FolderHierarchy::build_from_api(api, &tenant.uuid).await?;
+            let suggestions = find_similar_paths(&hierarchy, path);
+            
+            let suggestion_message = if suggestions.is_empty() {
+                String::new()
+            } else if suggestions.len() == 1 {
+                format!("\n\nDid you mean: {}", suggestions[0])
+            } else {
+                format!(
+                    "\n\nDid you mean one of:\n  {}",
+                    suggestions.iter().map(|s| format!("• {}", s)).collect::<Vec<_>>().join("\n  ")
+                )
+            };
+            
+            Err(CliError::FolderNotFound(path.to_string(), suggestion_message))
+        }
         Err(api_error) => {
             // Propagate API errors (like authentication errors) instead of converting them to FolderNotFound
             Err(CliError::PhysnaExtendedApiError(api_error))
@@ -81,7 +99,10 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
             } else {
                 hierarchy
                     .filter_by_path(path.as_str())
-                    .ok_or(CliError::FolderNotFound(path))?
+                    .ok_or(CliError::FolderNotFound(
+                        path.clone(),
+                        String::new()
+                    ))?
             };
             hierarchy.print_tree();
         }
@@ -93,7 +114,10 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 // Use get_children_by_path to get only direct children, not all descendants
                 hierarchy
                     .get_children_by_path(path.as_str())
-                    .ok_or(CliError::FolderNotFound(path))?
+                    .ok_or(CliError::FolderNotFound(
+                        path.clone(),
+                        String::new()
+                    ))?
             };
 
             println!("{}", folder_list.format(format)?);
@@ -375,7 +399,10 @@ pub async fn resolve_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             println!("{}", uuid);
             Ok(())
         }
-        None => Err(CliError::FolderNotFound(folder_path.clone())),
+        None => Err(CliError::FolderNotFound(
+            folder_path.clone(),
+            String::new()
+        )),
     }
 }
 
@@ -1568,7 +1595,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         // Try to resolve the folder UUID by path
         match resolve_folder_uuid_by_path(&mut api, &tenant, path).await {
             Ok(uuid) => uuid,
-            Err(CliError::FolderNotFound(_)) => {
+            Err(CliError::FolderNotFound(_, _)) => {
                 // Folder doesn't exist, create it
                 tracing::trace!(
                     "Folder does not exist, creating new folder with path: {}",

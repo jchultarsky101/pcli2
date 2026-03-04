@@ -3,6 +3,8 @@
 //! This module provides functionality for formatting output in various formats
 //! including JSON, CSV, and tree representations.
 
+pub mod impls;
+
 use csv::Writer;
 use serde_json;
 use std::io::BufWriter;

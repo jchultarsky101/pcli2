@@ -2800,9 +2800,22 @@ impl PhysnaApiClient {
         );
 
         // Expand the glob pattern to get matching files
-        let paths: Vec<_> = glob(glob_pattern)?
-            .filter_map(|path_result| path_result.ok()) // Filter out any errors and extract the PathBuf
-            .collect();
+        // Support both glob patterns (e.g., "data/*.stl") and comma-separated lists (e.g., "file1.stl,file2.stl")
+        let paths: Vec<_> = if glob_pattern.contains(',') {
+            // Comma-separated list of file paths
+            glob_pattern
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from)
+                .filter(|path| path.exists())
+                .collect()
+        } else {
+            // Glob pattern
+            glob(glob_pattern)?
+                .filter_map(|path_result| path_result.ok()) // Filter out any errors and extract the PathBuf
+                .collect()
+        };
 
         debug!(
             "Found {} files matching pattern: {}",

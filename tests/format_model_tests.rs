@@ -3,8 +3,8 @@
 /// These tests provide regression protection for formatting and path normalization.
 #[cfg(test)]
 mod format_and_model_tests {
-    use pcli2::format::{OutputFormat, OutputFormatOptions, FormattingError};
-    use pcli2::format_utils::{FormatParams, FormatOptionsBuilder, FormatPreset};
+    use pcli2::format::{FormattingError, OutputFormat, OutputFormatOptions};
+    use pcli2::format_utils::{FormatOptionsBuilder, FormatParams, FormatPreset};
     use pcli2::model::normalize_path;
 
     mod normalize_path_tests {
@@ -20,9 +20,15 @@ mod format_and_model_tests {
 
         #[test]
         fn test_consecutive_slashes() {
-            assert_eq!(normalize_path("/myroot//mysub///more/"), "/myroot/mysub/more");
+            assert_eq!(
+                normalize_path("/myroot//mysub///more/"),
+                "/myroot/mysub/more"
+            );
             assert_eq!(normalize_path("Root//Folder"), "/Root/Folder");
-            assert_eq!(normalize_path("//double//slash//test"), "/double/slash/test");
+            assert_eq!(
+                normalize_path("//double//slash//test"),
+                "/double/slash/test"
+            );
             assert_eq!(normalize_path("///"), "/");
             assert_eq!(normalize_path(""), "/");
         }
@@ -103,7 +109,7 @@ mod format_and_model_tests {
             assert_eq!(normalize_path("/home/Folder"), "/Folder");
             assert_eq!(normalize_path("/Home/Folder"), "/Folder");
             assert_eq!(normalize_path("/hOmE/Folder"), "/Folder");
-            
+
             // Test with trailing slash
             assert_eq!(normalize_path("/HOME/Folder/"), "/Folder");
             assert_eq!(normalize_path("/home/Folder/"), "/Folder");
@@ -148,7 +154,7 @@ mod format_and_model_tests {
             let options = OutputFormatOptions::default();
             let format = OutputFormat::from_string_with_options("json", options.clone()).unwrap();
             assert!(matches!(format, OutputFormat::Json(_)));
-            
+
             let format = OutputFormat::from_string_with_options("JSON", options).unwrap();
             assert!(matches!(format, OutputFormat::Json(_)));
         }
@@ -158,7 +164,7 @@ mod format_and_model_tests {
             let options = OutputFormatOptions::default();
             let format = OutputFormat::from_string_with_options("csv", options.clone()).unwrap();
             assert!(matches!(format, OutputFormat::Csv(_)));
-            
+
             let format = OutputFormat::from_string_with_options("CSV", options).unwrap();
             assert!(matches!(format, OutputFormat::Csv(_)));
         }
@@ -168,7 +174,7 @@ mod format_and_model_tests {
             let options = OutputFormatOptions::default();
             let format = OutputFormat::from_string_with_options("tree", options.clone()).unwrap();
             assert!(matches!(format, OutputFormat::Tree(_)));
-            
+
             let format = OutputFormat::from_string_with_options("TREE", options).unwrap();
             assert!(matches!(format, OutputFormat::Tree(_)));
         }
@@ -178,7 +184,7 @@ mod format_and_model_tests {
             let options = OutputFormatOptions::default();
             let result = OutputFormat::from_string_with_options("xml", options);
             assert!(result.is_err());
-            
+
             match result.unwrap_err() {
                 FormattingError::UnsupportedOutputFormat(fmt) => assert_eq!(fmt, "xml"),
                 _ => panic!("Expected UnsupportedOutputFormat error"),
@@ -188,12 +194,12 @@ mod format_and_model_tests {
         #[test]
         fn test_from_string_with_options_safe() {
             let options = OutputFormatOptions::default();
-            
+
             // Valid formats
             assert!(OutputFormat::from_string_with_options_safe("json", options.clone()).is_ok());
             assert!(OutputFormat::from_string_with_options_safe("csv", options.clone()).is_ok());
             assert!(OutputFormat::from_string_with_options_safe("tree", options.clone()).is_ok());
-            
+
             // Invalid format
             assert!(OutputFormat::from_string_with_options_safe("xml", options).is_err());
         }
@@ -217,10 +223,10 @@ mod format_and_model_tests {
         fn test_format_display() {
             let json_format = OutputFormat::Json(OutputFormatOptions::default());
             assert_eq!(format!("{}", json_format), "json");
-            
+
             let csv_format = OutputFormat::Csv(OutputFormatOptions::default());
             assert_eq!(format!("{}", csv_format), "csv");
-            
+
             let tree_format = OutputFormat::Tree(OutputFormatOptions::default());
             assert_eq!(format!("{}", tree_format), "tree");
         }
@@ -230,7 +236,7 @@ mod format_and_model_tests {
             let format: Result<OutputFormat, _> = "json".parse();
             assert!(format.is_ok());
             assert!(matches!(format.unwrap(), OutputFormat::Json(_)));
-            
+
             let format: Result<OutputFormat, _> = "invalid".parse();
             assert!(format.is_err());
         }
@@ -326,25 +332,19 @@ mod format_and_model_tests {
 
         #[test]
         fn test_builder_with_metadata() {
-            let options = FormatOptionsBuilder::new()
-                .with_metadata(true)
-                .build();
+            let options = FormatOptionsBuilder::new().with_metadata(true).build();
             assert!(options.with_metadata);
         }
 
         #[test]
         fn test_builder_with_headers() {
-            let options = FormatOptionsBuilder::new()
-                .with_headers(true)
-                .build();
+            let options = FormatOptionsBuilder::new().with_headers(true).build();
             assert!(options.with_headers);
         }
 
         #[test]
         fn test_builder_pretty() {
-            let options = FormatOptionsBuilder::new()
-                .pretty(true)
-                .build();
+            let options = FormatOptionsBuilder::new().pretty(true).build();
             assert!(options.pretty);
         }
 
@@ -394,7 +394,9 @@ mod format_and_model_tests {
             let preset = FormatPreset::Verbose;
             let format = preset.to_format("json");
             // Verbose should have metadata and headers
-            assert!(matches!(format, OutputFormat::Json(opts) if opts.with_metadata && opts.with_headers && opts.pretty));
+            assert!(
+                matches!(format, OutputFormat::Json(opts) if opts.with_metadata && opts.with_headers && opts.pretty)
+            );
         }
 
         #[test]
@@ -402,7 +404,9 @@ mod format_and_model_tests {
             let preset = FormatPreset::Compact;
             let format = preset.to_format("json");
             // Compact should have no extra options
-            assert!(matches!(format, OutputFormat::Json(opts) if !opts.with_metadata && !opts.with_headers && !opts.pretty));
+            assert!(
+                matches!(format, OutputFormat::Json(opts) if !opts.with_metadata && !opts.with_headers && !opts.pretty)
+            );
         }
 
         #[test]
@@ -446,20 +450,29 @@ mod format_and_model_tests {
         fn test_format_params_from_args() {
             let cmd = Command::new("test")
                 .arg(Arg::new("format").long("format").action(ArgAction::Set))
-                .arg(Arg::new("headers").long("headers").action(ArgAction::SetTrue))
+                .arg(
+                    Arg::new("headers")
+                        .long("headers")
+                        .action(ArgAction::SetTrue),
+                )
                 .arg(Arg::new("pretty").long("pretty").action(ArgAction::SetTrue))
-                .arg(Arg::new("metadata").long("metadata").action(ArgAction::SetTrue));
+                .arg(
+                    Arg::new("metadata")
+                        .long("metadata")
+                        .action(ArgAction::SetTrue),
+                );
 
             let matches = cmd.get_matches_from(vec![
                 "test",
-                "--format", "json",
+                "--format",
+                "json",
                 "--headers",
                 "--pretty",
                 "--metadata",
             ]);
 
             let params = FormatParams::from_args(&matches);
-            
+
             assert!(matches!(params.format, OutputFormat::Json(_)));
             assert!(params.format_options.with_headers);
             assert!(params.format_options.pretty);
@@ -471,14 +484,22 @@ mod format_and_model_tests {
         fn test_format_params_default_format() {
             let cmd = Command::new("test")
                 .arg(Arg::new("format").long("format").action(ArgAction::Set))
-                .arg(Arg::new("headers").long("headers").action(ArgAction::SetTrue))
+                .arg(
+                    Arg::new("headers")
+                        .long("headers")
+                        .action(ArgAction::SetTrue),
+                )
                 .arg(Arg::new("pretty").long("pretty").action(ArgAction::SetTrue))
-                .arg(Arg::new("metadata").long("metadata").action(ArgAction::SetTrue));
+                .arg(
+                    Arg::new("metadata")
+                        .long("metadata")
+                        .action(ArgAction::SetTrue),
+                );
 
             let matches = cmd.get_matches_from(vec!["test"]);
 
             let params = FormatParams::from_args(&matches);
-            
+
             // Should default to JSON
             assert!(matches!(params.format, OutputFormat::Json(_)));
             assert_eq!(params.format_str, "json");
@@ -488,14 +509,22 @@ mod format_and_model_tests {
         fn test_format_params_with_default() {
             let cmd = Command::new("test")
                 .arg(Arg::new("format").long("format").action(ArgAction::Set))
-                .arg(Arg::new("headers").long("headers").action(ArgAction::SetTrue))
+                .arg(
+                    Arg::new("headers")
+                        .long("headers")
+                        .action(ArgAction::SetTrue),
+                )
                 .arg(Arg::new("pretty").long("pretty").action(ArgAction::SetTrue))
-                .arg(Arg::new("metadata").long("metadata").action(ArgAction::SetTrue));
+                .arg(
+                    Arg::new("metadata")
+                        .long("metadata")
+                        .action(ArgAction::SetTrue),
+                );
 
             let matches = cmd.get_matches_from(vec!["test"]);
 
             let params = FormatParams::from_args_with_default(&matches, "csv");
-            
+
             assert!(matches!(params.format, OutputFormat::Csv(_)));
             assert_eq!(params.format_str, "csv");
         }

@@ -4,8 +4,8 @@
 /// regression protection during refactoring.
 #[cfg(test)]
 mod error_tests {
-    use pcli2::error::CliError;
     use pcli2::configuration::ConfigurationError;
+    use pcli2::error::CliError;
     use pcli2::format::FormattingError;
     use uuid::Uuid;
 
@@ -17,7 +17,9 @@ mod error_tests {
             let error = CliError::UnsupportedSubcommand("test-command".to_string());
             let error_str = error.to_string();
             // The error message is "Undefined or unsupported subcommand" followed by the command
-            assert!(error_str.contains("unsupported subcommand") || error_str.contains("test-command"));
+            assert!(
+                error_str.contains("unsupported subcommand") || error_str.contains("test-command")
+            );
             assert_eq!(error.exit_code().code(), 64); // UsageError
         }
 
@@ -25,7 +27,7 @@ mod error_tests {
         fn test_configuration_error_conversion() {
             let config_error = ConfigurationError::FailedToFindConfigurationDirectory;
             let cli_error: CliError = config_error.into();
-            
+
             match cli_error {
                 CliError::ConfigurationError(_) => (),
                 _ => panic!("Expected ConfigurationError variant"),
@@ -36,7 +38,7 @@ mod error_tests {
         fn test_formatting_error_conversion() {
             let format_error = FormattingError::UnsupportedOutputFormat("invalid".to_string());
             let cli_error: CliError = format_error.into();
-            
+
             match cli_error {
                 CliError::FormattingError(_) => (),
                 _ => panic!("Expected FormattingError variant"),
@@ -60,8 +62,8 @@ mod error_tests {
 
         #[test]
         fn test_tenant_not_found() {
-            let error = CliError::TenantNotFound { 
-                identifier: "test-tenant".to_string() 
+            let error = CliError::TenantNotFound {
+                identifier: "test-tenant".to_string(),
             };
             let error_str = error.to_string();
             assert!(error_str.contains("test-tenant"));
@@ -80,7 +82,7 @@ mod error_tests {
         fn test_folder_rename_failed() {
             let error = CliError::FolderRenameFailed(
                 "uuid-123".to_string(),
-                "permission denied".to_string()
+                "permission denied".to_string(),
             );
             let error_str = error.to_string();
             assert!(error_str.contains("uuid-123"));
@@ -92,10 +94,10 @@ mod error_tests {
             let invalid_json = "not valid json";
             let result: Result<serde_json::Value, _> = serde_json::from_str(invalid_json);
             assert!(result.is_err());
-            
+
             let json_error = result.unwrap_err();
             let cli_error: CliError = json_error.into();
-            
+
             match cli_error {
                 CliError::JsonError(_) => (),
                 _ => panic!("Expected JsonError variant"),
@@ -107,10 +109,10 @@ mod error_tests {
             let invalid_uuid = "not-a-uuid";
             let result: Result<Uuid, _> = invalid_uuid.parse();
             assert!(result.is_err());
-            
+
             let uuid_error = result.unwrap_err();
             let cli_error: CliError = uuid_error.into();
-            
+
             match cli_error {
                 CliError::UuidParsingError(_) => (),
                 _ => panic!("Expected UuidParsingError variant"),
@@ -135,7 +137,7 @@ mod error_tests {
             let result: Result<serde_json::Value, _> = serde_json::from_str(invalid_json);
             let json_error = result.unwrap_err();
             let action_error: CliActionError = json_error.into();
-            
+
             match action_error {
                 CliActionError::JsonError(_) => (),
                 _ => panic!("Expected JsonError variant"),
@@ -147,7 +149,7 @@ mod error_tests {
             let mut writer = csv::Writer::from_writer(vec![]);
             let result = writer.write_record(["test"]);
             assert!(result.is_ok());
-            
+
             let inner_result = writer.into_inner();
             assert!(inner_result.is_ok());
         }
@@ -169,8 +171,8 @@ mod error_tests {
 
         #[test]
         fn test_tenant_not_found() {
-            let error = CliActionError::TenantNotFound { 
-                identifier: "test".to_string() 
+            let error = CliActionError::TenantNotFound {
+                identifier: "test".to_string(),
             };
             let error_str = error.to_string();
             assert!(error_str.contains("test"));
@@ -178,12 +180,9 @@ mod error_tests {
 
         #[test]
         fn test_io_error_conversion() {
-            let io_error = std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "file not found"
-            );
+            let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
             let action_error: CliActionError = io_error.into();
-            
+
             match action_error {
                 CliActionError::IoError(_) => (),
                 _ => panic!("Expected IoError variant"),
@@ -299,10 +298,7 @@ mod error_tests {
 
         #[test]
         fn test_failed_to_load_data() {
-            let io_error = std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "file not found"
-            );
+            let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
             let error = ConfigurationError::FailedToLoadData {
                 cause: Box::new(io_error),
             };
@@ -312,10 +308,8 @@ mod error_tests {
 
         #[test]
         fn test_failed_to_write_data() {
-            let io_error = std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "permission denied"
-            );
+            let io_error =
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
             let error = ConfigurationError::FailedToWriteData {
                 cause: Box::new(io_error),
             };
@@ -355,10 +349,7 @@ mod error_tests {
 
         #[test]
         fn test_format_failure() {
-            let io_error = std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid data"
-            );
+            let io_error = std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid data");
             let error = FormattingError::FormatFailure {
                 cause: Box::new(io_error),
             };
@@ -370,10 +361,10 @@ mod error_tests {
         fn test_csv_error_conversion() {
             let csv_error = csv::Error::from(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "csv error"
+                "csv error",
             ));
             let format_error: FormattingError = csv_error.into();
-            
+
             match format_error {
                 FormattingError::CsvError(_) => (),
                 _ => panic!("Expected CsvError variant"),
@@ -385,10 +376,10 @@ mod error_tests {
             let invalid_utf8 = vec![0, 159, 146, 150];
             let result = String::from_utf8(invalid_utf8);
             assert!(result.is_err());
-            
+
             let utf8_error = result.unwrap_err();
             let format_error: FormattingError = utf8_error.into();
-            
+
             match format_error {
                 FormattingError::Utf8Error(_) => (),
                 _ => panic!("Expected Utf8Error variant"),
@@ -402,7 +393,7 @@ mod error_tests {
             let io_error = std::io::Error::new(std::io::ErrorKind::InvalidData, "test io error");
             let json_error = serde_json::Error::io(io_error);
             let format_error: FormattingError = json_error.into();
-            
+
             match format_error {
                 FormattingError::JsonSerializationError(_) => (),
                 _ => panic!("Expected JsonSerializationError variant"),

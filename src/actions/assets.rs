@@ -3415,13 +3415,12 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     // Get the text query parameter
-    let text_query =
-        sub_matches
-            .get_one::<String>("text")
-            .ok_or(CliError::MissingRequiredArgument(
-                "text query is required".to_string(),
-            ))?
-            .clone();
+    let text_query = sub_matches
+        .get_one::<String>("text")
+        .ok_or(CliError::MissingRequiredArgument(
+            "text query is required".to_string(),
+        ))?
+        .clone();
 
     // Get the fuzzy flag - if not specified, default to false (meaning exact search with quoted text)
     let fuzzy = sub_matches.get_flag(PARAMETER_FUZZY);

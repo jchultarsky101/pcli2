@@ -844,11 +844,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 pretty,
                             };
 
-                            let format = OutputFormat::from_string_with_options(
-                                    format_str,
-                                    format_options,
-                                )
-                                .map_err(CliError::FormattingError)?;
+                            let format =
+                                OutputFormat::from_string_with_options(format_str, format_options)
+                                    .map_err(CliError::FormattingError)?;
 
                             let configuration = Configuration::load_or_create_default()?;
                             match configuration.format(&format) {
@@ -1036,11 +1034,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 pretty,
                             };
 
-                            let format = OutputFormat::from_string_with_options(
-                                    &format_str,
-                                    format_options,
-                                )
-                                .map_err(CliError::FormattingError)?;
+                            let format =
+                                OutputFormat::from_string_with_options(&format_str, format_options)
+                                    .map_err(CliError::FormattingError)?;
 
                             let configuration = Configuration::load_or_create_default()?;
                             let active_env = configuration.get_active_environment();
@@ -1203,11 +1199,9 @@ pub async fn execute_command() -> Result<(), CliError> {
                                 pretty,
                             };
 
-                            let format = OutputFormat::from_string_with_options(
-                                    &format_str,
-                                    format_options,
-                                )
-                                .map_err(CliError::FormattingError)?;
+                            let format =
+                                OutputFormat::from_string_with_options(&format_str, format_options)
+                                    .map_err(CliError::FormattingError)?;
 
                             let env_name = sub_matches.get_one::<String>("name");
 

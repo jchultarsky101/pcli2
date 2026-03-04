@@ -162,6 +162,9 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
         || error_str.to_lowercase().contains("network")
     {
         "Network error. Please check your internet connection and try again.".to_string()
+    } else if error_str.contains("Folder") && error_str.contains("not found") {
+        // Preserve the original Folder NotFound error message which may include suggestions
+        error_str
     } else {
         // Return the original error if no specific user-friendly message applies
         error_str

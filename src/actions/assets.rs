@@ -16,7 +16,7 @@ use crate::{
 };
 use clap::ArgMatches;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 use tracing::{debug, trace};
 use uuid::Uuid;
 
@@ -127,9 +127,7 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
         .map_err(crate::actions::CliActionError::FormattingError)?;
 
-    let asset_uuid_param = sub_matches
-        .get_one::<String>(PARAMETER_UUID)
-        .map(|s| Uuid::from_str(s).unwrap());
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
@@ -139,7 +137,7 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let asset = crate::actions::utils::resolve_asset(
         ctx.api(),
         &tenant_uuid,
-        asset_uuid_param.as_ref(),
+        asset_uuid_param,
         asset_path_param,
     )
     .await?;
@@ -159,9 +157,7 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
     let format = get_format_parameter_value(sub_matches).await;
 
-    let asset_uuid_param = sub_matches
-        .get_one::<String>(PARAMETER_UUID)
-        .map(|s| Uuid::from_str(s).unwrap());
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
@@ -171,7 +167,7 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
     let asset = crate::actions::utils::resolve_asset(
         ctx.api(),
         &tenant_uuid,
-        asset_uuid_param.as_ref(),
+        asset_uuid_param,
         asset_path_param,
     )
     .await?;
@@ -587,9 +583,7 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
     let format = get_format_parameter_value(sub_matches).await;
 
-    let asset_uuid_param = sub_matches
-        .get_one::<String>(PARAMETER_UUID)
-        .map(|s| Uuid::from_str(s).unwrap());
+    let asset_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
@@ -599,7 +593,7 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
     let asset = crate::actions::utils::resolve_asset(
         ctx.api(),
         &tenant_uuid,
-        asset_uuid_param.as_ref(),
+        asset_uuid_param,
         asset_path_param,
     )
     .await?;

@@ -24,6 +24,7 @@ pub fn asset_command() -> Command {
         .subcommand(
             Command::new(COMMAND_GET)
                 .about("Get asset details")
+                .visible_alias("cat")
                 .arg(tenant_parameter())
                 .arg(uuid_parameter())
                 .arg(path_parameter())
@@ -50,6 +51,7 @@ pub fn asset_command() -> Command {
         .subcommand(
             Command::new(COMMAND_CREATE_BATCH)
                 .about("Create multiple assets by uploading files matching a glob pattern")
+                .visible_alias("upload-batch")
                 .arg(tenant_parameter())
                 .arg(multiple_files_parameter())
                 .arg(folder_uuid_parameter())
@@ -107,6 +109,7 @@ pub fn asset_command() -> Command {
         .subcommand(
             Command::new(COMMAND_DEPENDENCIES)
                 .about("Get dependencies for an asset")
+                .visible_alias("deps")
                 .arg(tenant_parameter())
                 .arg(uuid_parameter())
                 .arg(path_parameter())
@@ -119,6 +122,7 @@ pub fn asset_command() -> Command {
         .subcommand(
             Command::new(COMMAND_DOWNLOAD)
                 .about("Download asset file")
+                .visible_alias("dl")
                 .arg(tenant_parameter())
                 .arg(uuid_parameter())
                 .arg(path_parameter())
@@ -226,6 +230,7 @@ pub fn asset_command() -> Command {
     .subcommand(
         Command::new(COMMAND_THUMBNAIL)
             .about("Download asset thumbnail")
+            .visible_alias("thumb")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
             .arg(path_parameter())

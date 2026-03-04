@@ -40,7 +40,7 @@ mod cli_help_tests {
     #[test]
     fn test_cli_subcommand_help_outputs() {
         // Test help output for each major subcommand
-        let subcommands = vec!["tenant", "folder", "asset", "auth", "config"];
+        let subcommands = vec!["tenant", "folder", "asset", "auth", "config", "environment"];
 
         for subcommand in subcommands {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
@@ -84,7 +84,13 @@ mod cli_help_tests {
                 assert!(help_output.contains("get"));
                 assert!(help_output.contains("export"));
                 assert!(help_output.contains("import"));
-                assert!(help_output.contains("environment"));
+            } else if subcommand == "environment" {
+                assert!(help_output.contains("add"));
+                assert!(help_output.contains("use"));
+                assert!(help_output.contains("list"));
+                assert!(help_output.contains("get"));
+                assert!(help_output.contains("remove"));
+                assert!(help_output.contains("reset"));
             }
         }
     }
@@ -164,19 +170,13 @@ mod cli_help_tests {
 
     #[test]
     fn test_deeply_nested_subcommand_help() {
-        // Test help output for deeply nested subcommands like asset metadata
+        // Test help output for deeply nested subcommands like asset metadata (3 levels)
         let deeply_nested_commands = vec![
             ("asset", "metadata", "get"),
             ("asset", "metadata", "create"),
             ("asset", "metadata", "delete"),
             ("asset", "metadata", "inference"),
             ("asset", "metadata", "create-batch"),
-            ("config", "environment", "add"),
-            ("config", "environment", "use"),
-            ("config", "environment", "list"),
-            ("config", "environment", "get"),
-            ("config", "environment", "remove"),
-            ("config", "environment", "reset"),
         ];
 
         for (parent_cmd, sub_cmd, sub_sub_cmd) in deeply_nested_commands {
@@ -202,6 +202,39 @@ mod cli_help_tests {
             assert!(help_output.contains(parent_cmd));
             assert!(help_output.contains(sub_cmd));
             assert!(help_output.contains(sub_sub_cmd));
+        }
+
+        // Test help output for environment subcommands (2 levels - now top-level)
+        let environment_commands = vec![
+            ("environment", "add"),
+            ("environment", "use"),
+            ("environment", "list"),
+            ("environment", "get"),
+            ("environment", "remove"),
+            ("environment", "reset"),
+        ];
+
+        for (parent_cmd, sub_cmd) in environment_commands {
+            let mut cmd = Command::cargo_bin("pcli2").unwrap();
+            let assert_result = cmd
+                .arg(parent_cmd)
+                .arg(sub_cmd)
+                .arg("--help")
+                .assert()
+                .success();
+            let output = assert_result.get_output();
+            let help_output = String::from_utf8_lossy(&output.stdout);
+
+            // Print the help output for manual verification
+            println!(
+                "Help Output for '{} {}':\n{}",
+                parent_cmd, sub_cmd, help_output
+            );
+
+            // Verify that each subcommand help contains expected elements
+            assert!(help_output.contains("Usage:"));
+            assert!(help_output.contains(parent_cmd));
+            assert!(help_output.contains(sub_cmd));
         }
     }
 }

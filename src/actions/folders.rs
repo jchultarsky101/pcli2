@@ -40,7 +40,7 @@ pub async fn resolve_folder_uuid_by_path(
             // Folder not found - try to provide helpful suggestions
             let hierarchy = FolderHierarchy::build_from_api(api, &tenant.uuid).await?;
             let suggestions = find_similar_paths(&hierarchy, path);
-            
+
             let suggestion_message = if suggestions.is_empty() {
                 String::new()
             } else if suggestions.len() == 1 {
@@ -48,11 +48,18 @@ pub async fn resolve_folder_uuid_by_path(
             } else {
                 format!(
                     "\n\nDid you mean one of:\n  {}",
-                    suggestions.iter().map(|s| format!("• {}", s)).collect::<Vec<_>>().join("\n  ")
+                    suggestions
+                        .iter()
+                        .map(|s| format!("• {}", s))
+                        .collect::<Vec<_>>()
+                        .join("\n  ")
                 )
             };
-            
-            Err(CliError::FolderNotFound(path.to_string(), suggestion_message))
+
+            Err(CliError::FolderNotFound(
+                path.to_string(),
+                suggestion_message,
+            ))
         }
         Err(api_error) => {
             // Propagate API errors (like authentication errors) instead of converting them to FolderNotFound
@@ -99,10 +106,7 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
             } else {
                 hierarchy
                     .filter_by_path(path.as_str())
-                    .ok_or(CliError::FolderNotFound(
-                        path.clone(),
-                        String::new()
-                    ))?
+                    .ok_or(CliError::FolderNotFound(path.clone(), String::new()))?
             };
             hierarchy.print_tree();
         }
@@ -114,10 +118,7 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 // Use get_children_by_path to get only direct children, not all descendants
                 hierarchy
                     .get_children_by_path(path.as_str())
-                    .ok_or(CliError::FolderNotFound(
-                        path.clone(),
-                        String::new()
-                    ))?
+                    .ok_or(CliError::FolderNotFound(path.clone(), String::new()))?
             };
 
             println!("{}", folder_list.format(format)?);
@@ -320,6 +321,7 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
     let force_flag = sub_matches.get_flag("force");
+    let yes_flag = sub_matches.get_flag("yes");
 
     // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
     if folder_uuid_param.is_some() && folder_path_param.is_some() {
@@ -350,6 +352,42 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             "Missing folder path".to_string(),
         ));
     };
+
+    // Ask for confirmation unless --yes flag is provided
+    if !yes_flag {
+        let delete_msg = if force_flag {
+            format!(
+                "Delete folder '{}' and ALL its contents?",
+                folder_path_param.unwrap_or(&folder_uuid.to_string())
+            )
+        } else {
+            format!(
+                "Delete folder '{}'?",
+                folder_path_param.unwrap_or(&folder_uuid.to_string())
+            )
+        };
+
+        let confirm = inquire::Confirm::new(&delete_msg)
+            .with_default(false)
+            .with_help_message("This action cannot be undone")
+            .prompt();
+
+        match confirm {
+            Ok(true) => {} // User confirmed
+            Ok(false) => {
+                println!("Deletion cancelled.");
+                return Ok(());
+            }
+            Err(e) => {
+                // Error in prompting (e.g., not a TTY), treat as cancellation
+                eprintln!(
+                    "Error prompting for confirmation: {}. Use --yes to skip confirmation.",
+                    e
+                );
+                return Ok(());
+            }
+        }
+    }
 
     match api
         .delete_folder(&tenant.uuid, &folder_uuid, force_flag)
@@ -399,10 +437,7 @@ pub async fn resolve_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             println!("{}", uuid);
             Ok(())
         }
-        None => Err(CliError::FolderNotFound(
-            folder_path.clone(),
-            String::new()
-        )),
+        None => Err(CliError::FolderNotFound(folder_path.clone(), String::new())),
     }
 }
 
@@ -655,7 +690,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let mp = MultiProgress::new();
         let pb = mp.add(ProgressBar::new(all_assets_with_paths.len() as u64));
         pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall progress")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
             .unwrap()
             .progress_chars("#>-"));
         (Some(pb), Some(mp))
@@ -1176,7 +1211,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         let mp = MultiProgress::new();
         let pb = mp.add(ProgressBar::new(all_assets_with_paths.len() as u64));
         pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall progress")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
             .unwrap()
             .progress_chars("#>-"));
         (Some(pb), Some(mp))
@@ -1731,7 +1766,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         let mp = indicatif::MultiProgress::new();
         let pb = mp.add(indicatif::ProgressBar::new(total_entries_count as u64));
         pb.set_style(indicatif::ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall progress")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
             .unwrap()
             .progress_chars("#>-"));
         (Some(pb), Some(mp))

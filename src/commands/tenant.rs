@@ -40,6 +40,7 @@ pub fn tenant_command() -> Command {
         .subcommand(
             Command::new(COMMAND_USE)
                 .about("Set the active tenant")
+                .visible_alias("select")
                 .arg(tenant_name_parameter()) // --name (tenant short name)
                 .arg(crate::commands::params::refresh_parameter()) // --refresh flag to force refresh tenant list
                 .arg(format_parameter().value_parser(["json", "csv"]))
@@ -54,5 +55,9 @@ pub fn tenant_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
-        .subcommand(Command::new(COMMAND_CLEAR).about("Clear the active tenant"))
+        .subcommand(
+            Command::new(COMMAND_CLEAR)
+                .about("Clear the active tenant")
+                .visible_alias("unset"),
+        )
 }

@@ -13,10 +13,7 @@ impl AssetStateCounts {
 }
 
 impl Formattable for AssetStateCounts {
-    fn format(
-        &self,
-        f: &OutputFormat,
-    ) -> Result<String, FormattingError> {
+    fn format(&self, f: &OutputFormat) -> Result<String, FormattingError> {
         match f {
             OutputFormat::Json(options) => {
                 let json = if options.pretty {

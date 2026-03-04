@@ -17,7 +17,7 @@ mod cli_help_snapshot_tests {
         let expected_snapshot = &help_output;
 
         // Verify that the help output contains expected elements
-        assert!(expected_snapshot.contains("Usage: pcli2 <COMMAND>"));
+        assert!(expected_snapshot.contains("Usage: pcli2"));
         assert!(expected_snapshot.contains("Commands:"));
         assert!(expected_snapshot.contains("Options:"));
         assert!(expected_snapshot.contains("tenant"));
@@ -26,8 +26,11 @@ mod cli_help_snapshot_tests {
         assert!(expected_snapshot.contains("asset"));
         // Context command has been moved to tenant command
         assert!(expected_snapshot.contains("config"));
+        assert!(expected_snapshot.contains("environment"));
         assert!(expected_snapshot.contains("-h, --help"));
         assert!(expected_snapshot.contains("-V, --version"));
+        assert!(expected_snapshot.contains("--yes"));
+        assert!(expected_snapshot.contains("--no-color"));
 
         // Print the help output for manual verification
         println!("CLI Help Snapshot:\n{}", expected_snapshot);
@@ -36,7 +39,7 @@ mod cli_help_snapshot_tests {
     #[test]
     fn test_cli_help_subcommands_snapshot() {
         // Capture snapshots of each main subcommand's help
-        let subcommands = vec!["tenant", "folder", "asset", "auth", "config"];
+        let subcommands = vec!["tenant", "folder", "asset", "auth", "config", "environment"];
         let mut snapshots: HashMap<String, String> = HashMap::new();
 
         for subcommand in subcommands {
@@ -125,22 +128,16 @@ mod cli_help_snapshot_tests {
 
     #[test]
     fn test_deeply_nested_subcommand_snapshots() {
-        // Test snapshots for deeply nested subcommands
-        let test_cases = vec![
+        // Test snapshots for deeply nested subcommands (3 levels)
+        let three_level_cases = vec![
             ("asset", "metadata", "get"),
             ("asset", "metadata", "create"),
             ("asset", "metadata", "delete"),
             ("asset", "metadata", "inference"),
             ("asset", "metadata", "create-batch"),
-            ("config", "environment", "add"),
-            ("config", "environment", "use"),
-            ("config", "environment", "list"),
-            ("config", "environment", "get"),
-            ("config", "environment", "remove"),
-            ("config", "environment", "reset"),
         ];
 
-        for (parent_cmd, sub_cmd, sub_sub_cmd) in test_cases {
+        for (parent_cmd, sub_cmd, sub_sub_cmd) in three_level_cases {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
             let assert_result = cmd
                 .arg(parent_cmd)
@@ -162,6 +159,37 @@ mod cli_help_snapshot_tests {
             println!(
                 "Snapshot for '{} {} {}':\n{}",
                 parent_cmd, sub_cmd, sub_sub_cmd, help_output
+            );
+        }
+
+        // Test snapshots for environment subcommands (2 levels - now top-level)
+        let two_level_cases = vec![
+            ("environment", "add"),
+            ("environment", "use"),
+            ("environment", "list"),
+            ("environment", "get"),
+            ("environment", "remove"),
+            ("environment", "reset"),
+        ];
+
+        for (parent_cmd, sub_cmd) in two_level_cases {
+            let mut cmd = Command::cargo_bin("pcli2").unwrap();
+            let assert_result = cmd
+                .arg(parent_cmd)
+                .arg(sub_cmd)
+                .arg("--help")
+                .assert()
+                .success();
+            let output = assert_result.get_output();
+            let help_output = String::from_utf8_lossy(&output.stdout);
+
+            // Verify each subcommand help contains expected elements
+            assert!(help_output.contains(&format!("Usage: pcli2 {} {}", parent_cmd, sub_cmd)));
+
+            // Print the snapshot
+            println!(
+                "Snapshot for '{} {}':\n{}",
+                parent_cmd, sub_cmd, help_output
             );
         }
     }

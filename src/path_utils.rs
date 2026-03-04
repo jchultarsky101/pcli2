@@ -39,7 +39,11 @@ pub fn find_similar_paths(hierarchy: &FolderHierarchy, target_path: &str) -> Vec
 
     // Sort by similarity (highest first) and return top suggestions
     suggestions.sort_by(|a, b| b.1.cmp(&a.1));
-    suggestions.into_iter().take(3).map(|(path, _)| path).collect()
+    suggestions
+        .into_iter()
+        .take(3)
+        .map(|(path, _)| path)
+        .collect()
 }
 
 /// Calculate a simple similarity score between two strings.

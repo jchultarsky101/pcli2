@@ -11,6 +11,7 @@ pub mod assets;
 pub mod auth;
 pub mod completions;
 pub mod config;
+pub mod environment;
 pub mod folder;
 pub mod metadata;
 pub mod params;
@@ -45,12 +46,54 @@ pub fn create_full_command() -> Command {
         .propagate_version(true)
         .subcommand_required(true)
         .arg_required_else_help(true)
+        // Add global arguments
+        .arg(
+            clap::Arg::new("no-color")
+                .long("no-color")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .env("PCLI2_NO_COLOR")
+                .help("Disable color output"),
+        )
+        .arg(
+            clap::Arg::new("yes")
+                .long("yes")
+                .short('y')
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .help("Automatically answer yes to confirmation prompts"),
+        )
+        // Add examples
+        .after_help(color_print::cstr!(
+            "<bold>Examples:</bold>
+  <cyan># Authenticate with your Physna tenant</cyan>
+  <green>pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET</green>
+  
+  <cyan># List folders in tree format</cyan>
+  <green>pcli2 folder list --format tree</green>
+  
+  <cyan># Upload an asset to a folder</cyan>
+  <green>pcli2 asset create --file model.stl --folder-path /Root/Models/</green>
+  
+  <cyan># Find geometrically similar assets</cyan>
+  <green>pcli2 asset geometric-match --path /Root/Models/part.stl --threshold 85.0</green>
+  
+  <cyan># Download all assets from a folder</cyan>
+  <green>pcli2 folder download --folder-path /Root/Models/ --output ./downloads --progress</green>
+  
+  <cyan># Use short aliases for common commands</cyan>
+  <green>pcli2 folder ls          # List folders</green>
+  <green>pcli2 asset ls           # List assets</green>
+  <green>pcli2 auth in            # Login</green>
+  <green>pcli2 env list           # List environments</green>"
+        ))
         // Add all the modularized command groups
         .subcommand(tenant::tenant_command())
         .subcommand(folder::folder_command())
         .subcommand(auth::auth_command())
         .subcommand(assets::asset_command())
         .subcommand(config::config_command())
+        .subcommand(environment::environment_command())
         .subcommand(user::user_command())
         .subcommand(completions::completions_command())
 }

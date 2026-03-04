@@ -1,0 +1,42 @@
+# Docker ignore file for PCLI2
+
+# Git
+.git
+.gitignore
+
+# Build artifacts
+target/
+debug/
+release/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test data
+data/
+tests/testdata/
+
+# Documentation build output
+public/
+
+# Local configuration
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+*.profraw
+*.profdata

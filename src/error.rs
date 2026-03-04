@@ -30,8 +30,8 @@ pub enum CliError {
     #[error("Tenant '{identifier}' not found")]
     TenantNotFound { identifier: String },
     /// Error when a folder cannot be found by path or ID
-    #[error("Folder '{0}' not found. Please verify the folder path exists in your tenant.")]
-    FolderNotFound(String),
+    #[error("Folder '{0}' not found. Please verify the folder path exists in your tenant.{1}")]
+    FolderNotFound(String, String),
 
     /// Error when a folder rename operation fails after successful path resolution
     #[error("Failed to rename folder '{0}'. The folder was found but the rename operation failed. This could be due to permissions or API limitations. Error details: {1}")]

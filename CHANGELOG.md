@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Comprehensive regression test suite with 85 new tests
+  - 41 tests for error types, conversions, and error handling utilities
+  - 44 tests for format utilities, OutputFormat, and path normalization
+  - Tests provide protection against regressions during future refactoring
+
+### Changed
+- **Format parameter handling consolidated** - All format parsing now uses `FormatParams::from_args()` for consistency
+  - Updated 8 functions in `actions/assets.rs`: `print_asset()`, `geometric_match_asset()`, `part_match_asset()`, `geometric_match_folder()`, `visual_match_asset()`, `visual_match_folder()`, `text_match()`
+  - Removed ~100 lines of duplicated format parsing code
+  - All format handling now follows a single, consistent pattern
+
+- **Improved error handling** - Replaced `.unwrap()` calls with proper error propagation
+  - 5 `.unwrap()` calls in `cli.rs` replaced with `?` operator and `map_err()`
+  - Better error messages for format parsing failures
+  - Added descriptive context for environment lookup operations
+
+- **Code quality improvements**
+  - Deleted backup file `src/physna_v3.rs.bak` (-2,673 lines)
+  - Fixed all clippy warnings
+  - Net reduction of ~1,881 lines of code
+
+### Technical Details
+- All 149 tests passing (32 lib + 13 actions + 9 api + 10 CLI help + 85 new regression tests)
+- Zero clippy warnings
+- No breaking changes - all changes are internal refactoring
+
 ## [0.2.32] - 2026-03-03
 
 ### Fixed

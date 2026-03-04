@@ -251,6 +251,18 @@ impl FolderHierarchy {
     /// # Returns
     /// * `Some(&FolderNode)` - If a folder with the specified path exists
     /// * `None` - If no folder with the specified path exists
+    pub fn get_node_by_path(&self, path: &str) -> Option<&FolderNode> {
+        self.get_folder_by_path(path)
+    }
+
+    /// Get a folder node by its path
+    ///
+    /// # Arguments
+    /// * `path` - The path of the folder to retrieve (e.g., "Root/Child/Grandchild")
+    ///
+    /// # Returns
+    /// * `Some(&FolderNode)` - If a folder with the specified path exists
+    /// * `None` - If no folder with the specified path exists
     pub fn get_folder_by_path(&self, path: &str) -> Option<&FolderNode> {
         // Handle the root path specially
         if path == "/" {

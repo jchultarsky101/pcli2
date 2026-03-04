@@ -144,6 +144,9 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
         "Authentication failed. Please check your access token and try logging in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("403") || error_str.to_lowercase().contains("forbidden") {
         "Access forbidden. You don't have permission to perform this operation. This may be due to:\n  - Missing access token (try 'pcli2 auth login')\n  - Expired access token (try 'pcli2 auth login')\n  - Insufficient permissions for this operation".to_string()
+    } else if error_str.to_lowercase().contains("folder") && error_str.to_lowercase().contains("not found") {
+        // Preserve the original Folder NotFound error message which may include suggestions
+        error_str
     } else if error_str.contains("404") || error_str.to_lowercase().contains("not found") {
         // Check if this is actually an authentication issue masquerading as a "not found" error
         if error_str.to_lowercase().contains("authentication")

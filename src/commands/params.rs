@@ -180,7 +180,7 @@ pub fn multiple_files_parameter() -> Arg {
         .long(PARAMETER_FILES)
         .num_args(1)
         .required(true)
-        .help("Glob pattern to match files to upload (e.g., \"data/puzzle/*.STL\")")
+        .help("Glob pattern or comma-separated list of files to upload (e.g., \"data/puzzle/*.STL\" or \"file1.stl,file2.stl\")")
         .value_parser(clap::value_parser!(String))
 }
 

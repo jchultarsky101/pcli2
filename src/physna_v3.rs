@@ -1339,6 +1339,24 @@ impl PhysnaApiClient {
                 }
             }
 
+            // Folder not found in cache - refresh the cache and try again
+            // This handles the case where a folder was recently created and the cache is stale
+            debug!(
+                "Folder not found at path '{}' in cache, refreshing cache...",
+                folder_path
+            );
+            if let Ok(hierarchy) =
+                crate::folder_cache::FolderCache::refresh(self, tenant_uuid).await
+            {
+                if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
+                    debug!(
+                        "Found folder at path '{}' after cache refresh: {}",
+                        path_for_hierarchy, folder_node.folder.uuid
+                    );
+                    return Ok(Some(folder_node.folder.uuid));
+                }
+            }
+
             debug!("Folder not found at path: {}", folder_path);
             Ok(None)
         }
@@ -2782,15 +2800,33 @@ impl PhysnaApiClient {
         );
 
         // Expand the glob pattern to get matching files
-        let paths: Vec<_> = glob(glob_pattern)?
-            .filter_map(|path_result| path_result.ok()) // Filter out any errors and extract the PathBuf
-            .collect();
+        // Support both glob patterns (e.g., "data/*.stl") and comma-separated lists (e.g., "file1.stl,file2.stl")
+        let paths: Vec<_> = if glob_pattern.contains(',') {
+            // Comma-separated list of file paths
+            glob_pattern
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from)
+                .filter(|path| path.exists())
+                .collect()
+        } else {
+            // Glob pattern
+            glob(glob_pattern)?
+                .filter_map(|path_result| path_result.ok()) // Filter out any errors and extract the PathBuf
+                .collect()
+        };
 
         debug!(
             "Found {} files matching pattern: {}",
             paths.len(),
             glob_pattern
         );
+
+        // Handle the case where no files match the glob pattern
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
 
         // Create progress bar if requested
         let progress_bar = if show_progress {
@@ -2821,9 +2857,10 @@ impl PhysnaApiClient {
         use tokio_stream::wrappers::ReceiverStream;
 
         let semaphore = std::sync::Arc::new(Semaphore::new(concurrent));
+        // Ensure buffer size is at least 1 to avoid panic with empty channels
         let (tx, rx) = tokio::sync::mpsc::channel::<
             Result<crate::model::Asset, (std::path::PathBuf, ApiError)>,
-        >(paths.len());
+        >(paths.len().max(1));
 
         // Process each file with controlled concurrency
         // Convert folder_uuid to owned value to avoid lifetime issues

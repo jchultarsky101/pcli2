@@ -7,8 +7,10 @@ use crate::{
     configuration::Configuration,
     error::CliError,
     format::OutputFormatter,
+    folder_hierarchy::FolderHierarchy,
     model::{normalize_path, AssetList},
     param_utils::{get_format_parameter_value, get_tenant},
+    path_utils::find_similar_paths,
     physna_v3::{PhysnaApiClient, TryDefault},
 };
 use clap::ArgMatches;
@@ -53,9 +55,52 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
         if is_recursive {
             // Recursively list assets in the folder and all subfolders
+            // First verify the folder exists
+            let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+
+            if hierarchy.get_node_by_path(&path).is_none() {
+                // Path not found - check for similar paths
+                let suggestions = find_similar_paths(&hierarchy, &path);
+                
+                let suggestion_message = if suggestions.is_empty() {
+                    String::new()
+                } else if suggestions.len() == 1 {
+                    format!("\n\nDid you mean: {}", suggestions[0])
+                } else {
+                    format!(
+                        "\n\nDid you mean one of:\n  {}",
+                        suggestions.iter().map(|s| format!("• {}", s)).collect::<Vec<_>>().join("\n  ")
+                    )
+                };
+                
+                return Err(CliError::FolderNotFound(path, suggestion_message));
+            }
+            
             let all_assets = list_assets_recursively(&mut api, &tenant.uuid, &path).await?;
             println!("{}", all_assets.format(format)?);
         } else {
+            // First verify the folder exists by building the hierarchy
+            let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+            
+            // Check if the path exists (case-sensitive)
+            if hierarchy.get_node_by_path(&path).is_none() {
+                // Path not found - check for similar paths
+                let suggestions = find_similar_paths(&hierarchy, &path);
+                
+                let suggestion_message = if suggestions.is_empty() {
+                    String::new()
+                } else if suggestions.len() == 1 {
+                    format!("\n\nDid you mean: {}", suggestions[0])
+                } else {
+                    format!(
+                        "\n\nDid you mean one of:\n  {}",
+                        suggestions.iter().map(|s| format!("• {}", s)).collect::<Vec<_>>().join("\n  ")
+                    )
+                };
+                
+                return Err(CliError::FolderNotFound(path, suggestion_message));
+            }
+            
             let assets = api
                 .list_assets_by_parent_folder_path(&tenant.uuid, path.as_str())
                 .await?;
@@ -97,7 +142,21 @@ async fn list_assets_recursively(
     // Filter the hierarchy to only include the specified path and its subfolders
     let filtered_hierarchy = hierarchy
         .filter_by_path(folder_path)
-        .ok_or_else(|| CliError::FolderNotFound(folder_path.to_string()))?;
+        .ok_or_else(|| {
+            // Provide helpful suggestions
+            let suggestions = find_similar_paths(&hierarchy, folder_path);
+            let suggestion_message = if suggestions.is_empty() {
+                String::new()
+            } else if suggestions.len() == 1 {
+                format!("\n\nDid you mean: {}", suggestions[0])
+            } else {
+                format!(
+                    "\n\nDid you mean one of:\n  {}",
+                    suggestions.iter().map(|s| format!("• {}", s)).collect::<Vec<_>>().join("\n  ")
+                )
+            };
+            CliError::FolderNotFound(folder_path.to_string(), suggestion_message)
+        })?;
 
     let mut all_assets = AssetList::empty();
 

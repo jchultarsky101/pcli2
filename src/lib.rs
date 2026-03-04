@@ -37,5 +37,6 @@ pub mod metadata;
 pub mod metadata_cache;
 pub mod model;
 pub mod param_utils;
+pub mod path_utils;
 pub mod physna_v3;
 pub mod tenant_cache;

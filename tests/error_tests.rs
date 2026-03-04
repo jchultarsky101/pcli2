@@ -72,7 +72,7 @@ mod error_tests {
 
         #[test]
         fn test_folder_not_found() {
-            let error = CliError::FolderNotFound("/Root/Test".to_string());
+            let error = CliError::FolderNotFound("/Root/Test".to_string(), String::new());
             let error_str = error.to_string();
             assert!(error_str.contains("/Root/Test"));
             assert_eq!(error.exit_code().code(), 64); // UsageError
@@ -122,7 +122,7 @@ mod error_tests {
         #[test]
         fn test_exit_code_default() {
             // Test that unspecified errors return SoftwareError code
-            let error = CliError::FolderNotFound("test".to_string());
+            let error = CliError::FolderNotFound("test".to_string(), String::new());
             // FolderNotFound returns UsageError (64), not SoftwareError (70)
             assert_eq!(error.exit_code().code(), 64);
         }

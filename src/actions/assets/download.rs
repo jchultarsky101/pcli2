@@ -6,7 +6,10 @@
 use crate::actions::CliActionError;
 use crate::{
     actions::folders::resolve_folder_uuid_by_path,
-    commands::params::{PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID},
+    commands::params::{
+        PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_PATH,
+        PARAMETER_UUID,
+    },
     configuration::Configuration,
     error::CliError,
     error_utils,
@@ -56,8 +59,7 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     .await?;
 
     // Get the output file path
-    let output_file_path = if let Some(output_path) =
-        sub_matches.get_one::<PathBuf>(PARAMETER_FILE)
+    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(PARAMETER_FILE)
     {
         output_path.clone()
     } else {
@@ -140,8 +142,7 @@ pub async fn download_asset_thumbnail(sub_matches: &ArgMatches) -> Result<(), Cl
     .await?;
 
     // Get the output file path
-    let output_file_path = if let Some(output_path) =
-        sub_matches.get_one::<PathBuf>(PARAMETER_FILE)
+    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(PARAMETER_FILE)
     {
         // Validate the output file path
         if output_path.as_os_str().is_empty() {
@@ -237,8 +238,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     // Get the output file path
-    let output_file_path = if let Some(output_path) =
-        sub_matches.get_one::<PathBuf>(PARAMETER_FILE)
+    let output_file_path = if let Some(output_path) = sub_matches.get_one::<PathBuf>(PARAMETER_FILE)
     {
         output_path.clone()
     } else {

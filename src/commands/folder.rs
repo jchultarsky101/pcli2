@@ -20,6 +20,7 @@ pub fn folder_command() -> Command {
         .subcommand(
             Command::new(COMMAND_CREATE)
                 .about("Create a new folder")
+                .visible_alias("add")
                 .arg(tenant_parameter())
                 .arg(name_parameter())
                 .arg(parent_folder_path_parameter())
@@ -29,6 +30,7 @@ pub fn folder_command() -> Command {
         .subcommand(
             Command::new(COMMAND_GET)
                 .about("Get folder details")
+                .visible_alias("cat")
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
@@ -83,6 +85,7 @@ pub fn folder_command() -> Command {
         .subcommand(
             Command::new("rename")
                 .about("Rename a folder")
+                .visible_alias("ren")
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
@@ -104,12 +107,14 @@ pub fn folder_command() -> Command {
         .subcommand(
             Command::new("resolve")
                 .about("Resolve a folder path to its UUID")
+                .visible_alias("res")
                 .arg(tenant_parameter())
                 .arg(folder_path_parameter()),
         )
         .subcommand(
             Command::new("download")
                 .about("Download all assets in a folder to a local directory")
+                .visible_alias("dl")
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())

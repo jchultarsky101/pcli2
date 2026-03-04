@@ -8,7 +8,7 @@
 //! - main.rs: Entry point and application initialization
 //! - cli.rs: Command execution logic
 //! - commands.rs: Command definitions and parsing
-//! - physna_v3.rs: API client and communication layer  
+//! - physna_v3.rs: API client and communication layer
 //! - model.rs: Data models and structures
 //! - auth.rs: Authentication handling
 //! - configuration.rs: Configuration management
@@ -53,6 +53,23 @@ impl MainError {
     }
 }
 
+/// Initialize the logging subsystem with the specified log level
+///
+/// Supports log levels: error, warn, info, debug, trace
+/// Can be set via --log-level flag, PCLI2_LOG_LEVEL env var, or RUST_LOG env var
+fn init_logging() {
+    // Check for PCLI2_LOG_LEVEL environment variable first
+    let log_level = env::var("PCLI2_LOG_LEVEL")
+        .or_else(|_| env::var("RUST_LOG"))
+        .unwrap_or_else(|_| "warn".to_string());
+
+    // Parse the log level and create filter
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&log_level));
+
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+}
+
 /// Main entry point for the Physna CLI client application.
 ///
 /// This function performs the following steps:
@@ -78,9 +95,9 @@ async fn main() {
     }
 
     // Initialize the logging subsystem
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    // Log level can be set via PCLI2_LOG_LEVEL or RUST_LOG environment variables
+    // Default is "warn" if not set
+    init_logging();
 
     // Parse and execute the CLI command
     match execute_command().await {

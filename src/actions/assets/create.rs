@@ -4,8 +4,8 @@
 //! including batch operations and metadata management.
 
 use crate::{
-    actions::CliActionError,
     actions::folders::resolve_folder_uuid_by_path,
+    actions::CliActionError,
     commands::params::{
         PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID,
         PARAMETER_PATH, PARAMETER_UUID,

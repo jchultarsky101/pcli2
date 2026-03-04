@@ -76,6 +76,34 @@ cargo build --release
 # Binary located at target/release/pcli2
 ```
 
+#### 🍺 Homebrew (macOS/Linux)
+
+```bash
+# Add the PCLI2 tap
+brew tap jchultarsky101/pcli2
+
+# Install PCLI2
+brew install pcli2
+```
+
+#### 🐳 Docker
+
+Run PCLI2 in a container:
+
+```bash
+# Build the Docker image
+docker build -t pcli2 .
+
+# Run PCLI2 commands
+docker run --rm -v $(pwd):/data -v ~/.config/pcli2:/home/pcli2/.config/pcli2 pcli2 --help
+
+# Example: List folders
+docker run --rm -v $(pwd):/data -v ~/.config/pcli2:/home/pcli2/.config/pcli2 pcli2 folder list
+
+# Authenticate first (credentials persist in mounted volume)
+docker run --rm -it -v ~/.config/pcli2:/home/pcli2/.config/pcli2 pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+```
+
 ### Verification
 ```bash
 pcli2 --version

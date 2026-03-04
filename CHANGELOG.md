@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Top-level `environment` command** - Moved `config environment` to first-level `environment` (alias: `env`) for better ergonomics
+- **Command aliases** - Added Unix-style aliases across all commands:
+  - `tenant`: `ls`, `select`, `unset`
+  - `folder`: `ls`, `rm`, `cat`, `add`, `mv`, `ren`, `res`, `dl`
+  - `asset`: `ls`, `rm`, `cat`, `upload`, `dl`, `deps`, `thumb`
+  - `auth`: `a`, `in`, `out`, `token`, `clear`, `exp`
+- **Confirmation prompts** - Destructive operations (`asset delete`, `folder delete`) now prompt for confirmation
+- **`--yes` / `-y` flag** - Skip confirmation prompts for scripting and CI/CD
+- **`PCLI2_NO_COLOR` environment variable** - Disable color output for CI/CD and logs
+- **`--no-color` flag** - Command-line flag to disable color output
+- **`config validate` command** - Validate configuration, credentials, and optionally test API connectivity
+- **Structured logging** - Support for `PCLI2_LOG_LEVEL` and `RUST_LOG` environment variables (error, warn, info, debug, trace)
+- **Progress bar enhancements** - Added throughput display (items/second) and improved ETA formatting
+- **Examples in --help** - Added comprehensive examples to main help output showing common workflows
+- **Docker support** - Added Dockerfile and .dockerignore for containerized deployments
+- **Homebrew formula** - Added Homebrew tap support for macOS/Linux installation
+- **Benchmark suite** - Added criterion-based benchmarks for performance tracking
+- **Enhanced CI workflow** - Multi-platform testing (Linux, macOS, Windows), fmt check, clippy linting, and coverage reporting
+
+### Changed
+- **Improved CI/CD** - GitHub Actions now runs on all major platforms with comprehensive quality checks
+- **Better error handling** - Confirmation failures gracefully exit without errors
+
+### Technical Details
+- All changes are backward compatible
+- No breaking changes to existing functionality
+- 151+ tests passing
+- Zero clippy warnings
+
 ## [0.2.35] - 2026-03-04
 
 ### Added

@@ -19,13 +19,15 @@ pub mod print;
 pub mod reprocess;
 
 // Re-export all public functions for backward compatibility
-pub use create::{create_asset, create_asset_batch, create_asset_metadata_batch, update_asset_metadata};
+pub use create::{
+    create_asset, create_asset_batch, create_asset_metadata_batch, update_asset_metadata,
+};
 pub use delete::{delete_asset, delete_asset_metadata};
 pub use download::{download_asset, download_asset_thumbnail, download_folder};
 pub use list::list_assets;
 pub use match_ops::{
-    geometric_match_asset, geometric_match_folder, part_match_asset, part_match_folder,
-    text_match, visual_match_asset, visual_match_folder,
+    geometric_match_asset, geometric_match_folder, part_match_asset, part_match_folder, text_match,
+    visual_match_asset, visual_match_folder,
 };
 pub use metadata::metadata_inference;
 pub use print::{

@@ -2,15 +2,14 @@
 //!
 //! This module provides CSV, JSON, and Tree formatting for tenant-related data structures.
 
-use crate::format::{CsvRecordProducer, Formattable, FormattingError, OutputFormat, OutputFormatter};
+use crate::format::{
+    CsvRecordProducer, Formattable, FormattingError, OutputFormat, OutputFormatter,
+};
 use crate::model::{Tenant, TenantList};
 use csv::Writer;
 
 impl Formattable for Tenant {
-    fn format(
-        &self,
-        f: &OutputFormat,
-    ) -> Result<String, FormattingError> {
+    fn format(&self, f: &OutputFormat) -> Result<String, FormattingError> {
         match f {
             OutputFormat::Json(options) => {
                 let json = if options.pretty {
@@ -20,9 +19,7 @@ impl Formattable for Tenant {
                 };
                 match json {
                     Ok(json) => Ok(json),
-                    Err(e) => {
-                        Err(FormattingError::FormatFailure { cause: Box::new(e) })
-                    }
+                    Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
                 }
             }
             OutputFormat::Csv(options) => {

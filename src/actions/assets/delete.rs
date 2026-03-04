@@ -32,6 +32,7 @@ pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     let asset_uuid_param = sub_matches.get_one::<uuid::Uuid>(PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
+    let yes_flag = sub_matches.get_flag("yes");
 
     // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
     let tenant_uuid = *ctx.tenant_uuid();
@@ -44,6 +45,35 @@ pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         asset_path_param,
     )
     .await?;
+
+    // Ask for confirmation unless --yes flag is provided
+    if !yes_flag {
+        let asset_identifier = asset_path_param
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| asset.uuid().to_string());
+        let delete_msg = format!("Delete asset '{}'?", asset_identifier);
+
+        let confirm = inquire::Confirm::new(&delete_msg)
+            .with_default(false)
+            .with_help_message("This action cannot be undone")
+            .prompt();
+
+        match confirm {
+            Ok(true) => {} // User confirmed
+            Ok(false) => {
+                println!("Deletion cancelled.");
+                return Ok(());
+            }
+            Err(e) => {
+                // Error in prompting (e.g., not a TTY), treat as cancellation
+                eprintln!(
+                    "Error prompting for confirmation: {}. Use --yes to skip confirmation.",
+                    e
+                );
+                return Ok(());
+            }
+        }
+    }
 
     // Delete the asset
     ctx.api()

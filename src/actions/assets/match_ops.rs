@@ -5,7 +5,10 @@
 
 use crate::{
     actions::CliActionError,
-    commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_METADATA, PARAMETER_PRETTY, PARAMETER_UUID, PARAMETER_PATH, PARAMETER_FUZZY},
+    commands::params::{
+        PARAMETER_FOLDER_PATH, PARAMETER_FORMAT, PARAMETER_FUZZY, PARAMETER_HEADERS,
+        PARAMETER_METADATA, PARAMETER_PATH, PARAMETER_PRETTY, PARAMETER_UUID,
+    },
     configuration::Configuration,
     error::CliError,
     error_utils,
@@ -616,7 +619,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         let overall_pb = mp.add(ProgressBar::new(all_assets.len() as u64));
         overall_pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall Progress")
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
                 .unwrap()
                 .progress_chars("#>-")
         );
@@ -1082,9 +1085,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         .unwrap_or(80.0);
 
     // Get format parameters
-    let format_str = if let Some(format_val) =
-        sub_matches.get_one::<String>(PARAMETER_FORMAT)
-    {
+    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
         format_val.clone()
     } else {
         // Check environment variable first, then use default
@@ -1165,7 +1166,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         let overall_pb = mp.add(ProgressBar::new(all_assets.len() as u64));
         overall_pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall Progress")
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
                 .unwrap()
                 .progress_chars("#>-")
         );
@@ -1687,7 +1688,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         let overall_pb = mp.add(ProgressBar::new(all_assets.len() as u64));
         overall_pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Overall Progress")
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
                 .unwrap()
                 .progress_chars("#>-")
         );

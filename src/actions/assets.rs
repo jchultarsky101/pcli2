@@ -108,24 +108,10 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
-    // Get format parameters directly from sub_matches since asset get command has all format flags
-    let format_str = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .unwrap_or(&"json".to_string())
-        .clone();
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata,
-        with_headers,
-        pretty,
-    };
-
-    #[allow(clippy::needless_borrow)]
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(crate::actions::CliActionError::FormattingError)?;
+    // Use FormatParams for consistent format parameter handling
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let format = format_params.format;
+    let with_metadata = format_params.format_options.with_metadata;
 
     let asset_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
@@ -901,24 +887,11 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
         .copied()
         .unwrap_or(80.0);
 
-    // Get format parameters directly from sub_matches since geometric match commands have all format flags
-    let format_str = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .unwrap();
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata,
-        with_headers,
-        pretty,
-    };
-
-    #[allow(clippy::needless_borrow)]
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    // Use FormatParams for consistent format parameter handling
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let format = format_params.format;
+    let _with_metadata = format_params.format_options.with_metadata;
+    let _with_headers = format_params.format_options.with_headers;
 
     // Extract tenant info before calling resolve_asset to avoid borrowing conflicts
     let tenant_uuid = *ctx.tenant_uuid();
@@ -1031,33 +1004,11 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
         .copied()
         .unwrap_or(80.0);
 
-    // Get format parameters directly from sub_matches since part match commands have all format flags
-    let format_str = if let Some(format_val) =
-        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-    {
-        format_val.clone()
-    } else {
-        // Check environment variable first, then use default
-        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-            env_format
-        } else {
-            "json".to_string()
-        }
-    };
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata,
-        with_headers,
-        pretty,
-    };
-
-    #[allow(clippy::needless_borrow)]
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    // Use FormatParams for consistent format parameter handling
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let format = format_params.format;
+    let with_metadata = format_params.format_options.with_metadata;
+    let _with_headers = format_params.format_options.with_headers;
 
     // Extract tenant info before calling resolve_asset to avoid borrowing conflicts
     let tenant_uuid = *ctx.tenant_uuid();
@@ -1184,25 +1135,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         .copied()
         .unwrap_or(80.0);
 
-    // Get format parameters
-    let format_str = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .unwrap_or(&"json".to_string())
-        .clone();
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata,
-        with_headers,
-        pretty,
-    };
-
-    #[allow(clippy::needless_borrow)]
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    // Use FormatParams for consistent format parameter handling
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let format = format_params.format;
+    let with_metadata = format_params.format_options.with_metadata;
+    let with_headers = format_params.format_options.with_headers;
 
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
@@ -2235,33 +2172,11 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     let asset_uuid_param = sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(crate::commands::params::PARAMETER_PATH);
 
-    // Get format parameters directly from sub_matches since visual match commands have all format flags
-    let format_str = if let Some(format_val) =
-        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-    {
-        format_val.clone()
-    } else {
-        // Check environment variable first, then use default
-        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-            env_format
-        } else {
-            "json".to_string()
-        }
-    };
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata,
-        with_headers,
-        pretty,
-    };
-
-    #[allow(clippy::needless_borrow)]
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    // Use FormatParams for consistent format parameter handling
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let format = format_params.format;
+    let with_metadata = format_params.format_options.with_metadata;
+    let with_headers = format_params.format_options.with_headers;
 
     // Extract tenant info before calling resolve_asset to avoid borrowing conflicts
     let tenant_uuid = *ctx.tenant_uuid();
@@ -2488,33 +2403,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         .cloned()
         .collect();
 
-    // Get format parameters
-    let format_str = if let Some(format_val) =
-        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-    {
-        format_val.clone()
-    } else {
-        // Check environment variable first, then use default
-        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-            env_format
-        } else {
-            "json".to_string()
-        }
-    };
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata,
-        with_headers,
-        pretty,
-    };
-
-    #[allow(clippy::needless_borrow)]
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    // Use FormatParams for consistent format parameter handling
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let format = format_params.format;
+    let with_metadata = format_params.format_options.with_metadata;
+    let with_headers = format_params.format_options.with_headers;
 
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
@@ -3527,7 +3420,8 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
             .get_one::<String>("text")
             .ok_or(CliError::MissingRequiredArgument(
                 "text query is required".to_string(),
-            ))?;
+            ))?
+            .clone();
 
     // Get the fuzzy flag - if not specified, default to false (meaning exact search with quoted text)
     let fuzzy = sub_matches.get_flag(PARAMETER_FUZZY);
@@ -3539,33 +3433,9 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
         format!("\"{}\"", text_query)
     };
 
-    // Get format parameters directly from sub_matches since text match commands have format flags
-    let format_str = if let Some(format_val) =
-        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-    {
-        format_val.clone()
-    } else {
-        // Check environment variable first, then use default
-        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-            env_format
-        } else {
-            "json".to_string()
-        }
-    };
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let with_metadata = sub_matches.get_flag(crate::commands::params::PARAMETER_METADATA);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata,
-        with_headers,
-        pretty,
-    };
-
-    #[allow(clippy::needless_borrow)]
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    // Use FormatParams for consistent format parameter handling
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let format = format_params.format;
 
     // Extract tenant info before calling text search
     let tenant_uuid = *ctx.tenant_uuid();

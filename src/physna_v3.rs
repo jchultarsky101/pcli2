@@ -82,6 +82,14 @@ pub enum ApiError {
     /// Invalid parameter error with a descriptive message
     #[error("Invalid parameter: {0}")]
     InvalidParameterError(String),
+
+    /// Metadata type mismatch error when trying to update a metadata field with an incompatible type
+    #[error("Metadata type mismatch: Cannot update metadata field '{field_name}' with a value of type '{provided_type}'. The field was defined as type '{expected_type}'. Please use a value that matches the field's defined type, or delete and recreate the field with the desired type.")]
+    MetadataTypeMismatch {
+        field_name: String,
+        expected_type: String,
+        provided_type: String,
+    },
 }
 
 pub trait TryDefault: Sized {
@@ -1716,7 +1724,7 @@ impl PhysnaApiClient {
     ///
     /// # Returns
     /// * `Ok(())` - Successfully updated asset metadata
-    /// * `Err(ApiError)` - HTTP error or JSON parsing error
+    /// * `Err(ApiError)` - HTTP error or JSON parsing error, including MetadataTypeMismatch if a type conflict is detected
     pub async fn update_asset_metadata_with_registration(
         &mut self,
         tenant_uuid: &Uuid,
@@ -1727,15 +1735,33 @@ impl PhysnaApiClient {
         let existing_fields_response = self.get_metadata_fields(&tenant_uuid.to_string()).await;
 
         let mut existing_field_names = std::collections::HashSet::new();
+        let mut field_type_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+
         if let Ok(fields_response) = existing_fields_response {
             for field in fields_response.metadata_fields {
-                existing_field_names.insert(field.name);
+                existing_field_names.insert(field.name.clone());
+                field_type_map.insert(field.name, field.field_type);
             }
         }
 
-        // Check each metadata key and register if it doesn't exist
-        for (key, _value) in metadata.iter() {
-            if !existing_field_names.contains(key) {
+        // Check each metadata key for type compatibility before updating
+        for (key, value) in metadata.iter() {
+            if existing_field_names.contains(key) {
+                // Field exists - check for type mismatch
+                if let Some(expected_type) = field_type_map.get(key) {
+                    let provided_type = Self::infer_json_value_type(value);
+
+                    // Check if types are incompatible
+                    if !Self::is_type_compatible(expected_type, &provided_type) {
+                        return Err(ApiError::MetadataTypeMismatch {
+                            field_name: key.clone(),
+                            expected_type: expected_type.clone(),
+                            provided_type,
+                        });
+                    }
+                }
+            } else {
                 // Register the new metadata field (default to text type)
                 let field_result = self
                     .create_metadata_field(&tenant_uuid.to_string(), key, Some("text"))
@@ -1755,6 +1781,42 @@ impl PhysnaApiClient {
         // Now update the asset metadata
         self.update_asset_metadata(tenant_uuid, asset_uuid, metadata)
             .await
+    }
+
+    /// Infer the type of a JSON value for metadata type checking
+    ///
+    /// # Arguments
+    /// * `value` - The JSON value to infer the type from
+    ///
+    /// # Returns
+    /// * `String` - The inferred type ("text", "number", or "boolean")
+    fn infer_json_value_type(value: &serde_json::Value) -> String {
+        match value {
+            serde_json::Value::String(_) => "text".to_string(),
+            serde_json::Value::Number(_) => "number".to_string(),
+            serde_json::Value::Bool(_) => "boolean".to_string(),
+            serde_json::Value::Null => "null".to_string(),
+            serde_json::Value::Array(_) => "array".to_string(),
+            serde_json::Value::Object(_) => "object".to_string(),
+        }
+    }
+
+    /// Check if two metadata types are compatible
+    ///
+    /// This function determines if a provided type can be assigned to a field with an expected type.
+    /// For now, we use strict type matching, but this could be extended to allow compatible conversions
+    /// (e.g., number to text).
+    ///
+    /// # Arguments
+    /// * `expected_type` - The type of the existing metadata field
+    /// * `provided_type` - The type of the value being assigned
+    ///
+    /// # Returns
+    /// * `bool` - true if the types are compatible, false otherwise
+    fn is_type_compatible(expected_type: &str, provided_type: &str) -> bool {
+        // For now, use strict type matching
+        // Future enhancement: allow number -> text conversion since numbers can be stringified
+        expected_type == provided_type
     }
 
     /// Delete specific metadata fields from an asset
@@ -4488,6 +4550,90 @@ mod tests {
         // This test documents that for non-root paths, the function
         // calls get_folder_uuid_by_path and returns its result
         // Implementation would require mocking which is complex for this case
+    }
+
+    #[test]
+    fn test_infer_json_value_type_string() {
+        let value = serde_json::Value::String("test".to_string());
+        let inferred_type = PhysnaApiClient::infer_json_value_type(&value);
+        assert_eq!(inferred_type, "text");
+    }
+
+    #[test]
+    fn test_infer_json_value_type_number_integer() {
+        let value = serde_json::Value::Number(serde_json::Number::from(42));
+        let inferred_type = PhysnaApiClient::infer_json_value_type(&value);
+        assert_eq!(inferred_type, "number");
+    }
+
+    #[test]
+    fn test_infer_json_value_type_number_float() {
+        let value = serde_json::Value::Number(serde_json::Number::from_f64(2.71).unwrap());
+        let inferred_type = PhysnaApiClient::infer_json_value_type(&value);
+        assert_eq!(inferred_type, "number");
+    }
+
+    #[test]
+    fn test_infer_json_value_type_boolean() {
+        let value = serde_json::Value::Bool(true);
+        let inferred_type = PhysnaApiClient::infer_json_value_type(&value);
+        assert_eq!(inferred_type, "boolean");
+    }
+
+    #[test]
+    fn test_infer_json_value_type_null() {
+        let value = serde_json::Value::Null;
+        let inferred_type = PhysnaApiClient::infer_json_value_type(&value);
+        assert_eq!(inferred_type, "null");
+    }
+
+    #[test]
+    fn test_infer_json_value_type_array() {
+        let value = serde_json::Value::Array(vec![]);
+        let inferred_type = PhysnaApiClient::infer_json_value_type(&value);
+        assert_eq!(inferred_type, "array");
+    }
+
+    #[test]
+    fn test_infer_json_value_type_object() {
+        let value = serde_json::json!({});
+        let inferred_type = PhysnaApiClient::infer_json_value_type(&value);
+        assert_eq!(inferred_type, "object");
+    }
+
+    #[test]
+    fn test_is_type_compatible_same_types() {
+        assert!(PhysnaApiClient::is_type_compatible("text", "text"));
+        assert!(PhysnaApiClient::is_type_compatible("number", "number"));
+        assert!(PhysnaApiClient::is_type_compatible("boolean", "boolean"));
+    }
+
+    #[test]
+    fn test_is_type_compatible_different_types() {
+        assert!(!PhysnaApiClient::is_type_compatible("text", "number"));
+        assert!(!PhysnaApiClient::is_type_compatible("number", "boolean"));
+        assert!(!PhysnaApiClient::is_type_compatible("text", "boolean"));
+    }
+
+    #[test]
+    fn test_is_type_compatible_null_and_array() {
+        assert!(!PhysnaApiClient::is_type_compatible("text", "null"));
+        assert!(!PhysnaApiClient::is_type_compatible("text", "array"));
+        assert!(!PhysnaApiClient::is_type_compatible("text", "object"));
+    }
+
+    #[test]
+    fn test_metadata_type_mismatch_error_display() {
+        let error = ApiError::MetadataTypeMismatch {
+            field_name: "test_field".to_string(),
+            expected_type: "number".to_string(),
+            provided_type: "text".to_string(),
+        };
+        let error_str = error.to_string();
+        assert!(error_str.contains("Metadata type mismatch"));
+        assert!(error_str.contains("test_field"));
+        assert!(error_str.contains("number"));
+        assert!(error_str.contains("text"));
     }
 }
 

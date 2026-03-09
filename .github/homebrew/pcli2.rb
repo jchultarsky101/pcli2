@@ -1,13 +1,16 @@
 # Homebrew formula for PCLI2
-# Install with: brew install pcli2
-# Or from tap: brew install jchultarsky101/pcli2/pcli2
+# Install with:
+#   brew tap jchultarsky101/pcli2
+#   brew install pcli2
+#
+# Or directly:
+#   brew install jchultarsky101/pcli2/pcli2
 
 class Pcli2 < Formula
   desc "Physna Command Line Interface v2 - Advanced 3D Geometry Search and Analysis"
   homepage "https://github.com/jchultarsky101/pcli2"
-  url "https://github.com/jchultarsky101/pcli2/archive/refs/tags/v0.2.35.tar.gz"
-  sha256 :no_check # Replace with actual SHA256 checksum for release
-  version "0.2.35"
+  url "https://github.com/jchultarsky101/pcli2/archive/refs/tags/v1.0.0.tar.gz"
+  sha256 "ef1ebda08e92fee175b437ace43c9dcb0916906ee18ebf681f2759c063317c7a"
   license "Apache-2.0"
 
   head "https://github.com/jchultarsky101/pcli2.git", branch: "main"
@@ -18,7 +21,7 @@ class Pcli2 < Formula
 
   def install
     # Build the project
-    system "cargo", "install", *std_cargo_args
+    system "cargo", "install", *std_cargo_args, "--locked"
 
     # Generate shell completions
     bin.mkpath
@@ -30,7 +33,7 @@ class Pcli2 < Formula
   test do
     # Test version output
     output = shell_output("#{bin}/pcli2 --version")
-    assert_match "pcli2", output
+    assert_match "pcli2 1.0.0", output
 
     # Test help output
     output = shell_output("#{bin}/pcli2 --help")
@@ -42,5 +45,9 @@ class Pcli2 < Formula
     assert_match "asset", output
     assert_match "auth", output
     assert_match "environment", output
+    
+    # Test config validate command
+    output = shell_output("#{bin}/pcli2 config validate --help")
+    assert_match "Validate configuration", output
   end
 end

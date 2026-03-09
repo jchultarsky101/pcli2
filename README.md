@@ -19,6 +19,28 @@ pcli2 auth get
 pcli2 folder list --format tree
 ```
 
+### 💡 Quick Tips
+
+**Use aliases for faster workflows:**
+```bash
+pcli2 folder ls          # List folders
+pcli2 asset ls           # List assets
+pcli2 asset rm           # Delete asset
+pcli2 folder mv          # Move folder
+pcli2 auth in            # Login
+pcli2 env list           # List environments
+```
+
+**Skip confirmation prompts in scripts:**
+```bash
+pcli2 asset delete --path /Root/Models/part.stl --yes
+```
+
+**Validate your setup:**
+```bash
+pcli2 config validate --verbose
+```
+
 ## 📋 Table of Contents
 
 - [Features](#-features)
@@ -32,6 +54,7 @@ pcli2 folder list --format tree
 ## ✨ Features
 
 - **Intuitive Command Structure** - Nested sub-commands like Git CLI
+- **Command Aliases** - Unix-style shortcuts (`ls`, `rm`, `cat`, `dl`, `mv`) for faster workflows
 - **Comprehensive Asset Management** - Create, list, get, delete, and analyze
 - **Folder Operations** - Organize assets with full folder management
 - **Geometric Matching** - Find similar 3D geometries
@@ -41,9 +64,13 @@ pcli2 folder list --format tree
 - **Metadata Operations** - Manage custom properties efficiently
 - **Bulk Operations** - Process multiple assets with batch commands
 - **Secure Authentication** - OAuth2 with system keyring integration
+- **Confirmation Prompts** - Safety for destructive operations with `--yes` flag for scripting
+- **Configuration Validation** - `config validate` command to verify setup before operations
 - **Flexible Output Formats** - JSON, CSV, and tree views
 - **Resume Capability** - Continue interrupted downloads seamlessly
 - **Performance Optimizations** - Concurrent operations and caching for faster processing
+- **Structured Logging** - Debug with `PCLI2_LOG_LEVEL` environment variable
+- **Progress Tracking** - Enhanced progress bars with throughput and ETA
 
 ## 💻 Installation
 
@@ -384,6 +411,38 @@ pcli2 config environment use --name development
 pcli2 config environment list
 ```
 
+#### Environment Command (Alias: `env`)
+
+For better ergonomics, you can also use the top-level `env` command:
+
+```bash
+pcli2 env add -n dev --api-url "https://dev-api.physna.com/v3"
+pcli2 env use -n dev
+pcli2 env list
+pcli2 env get
+```
+
+#### Configuration Validation
+
+Validate your configuration before running operations:
+
+```bash
+# Quick validation
+pcli2 config validate
+
+# Detailed validation with API connectivity test
+pcli2 config validate --verbose --api
+```
+
+#### Structured Logging
+
+Enable debug logging for troubleshooting:
+
+```bash
+PCLI2_LOG_LEVEL=debug pcli2 folder download --path /Root/Models/
+RUST_LOG=pcli2=trace pcli2 asset get --uuid xxx
+```
+
 ## 🛠️ Troubleshooting
 
 ### Common Issues
@@ -414,7 +473,62 @@ pcli2 tenant current
 
 # Review configuration
 pcli2 config get
+
+# Validate setup
+pcli2 config validate --verbose
+
+# Enable debug logging
+PCLI2_LOG_LEVEL=debug pcli2 folder list
 ```
+
+## 🔢 Command Aliases Reference
+
+Quick reference for all available command aliases:
+
+### Tenant Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 tenant list` | `pcli2 tenant ls` |
+| `pcli2 tenant use` | `pcli2 tenant select` |
+| `pcli2 tenant clear` | `pcli2 tenant unset` |
+
+### Folder Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 folder list` | `pcli2 folder ls` |
+| `pcli2 folder delete` | `pcli2 folder rm` |
+| `pcli2 folder get` | `pcli2 folder cat` |
+| `pcli2 folder create` | `pcli2 folder add` |
+| `pcli2 folder move` | `pcli2 folder mv` |
+| `pcli2 folder rename` | `pcli2 folder ren` |
+| `pcli2 folder resolve` | `pcli2 folder res` |
+| `pcli2 folder download` | `pcli2 folder dl` |
+
+### Asset Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 asset list` | `pcli2 asset ls` |
+| `pcli2 asset delete` | `pcli2 asset rm` |
+| `pcli2 asset get` | `pcli2 asset cat` |
+| `pcli2 asset create` | `pcli2 asset upload` |
+| `pcli2 asset download` | `pcli2 asset dl` |
+| `pcli2 asset dependencies` | `pcli2 asset deps` |
+| `pcli2 asset thumbnail` | `pcli2 asset thumb` |
+
+### Authentication Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 auth` | `pcli2 a` |
+| `pcli2 auth login` | `pcli2 auth in` |
+| `pcli2 auth logout` | `pcli2 auth out` |
+| `pcli2 auth get` | `pcli2 auth token` |
+| `pcli2 auth clear-token` | `pcli2 auth clear` |
+| `pcli2 auth expiration` | `pcli2 auth exp` |
+
+### Environment Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 environment` | `pcli2 env` |
 
 ## 📜 Commands Reference
 

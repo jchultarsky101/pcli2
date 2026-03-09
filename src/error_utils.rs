@@ -140,6 +140,9 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
     {
         // Handle authentication errors that indicate missing or invalid tokens
         error_str
+    } else if error_str.contains("Metadata type mismatch") {
+        // Metadata type mismatch errors already have a good user-friendly message in the ApiError variant
+        error_str
     } else if error_str.contains("401") || error_str.to_lowercase().contains("unauthorized") {
         "Authentication failed. Please check your access token and try logging in again with 'pcli2 auth login'.".to_string()
     } else if error_str.contains("403") || error_str.to_lowercase().contains("forbidden") {
@@ -232,5 +235,15 @@ mod tests {
         assert!(is_retryable_error("Connection timeout"));
         assert!(is_retryable_error("503 Service Unavailable"));
         assert!(!is_retryable_error("Invalid argument"));
+    }
+
+    #[test]
+    fn test_create_user_friendly_error_metadata_type_mismatch() {
+        let error_msg = "Metadata type mismatch: Cannot update metadata field 'test_field' with a value of type 'text'. The field was defined as type 'number'.";
+        let friendly_msg = create_user_friendly_error(error_msg);
+        assert!(friendly_msg.contains("Metadata type mismatch"));
+        assert!(friendly_msg.contains("test_field"));
+        assert!(friendly_msg.contains("text"));
+        assert!(friendly_msg.contains("number"));
     }
 }

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-09
+
+### Added
+- **Metadata type mismatch detection** - Proactive detection of incompatible metadata type updates before API calls
+  - New `ApiError::MetadataTypeMismatch` error variant with detailed error message
+  - Type checking compares existing field types with provided values
+  - Clear error messages explain the field name, expected type, and provided type
+  - Suggests remediation steps (use matching type or recreate field)
+- **Type inference for JSON values** - Helper methods to determine JSON value types
+  - `infer_json_value_type()` - Identifies text, number, boolean, null, array, and object types
+  - `is_type_compatible()` - Validates type compatibility between field definitions and values
+- **Enhanced error messages** - User-friendly error output for metadata type mismatches
+
+### Changed
+- **Improved metadata update workflow** - Type validation occurs before API requests
+  - Prevents confusing 404 errors when updating metadata with incompatible types
+  - Fetches and caches metadata field definitions during update operations
+  - Returns specific error instead of generic "Resource not found"
+
 ## [1.0.0] - 2026-03-04
 
 ### Added

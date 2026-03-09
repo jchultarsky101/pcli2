@@ -1739,14 +1739,32 @@ impl PhysnaApiClient {
             std::collections::HashMap::new();
 
         if let Ok(fields_response) = existing_fields_response {
+            debug!(
+                "Retrieved {} existing metadata fields for tenant",
+                fields_response.metadata_fields.len()
+            );
             for field in fields_response.metadata_fields {
+                debug!(
+                    "Found metadata field: '{}' with type: '{}'",
+                    field.name, field.field_type
+                );
                 existing_field_names.insert(field.name.clone());
                 field_type_map.insert(field.name, field.field_type);
             }
+        } else {
+            debug!(
+                "Failed to retrieve metadata fields: {:?}",
+                existing_fields_response
+            );
         }
 
         // Check each metadata key for type compatibility before updating
         for (key, value) in metadata.iter() {
+            debug!(
+                "Checking metadata key '{}' with value type '{}'",
+                key,
+                Self::infer_json_value_type(value)
+            );
             if existing_field_names.contains(key) {
                 // Field exists - check for type mismatch
                 if let Some(expected_type) = field_type_map.get(key) {
@@ -1754,6 +1772,10 @@ impl PhysnaApiClient {
 
                     // Check if types are incompatible
                     if !Self::is_type_compatible(expected_type, &provided_type) {
+                        debug!(
+                            "Type mismatch detected: field '{}' expected '{}' but got '{}'",
+                            key, expected_type, provided_type
+                        );
                         return Err(ApiError::MetadataTypeMismatch {
                             field_name: key.clone(),
                             expected_type: expected_type.clone(),
@@ -1762,6 +1784,10 @@ impl PhysnaApiClient {
                     }
                 }
             } else {
+                debug!(
+                    "Metadata field '{}' not found in existing fields, will attempt to register",
+                    key
+                );
                 // Register the new metadata field (default to text type)
                 let field_result = self
                     .create_metadata_field(&tenant_uuid.to_string(), key, Some("text"))

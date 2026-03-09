@@ -4,8 +4,8 @@
 
 use crate::commands::params::{
     format_parameter, format_pretty_parameter, format_with_headers_parameter,
-    format_with_metadata_parameter, path_parameter, tenant_parameter, uuid_parameter, COMMAND_CREATE,
-    COMMAND_DELETE, COMMAND_GET, COMMAND_METADATA,
+    format_with_metadata_parameter, path_parameter, tenant_parameter, uuid_parameter,
+    COMMAND_CREATE, COMMAND_DELETE, COMMAND_GET, COMMAND_METADATA,
 };
 use clap::{Arg, ArgAction, ArgGroup, Command};
 

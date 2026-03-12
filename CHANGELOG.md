@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-03-12
+
+### Fixed
+- **Asset create path resolution** - Fixed bug where assets uploaded with `--folder-uuid` were placed in the root directory instead of the specified folder
+  - When using `--folder-uuid` (instead of `--folder-path`), the asset path is now correctly constructed using the folder's actual path
+  - Affects `pcli2 asset create` command
+
 ## [1.1.0] - 2026-03-09
 
 ### Added

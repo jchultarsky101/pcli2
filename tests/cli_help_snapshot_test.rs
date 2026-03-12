@@ -4,9 +4,11 @@ mod cli_help_snapshot_tests {
     use std::collections::HashMap;
     use std::process::Command;
 
-    /// Normalize line endings to handle differences between Windows (CRLF) and Unix (LF)
+    /// Normalize output to handle platform differences
     fn normalize_output(output: &str) -> String {
-        output.replace("\r\n", "\n")
+        output
+            .replace("\r\n", "\n") // Normalize line endings
+            .replace("pcli2.exe", "pcli2") // Normalize binary name on Windows
     }
 
     #[test]

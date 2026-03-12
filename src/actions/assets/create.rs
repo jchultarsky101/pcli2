@@ -68,16 +68,25 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ));
     };
 
-    // Check if the folder exists
+    // Check if the folder exists and set its path
     let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
     let mut folder = folder;
     if let Some(path) = folder_path_param {
-        folder.set_path(path.to_owned())
+        folder.set_path(path.to_owned());
     } else {
-        // When using --folder-uuid, we need to build the folder hierarchy to get the full path
-        let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
-        if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
-            folder.set_path(path);
+        // When using --folder-uuid, try to build the folder hierarchy to get the full path
+        // This is optional - if it fails, we'll just use the folder name without the full path
+        match FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await {
+            Ok(hierarchy) => {
+                if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
+                    folder.set_path(path);
+                }
+            }
+            Err(_) => {
+                // If we can't build the hierarchy, just use the folder name as the path
+                // This allows the create operation to proceed even if hierarchy fetch fails
+                folder.set_path(folder.name());
+            }
         }
     }
 

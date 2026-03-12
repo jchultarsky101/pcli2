@@ -13,6 +13,7 @@ use crate::{
     configuration::Configuration,
     error::CliError,
     error_utils,
+    folder_hierarchy::FolderHierarchy,
     format::OutputFormatter,
     metadata::convert_single_metadata_to_json_value,
     model::AssetList,
@@ -72,6 +73,12 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut folder = folder;
     if let Some(path) = folder_path_param {
         folder.set_path(path.to_owned())
+    } else {
+        // When using --folder-uuid, we need to build the folder hierarchy to get the full path
+        let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+        if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
+            folder.set_path(path);
+        }
     }
 
     let file_path = sub_matches
@@ -87,14 +94,11 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .to_string();
 
     // Construct the full asset path by combining folder path with filename
-    let asset_path = if let Some(folder_path) = folder_path_param {
-        if folder_path.is_empty() {
-            file_name.clone()
-        } else {
-            format!("{}/{}", folder_path, file_name)
-        }
-    } else {
+    let folder_path = folder.path();
+    let asset_path = if folder_path.is_empty() || folder_path == "/" {
         file_name.clone()
+    } else {
+        format!("{}/{}", folder_path, file_name)
     };
 
     debug!("Creating asset with path: {}", asset_path);
@@ -162,6 +166,12 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     let mut folder = folder;
     if let Some(path) = folder_path_param {
         folder.set_path(path.to_owned())
+    } else {
+        // When using --folder-uuid, we need to build the folder hierarchy to get the full path
+        let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+        if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
+            folder.set_path(path);
+        }
     }
 
     let assets = api

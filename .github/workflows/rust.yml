@@ -58,7 +58,7 @@ jobs:
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install openssl cmake
+        brew install --quiet openssl cmake
     - name: Build
       run: cargo build --verbose
     - name: Run tests

@@ -4,13 +4,18 @@ mod cli_help_snapshot_tests {
     use std::collections::HashMap;
     use std::process::Command;
 
+    /// Normalize line endings to handle differences between Windows (CRLF) and Unix (LF)
+    fn normalize_output(output: &str) -> String {
+        output.replace("\r\n", "\n")
+    }
+
     #[test]
     fn test_cli_help_snapshot() {
         // Capture the current help output as a snapshot to detect changes
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
         let assert_result = cmd.arg("--help").assert().success();
         let output = assert_result.get_output();
-        let help_output = String::from_utf8_lossy(&output.stdout);
+        let help_output = normalize_output(&String::from_utf8_lossy(&output.stdout));
 
         // Define the expected snapshot of the help output
         // This will help us detect if any changes are made to the CLI interface
@@ -46,12 +51,20 @@ mod cli_help_snapshot_tests {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
             let assert_result = cmd.arg(subcommand).arg("--help").assert().success();
             let output = assert_result.get_output();
-            let help_output = String::from_utf8_lossy(&output.stdout);
+            let help_output = normalize_output(&String::from_utf8_lossy(&output.stdout));
 
             snapshots.insert(subcommand.to_string(), help_output.to_string());
 
             // Verify each subcommand help contains expected elements
-            assert!(help_output.contains(&format!("Usage: pcli2 {}", subcommand)));
+            // Use contains with normalized usage line to handle platform differences
+            let usage_pattern = format!("Usage: pcli2 {}", subcommand);
+            assert!(
+                help_output.contains(&usage_pattern),
+                "Help output for '{}' should contain '{}'. Got:\n{}",
+                subcommand,
+                usage_pattern,
+                help_output
+            );
             assert!(help_output.contains("Options:"));
         }
 
@@ -67,7 +80,7 @@ mod cli_help_snapshot_tests {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
         let assert_result = cmd.arg("--version").assert().success();
         let output = assert_result.get_output();
-        let version_output = String::from_utf8_lossy(&output.stdout);
+        let version_output = normalize_output(&String::from_utf8_lossy(&output.stdout));
 
         // Verify the version output format
         assert!(version_output.contains("pcli2"));
@@ -113,10 +126,18 @@ mod cli_help_snapshot_tests {
                 .assert()
                 .success();
             let output = assert_result.get_output();
-            let help_output = String::from_utf8_lossy(&output.stdout);
+            let help_output = normalize_output(&String::from_utf8_lossy(&output.stdout));
 
             // Verify each nested subcommand help contains expected elements
-            assert!(help_output.contains(&format!("Usage: pcli2 {} {}", parent_cmd, sub_cmd)));
+            let usage_pattern = format!("Usage: pcli2 {} {}", parent_cmd, sub_cmd);
+            assert!(
+                help_output.contains(&usage_pattern),
+                "Help output for '{} {}' should contain '{}'. Got:\n{}",
+                parent_cmd,
+                sub_cmd,
+                usage_pattern,
+                help_output
+            );
 
             // Print the snapshot
             println!(
@@ -147,13 +168,19 @@ mod cli_help_snapshot_tests {
                 .assert()
                 .success();
             let output = assert_result.get_output();
-            let help_output = String::from_utf8_lossy(&output.stdout);
+            let help_output = normalize_output(&String::from_utf8_lossy(&output.stdout));
 
             // Verify each deeply nested subcommand help contains expected elements
-            assert!(help_output.contains(&format!(
-                "Usage: pcli2 {} {} {}",
-                parent_cmd, sub_cmd, sub_sub_cmd
-            )));
+            let usage_pattern = format!("Usage: pcli2 {} {} {}", parent_cmd, sub_cmd, sub_sub_cmd);
+            assert!(
+                help_output.contains(&usage_pattern),
+                "Help output for '{} {} {}' should contain '{}'. Got:\n{}",
+                parent_cmd,
+                sub_cmd,
+                sub_sub_cmd,
+                usage_pattern,
+                help_output
+            );
 
             // Print the snapshot
             println!(
@@ -181,10 +208,18 @@ mod cli_help_snapshot_tests {
                 .assert()
                 .success();
             let output = assert_result.get_output();
-            let help_output = String::from_utf8_lossy(&output.stdout);
+            let help_output = normalize_output(&String::from_utf8_lossy(&output.stdout));
 
             // Verify each subcommand help contains expected elements
-            assert!(help_output.contains(&format!("Usage: pcli2 {} {}", parent_cmd, sub_cmd)));
+            let usage_pattern = format!("Usage: pcli2 {} {}", parent_cmd, sub_cmd);
+            assert!(
+                help_output.contains(&usage_pattern),
+                "Help output for '{} {}' should contain '{}'. Got:\n{}",
+                parent_cmd,
+                sub_cmd,
+                usage_pattern,
+                help_output
+            );
 
             // Print the snapshot
             println!(

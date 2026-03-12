@@ -30,6 +30,7 @@ fn bench_normalize_path(c: &mut Criterion) {
 fn bench_format_parsing(c: &mut Criterion) {
     use pcli2::format::{OutputFormat, OutputFormatOptions};
 
+    #[allow(clippy::result_large_err)]
     c.bench_function("parse_format_json", |b| {
         b.iter(|| {
             OutputFormat::from_string_with_options(
@@ -39,12 +40,14 @@ fn bench_format_parsing(c: &mut Criterion) {
         })
     });
 
+    #[allow(clippy::result_large_err)]
     c.bench_function("parse_format_csv", |b| {
         b.iter(|| {
             OutputFormat::from_string_with_options(black_box("csv"), OutputFormatOptions::default())
         })
     });
 
+    #[allow(clippy::result_large_err)]
     c.bench_function("parse_format_tree", |b| {
         b.iter(|| {
             OutputFormat::from_string_with_options(

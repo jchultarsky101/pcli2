@@ -734,7 +734,7 @@ pub async fn execute_command() -> Result<(), CliError> {
                         }
                     }
                 }
-                Some((command_name, sub_matches)) if command_name == COMMAND_EXPIRATION => {
+                Some((command_name, _sub_matches)) if command_name == COMMAND_EXPIRATION => {
                     trace!("Executing auth expiration command");
 
                     let configuration = Configuration::load_or_create_default()?;

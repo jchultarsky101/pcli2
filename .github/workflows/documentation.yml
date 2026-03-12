@@ -14,18 +14,21 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Setup Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@v5
 
       - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v3
+        uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: 'latest'
 

@@ -67,6 +67,9 @@ pub const COMMAND_RESET: &str = "reset";
 pub const COMMAND_CURRENT: &str = "current";
 pub const COMMAND_STATE: &str = "state";
 
+// Cache commands
+pub const COMMAND_CACHE: &str = "cache";
+
 // Environment parameter names
 pub const PARAMETER_API_URL: &str = "api-url";
 pub const PARAMETER_UI_URL: &str = "ui-url";

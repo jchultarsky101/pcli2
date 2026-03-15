@@ -553,6 +553,27 @@ pcli2 asset thumbnail        # Download asset thumbnail
 pcli2 asset metadata         # Manage asset metadata
 ```
 
+#### Asset List Command
+
+The `asset list` command lists assets in a folder with various filtering and formatting options.
+
+```bash
+# List assets in a specific folder
+pcli2 asset list --folder-path "/Root/Models/"
+
+# List assets recursively (including all subfolders)
+pcli2 asset list --folder-path "/Root/Models/" --recursive
+
+# Output in CSV format with headers
+pcli2 asset list --folder-path "/Root/Models/" --format csv --headers
+
+# Include metadata in JSON output
+pcli2 asset list --folder-path "/Root/Models/" --format json --metadata
+
+# Force refresh folder cache before listing (useful after folder changes)
+pcli2 asset list --reload --folder-path "/Root/Models/" --format csv
+```
+
 #### Asset Metadata Commands
 
 Manage custom properties for assets.
@@ -606,7 +627,19 @@ pcli2 folder visual-match     # Find visually similar assets for all assets in f
 pcli2 folder thumbnail        # Download thumbnails for all assets in a folder
 ```
 
-**Important Note**: Folder paths are case-sensitive. Make sure to use the exact capitalization when specifying folder paths.
+**Important Note**: Folder paths are **case-insensitive**. You can use any capitalization when specifying folder paths (e.g., `/Root/Models`, `/root/models`, `/ROOT/MODELS` all refer to the same folder). This matches the behavior of Windows file systems and provides a more user-friendly experience.
+
+#### Folder Resolve Command
+
+The `folder resolve` command resolves a folder path to its UUID, which can be useful for scripting or debugging.
+
+```bash
+# Resolve a folder path to UUID
+pcli2 folder resolve --folder-path "/Root/MyFolder"
+
+# Force refresh folder cache before resolving (useful if folder was recently recreated)
+pcli2 folder resolve --reload --folder-path "/Root/MyFolder"
+```
 
 #### Folder List Command
 
@@ -631,6 +664,15 @@ pcli2 folder list --format tree
 - **Mutual Exclusivity**: You can specify either `--folder-path` or `--folder-uuid`, but not both
 - **Flexible Output**: Supports JSON, CSV, and tree formats
 - **Folder Hierarchy**: Shows the complete folder structure when using tree format
+- **Cache Refresh**: Use `--reload` flag to force refresh of folder cache before listing
+
+```bash
+# Force refresh folder cache before listing (useful after folder changes)
+pcli2 folder list --reload
+
+# Combine with other flags
+pcli2 folder list --reload --format tree
+```
 
 ### Tenant Commands
 
@@ -690,7 +732,45 @@ pcli2 config environment get -n <name>         # Short form of get with name
 Additional utility commands.
 
 ```
-pcli2 completions  # Generate shell completions for various shells
+pcli2 cache          # Cache management (clear cached data)
+pcli2 completions    # Generate shell completions for various shells
+```
+
+#### Cache Management Command
+
+The `cache` command provides tools for managing PCLI2's local cache. Caching improves performance by storing folder hierarchies, metadata definitions, and tenant lists locally, but can sometimes contain stale data.
+
+```bash
+# Clear all caches (folder, metadata, and tenant)
+pcli2 cache clear
+
+# Clear all caches without confirmation prompt (useful for scripts)
+pcli2 cache clear --yes
+
+# Clear specific cache types
+pcli2 cache clear --folder      # Clear only folder hierarchy cache
+pcli2 cache clear --metadata    # Clear only metadata field cache
+pcli2 cache clear --tenant      # Clear only tenant list cache
+
+# Combine flags to clear multiple specific caches
+pcli2 cache clear --folder --metadata --yes
+
+# Use the alias 'clean'
+pcli2 cache clean --yes
+```
+
+**When to clear the cache:**
+- After deleting and recreating folders with the same name
+- When folder paths return unexpected results
+- After making bulk changes to folder structure
+- When troubleshooting "folder not found" errors
+- Periodically to ensure fresh data from the API
+
+**Note:** The `--reload` flag on commands like `folder list`, `folder resolve`, and `asset list` provides a convenient way to refresh the folder cache for a single operation without clearing all caches.
+
+```bash
+# Example: List assets with fresh folder data
+pcli2 asset list --reload --folder-path "/Root/Models/" --format csv
 ```
 
 #### Shell Completions

@@ -46,6 +46,17 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ));
     }
 
+    // Check if reload flag is set to clear the cache
+    let reload_cache = sub_matches.get_flag(crate::commands::params::PARAMETER_RELOAD);
+    if reload_cache {
+        trace!("Reload flag set, clearing folder cache before listing assets...");
+        crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(
+            |e| {
+                tracing::debug!("Failed to invalidate folder cache: {}", e);
+            },
+        );
+    }
+
     // If a path is specified, get assets filtered by folder path
     if let Some(path) = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH) {
         trace!("Listing assets for folder path: {}", path);

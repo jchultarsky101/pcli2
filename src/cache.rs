@@ -67,7 +67,7 @@ pub struct CacheConfig {
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            expiration_seconds: 24 * 60 * 60, // 24 hours
+            expiration_seconds: 60 * 60, // 1 hour - reduced from 24 hours to avoid stale data issues
             compress: false,
             cache_dir: dirs::cache_dir()
                 .unwrap_or_else(std::env::temp_dir)
@@ -151,13 +151,13 @@ mod tests {
     #[test]
     fn test_base_cache_creation() {
         let cache = BaseCache::new();
-        assert_eq!(cache.config.expiration_seconds, 24 * 60 * 60); // 24 hours
+        assert_eq!(cache.config.expiration_seconds, 60 * 60); // 1 hour
     }
 
     #[test]
     fn test_cache_config_default() {
         let config = CacheConfig::default();
-        assert_eq!(config.expiration_seconds, 24 * 60 * 60); // 24 hours
+        assert_eq!(config.expiration_seconds, 60 * 60); // 1 hour
         assert!(!config.compress);
         assert!(config.cache_dir.ends_with("pcli2"));
     }

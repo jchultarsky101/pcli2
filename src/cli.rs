@@ -23,6 +23,7 @@ use pcli2::{
             print_folder_dependencies, reprocess_asset, text_match, update_asset_metadata,
             visual_match_asset, visual_match_folder,
         },
+        cache::clear_cache,
         folders::{
             create_folder, delete_folder, download_folder, download_folder_thumbnails,
             list_folders, move_folder, print_folder_details, rename_folder, resolve_folder,
@@ -1046,6 +1047,20 @@ pub async fn execute_command() -> Result<(), CliError> {
 
             pcli2::commands::environment::execute_environment_command(sub_matches).await?;
             Ok(())
+        }
+        Some(("cache", sub_matches)) => {
+            trace!("Command: cache");
+
+            match sub_matches.subcommand() {
+                Some(("clear", clear_sub_matches)) => {
+                    trace!("Command: cache clear");
+                    clear_cache(clear_sub_matches).await?;
+                    Ok(())
+                }
+                _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                    sub_matches,
+                ))),
+            }
         }
         _ => Err(CliError::UnsupportedSubcommand(String::from("unknown"))),
     }

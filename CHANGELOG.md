@@ -5,12 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.1] - 2026-03-12
+## [1.1.2] - 2026-03-14
 
 ### Fixed
 - **Asset create path resolution** - Fixed bug where assets uploaded with `--folder-uuid` were placed in the root directory instead of the specified folder
   - When using `--folder-uuid` (instead of `--folder-path`), the asset path is now correctly constructed using the folder's actual path
   - Affects `pcli2 asset create` command
+- **Case-insensitive folder path matching** - Fixed folder lookup to use case-insensitive comparison for cross-platform compatibility
+  - Windows users can now use folder paths with any casing (e.g., `photos and models`, `PHOTOS AND MODELS`)
+  - Matches Windows file system behavior where paths are case-insensitive
+  - Affects all commands that accept `--folder-path`: `asset list`, `folder resolve`, `folder download`, etc.
+  - Adds comprehensive test coverage for case-insensitive matching
+- **Stale folder cache issue** - Fixed issue where deleted and recreated folders would return stale UUIDs from cache
+  - Reduced default cache expiration from 24 hours to 1 hour to minimize stale data issues
+  - Added `--reload` flag to `folder resolve` command to force cache refresh before resolving
+  - Added `--reload` flag to `asset list` command to force cache refresh before listing
+  - Users can now run `pcli2 folder resolve --reload --folder-path "..."` or `pcli2 asset list --reload --folder-path "..."` to bypass stale cache
+
+### Added
+- **New `cache clear` command** - Added dedicated command for clearing all caches on demand
+  - `pcli2 cache clear` - Clear all caches (folder, metadata, tenant)
+  - `pcli2 cache clear --folder` - Clear only folder cache
+  - `pcli2 cache clear --metadata` - Clear only metadata cache
+  - `pcli2 cache clear --tenant` - Clear only tenant cache
+  - `pcli2 cache clear --yes` - Skip confirmation prompt
+  - Aliases: `pcli2 cache clean` works the same as `pcli2 cache clear`
 
 ## [1.1.0] - 2026-03-09
 

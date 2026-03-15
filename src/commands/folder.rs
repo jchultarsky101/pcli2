@@ -109,7 +109,14 @@ pub fn folder_command() -> Command {
                 .about("Resolve a folder path to its UUID")
                 .visible_alias("res")
                 .arg(tenant_parameter())
-                .arg(folder_path_parameter()),
+                .arg(folder_path_parameter())
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_RELOAD)
+                        .long(crate::commands::params::PARAMETER_RELOAD)
+                        .action(clap::ArgAction::SetTrue)
+                        .required(false)
+                        .help("Force refresh the folder cache from the API before resolving"),
+                ),
         )
         .subcommand(
             Command::new("download")

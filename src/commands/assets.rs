@@ -100,6 +100,13 @@ pub fn asset_command() -> Command {
                         .required(false)
                         .help("Recursively list assets in subfolders"),
                 )
+                .arg(
+                    clap::Arg::new(crate::commands::params::PARAMETER_RELOAD)
+                        .long(crate::commands::params::PARAMETER_RELOAD)
+                        .action(ArgAction::SetTrue)
+                        .required(false)
+                        .help("Force refresh the folder cache from the API before listing assets"),
+                )
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())

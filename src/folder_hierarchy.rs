@@ -299,9 +299,11 @@ impl FolderHierarchy {
         let current_part = path_parts[0];
 
         // Find folder with matching name among the given folder IDs
+        // Use case-insensitive comparison for better cross-platform compatibility
+        // (Windows users expect case-insensitive folder matching)
         for folder_id in folder_ids {
             if let Some(node) = self.nodes.get(folder_id) {
-                if node.name() == current_part {
+                if node.name().eq_ignore_ascii_case(current_part) {
                     if path_parts.len() == 1 {
                         // Found the target folder
                         return Some(node);
@@ -490,5 +492,115 @@ impl FolderHierarchy {
         }
 
         folder_list
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_case_insensitive_folder_matching() {
+        // Create a folder hierarchy with mixed-case folder names
+        let mut nodes = HashMap::new();
+
+        // Create root folder "Photos and Models"
+        let root_folder = FolderResponse {
+            uuid: Uuid::new_v4(),
+            tenant_uuid: Uuid::new_v4(),
+            name: "Photos and Models".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            assets_count: 0,
+            folders_count: 0,
+            parent_folder_uuid: None,
+            owner_id: None,
+        };
+
+        let root_uuid = root_folder.uuid;
+        nodes.insert(root_uuid, FolderNode::new(root_folder));
+
+        let hierarchy = FolderHierarchy {
+            nodes,
+            root_uuids: vec![root_uuid],
+        };
+
+        // Test exact case match
+        assert!(hierarchy.get_folder_by_path("Photos and Models").is_some());
+
+        // Test lowercase match
+        assert!(hierarchy.get_folder_by_path("photos and models").is_some());
+
+        // Test uppercase match
+        assert!(hierarchy.get_folder_by_path("PHOTOS AND MODELS").is_some());
+
+        // Test mixed case match
+        assert!(hierarchy.get_folder_by_path("photos AND Models").is_some());
+
+        // Test with leading slash
+        assert!(hierarchy.get_folder_by_path("/Photos and Models").is_some());
+        assert!(hierarchy.get_folder_by_path("/photos and models").is_some());
+    }
+
+    #[test]
+    fn test_nested_case_insensitive_matching() {
+        // Create a nested folder hierarchy
+        let mut nodes = HashMap::new();
+
+        let parent_folder = FolderResponse {
+            uuid: Uuid::new_v4(),
+            tenant_uuid: Uuid::new_v4(),
+            name: "Parent".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            assets_count: 0,
+            folders_count: 1,
+            parent_folder_uuid: None,
+            owner_id: None,
+        };
+
+        let parent_uuid = parent_folder.uuid;
+
+        let child_folder = FolderResponse {
+            uuid: Uuid::new_v4(),
+            tenant_uuid: Uuid::new_v4(),
+            name: "Child Folder".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            assets_count: 0,
+            folders_count: 0,
+            parent_folder_uuid: Some(parent_uuid),
+            owner_id: None,
+        };
+
+        let child_uuid = child_folder.uuid;
+
+        nodes.insert(parent_uuid, FolderNode::new(parent_folder));
+        nodes.insert(child_uuid, FolderNode::new(child_folder));
+
+        // Add child to parent's children list
+        if let Some(parent_node) = nodes.get_mut(&parent_uuid) {
+            parent_node.children.push(child_uuid);
+        }
+
+        let hierarchy = FolderHierarchy {
+            nodes,
+            root_uuids: vec![parent_uuid],
+        };
+
+        // Test nested path with different cases
+        assert!(hierarchy
+            .get_folder_by_path("Parent/Child Folder")
+            .is_some());
+        assert!(hierarchy
+            .get_folder_by_path("parent/child folder")
+            .is_some());
+        assert!(hierarchy
+            .get_folder_by_path("PARENT/CHILD FOLDER")
+            .is_some());
+        assert!(hierarchy
+            .get_folder_by_path("parent/Child Folder")
+            .is_some());
     }
 }

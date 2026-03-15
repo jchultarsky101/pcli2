@@ -420,6 +420,17 @@ pub async fn resolve_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     trace!("Resolving path: {}", folder_path);
 
+    // Check if reload flag is set to clear the cache
+    let reload_cache = sub_matches.get_flag(crate::commands::params::PARAMETER_RELOAD);
+    if reload_cache {
+        trace!("Reload flag set, clearing folder cache before resolving...");
+        crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(
+            |e| {
+                tracing::debug!("Failed to invalidate folder cache: {}", e);
+            },
+        );
+    }
+
     // Special handling for root path "/"
     if crate::model::normalize_path(folder_path) == "/" {
         // The root path "/" doesn't correspond to a specific folder UUID

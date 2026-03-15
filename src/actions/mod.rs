@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 pub mod assets;
+pub mod cache;
 pub mod completions;
 pub mod folders;
 pub mod tenants;

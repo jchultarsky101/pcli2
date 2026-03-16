@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-03-16
+
+### Fixed
+- **Folder download error handling** - Complete overhaul of error handling and reporting for `folder download` command
+  - Fixed incorrect error counts with concurrent downloads (`--concurrent` flag)
+  - Progress bars no longer corrupted by inline error messages
+  - All errors now collected and displayed AFTER statistics for visibility
+  - Error messages now show actual API errors instead of generic messages
+  - Always waits for all download tasks to complete before reporting
+  - Folder cache invalidated at start to ensure fresh data from server
+  - Stats summary now shown regardless of success or error
+  - Detailed error list remains visible on screen at end of run
+- **Inline logging during downloads** - Removed `tracing::error!()` and `tracing::warn!()` calls that corrupted progress bar display
+  - All errors now collected in memory and printed once at completion
+  - Cleaner user experience with no scrolling error messages during download
+
 ## [1.1.2] - 2026-03-14
 
 ### Fixed

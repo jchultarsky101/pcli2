@@ -473,6 +473,11 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
+    // Invalidate folder cache to ensure we get fresh data from the server
+    crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(|e| {
+        tracing::debug!("Failed to invalidate folder cache: {}", e);
+    });
+
     // Get folder UUID or path from command line
     let folder_uuid_param =
         sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_FOLDER_UUID);
@@ -713,6 +718,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut error_count = 0;
     let mut success_count = 0;
     let total_assets = all_assets_with_paths.len(); // Store the length before moving the vector
+    let mut first_error: Option<CliError> = None; // Track the first error if not continuing
+    let mut error_messages: Vec<String> = Vec::new(); // Collect error messages to print later
 
     // Download each asset to the appropriate subdirectory in the temp directory
     let mut tasks = Vec::new();
@@ -773,12 +780,8 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             let mut api_task = match PhysnaApiClient::try_default() {
                 Ok(client) => client,
                 Err(e) => {
-                    if continue_on_error_clone {
-                        return Ok(Err((asset_name, physna_path, e, true)));
-                    // true indicates it's a recoverable error
-                    } else {
-                        return Err(CliError::PhysnaExtendedApiError(e));
-                    }
+                    // Always return error through Ok path so it can be collected
+                    return Ok(Err((asset_name, physna_path, e, continue_on_error_clone)));
                 }
             };
 
@@ -900,26 +903,11 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                         ipb.finish_and_clear(); // Clear the spinner for this individual download
                     }
 
-                    // Log the detailed error for debugging with asset UUID and Physna path
-                    tracing::error!(
-                        "Failed to download asset '{}' (Asset UUID: {}, Physna path: {}): {}",
-                        asset_name,
-                        asset_id,
-                        physna_path,
-                        e
-                    );
-                    tracing::debug!(
-                        "Error details for asset '{}': error type = {:?}",
-                        asset_name,
-                        e
-                    );
+                    // Don't log errors here - they will be collected and printed at the end
+                    // to avoid corrupting the progress bar display
 
-                    // If continue-on-error is enabled, return the error as a warning instead of failing
-                    if continue_on_error_clone {
-                        Ok(Err((asset_name, physna_path, e, true))) // true indicates it's a recoverable error
-                    } else {
-                        Err(CliError::PhysnaExtendedApiError(e))
-                    }
+                    // Always return error through Ok path so it can be collected
+                    Ok(Err((asset_name, physna_path, e, continue_on_error_clone)))
                 }
             }
         });
@@ -927,7 +915,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         tasks.push(task);
     }
 
-    // Wait for all tasks to complete
+    // Wait for all tasks to complete - always process all tasks to get accurate counts
     for task in tasks {
         match task.await {
             Ok(task_result) => {
@@ -936,34 +924,39 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                         Ok(_asset_name) => {
                             success_count += 1;
                         }
-                        Err((asset_name, physna_path, error, is_recoverable)) => {
-                            if is_recoverable {
-                                error_count += 1;
-                                eprintln!("⚠️  Warning: Failed to download asset '{}' (Physna path: {}): {}", asset_name, physna_path, error);
-                            } else {
-                                return Err(CliError::PhysnaExtendedApiError(error));
+                        Err((asset_name, physna_path, error, _is_recoverable)) => {
+                            error_count += 1;
+                            // Collect error message to print later (after clearing progress bars)
+                            // Always show the actual API error so users understand what went wrong
+                            error_messages.push(format!(
+                                "⚠️  Failed to download asset '{}' (Physna path: {}): {}",
+                                asset_name, physna_path, error
+                            ));
+                            // Track the first error if we're not continuing on error
+                            if !continue_on_error && first_error.is_none() {
+                                first_error = Some(CliError::PhysnaExtendedApiError(error));
                             }
                         }
                     },
                     Err(cli_error) => {
-                        if continue_on_error {
-                            error_count += 1;
-                            eprintln!(
-                                "⚠️  Warning: Failed to download asset due to CLI error: {}",
-                                cli_error
-                            );
-                        } else {
-                            return Err(cli_error);
+                        error_count += 1;
+                        error_messages.push(format!(
+                            "⚠️  Failed to download asset due to CLI error: {}",
+                            cli_error
+                        ));
+                        // Track the first error if we're not continuing on error
+                        if !continue_on_error && first_error.is_none() {
+                            first_error = Some(cli_error);
                         }
                     }
                 }
             }
             Err(join_error) => {
-                if continue_on_error {
-                    error_count += 1;
-                    eprintln!("⚠️  Warning: Task failed to execute: {}", join_error);
-                } else {
-                    return Err(CliError::ActionError(
+                error_count += 1;
+                error_messages.push(format!("⚠️  Task failed to execute: {}", join_error));
+                // Track the first error if we're not continuing on error
+                if !continue_on_error && first_error.is_none() {
+                    first_error = Some(CliError::ActionError(
                         crate::actions::CliActionError::IoError(std::io::Error::other(
                             join_error.to_string(),
                         )),
@@ -973,7 +966,55 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         }
     }
 
-    // Report summary with nice statistics
+    // Finish progress bars before printing summary and errors
+    if let Some(pb) = progress_bar {
+        pb.finish_and_clear();
+    }
+    if let Some(mp) = multi_progress {
+        mp.clear().ok();
+    }
+
+    // Report summary with nice statistics - print this FIRST so errors appear above it
+    print_download_summary(
+        success_count,
+        error_count,
+        total_assets,
+        resume_flag,
+        &dest_dir,
+    );
+
+    // Print collected error messages AFTER the stats so they remain visible on screen
+    if !error_messages.is_empty() {
+        eprintln!();
+        eprintln!("📋 Detailed Error List:");
+        eprintln!("======================");
+        for error_msg in &error_messages {
+            eprintln!("{}", error_msg);
+        }
+    }
+
+    // If we encountered errors and are not continuing on error, return an error
+    // Don't print a generic error message - the detailed list above shows what happened
+    if !continue_on_error && error_count > 0 {
+        return Err(CliError::ActionError(
+            crate::actions::CliActionError::IoError(std::io::Error::other(format!(
+                "Download completed with {} error(s). See detailed list above.",
+                error_count
+            ))),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Print download statistics summary
+fn print_download_summary(
+    success_count: usize,
+    error_count: usize,
+    total_assets: usize,
+    resume_flag: bool,
+    dest_dir: &std::path::PathBuf,
+) {
     println!("\n📊 Download Statistics Report");
     println!("===========================");
     println!("✅ Successfully downloaded: {}", success_count);
@@ -991,13 +1032,15 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         println!("❌ Failed downloads: 0");
     }
     println!("📁 Total assets processed: {}", total_assets);
-    println!("⏳ Operation completed successfully!");
+    if error_count > 0 {
+        println!("⏳ Operation completed with errors!");
+    } else {
+        println!("⏳ Operation completed successfully!");
+    }
     println!(
         "\n📁 Files downloaded to destination directory: {:?}",
         dest_dir
     );
-
-    Ok(())
 }
 
 /// Download thumbnails for all assets in a folder.
@@ -2147,12 +2190,7 @@ async fn download_asset_with_retry(
             {
                 Ok(content) => Ok(content),
                 Err(final_e) => {
-                    tracing::error!(
-                        "Asset download failed for '{}' (ID: {}) after retry: {}",
-                        asset_name,
-                        asset_id,
-                        final_e
-                    );
+                    // Don't log here - errors will be collected and printed at the end
                     Err(final_e)
                 }
             }

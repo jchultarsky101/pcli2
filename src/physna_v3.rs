@@ -3871,14 +3871,24 @@ impl PhysnaApiClient {
                 .unwrap_or_else(|_| "Unknown error response".to_string());
 
             // Enhanced error logging for debugging
+            // Don't log errors here - they will be collected and printed by the caller
+            // to avoid duplicate/corrupted output during multi-threaded operations
             if error_body.contains("error") || error_body.contains("message") {
                 // This appears to be a JSON error response from the API
-                error!(
+                // error!(
+                //     "Failed to download asset: {} - API returned error: {}",
+                //     asset_display, error_body
+                // );
+                debug!(
                     "Failed to download asset: {} - API returned error: {}",
                     asset_display, error_body
                 );
             } else {
-                error!(
+                // error!(
+                //     "Failed to download asset: {} - Status: {}, Response: {}",
+                //     asset_display, status, error_body
+                // );
+                debug!(
                     "Failed to download asset: {} - Status: {}, Response: {}",
                     asset_display, status, error_body
                 );

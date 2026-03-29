@@ -390,6 +390,132 @@ impl PhysnaApiClient {
         self.access_token.clone()
     }
 
+    /// Decode the expiration time from a JWT access token
+    ///
+    /// # Arguments
+    /// * `token` - The JWT access token to decode
+    ///
+    /// # Returns
+    /// * `Ok(i64)` - The expiration timestamp (Unix epoch seconds)
+    /// * `Err(ApiError)` - If the token cannot be decoded
+    fn decode_token_expiration(token: &str) -> Result<i64, ApiError> {
+        use base64::Engine;
+
+        // Split the JWT into its three parts: header.payload.signature
+        let parts: Vec<&str> = token.split('.').collect();
+        if parts.len() != 3 {
+            return Err(ApiError::AuthError(
+                "Invalid JWT format: token must have exactly 3 parts".to_string(),
+            ));
+        }
+
+        // Decode the payload (the middle part)
+        let payload = parts[1];
+
+        // Add padding if necessary (JWTs use base64url encoding without padding)
+        let mut padded_payload = payload.to_string();
+        match payload.len() % 4 {
+            2 => padded_payload.push_str("=="),
+            3 => padded_payload.push('='),
+            _ => {}
+        }
+
+        // Decode the base64url-encoded payload
+        let decoded_bytes = base64::engine::general_purpose::URL_SAFE
+            .decode(&padded_payload)
+            .map_err(|e| ApiError::AuthError(format!("Failed to decode token payload: {}", e)))?;
+
+        let payload_str = String::from_utf8_lossy(&decoded_bytes);
+
+        // Parse the JSON payload
+        let payload_json: serde_json::Value = serde_json::from_str(&payload_str).map_err(|e| {
+            ApiError::AuthError(format!("Failed to parse token payload JSON: {}", e))
+        })?;
+
+        // Extract the 'exp' claim (expiration time)
+        payload_json
+            .get("exp")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| {
+                ApiError::AuthError(
+                    "Token does not contain an 'exp' (expiration) claim".to_string(),
+                )
+            })
+    }
+
+    /// Check if the current access token is expired or about to expire within a threshold
+    ///
+    /// # Arguments
+    /// * `threshold_seconds` - The time threshold in seconds before expiration to consider the token as expiring soon
+    ///
+    /// # Returns
+    /// * `Ok(bool)` - true if the token is expired or will expire within the threshold, false otherwise
+    /// * `Err(ApiError)` - If there's no token or it cannot be decoded
+    pub fn is_token_expiring_soon(&self, threshold_seconds: u64) -> Result<bool, ApiError> {
+        let token = self
+            .access_token
+            .as_ref()
+            .ok_or_else(|| ApiError::AuthError("No access token available".to_string()))?;
+
+        let exp_timestamp = Self::decode_token_expiration(token)?;
+        let current_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| ApiError::AuthError(format!("Failed to get current time: {}", e)))?
+            .as_secs() as i64;
+
+        let time_remaining = exp_timestamp - current_timestamp;
+
+        // Token is expiring soon if time remaining is less than the threshold
+        Ok(time_remaining <= threshold_seconds as i64)
+    }
+
+    /// Get the time remaining until token expiration in seconds
+    ///
+    /// # Returns
+    /// * `Ok(i64)` - Seconds remaining until expiration (negative if expired)
+    /// * `Err(ApiError)` - If there's no token or it cannot be decoded
+    pub fn get_token_time_remaining(&self) -> Result<i64, ApiError> {
+        let token = self
+            .access_token
+            .as_ref()
+            .ok_or_else(|| ApiError::AuthError("No access token available".to_string()))?;
+
+        let exp_timestamp = Self::decode_token_expiration(token)?;
+        let current_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| ApiError::AuthError(format!("Failed to get current time: {}", e)))?
+            .as_secs() as i64;
+
+        Ok(exp_timestamp - current_timestamp)
+    }
+
+    /// Proactively refresh the token if it's about to expire
+    ///
+    /// This method checks if the token will expire within the given threshold and
+    /// refreshes it if necessary. This is useful for long-running operations.
+    ///
+    /// # Arguments
+    /// * `threshold_seconds` - The time threshold in seconds before expiration to trigger a refresh
+    ///
+    /// # Returns
+    /// * `Ok(bool)` - true if the token was refreshed, false if it's still valid
+    /// * `Err(ApiError)` - If the refresh failed or there's no token
+    pub async fn refresh_token_if_expiring_soon(
+        &mut self,
+        threshold_seconds: u64,
+    ) -> Result<bool, ApiError> {
+        if self.is_token_expiring_soon(threshold_seconds)? {
+            debug!(
+                "Token is expiring soon (within {} seconds), refreshing proactively",
+                threshold_seconds
+            );
+            self.refresh_token().await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Generic method to build and execute HTTP requests with automatic token refresh on 401/403 errors
     ///
     /// This method provides a unified interface for making HTTP requests to the Physna V3 API.

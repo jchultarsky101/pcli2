@@ -258,9 +258,33 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         }
     }
 
+    // Pre-flight token expiration check
+    // Estimate time per asset operation (conservative estimate: 5 seconds per asset)
+    const TIME_PER_ASSET_SECONDS: u64 = 5;
+    const SAFETY_MARGIN_SECONDS: u64 = 300; // 5 minute safety margin
+
+    let time_remaining = api.get_token_time_remaining().unwrap_or(0);
+    let estimated_time_needed = (asset_metadata_map.len() as u64) * TIME_PER_ASSET_SECONDS;
+
+    // Warn if token may expire during batch operation
+    if time_remaining > 0 && (time_remaining as u64) < estimated_time_needed + SAFETY_MARGIN_SECONDS
+    {
+        let time_remaining_min = time_remaining / 60;
+        eprintln!(
+            ":warning: Warning: Token expires in approximately {} minutes, but batch operation may take {} minutes",
+            time_remaining_min,
+            (estimated_time_needed / 60).max(1)
+        );
+        eprintln!("  Token will be refreshed automatically if needed during processing.");
+        eprintln!();
+    }
+
     // Process each asset with its metadata
     let total_assets = asset_metadata_map.len();
     let mut current_asset = 0;
+    let mut success_count = 0;
+    let mut failure_count = 0;
+    let mut auth_failure_occurred = false;
 
     for (asset_path, metadata) in &asset_metadata_map {
         if show_progress {
@@ -271,6 +295,18 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             );
         }
 
+        // Proactively refresh token if it's about to expire (within 2 minutes)
+        // This prevents token expiration mid-operation during long-running batches
+        const TOKEN_REFRESH_THRESHOLD_SECONDS: u64 = 120; // 2 minutes
+        if let Err(e) = api
+            .refresh_token_if_expiring_soon(TOKEN_REFRESH_THRESHOLD_SECONDS)
+            .await
+        {
+            // If we can't refresh the token, report the error but continue
+            // The individual API calls will also attempt refresh on 401/403
+            debug!("Proactive token refresh failed: {}", e);
+        }
+
         // Get the asset by the normalized path
         match api.get_asset_by_path(&tenant.uuid, asset_path).await {
             Ok(asset) => {
@@ -279,6 +315,30 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     .update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), metadata)
                     .await
                 {
+                    // Check if this is an authentication error - if so, stop processing
+                    // as subsequent operations will also fail
+                    let error_str = format!("{}", e);
+                    if error_str.contains("Authentication")
+                        || error_str.contains("unauthorized")
+                        || error_str.contains("forbidden")
+                    {
+                        auth_failure_occurred = true;
+                        error_utils::report_error_with_remediation(
+                            &format!(
+                                "Authentication failed while updating metadata for asset '{}': {}",
+                                asset_path, e
+                            ),
+                            &[
+                                "Your access token may have expired",
+                                "Try running 'pcli2 auth expiration' to check token status",
+                                "Re-authenticate with 'pcli2 auth login' and retry the batch operation",
+                            ],
+                        );
+                        failure_count += 1;
+                        break; // Stop processing on auth failure
+                    }
+
+                    // For non-auth errors, report and continue
                     error_utils::report_error_with_remediation(
                         &format!(
                             "Failed to update metadata for asset '{}': {}",
@@ -291,9 +351,34 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             "Confirm the asset hasn't been deleted or modified recently",
                         ],
                     );
+                    failure_count += 1;
+                } else {
+                    success_count += 1;
                 }
             }
-            Err(_e) => {
+            Err(e) => {
+                // Check if this is an authentication error
+                let error_str = format!("{}", e);
+                if error_str.contains("Authentication")
+                    || error_str.contains("unauthorized")
+                    || error_str.contains("forbidden")
+                {
+                    auth_failure_occurred = true;
+                    error_utils::report_error_with_remediation(
+                        &format!(
+                            "Authentication failed while looking up asset '{}': {}",
+                            asset_path, e
+                        ),
+                        &[
+                            "Your access token may have expired",
+                            "Try running 'pcli2 auth expiration' to check token status",
+                            "Re-authenticate with 'pcli2 auth login' and retry the batch operation",
+                        ],
+                    );
+                    failure_count += 1;
+                    break; // Stop processing on auth failure
+                }
+
                 error_utils::report_error_with_remediation(
                     &format!("Asset not found: '{}'", asset_path),
                     &[
@@ -304,12 +389,28 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                         "Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command"
                     ]
                 );
+                failure_count += 1;
             }
         }
     }
 
     if show_progress {
         eprintln!(); // New line after progress indicator
+    }
+
+    // Print summary if there were any failures or if progress was shown
+    if show_progress || failure_count > 0 {
+        eprintln!(
+            "Batch operation completed: {} successful, {} failed",
+            success_count, failure_count
+        );
+    }
+
+    // If an authentication failure occurred, return an error to indicate the batch didn't complete
+    if auth_failure_occurred {
+        return Err(CliError::SecurityError(
+            "Batch operation stopped due to authentication failure. Please re-authenticate and retry.".to_string(),
+        ));
     }
 
     // No output on success (per UNIX best practices)

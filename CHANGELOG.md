@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`asset metadata update-batch` token expiration handling** - Fixed issue where long-running batch operations would fail with authentication errors when the token expired mid-session
+  - Added pre-flight token expiration check that warns if token may expire during batch operation
+  - Added proactive token refresh before each asset is processed (refreshes if within 2 minutes of expiration)
+  - Authentication errors now properly detected and batch operation stops immediately with clear remediation steps
+  - Added success/failure summary at end of batch operation
+  - Affects `pcli2 asset metadata update-batch` and `pcli2 asset metadata create-batch` commands
+
 ## [1.1.3] - 2026-03-16
 
 ### Fixed

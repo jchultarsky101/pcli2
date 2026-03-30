@@ -163,7 +163,17 @@ pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
             "Resource not found. Please check the resource ID or path and try again.".to_string()
         }
     } else if error_str.contains("409") || error_str.to_lowercase().contains("conflict") {
-        "Operation conflict. The resource may already exist or be in use.".to_string()
+        // For 409 Conflict, provide a generic message
+        // But if the error also contains specific details, include them
+        if error_str.contains("400") || error_str.to_lowercase().contains("bad request") {
+            // This is actually a 400 error that was mislabeled - show the actual message
+            format!("Bad request. {}", error_str)
+        } else {
+            "Operation conflict. The resource may already exist or be in use.".to_string()
+        }
+    } else if error_str.contains("400") || error_str.to_lowercase().contains("bad request") {
+        // For 400 Bad Request, show the actual error message as it usually contains useful details
+        format!("Bad request. {}", error_str)
     } else if error_str.to_lowercase().contains("timeout") {
         "Request timeout. The server took too long to respond. Please try again.".to_string()
     } else if error_str.to_lowercase().contains("connection")

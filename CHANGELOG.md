@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Authentication errors now properly detected and batch operation stops immediately with clear remediation steps
   - Added success/failure summary at end of batch operation
   - Affects `pcli2 asset metadata update-batch` and `pcli2 asset metadata create-batch` commands
+- **`asset metadata create-batch` empty value handling** - Fixed issue where CSV files with empty metadata values would fail with confusing error messages
+  - Empty metadata values are now skipped during CSV parsing (API rejects empty strings)
+  - Added debug logging to show which empty values were skipped
+  - Improved error messages for 400 Bad Request errors to show actual API error instead of generic "Operation conflict"
+  - Affects `pcli2 asset metadata create-batch` and `pcli2 asset metadata update-batch` commands
 
 ## [1.1.3] - 2026-03-16
 

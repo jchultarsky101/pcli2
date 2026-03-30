@@ -232,6 +232,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     // Parse the CSV records
     let mut asset_metadata_map: HashMap<String, HashMap<String, serde_json::Value>> =
         HashMap::new();
+    let mut skipped_empty_count = 0;
 
     for result in reader.records() {
         let record: csv::StringRecord = result
@@ -241,6 +242,16 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             let asset_path: &str = record[0].trim();
             let metadata_name: &str = record[1].trim();
             let metadata_value: &str = record[2].trim();
+
+            // Skip empty metadata values - the API rejects empty strings
+            if metadata_value.is_empty() {
+                skipped_empty_count += 1;
+                debug!(
+                    "Skipping empty value for metadata field '{}' on asset '{}'",
+                    metadata_name, asset_path
+                );
+                continue;
+            }
 
             // Use the same conversion logic as individual metadata command (default to text type)
             let json_value = crate::metadata::convert_single_metadata_to_json_value(
@@ -256,6 +267,14 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 .or_default()
                 .insert(metadata_name.to_string(), json_value);
         }
+    }
+
+    // Report skipped empty values
+    if skipped_empty_count > 0 {
+        debug!(
+            "Skipped {} empty metadata values during CSV parsing",
+            skipped_empty_count
+        );
     }
 
     // Pre-flight token expiration check

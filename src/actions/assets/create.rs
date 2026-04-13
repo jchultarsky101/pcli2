@@ -63,7 +63,7 @@ fn convert_string_to_json_type(value: &str, _existing_type: Option<&str>) -> Val
     if value.is_empty() {
         return Value::Null;
     }
-    
+
     // Keep as string to avoid type conflicts
     // The API handles type validation and provides clear error messages
     Value::String(value.to_string())
@@ -308,7 +308,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     let time_remaining = api.get_token_time_remaining().unwrap_or(0);
     let estimated_time_needed = (raw_asset_metadata.len() as u64) * TIME_PER_ASSET_SECONDS;
 
-    if time_remaining > 0 && (time_remaining as u64) < estimated_time_needed + SAFETY_MARGIN_SECONDS {
+    if time_remaining > 0 && (time_remaining as u64) < estimated_time_needed + SAFETY_MARGIN_SECONDS
+    {
         let time_remaining_min = time_remaining / 60;
         eprintln!(
             ":warning: Warning: Token expires in approximately {} minutes, but batch operation may take {} minutes",
@@ -412,11 +413,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         if !fields_to_delete.is_empty() {
             let keys: Vec<&str> = fields_to_delete.iter().map(|s| s.as_str()).collect();
             if let Err(e) = api
-                .delete_asset_metadata(
-                    &tenant.uuid.to_string(),
-                    &asset.uuid().to_string(),
-                    keys,
-                )
+                .delete_asset_metadata(&tenant.uuid.to_string(), &asset.uuid().to_string(), keys)
                 .await
             {
                 let error_str = format!("{}", e);
@@ -457,7 +454,11 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         // Update fields with non-empty values
         if !asset_had_error && !typed_metadata.is_empty() {
             if let Err(e) = api
-                .update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), &typed_metadata)
+                .update_asset_metadata_with_registration(
+                    &tenant.uuid,
+                    &asset.uuid(),
+                    &typed_metadata,
+                )
                 .await
             {
                 let error_str = format!("{}", e);
@@ -493,7 +494,10 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     break;
                 } else {
                     error_utils::report_error_with_remediation(
-                        &format!("Failed to update metadata for asset '{}': {}", asset_path, e),
+                        &format!(
+                            "Failed to update metadata for asset '{}': {}",
+                            asset_path, e
+                        ),
                         &[
                             "Verify metadata field names and values are valid",
                             "Check that you have sufficient permissions to modify this asset",

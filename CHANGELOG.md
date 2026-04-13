@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-04-13
+
+### Changed
+- **`asset metadata create-batch` empty value now deletes the field** - Previously, empty values in the CSV were silently skipped. Now an empty VALUE column triggers deletion of that metadata field from the asset, enabling true round-trip workflows where exporting, clearing a value, and reimporting removes the field.
+  - The batch command now calls the dedicated delete API endpoint for empty-value rows before applying updates
+  - Authentication and other errors during the delete step are handled with the same retry/break logic as updates
+  - Affects `pcli2 asset metadata create-batch` command
+- **Smarter type detection for untyped metadata values** - `asset metadata create` (single-asset) now auto-infers boolean and numeric types when `--type` is omitted or set to an unknown value, reducing type-mismatch errors when a field is already registered as `boolean` or `number` in Physna.
+  - Recognises `true`/`false`/`yes`/`no` (case-insensitive) as booleans and integer/float strings as numbers
+  - Falls back to `text` with sanitization for everything else
+
 ## [1.1.6] - 2026-04-13
 
 ### Fixed

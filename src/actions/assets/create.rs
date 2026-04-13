@@ -16,15 +16,58 @@ use crate::{
     folder_hierarchy::FolderHierarchy,
     format::OutputFormatter,
     metadata::convert_single_metadata_to_json_value,
-    model::AssetList,
+    model::{Asset, AssetList},
     param_utils::get_format_parameter_value,
     param_utils::get_tenant,
     physna_v3::{PhysnaApiClient, TryDefault},
 };
 use clap::ArgMatches;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{debug, trace};
+
+/// Cache for asset metadata during batch processing to avoid repeated API calls
+struct AssetMetadataCache {
+    cache: HashMap<String, Asset>,
+}
+
+impl AssetMetadataCache {
+    fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<&Asset> {
+        self.cache.get(key)
+    }
+
+    fn insert(&mut self, key: String, asset: Asset) {
+        self.cache.insert(key, asset);
+    }
+}
+
+/// Convert a string value to JSON type
+/// For batch operations, we keep all values as strings to avoid type conflicts
+/// The API will validate and return clear errors if there's a type mismatch
+///
+/// # Arguments
+/// * `value` - The string value to convert
+/// * `_existing_type` - Optional existing field type (currently ignored)
+///
+/// # Returns
+/// JSON value (always String for safety)
+fn convert_string_to_json_type(value: &str, _existing_type: Option<&str>) -> Value {
+    // Handle empty string - represents "delete" operation
+    if value.is_empty() {
+        return Value::Null;
+    }
+    
+    // Keep as string to avoid type conflicts
+    // The API handles type validation and provides clear error messages
+    Value::String(value.to_string())
+}
 
 /// Create a single asset by uploading a file.
 ///
@@ -224,15 +267,13 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
-    // Read the CSV file
+    // Read the CSV file and store raw string values
+    // Structure: {asset_path: {metadata_name: raw_string_value}}
+    let mut raw_asset_metadata: HashMap<String, HashMap<String, String>> = HashMap::new();
+
     let file = std::fs::File::open(csv_file_path)
         .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
     let mut reader = csv::Reader::from_reader(file);
-
-    // Parse the CSV records
-    let mut asset_metadata_map: HashMap<String, HashMap<String, serde_json::Value>> =
-        HashMap::new();
-    let mut skipped_empty_count = 0;
 
     for result in reader.records() {
         let record: csv::StringRecord = result
@@ -243,51 +284,31 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             let metadata_name: &str = record[1].trim();
             let metadata_value: &str = record[2].trim();
 
-            // Skip empty metadata values - the API rejects empty strings
+            // Keep empty values - they mean "delete existing metadata"
             if metadata_value.is_empty() {
-                skipped_empty_count += 1;
                 debug!(
-                    "Skipping empty value for metadata field '{}' on asset '{}'",
+                    "Empty value for metadata field '{}' on asset '{}' (will delete existing)",
                     metadata_name, asset_path
                 );
-                continue;
             }
 
-            // Use the same conversion logic as individual metadata command (default to text type)
-            let json_value = crate::metadata::convert_single_metadata_to_json_value(
-                metadata_name, // name parameter (not used in function)
-                metadata_value,
-                "text", // default to text type since CSV doesn't specify type
-            );
-
-            // Group metadata by asset path (strip leading slash if present for consistency with asset paths in system)
+            // Group metadata by asset path (strip leading slash if present)
             let clean_asset_path = asset_path.strip_prefix('/').unwrap_or(asset_path);
-            asset_metadata_map
+            raw_asset_metadata
                 .entry(clean_asset_path.to_string())
                 .or_default()
-                .insert(metadata_name.to_string(), json_value);
+                .insert(metadata_name.to_string(), metadata_value.to_string());
         }
     }
 
-    // Report skipped empty values
-    if skipped_empty_count > 0 {
-        debug!(
-            "Skipped {} empty metadata values during CSV parsing",
-            skipped_empty_count
-        );
-    }
-
     // Pre-flight token expiration check
-    // Estimate time per asset operation (conservative estimate: 5 seconds per asset)
     const TIME_PER_ASSET_SECONDS: u64 = 5;
-    const SAFETY_MARGIN_SECONDS: u64 = 300; // 5 minute safety margin
+    const SAFETY_MARGIN_SECONDS: u64 = 300;
 
     let time_remaining = api.get_token_time_remaining().unwrap_or(0);
-    let estimated_time_needed = (asset_metadata_map.len() as u64) * TIME_PER_ASSET_SECONDS;
+    let estimated_time_needed = (raw_asset_metadata.len() as u64) * TIME_PER_ASSET_SECONDS;
 
-    // Warn if token may expire during batch operation
-    if time_remaining > 0 && (time_remaining as u64) < estimated_time_needed + SAFETY_MARGIN_SECONDS
-    {
+    if time_remaining > 0 && (time_remaining as u64) < estimated_time_needed + SAFETY_MARGIN_SECONDS {
         let time_remaining_min = time_remaining / 60;
         eprintln!(
             ":warning: Warning: Token expires in approximately {} minutes, but batch operation may take {} minutes",
@@ -298,14 +319,17 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         eprintln!();
     }
 
-    // Process each asset with its metadata
-    let total_assets = asset_metadata_map.len();
+    // Create in-memory cache for asset metadata to avoid repeated API calls
+    let mut asset_cache = AssetMetadataCache::new();
+
+    // Process each asset
+    let total_assets = raw_asset_metadata.len();
     let mut current_asset = 0;
     let mut success_count = 0;
     let mut failure_count = 0;
     let mut auth_failure_occurred = false;
 
-    for (asset_path, metadata) in &asset_metadata_map {
+    for (asset_path, raw_metadata) in &raw_asset_metadata {
         if show_progress {
             current_asset += 1;
             eprint!(
@@ -314,69 +338,87 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             );
         }
 
-        // Proactively refresh token if it's about to expire (within 2 minutes)
-        // This prevents token expiration mid-operation during long-running batches
-        const TOKEN_REFRESH_THRESHOLD_SECONDS: u64 = 120; // 2 minutes
+        // Proactively refresh token if expiring soon
+        const TOKEN_REFRESH_THRESHOLD_SECONDS: u64 = 120;
         if let Err(e) = api
             .refresh_token_if_expiring_soon(TOKEN_REFRESH_THRESHOLD_SECONDS)
             .await
         {
-            // If we can't refresh the token, report the error but continue
-            // The individual API calls will also attempt refresh on 401/403
             debug!("Proactive token refresh failed: {}", e);
         }
 
-        // Get the asset by the normalized path
-        match api.get_asset_by_path(&tenant.uuid, asset_path).await {
-            Ok(asset) => {
-                // Update the asset's metadata with automatic registration of new keys
-                if let Err(e) = api
-                    .update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), metadata)
-                    .await
-                {
-                    // Check if this is an authentication error - if so, stop processing
-                    // as subsequent operations will also fail
-                    let error_str = format!("{}", e);
-                    if error_str.contains("Authentication")
-                        || error_str.contains("unauthorized")
-                        || error_str.contains("forbidden")
-                    {
-                        auth_failure_occurred = true;
+        // Get the asset to read existing metadata types (use cache if available)
+        let asset = match asset_cache.get(asset_path) {
+            Some(cached) => cached.clone(),
+            None => {
+                match api.get_asset_by_path(&tenant.uuid, asset_path).await {
+                    Ok(asset) => {
+                        // Cache the asset for potential reuse
+                        asset_cache.insert(asset_path.clone(), asset.clone());
+                        asset
+                    }
+                    Err(e) => {
+                        let error_str = format!("{}", e);
+                        if error_str.contains("Authentication")
+                            || error_str.contains("unauthorized")
+                            || error_str.contains("forbidden")
+                        {
+                            auth_failure_occurred = true;
+                            error_utils::report_error_with_remediation(
+                                &format!("Authentication failed while looking up asset '{}': {}", asset_path, e),
+                                &[
+                                    "Your access token may have expired",
+                                    "Try running 'pcli2 auth expiration' to check token status",
+                                    "Re-authenticate with 'pcli2 auth login' and retry the batch operation",
+                                ],
+                            );
+                            failure_count += 1;
+                            break;
+                        }
+
                         error_utils::report_error_with_remediation(
-                            &format!(
-                                "Authentication failed while updating metadata for asset '{}': {}",
-                                asset_path, e
-                            ),
+                            &format!("Asset not found: '{}'", asset_path),
                             &[
-                                "Your access token may have expired",
-                                "Try running 'pcli2 auth expiration' to check token status",
-                                "Re-authenticate with 'pcli2 auth login' and retry the batch operation",
-                            ],
+                                "Verify the asset path in your CSV file matches the actual asset path in Physna",
+                                "Check that the asset hasn't been deleted from the system",
+                                "Verify you're using the correct tenant for this asset",
+                                "Check for path format mismatches (e.g., leading slash differences)",
+                                "Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command"
+                            ]
                         );
                         failure_count += 1;
-                        break; // Stop processing on auth failure
+                        continue;
                     }
-
-                    // For non-auth errors, report and continue
-                    error_utils::report_error_with_remediation(
-                        &format!(
-                            "Failed to update metadata for asset '{}': {}",
-                            asset_path, e
-                        ),
-                        &[
-                            "Verify metadata field names and values are valid",
-                            "Check that you have sufficient permissions to modify this asset",
-                            "Verify your network connectivity",
-                            "Confirm the asset hasn't been deleted or modified recently",
-                        ],
-                    );
-                    failure_count += 1;
-                } else {
-                    success_count += 1;
                 }
             }
-            Err(e) => {
-                // Check if this is an authentication error
+        };
+
+        // Split into fields to delete (empty value) and fields to update (non-empty value)
+        let mut fields_to_delete: Vec<String> = Vec::new();
+        let mut typed_metadata: HashMap<String, serde_json::Value> = HashMap::new();
+
+        for (field_name, raw_value) in raw_metadata {
+            let json_value = convert_string_to_json_type(raw_value, None);
+            if json_value.is_null() {
+                fields_to_delete.push(field_name.clone());
+            } else {
+                typed_metadata.insert(field_name.clone(), json_value);
+            }
+        }
+
+        let mut asset_had_error = false;
+
+        // Delete fields with empty values
+        if !fields_to_delete.is_empty() {
+            let keys: Vec<&str> = fields_to_delete.iter().map(|s| s.as_str()).collect();
+            if let Err(e) = api
+                .delete_asset_metadata(
+                    &tenant.uuid.to_string(),
+                    &asset.uuid().to_string(),
+                    keys,
+                )
+                .await
+            {
                 let error_str = format!("{}", e);
                 if error_str.contains("Authentication")
                     || error_str.contains("unauthorized")
@@ -385,7 +427,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     auth_failure_occurred = true;
                     error_utils::report_error_with_remediation(
                         &format!(
-                            "Authentication failed while looking up asset '{}': {}",
+                            "Authentication failed while deleting metadata for asset '{}': {}",
                             asset_path, e
                         ),
                         &[
@@ -395,29 +437,85 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                         ],
                     );
                     failure_count += 1;
-                    break; // Stop processing on auth failure
+                    break;
                 }
-
                 error_utils::report_error_with_remediation(
-                    &format!("Asset not found: '{}'", asset_path),
+                    &format!(
+                        "Failed to delete metadata fields for asset '{}': {}",
+                        asset_path, e
+                    ),
                     &[
-                        "Verify the asset path in your CSV file matches the actual asset path in Physna",
-                        "Check that the asset hasn't been deleted from the system",
-                        "Verify you're using the correct tenant for this asset",
-                        "Check for path format mismatches (e.g., leading slash differences)",
-                        "Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command"
-                    ]
+                        "Verify the metadata field names exist on this asset",
+                        "Check that you have sufficient permissions to modify this asset",
+                    ],
                 );
                 failure_count += 1;
+                asset_had_error = true;
             }
+        }
+
+        // Update fields with non-empty values
+        if !asset_had_error && !typed_metadata.is_empty() {
+            if let Err(e) = api
+                .update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), &typed_metadata)
+                .await
+            {
+                let error_str = format!("{}", e);
+
+                if error_str.contains("must be a") || error_str.contains("Metadata type mismatch") {
+                    error_utils::report_error_with_remediation(
+                        &format!("Type conflict for asset '{}': {}", asset_path, e),
+                        &[
+                            "The metadata field already exists with a different type",
+                            "Delete the existing field first if you need to change its type",
+                            "Or provide a value that matches the existing field type",
+                        ],
+                    );
+                    failure_count += 1;
+                    asset_had_error = true;
+                } else if error_str.contains("Authentication")
+                    || error_str.contains("unauthorized")
+                    || error_str.contains("forbidden")
+                {
+                    auth_failure_occurred = true;
+                    error_utils::report_error_with_remediation(
+                        &format!(
+                            "Authentication failed while updating metadata for asset '{}': {}",
+                            asset_path, e
+                        ),
+                        &[
+                            "Your access token may have expired",
+                            "Try running 'pcli2 auth expiration' to check token status",
+                            "Re-authenticate with 'pcli2 auth login' and retry the batch operation",
+                        ],
+                    );
+                    failure_count += 1;
+                    break;
+                } else {
+                    error_utils::report_error_with_remediation(
+                        &format!("Failed to update metadata for asset '{}': {}", asset_path, e),
+                        &[
+                            "Verify metadata field names and values are valid",
+                            "Check that you have sufficient permissions to modify this asset",
+                            "Verify your network connectivity",
+                            "Confirm the asset hasn't been deleted or modified recently",
+                        ],
+                    );
+                    failure_count += 1;
+                    asset_had_error = true;
+                }
+            }
+        }
+
+        if !asset_had_error {
+            success_count += 1;
         }
     }
 
     if show_progress {
-        eprintln!(); // New line after progress indicator
+        eprintln!();
     }
 
-    // Print summary if there were any failures or if progress was shown
     if show_progress || failure_count > 0 {
         eprintln!(
             "Batch operation completed: {} successful, {} failed",
@@ -425,14 +523,12 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         );
     }
 
-    // If an authentication failure occurred, return an error to indicate the batch didn't complete
     if auth_failure_occurred {
         return Err(CliError::SecurityError(
             "Batch operation stopped due to authentication failure. Please re-authenticate and retry.".to_string(),
         ));
     }
 
-    // No output on success (per UNIX best practices)
     Ok(())
 }
 

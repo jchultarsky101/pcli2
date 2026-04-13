@@ -73,7 +73,7 @@ The CSV format specifications:
 - **Header Row**: Must contain exactly `ASSET_PATH,NAME,VALUE` in that order
 - **ASSET_PATH**: Full path to the asset in Physna (e.g., `/Root/Folder/Model.stl`)
 - **NAME**: Name of the metadata field to set
-- **VALUE**: Value to assign to the metadata field
+- **VALUE**: Value to assign to the metadata field. Leave empty to **delete** the field from the asset
 - **File Encoding**: Must be UTF-8 encoded
 - **Quoting**: Values containing commas, quotes, or newlines must be enclosed in double quotes
 - **Escaping**: Double quotes within values must be escaped by doubling them (e.g., `"15.5"" diameter"`)
@@ -86,7 +86,19 @@ The CSV format specifications:
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
 ```
 
-**Note:** The `create-batch` command processes each row as a single metadata field assignment for an asset. Multiple rows with the same ASSET_PATH will update multiple metadata fields for that asset in a single API call.
+**Deleting metadata fields via CSV:**
+
+Leave the VALUE column empty to remove a metadata field from an asset:
+
+```csv
+ASSET_PATH,NAME,VALUE
+/Root/Folder/Model1.stl,ObsoleteField,
+/Root/Folder/Model1.stl,Material,Steel
+```
+
+In the example above, `ObsoleteField` is deleted and `Material` is set to `Steel` in a single pass.
+
+**Note:** The `create-batch` command groups all rows by asset path, then issues deletes (empty values) followed by updates (non-empty values) per asset in one batch. Multiple rows with the same ASSET_PATH are combined into a single API interaction.
 
 ## Advanced Metadata Workflow: Export, Modify, Reimport
 
@@ -104,6 +116,7 @@ One of the most powerful features of PCLI2 is the ability to export metadata, mo
 2. **Modify Metadata Externally**:
    - Open the CSV file in a spreadsheet application (Excel, Google Sheets, etc.)
    - Make the desired changes to metadata values
+   - To **delete** a field, clear its VALUE cell (leave it blank)
    - Save the file in CSV format
 
 3. **Reimport Modified Metadata**:

@@ -163,7 +163,7 @@ pub fn convert_single_metadata_to_json_value(
         _ => {
             // Default to text/string type, but intelligently detect booleans and numbers
             // This helps when the API field is already defined as boolean/number but CSV doesn't specify type
-            
+
             // First, check for boolean values (case-insensitive)
             let lower_value = value.to_lowercase();
             if lower_value == "true" || lower_value == "yes" {
@@ -172,7 +172,7 @@ pub fn convert_single_metadata_to_json_value(
             if lower_value == "false" || lower_value == "no" {
                 return serde_json::Value::Bool(false);
             }
-            
+
             // Then, check for numeric values
             if let Ok(int_val) = value.parse::<i64>() {
                 return serde_json::Value::Number(serde_json::Number::from(int_val));
@@ -185,7 +185,7 @@ pub fn convert_single_metadata_to_json_value(
                     return serde_json::Value::Number(num);
                 }
             }
-            
+
             // Default to text/string type, with sanitization
             let sanitized_value = sanitize_metadata_value(value);
             serde_json::Value::String(sanitized_value)

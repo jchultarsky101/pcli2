@@ -262,7 +262,6 @@ impl FolderCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn test_folder_cache_get_cache_dir() {

@@ -282,18 +282,11 @@ mod tests {
 
     #[test]
     fn test_folder_cache_invalidate_nonexistent() {
-        // Test that we can invalidate a cache file that doesn't exist
-        let temp_dir = TempDir::new().unwrap();
-
-        // Temporarily override the cache directory
-        std::env::set_var("PCLI2_TEST_CACHE_DIR", temp_dir.path());
-
-        // This should not panic or return an error
-        let result = FolderCache::invalidate("nonexistent-tenant");
+        // Test that we can invalidate a cache file that doesn't exist.
+        // No need to override the cache dir — invalidate() only removes a file
+        // if it exists, so it returns Ok(()) regardless of where the cache lives.
+        let result = FolderCache::invalidate("nonexistent-tenant-xyzzy-404");
         assert!(result.is_ok());
-
-        // Clean up
-        std::env::remove_var("PCLI2_TEST_CACHE_DIR");
     }
 
     #[test]

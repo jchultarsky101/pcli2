@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-04-13
+
 ### Fixed
 - **Root folder path `"/"` resolution** - Fixed `FolderNotFound` error when specifying `--folder-path "/"` for commands such as `asset list`
   - `FolderHierarchy::get_folder_by_path` intentionally returns `None` for `"/"` (root is not a single node), but the caller was treating `None` as "not found"

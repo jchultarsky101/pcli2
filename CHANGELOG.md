@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-04-13
+
 ### Fixed
+- **Root folder path `"/"` resolution** - Fixed `FolderNotFound` error when specifying `--folder-path "/"` for commands such as `asset list`
+  - `FolderHierarchy::get_folder_by_path` intentionally returns `None` for `"/"` (root is not a single node), but the caller was treating `None` as "not found"
+  - Non-recursive `asset list --folder-path "/"` now correctly lists root-level assets (equivalent to omitting `--folder-path`)
+  - Recursive `asset list --folder-path "/" --recursive` now correctly traverses all folders
+  - Affects `pcli2 asset list` command
 - **`asset metadata update-batch` token expiration handling** - Fixed issue where long-running batch operations would fail with authentication errors when the token expired mid-session
   - Added pre-flight token expiration check that warns if token may expire during batch operation
   - Added proactive token refresh before each asset is processed (refreshes if within 2 minutes of expiration)

@@ -66,33 +66,41 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
         if is_recursive {
             // Recursively list assets in the folder and all subfolders
-            // First verify the folder exists
-            let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+            // Root path "/" is always valid; only check existence for non-root paths
+            if path != "/" {
+                let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
 
-            if hierarchy.get_node_by_path(&path).is_none() {
-                // Path not found - check for similar paths
-                let suggestions = find_similar_paths(&hierarchy, &path);
+                if hierarchy.get_node_by_path(&path).is_none() {
+                    // Path not found - check for similar paths
+                    let suggestions = find_similar_paths(&hierarchy, &path);
 
-                let suggestion_message = if suggestions.is_empty() {
-                    String::new()
-                } else if suggestions.len() == 1 {
-                    format!("\n\nDid you mean: {}", suggestions[0])
-                } else {
-                    format!(
-                        "\n\nDid you mean one of:\n  {}",
-                        suggestions
-                            .iter()
-                            .map(|s| format!("• {}", s))
-                            .collect::<Vec<_>>()
-                            .join("\n  ")
-                    )
-                };
+                    let suggestion_message = if suggestions.is_empty() {
+                        String::new()
+                    } else if suggestions.len() == 1 {
+                        format!("\n\nDid you mean: {}", suggestions[0])
+                    } else {
+                        format!(
+                            "\n\nDid you mean one of:\n  {}",
+                            suggestions
+                                .iter()
+                                .map(|s| format!("• {}", s))
+                                .collect::<Vec<_>>()
+                                .join("\n  ")
+                        )
+                    };
 
-                return Err(CliError::FolderNotFound(path, suggestion_message));
+                    return Err(CliError::FolderNotFound(path, suggestion_message));
+                }
             }
 
             let all_assets = list_assets_recursively(&mut api, &tenant.uuid, &path).await?;
             println!("{}", all_assets.format(format)?);
+        } else if path == "/" {
+            // Root path - list assets at the root level (no parent folder)
+            let assets = api
+                .list_assets_by_parent_folder_uuid(&tenant.uuid, None)
+                .await?;
+            println!("{}", assets.format(format)?);
         } else {
             // First verify the folder exists by building the hierarchy
             let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;

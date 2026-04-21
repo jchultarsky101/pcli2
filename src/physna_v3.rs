@@ -3826,26 +3826,24 @@ impl PhysnaApiClient {
                 Err(e) => {
                     // If we get a 404, it might mean there are no assets with that state
                     match &e {
-                        ApiError::HttpError(reqwest_err) => {
-                            if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                                debug!(
-                                    "No assets found with state: {} for tenant: {}",
-                                    state, tenant_uuid
-                                );
-                                // Return an empty response instead of an error
-                                AssetListResponse {
-                                    assets: vec![],
-                                    page_data: crate::model::PageData {
-                                        current_page: page,
-                                        per_page,
-                                        total: 0,
-                                        last_page: 1,
-                                        start_index: 0,
-                                        end_index: 0,
-                                    },
-                                }
-                            } else {
-                                return Err(e);
+                        ApiError::HttpError(reqwest_err)
+                            if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) =>
+                        {
+                            debug!(
+                                "No assets found with state: {} for tenant: {}",
+                                state, tenant_uuid
+                            );
+                            // Return an empty response instead of an error
+                            AssetListResponse {
+                                assets: vec![],
+                                page_data: crate::model::PageData {
+                                    current_page: page,
+                                    per_page,
+                                    total: 0,
+                                    last_page: 1,
+                                    start_index: 0,
+                                    end_index: 0,
+                                },
                             }
                         }
                         _ => return Err(e),

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-04-21
+
+### Added
+- **`--continue-on-error` flag for `asset metadata create-batch`** - Allows the batch to skip rows whose asset path cannot be resolved and continue processing remaining rows. Mirrors the flag already available on `folder download`, `folder upload`, and `folder thumbnail` commands.
+  - Reuses the shared `continue_on_error_parameter()` helper in `commands::params` for consistency across commands
+  - Affects `pcli2 asset metadata create-batch` (and its `update-batch` alias)
+
+### Changed
+- **`asset metadata create-batch` default error behavior** - By default, any error (unresolvable asset path or failed metadata API call) now terminates the batch with a summary of successes and failures printed to stderr. Previously, asset-path lookup failures and metadata API errors were logged but the batch silently continued.
+  - Pass `--continue-on-error` to skip unresolvable asset paths and continue with the remaining rows
+  - Metadata API errors (delete/update) always terminate execution regardless of the flag, because the API layer already retries transient HTTP failures internally
+  - CSV parsing errors continue to terminate execution immediately, as before
+  - Authentication failures continue to terminate execution with a remediation message, as before
+  - Affects `pcli2 asset metadata create-batch` command
+
 ## [1.1.7] - 2026-04-13
 
 ### Changed

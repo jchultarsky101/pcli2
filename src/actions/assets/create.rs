@@ -501,8 +501,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     break;
                 }
 
-                if error_str.contains("must be a") || error_str.contains("Metadata type mismatch")
-                {
+                if error_str.contains("must be a") || error_str.contains("Metadata type mismatch") {
                     error_utils::report_error_with_remediation(
                         &format!("Type conflict for asset '{}': {}", asset_path, e),
                         &[

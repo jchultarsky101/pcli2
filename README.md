@@ -316,6 +316,9 @@ pcli2 folder download --folder-path "/Root/Folder/" --delay 2
 # Continue on errors
 pcli2 folder download --folder-path "/Root/Folder/" --continue-on-error
 
+# Continue past unresolvable asset paths in a metadata batch
+pcli2 asset metadata create-batch --csv-file "metadata.csv" --continue-on-error
+
 # Download thumbnails for all assets in a folder
 pcli2 folder thumbnail --folder-path "/Root/Folder/" --progress --concurrent 3
 ```
@@ -605,6 +608,10 @@ ASSET_PATH,NAME,VALUE
 - Empty rows will be ignored
 - Each row represents a single metadata field assignment for an asset
 - If an asset has multiple metadata fields to update, include multiple rows with the same `ASSET_PATH` but different `NAME` and `VALUE` combinations
+
+**Error Handling**:
+
+By default, the batch stops on the first error and reports how many assets were processed successfully. Pass `--continue-on-error` to skip rows whose `ASSET_PATH` cannot be resolved and continue with the remaining assets. Metadata API failures (e.g. a failed update for a resolved asset) always terminate the batch regardless of the flag, because the API layer already retries transient HTTP failures internally.
 
 ### Folder Commands
 

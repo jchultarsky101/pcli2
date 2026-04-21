@@ -157,18 +157,26 @@ PCLI2 supports three metadata field types:
 
 ## Error Handling
 
-The metadata operations are designed to be resilient:
-- Continues processing even if individual asset operations fail
-- Provides detailed error messages for troubleshooting
-- Automatically handles network failures with retries
-- Validates input formats before processing
+Metadata operations provide detailed error messages, retry transient network failures internally, and validate input formats before processing.
 
-Common error scenarios and their handling:
-- **Missing assets**: Command skips missing assets with appropriate warnings
-- **Network failures**: Individual operations retry, overall process continues
-- **Permission issues**: Skips inaccessible assets with warning messages
-- **Invalid metadata**: Logs error but continues processing other assets
-- **API rate limits**: Respects rate limits and waits before retrying
+### `create-batch` Error Behavior
+
+By default, `asset metadata create-batch` **stops on the first error** and prints a summary of how many assets were processed successfully. This makes failures visible instead of letting a batch silently complete with partial results.
+
+Specifically:
+
+- **CSV parsing errors**: always terminate immediately — the input file is expected to be well-formed
+- **Unresolvable asset paths** (asset not found): by default, terminates the batch. Pass `--continue-on-error` to skip the failing asset and continue with the remaining rows
+- **Metadata API failures** (delete/update): always terminate the batch, regardless of `--continue-on-error`. The API layer already retries transient HTTP failures, so a surfaced failure usually indicates a persistent problem (permissions, type conflict, etc.) that is likely to affect subsequent calls as well
+- **Authentication failures**: always terminate with a remediation message directing the user to re-authenticate
+
+**Example — skip unresolvable asset paths:**
+
+```bash
+pcli2 asset metadata create-batch --csv-file "metadata.csv" --continue-on-error
+```
+
+On completion (or termination), a summary is printed to stderr showing the number of successful and failed assets.
 
 ## Performance Considerations
 

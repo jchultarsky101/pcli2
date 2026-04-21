@@ -7,8 +7,8 @@ use crate::{
     actions::folders::resolve_folder_uuid_by_path,
     actions::CliActionError,
     commands::params::{
-        PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID,
-        PARAMETER_PATH, PARAMETER_UUID,
+        PARAMETER_CONTINUE_ON_ERROR, PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH,
+        PARAMETER_FOLDER_UUID, PARAMETER_PATH, PARAMETER_UUID,
     },
     configuration::Configuration,
     error::CliError,
@@ -262,6 +262,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         .ok_or(CliError::MissingRequiredArgument("csv-file".to_string()))?;
 
     let show_progress = sub_matches.get_flag("progress");
+    let continue_on_error = sub_matches.get_flag(PARAMETER_CONTINUE_ON_ERROR);
 
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
@@ -388,7 +389,19 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             ]
                         );
                         failure_count += 1;
-                        continue;
+
+                        if continue_on_error {
+                            continue;
+                        }
+
+                        if show_progress {
+                            eprintln!();
+                        }
+                        eprintln!(
+                            "Batch operation stopped: {} successful, {} failed (use --continue-on-error to skip unresolvable asset paths)",
+                            success_count, failure_count
+                        );
+                        return Err(CliError::PhysnaExtendedApiError(e));
                     }
                 }
             }
@@ -406,8 +419,6 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 typed_metadata.insert(field_name.clone(), json_value);
             }
         }
-
-        let mut asset_had_error = false;
 
         // Delete fields with empty values
         if !fields_to_delete.is_empty() {
@@ -447,12 +458,19 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     ],
                 );
                 failure_count += 1;
-                asset_had_error = true;
+                if show_progress {
+                    eprintln!();
+                }
+                eprintln!(
+                    "Batch operation stopped: {} successful, {} failed",
+                    success_count, failure_count
+                );
+                return Err(CliError::PhysnaExtendedApiError(e));
             }
         }
 
         // Update fields with non-empty values
-        if !asset_had_error && !typed_metadata.is_empty() {
+        if !typed_metadata.is_empty() {
             if let Err(e) = api
                 .update_asset_metadata_with_registration(
                     &tenant.uuid,
@@ -463,18 +481,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             {
                 let error_str = format!("{}", e);
 
-                if error_str.contains("must be a") || error_str.contains("Metadata type mismatch") {
-                    error_utils::report_error_with_remediation(
-                        &format!("Type conflict for asset '{}': {}", asset_path, e),
-                        &[
-                            "The metadata field already exists with a different type",
-                            "Delete the existing field first if you need to change its type",
-                            "Or provide a value that matches the existing field type",
-                        ],
-                    );
-                    failure_count += 1;
-                    asset_had_error = true;
-                } else if error_str.contains("Authentication")
+                if error_str.contains("Authentication")
                     || error_str.contains("unauthorized")
                     || error_str.contains("forbidden")
                 {
@@ -492,6 +499,17 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     );
                     failure_count += 1;
                     break;
+                }
+
+                if error_str.contains("must be a") || error_str.contains("Metadata type mismatch") {
+                    error_utils::report_error_with_remediation(
+                        &format!("Type conflict for asset '{}': {}", asset_path, e),
+                        &[
+                            "The metadata field already exists with a different type",
+                            "Delete the existing field first if you need to change its type",
+                            "Or provide a value that matches the existing field type",
+                        ],
+                    );
                 } else {
                     error_utils::report_error_with_remediation(
                         &format!(
@@ -505,15 +523,20 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             "Confirm the asset hasn't been deleted or modified recently",
                         ],
                     );
-                    failure_count += 1;
-                    asset_had_error = true;
                 }
+                failure_count += 1;
+                if show_progress {
+                    eprintln!();
+                }
+                eprintln!(
+                    "Batch operation stopped: {} successful, {} failed",
+                    success_count, failure_count
+                );
+                return Err(CliError::PhysnaExtendedApiError(e));
             }
         }
 
-        if !asset_had_error {
-            success_count += 1;
-        }
+        success_count += 1;
     }
 
     if show_progress {

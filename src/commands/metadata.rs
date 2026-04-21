@@ -3,9 +3,10 @@
 //! This module defines CLI commands related to asset metadata management.
 
 use crate::commands::params::{
-    format_parameter, format_pretty_parameter, format_with_headers_parameter,
-    format_with_metadata_parameter, path_parameter, tenant_parameter, uuid_parameter,
-    COMMAND_CREATE, COMMAND_DELETE, COMMAND_GET, COMMAND_METADATA,
+    continue_on_error_parameter, format_parameter, format_pretty_parameter,
+    format_with_headers_parameter, format_with_metadata_parameter, path_parameter,
+    tenant_parameter, uuid_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_GET,
+    COMMAND_METADATA,
 };
 use clap::{Arg, ArgAction, ArgGroup, Command};
 
@@ -119,7 +120,13 @@ pub fn metadata_command() -> Command {
                     folder/subfolder/asset1.stl,Weight,\"15.5 kg\"\n\
                     folder/subfolder/asset2.ipt,Material,Aluminum\n\n\
                     The command will group metadata by asset path and update all metadata \
-                    for each asset in a single API call."
+                    for each asset in a single API call.\n\n\
+                    By default, any error (such as an asset path that cannot be resolved \
+                    or a failed metadata API call) terminates the batch operation. \
+                    Pass --continue-on-error to skip assets whose paths cannot be resolved \
+                    and continue with the remaining rows. Metadata API errors always \
+                    terminate execution regardless of this flag, because the API already \
+                    retries transient failures internally."
                 )
                 .arg(tenant_parameter())
                 .arg(
@@ -136,7 +143,8 @@ pub fn metadata_command() -> Command {
                         .action(ArgAction::SetTrue)
                         .required(false)
                         .help("Display progress bar during processing"),
-                ),
+                )
+                .arg(continue_on_error_parameter()),
         )
         .subcommand(
             Command::new("inference")

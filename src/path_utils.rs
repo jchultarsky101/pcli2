@@ -38,7 +38,7 @@ pub fn find_similar_paths(hierarchy: &FolderHierarchy, target_path: &str) -> Vec
     }
 
     // Sort by similarity (highest first) and return top suggestions
-    suggestions.sort_by(|a, b| b.1.cmp(&a.1));
+    suggestions.sort_by_key(|s| std::cmp::Reverse(s.1));
     suggestions
         .into_iter()
         .take(3)

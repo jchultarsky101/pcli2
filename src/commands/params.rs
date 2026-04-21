@@ -413,7 +413,7 @@ pub fn continue_on_error_parameter() -> Arg {
         .long(PARAMETER_CONTINUE_ON_ERROR)
         .action(ArgAction::SetTrue)
         .required(false)
-        .help("Continue downloading other assets if one fails")
+        .help("Continue processing remaining items when a recoverable error occurs")
 }
 
 /// Create the delay parameter.

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-05-07
+
+### Added
+- **`--override` flag for `asset create`** - When uploading an asset that already exists at the target path, automatically delete the existing asset and re-upload the new version in its place. Without this flag, the command continues to fail with a conflict error as before.
+  - Only triggers on HTTP 409 (asset already exists); other errors are unaffected
+  - Affects `pcli2 asset create` (and its `upload` alias)
+
 ## [1.1.8] - 2026-04-21
 
 ### Added

@@ -2335,6 +2335,18 @@ impl PhysnaApiClient {
         asset_path: &String,
         folder_uuid: &Uuid,
     ) -> Result<crate::model::Asset, ApiError> {
+        self.create_asset_with_metadata(tenant_uuid, file_path, asset_path, folder_uuid, None)
+            .await
+    }
+
+    pub async fn create_asset_with_metadata(
+        &mut self,
+        tenant_uuid: &Uuid,
+        file_path: &Path,
+        asset_path: &String,
+        folder_uuid: &Uuid,
+        metadata: Option<&std::collections::HashMap<String, serde_json::Value>>,
+    ) -> Result<crate::model::Asset, ApiError> {
         trace!("Creating new asset by uploading a file...");
 
         let url = format!("{}/tenants/{}/assets", self.base_url, tenant_uuid);
@@ -2350,6 +2362,10 @@ impl PhysnaApiClient {
             .unwrap()
             .to_string_lossy()
             .into_owned(); // It is save to unwrap because we already confired the file exists
+
+        let metadata_json = metadata
+            .map(|m| serde_json::to_string(m).unwrap_or_default())
+            .unwrap_or_default();
 
         trace!(
             "Uploading file: {}, with full path: {}",
@@ -2375,7 +2391,7 @@ impl PhysnaApiClient {
         let form = reqwest::multipart::Form::new()
             .part("file", file_part)
             .text("path", asset_path.clone()) // Full asset path including folder structure
-            .text("metadata", "") // Empty metadata
+            .text("metadata", metadata_json.clone())
             .text("createMissingFolders", "true"); // Enable creating missing folders
 
         debug!("Creating asset with path: {}", asset_path);
@@ -2425,7 +2441,7 @@ impl PhysnaApiClient {
             let mut retry_form = reqwest::multipart::Form::new()
                 .part("file", retry_file_part)
                 .text("path", asset_path.clone()) // Use the full asset path including folder
-                .text("metadata", "") // Empty metadata as in the working example
+                .text("metadata", metadata_json.clone())
                 .text("createMissingFolders", ""); // Empty createMissingFolders as in the working example
 
             // Add folder ID if provided

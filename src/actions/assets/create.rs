@@ -170,11 +170,8 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 asset_path
             );
             let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await?;
-            api.delete_asset(
-                &tenant.uuid.to_string(),
-                &existing.uuid().to_string(),
-            )
-            .await?;
+            api.delete_asset(&tenant.uuid.to_string(), &existing.uuid().to_string())
+                .await?;
             api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
                 .await?
         }

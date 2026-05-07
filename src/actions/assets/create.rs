@@ -8,7 +8,8 @@ use crate::{
     actions::CliActionError,
     commands::params::{
         PARAMETER_CONTINUE_ON_ERROR, PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH,
-        PARAMETER_FOLDER_UUID, PARAMETER_OVERRIDE, PARAMETER_PATH, PARAMETER_UUID,
+        PARAMETER_FOLDER_UUID, PARAMETER_OVERRIDE, PARAMETER_PATH, PARAMETER_RESTORE_METADATA,
+        PARAMETER_UUID,
     },
     configuration::Configuration,
     error::CliError,
@@ -19,7 +20,7 @@ use crate::{
     model::{Asset, AssetList},
     param_utils::get_format_parameter_value,
     param_utils::get_tenant,
-    physna_v3::{ApiError, PhysnaApiClient, TryDefault},
+    physna_v3::{PhysnaApiClient, TryDefault},
 };
 use clap::ArgMatches;
 use serde_json::Value;
@@ -156,26 +157,57 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     debug!("Creating asset with path: {}", asset_path);
 
     let override_flag = sub_matches.get_flag(PARAMETER_OVERRIDE);
+    let restore_metadata = sub_matches.get_flag(PARAMETER_RESTORE_METADATA);
 
-    let asset = match api
-        .create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
-        .await
-    {
-        Ok(asset) => asset,
-        Err(ApiError::ConflictError(ref msg))
-            if override_flag && msg.contains("Asset already exists") =>
-        {
+    let asset = if override_flag {
+        let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await.ok();
+
+        if let Some(existing) = existing {
             debug!(
                 "Asset already exists at path '{}', --override specified, deleting and re-uploading",
                 asset_path
             );
-            let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await?;
+
+            let saved_metadata = if restore_metadata {
+                let metadata: HashMap<String, serde_json::Value> = existing
+                    .metadata()
+                    .map(|m| {
+                        m.keys()
+                            .filter_map(|k| {
+                                m.get(k)
+                                    .map(|v| (k.clone(), serde_json::Value::String(v.clone())))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if metadata.is_empty() {
+                    debug!("No metadata found on existing asset to restore");
+                    None
+                } else {
+                    debug!("Saved {} metadata fields for restoration", metadata.len());
+                    Some(metadata)
+                }
+            } else {
+                None
+            };
+
             api.delete_asset(&tenant.uuid.to_string(), &existing.uuid().to_string())
                 .await?;
+            api.create_asset_with_metadata(
+                &tenant.uuid,
+                file_path,
+                &asset_path,
+                &folder_uuid,
+                saved_metadata.as_ref(),
+            )
+            .await?
+        } else {
             api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
                 .await?
         }
-        Err(e) => return Err(e.into()),
+    } else {
+        api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
+            .await?
     };
 
     println!("{}", asset.format(format)?);

@@ -81,7 +81,13 @@ The `asset create` command uploads individual files to your Physna tenant, placi
 
 ```bash
 # Upload a single asset
-pcli2 asset create --file path/to/my/model.stl --path /Root/MyFolder/
+pcli2 asset create --file path/to/my/model.stl --folder-path /Root/MyFolder/
+
+# Replace an existing asset (deletes the old one first)
+pcli2 asset create --file path/to/my/model.stl --folder-path /Root/MyFolder/ --override
+
+# Replace an existing asset and keep its metadata
+pcli2 asset create --file path/to/my/model.stl --folder-path /Root/MyFolder/ --override --restore-metadata
 ```
 
 For bulk operations, `asset create-batch` allows you to upload multiple files at once using glob patterns:

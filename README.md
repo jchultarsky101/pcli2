@@ -235,7 +235,13 @@ Upload, download, and manage assets:
 
 ```bash
 # Upload a single asset
-pcli2 asset create --file path/to/model.stl --path "/Root/Models/"
+pcli2 asset create --file path/to/model.stl --folder-path "/Root/Models/"
+
+# Replace an existing asset (delete + re-upload)
+pcli2 asset create --file path/to/model.stl --folder-path "/Root/Models/" --override
+
+# Replace an existing asset and preserve its metadata
+pcli2 asset create --file path/to/model.stl --folder-path "/Root/Models/" --override --restore-metadata
 
 # List assets in a folder
 pcli2 asset list --path "/Root/Models/" --format json

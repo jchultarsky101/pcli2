@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.9] - 2026-05-07
+## [1.1.10] - 2026-05-07
 
 ### Added
-- **`--override` flag for `asset create`** - When uploading an asset that already exists at the target path, automatically delete the existing asset and re-upload the new version in its place. Without this flag, the command continues to fail with a conflict error as before.
-  - Only triggers on HTTP 409 (asset already exists); other errors are unaffected
+- **`--override` flag for `asset create`** - When uploading an asset that already exists at the target path, automatically delete the existing asset and re-upload the new version in its place. Without this flag, a duplicate asset is created at the same path.
+  - Proactively checks for an existing asset before uploading; if found, deletes it first
+  - Affects `pcli2 asset create` (and its `upload` alias)
+- **`--restore-metadata` flag for `asset create`** - When used together with `--override`, preserves the existing asset's metadata and applies it to the newly uploaded asset. The metadata is passed directly in the upload request for a single-operation restore.
+  - Requires `--override` (enforced by the CLI parser)
+  - If the existing asset has no metadata, the flag is silently ignored
   - Affects `pcli2 asset create` (and its `upload` alias)
 
 ## [1.1.8] - 2026-04-21

@@ -107,6 +107,7 @@ pub const PARAMETER_DELAY: &str = "delay";
 pub const PARAMETER_LOCAL_PATH: &str = "local-path";
 pub const PARAMETER_SKIP_EXISTING: &str = "skip-existing";
 pub const PARAMETER_RESUME: &str = "resume";
+pub const PARAMETER_OVERRIDE: &str = "override";
 
 // Format options
 pub const FORMAT_CSV: &str = "csv";
@@ -431,6 +432,15 @@ pub fn delay_parameter() -> Arg {
                 Ok(val)
             }
         })
+}
+
+/// Create the override parameter for asset create commands.
+pub fn override_parameter() -> Arg {
+    Arg::new(PARAMETER_OVERRIDE)
+        .long(PARAMETER_OVERRIDE)
+        .action(ArgAction::SetTrue)
+        .required(false)
+        .help("If the asset already exists, delete it and upload the new version in its place")
 }
 
 /// Create the resume parameter.

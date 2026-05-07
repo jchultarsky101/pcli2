@@ -20,7 +20,7 @@ use crate::{
     model::{Asset, AssetList},
     param_utils::get_format_parameter_value,
     param_utils::get_tenant,
-    physna_v3::{ApiError, PhysnaApiClient, TryDefault},
+    physna_v3::{PhysnaApiClient, TryDefault},
 };
 use clap::ArgMatches;
 use serde_json::Value;
@@ -159,25 +159,17 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let override_flag = sub_matches.get_flag(PARAMETER_OVERRIDE);
     let restore_metadata = sub_matches.get_flag(PARAMETER_RESTORE_METADATA);
 
-    let asset = match api
-        .create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
-        .await
-    {
-        Ok(asset) => asset,
-        Err(ApiError::ConflictError(ref msg))
-            if override_flag && msg.contains("Asset already exists") =>
-        {
+    let asset = if override_flag {
+        let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await.ok();
+
+        if let Some(existing) = existing {
             debug!(
                 "Asset already exists at path '{}', --override specified, deleting and re-uploading",
                 asset_path
             );
-            let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await?;
 
             let saved_metadata = if restore_metadata {
-                let full_asset = api
-                    .get_asset_by_uuid(&tenant.uuid, &existing.uuid())
-                    .await?;
-                let metadata: HashMap<String, serde_json::Value> = full_asset
+                let metadata: HashMap<String, serde_json::Value> = existing
                     .metadata()
                     .map(|m| {
                         m.keys()
@@ -209,8 +201,13 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 saved_metadata.as_ref(),
             )
             .await?
+        } else {
+            api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
+                .await?
         }
-        Err(e) => return Err(e.into()),
+    } else {
+        api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
+            .await?
     };
 
     println!("{}", asset.format(format)?);

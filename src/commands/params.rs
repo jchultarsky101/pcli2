@@ -108,6 +108,7 @@ pub const PARAMETER_LOCAL_PATH: &str = "local-path";
 pub const PARAMETER_SKIP_EXISTING: &str = "skip-existing";
 pub const PARAMETER_RESUME: &str = "resume";
 pub const PARAMETER_OVERRIDE: &str = "override";
+pub const PARAMETER_RESTORE_METADATA: &str = "restore-metadata";
 
 // Format options
 pub const FORMAT_CSV: &str = "csv";
@@ -441,6 +442,16 @@ pub fn override_parameter() -> Arg {
         .action(ArgAction::SetTrue)
         .required(false)
         .help("If the asset already exists, delete it and upload the new version in its place")
+}
+
+/// Create the restore-metadata parameter for asset create commands.
+pub fn restore_metadata_parameter() -> Arg {
+    Arg::new(PARAMETER_RESTORE_METADATA)
+        .long(PARAMETER_RESTORE_METADATA)
+        .action(ArgAction::SetTrue)
+        .required(false)
+        .requires(PARAMETER_OVERRIDE)
+        .help("When used with --override, preserve the existing asset's metadata and apply it to the new asset")
 }
 
 /// Create the resume parameter.

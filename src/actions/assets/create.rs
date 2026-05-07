@@ -8,7 +8,8 @@ use crate::{
     actions::CliActionError,
     commands::params::{
         PARAMETER_CONTINUE_ON_ERROR, PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH,
-        PARAMETER_FOLDER_UUID, PARAMETER_OVERRIDE, PARAMETER_PATH, PARAMETER_UUID,
+        PARAMETER_FOLDER_UUID, PARAMETER_OVERRIDE, PARAMETER_PATH, PARAMETER_RESTORE_METADATA,
+        PARAMETER_UUID,
     },
     configuration::Configuration,
     error::CliError,
@@ -156,6 +157,7 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     debug!("Creating asset with path: {}", asset_path);
 
     let override_flag = sub_matches.get_flag(PARAMETER_OVERRIDE);
+    let restore_metadata = sub_matches.get_flag(PARAMETER_RESTORE_METADATA);
 
     let asset = match api
         .create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
@@ -170,10 +172,43 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 asset_path
             );
             let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await?;
+
+            let saved_metadata = if restore_metadata {
+                let full_asset = api
+                    .get_asset_by_uuid(&tenant.uuid, &existing.uuid())
+                    .await?;
+                let metadata: HashMap<String, serde_json::Value> = full_asset
+                    .metadata()
+                    .map(|m| {
+                        m.keys()
+                            .filter_map(|k| {
+                                m.get(k)
+                                    .map(|v| (k.clone(), serde_json::Value::String(v.clone())))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if metadata.is_empty() {
+                    debug!("No metadata found on existing asset to restore");
+                    None
+                } else {
+                    debug!("Saved {} metadata fields for restoration", metadata.len());
+                    Some(metadata)
+                }
+            } else {
+                None
+            };
+
             api.delete_asset(&tenant.uuid.to_string(), &existing.uuid().to_string())
                 .await?;
-            api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
-                .await?
+            api.create_asset_with_metadata(
+                &tenant.uuid,
+                file_path,
+                &asset_path,
+                &folder_uuid,
+                saved_metadata.as_ref(),
+            )
+            .await?
         }
         Err(e) => return Err(e.into()),
     };

@@ -211,10 +211,7 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 {
                     Ok(asset) => {
                         if attempt > 0 {
-                            debug!(
-                                "Asset creation succeeded on retry attempt {}",
-                                attempt
-                            );
+                            debug!("Asset creation succeeded on retry attempt {}", attempt);
                         }
                         created_asset = Some(asset);
                         break;

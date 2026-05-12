@@ -20,13 +20,13 @@ use crate::{
     model::{Asset, AssetList},
     param_utils::get_format_parameter_value,
     param_utils::get_tenant,
-    physna_v3::{PhysnaApiClient, TryDefault},
+    physna_v3::{ApiError, PhysnaApiClient, TryDefault},
 };
 use clap::ArgMatches;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 /// Cache for asset metadata during batch processing to avoid repeated API calls
 struct AssetMetadataCache {
@@ -193,14 +193,55 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
             api.delete_asset(&tenant.uuid.to_string(), &existing.uuid().to_string())
                 .await?;
-            api.create_asset_with_metadata(
-                &tenant.uuid,
-                file_path,
-                &asset_path,
-                &folder_uuid,
-                saved_metadata.as_ref(),
-            )
-            .await?
+
+            const MAX_RETRIES: u32 = 5;
+            const INITIAL_DELAY_MS: u64 = 500;
+
+            let mut created_asset = None;
+            for attempt in 0..=MAX_RETRIES {
+                match api
+                    .create_asset_with_metadata(
+                        &tenant.uuid,
+                        file_path,
+                        &asset_path,
+                        &folder_uuid,
+                        saved_metadata.as_ref(),
+                    )
+                    .await
+                {
+                    Ok(asset) => {
+                        if attempt > 0 {
+                            debug!(
+                                "Asset creation succeeded on retry attempt {}",
+                                attempt
+                            );
+                        }
+                        created_asset = Some(asset);
+                        break;
+                    }
+                    Err(ApiError::ConflictError(_)) if attempt < MAX_RETRIES => {
+                        let delay = INITIAL_DELAY_MS * 2u64.pow(attempt);
+                        warn!(
+                            "Conflict on attempt {} of {} — the previous asset may still be deleting. Retrying in {}ms...",
+                            attempt + 1,
+                            MAX_RETRIES + 1,
+                            delay
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            match created_asset {
+                Some(asset) => asset,
+                None => {
+                    return Err(ApiError::ConflictError(
+                        "Asset conflict persisted after delete during --override. The server may still be processing the deletion.".to_string(),
+                    )
+                    .into())
+                }
+            }
         } else {
             api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
                 .await?

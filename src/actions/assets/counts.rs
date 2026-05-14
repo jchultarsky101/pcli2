@@ -17,8 +17,6 @@ pub async fn count_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
-    eprintln!("Fetching all assets for tenant '{}'. This may take a while...", tenant.name);
-
     let assets = api.list_all_tenant_assets(&tenant.uuid).await?;
     let report = AssetHealthReport::from_assets(&assets);
 

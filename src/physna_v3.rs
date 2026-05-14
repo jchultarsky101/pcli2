@@ -3899,6 +3899,55 @@ impl PhysnaApiClient {
         Ok(all_assets.into())
     }
 
+    /// List all assets in a tenant using the GET /tenants/{tenantId}/assets endpoint.
+    ///
+    /// Handles pagination automatically, fetching all pages.
+    pub async fn list_all_tenant_assets(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<AssetList, ApiError> {
+        debug!(
+            "Listing all assets for tenant_uuid: {}",
+            tenant_uuid
+        );
+
+        let mut page: usize = 1;
+        let per_page: usize = 200;
+        let mut all_assets: Vec<Asset> = Vec::new();
+
+        loop {
+            let url = format!(
+                "{}/tenants/{}/assets?page={}&perPage={}",
+                self.base_url, tenant_uuid, page, per_page
+            );
+            debug!("List all tenant assets URL: {}", url);
+
+            let response: AssetListResponse = self.get(&url).await?;
+            let current_page_assets: Vec<Asset> =
+                response.assets.iter().map(|a| a.into()).collect();
+            all_assets.extend(current_page_assets);
+
+            if page >= response.page_data.last_page {
+                break;
+            }
+
+            page += 1;
+
+            if page > 10000 {
+                debug!("Reached maximum page limit (10000) while listing all assets for tenant: {}", tenant_uuid);
+                break;
+            }
+        }
+
+        debug!(
+            "Successfully retrieved {} total assets for tenant_uuid: {}",
+            all_assets.len(),
+            tenant_uuid
+        );
+
+        Ok(all_assets.into())
+    }
+
     /// Download asset file from the Physna API
     ///
     /// This method downloads the raw file content of the specified asset from the Physna API.

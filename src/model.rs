@@ -1975,6 +1975,68 @@ impl AssetStateCounts {
     }
 }
 
+/// Represents a health report computed from all assets in a tenant
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetHealthReport {
+    pub total: u32,
+    pub finished: u32,
+    pub indexing: u32,
+    pub failed: u32,
+    pub unsupported: u32,
+    pub no_3d_data: u32,
+    pub missing_dependencies: u32,
+    pub assemblies: u32,
+    pub parts: u32,
+    pub file_types: HashMap<String, u32>,
+}
+
+impl AssetHealthReport {
+    pub fn from_assets(assets: &AssetList) -> Self {
+        let mut report = AssetHealthReport {
+            total: 0,
+            finished: 0,
+            indexing: 0,
+            failed: 0,
+            unsupported: 0,
+            no_3d_data: 0,
+            missing_dependencies: 0,
+            assemblies: 0,
+            parts: 0,
+            file_types: HashMap::new(),
+        };
+
+        for asset in assets.iter() {
+            report.total += 1;
+
+            match asset.processing_status().map(|s| s.as_str()) {
+                Some("finished") => report.finished += 1,
+                Some("indexing") => report.indexing += 1,
+                Some("failed") => report.failed += 1,
+                Some("unsupported") => report.unsupported += 1,
+                Some("no-3d-data") => report.no_3d_data += 1,
+                Some("missing-dependencies") => report.missing_dependencies += 1,
+                _ => {}
+            }
+
+            if asset.is_assembly() {
+                report.assemblies += 1;
+            } else {
+                report.parts += 1;
+            }
+
+            if let Some(ft) = asset.file_type() {
+                *report.file_types.entry(ft.to_lowercase()).or_insert(0) += 1;
+            }
+        }
+
+        report
+    }
+
+    pub fn error_total(&self) -> u32 {
+        self.failed + self.unsupported + self.no_3d_data + self.missing_dependencies
+    }
+}
+
 /// Represents a match result from the text search
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextMatch {

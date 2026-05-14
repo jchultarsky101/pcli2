@@ -3906,10 +3906,7 @@ impl PhysnaApiClient {
         &mut self,
         tenant_uuid: &Uuid,
     ) -> Result<AssetList, ApiError> {
-        debug!(
-            "Listing all assets for tenant_uuid: {}",
-            tenant_uuid
-        );
+        debug!("Listing all assets for tenant_uuid: {}", tenant_uuid);
 
         let mut page: usize = 1;
         let per_page: usize = 200;
@@ -3934,7 +3931,10 @@ impl PhysnaApiClient {
             page += 1;
 
             if page > 10000 {
-                debug!("Reached maximum page limit (10000) while listing all assets for tenant: {}", tenant_uuid);
+                debug!(
+                    "Reached maximum page limit (10000) while listing all assets for tenant: {}",
+                    tenant_uuid
+                );
                 break;
             }
         }

@@ -241,6 +241,7 @@ pub fn asset_command() -> Command {
         Command::new(COMMAND_COUNTS)
             .about("Show asset health report with counts by state, type, and structure")
             .arg(tenant_parameter())
+            .arg(format_with_metadata_parameter())
             .arg(format_with_headers_parameter())
             .arg(format_pretty_parameter())
             .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))

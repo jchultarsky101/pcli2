@@ -9,8 +9,8 @@
 //! - Finding matching assets (geometric, visual, part, text)
 //! - Reprocessing assets
 
-pub mod counts;
 pub mod create;
+pub mod full_inventory;
 pub mod delete;
 pub mod download;
 pub mod list;
@@ -19,7 +19,7 @@ pub mod metadata;
 pub mod print;
 pub mod reprocess;
 
-pub use counts::count_assets;
+pub use full_inventory::{count_assets, inventory};
 pub use create::{
     create_asset, create_asset_batch, create_asset_metadata_batch, update_asset_metadata,
 };

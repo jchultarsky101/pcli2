@@ -18,7 +18,8 @@ use pcli2::{
         assets::{
             count_assets, create_asset, create_asset_batch, create_asset_metadata_batch,
             delete_asset, delete_asset_metadata, download_asset, download_asset_thumbnail,
-            geometric_match_asset, geometric_match_folder, list_assets, metadata_inference,
+            geometric_match_asset, geometric_match_folder, inventory, list_assets,
+            metadata_inference,
             part_match_asset, part_match_folder, print_asset, print_asset_dependencies,
             print_asset_metadata, print_folder_dependencies, reprocess_asset, text_match,
             update_asset_metadata, visual_match_asset, visual_match_folder,
@@ -39,7 +40,8 @@ use pcli2::{
         params::{
             COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG,
             COMMAND_COUNTS, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE,
-            COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER, COMMAND_GET,
+            COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER,
+            COMMAND_FULL_INVENTORY, COMMAND_GET,
             COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT,
             COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_STATE,
             COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD, COMMAND_USE,
@@ -309,6 +311,11 @@ pub async fn execute_command() -> Result<(), CliError> {
                 Some((COMMAND_COUNTS, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_COUNTS);
                     count_assets(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_FULL_INVENTORY, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_FULL_INVENTORY);
+                    inventory(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_CREATE_BATCH, sub_matches)) => {

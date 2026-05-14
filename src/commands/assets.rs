@@ -9,11 +9,12 @@ use crate::commands::params::{
     folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
     multiple_files_parameter, override_parameter, path_parameter, restore_metadata_parameter,
-    tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_CREATE, COMMAND_CREATE_BATCH,
-    COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_GET, COMMAND_LIST,
-    COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL,
-    COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
-    PARAMETER_FILE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
+    tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_COUNTS, COMMAND_CREATE,
+    COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD,
+    COMMAND_FULL_INVENTORY, COMMAND_GET,
+    COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_TEXT_MATCH,
+    COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE,
+    PARAMETER_CONCURRENT, PARAMETER_FILE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
 
@@ -236,6 +237,24 @@ pub fn asset_command() -> Command {
             .arg(uuid_parameter())
             .arg(path_parameter())
             .group(asset_identifier_group()), // Use the standard asset identifier group to ensure either UUID or path is provided, but not both
+    )
+    .subcommand(
+        Command::new(COMMAND_COUNTS)
+            .about("Show asset health report with counts by state, type, and structure")
+            .arg(tenant_parameter())
+            .arg(format_with_metadata_parameter())
+            .arg(format_with_headers_parameter())
+            .arg(format_pretty_parameter())
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+    )
+    .subcommand(
+        Command::new(COMMAND_FULL_INVENTORY)
+            .about("List complete inventory of all assets in the tenant")
+            .arg(tenant_parameter())
+            .arg(format_with_metadata_parameter())
+            .arg(format_with_headers_parameter())
+            .arg(format_pretty_parameter())
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
     )
     .subcommand(
         Command::new(COMMAND_THUMBNAIL)

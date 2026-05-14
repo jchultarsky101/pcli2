@@ -15,6 +15,7 @@
 mod asset;
 mod dependencies;
 mod folder;
+mod health;
 mod match_ops;
 mod metadata;
 mod state;

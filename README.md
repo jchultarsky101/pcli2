@@ -549,6 +549,8 @@ Manage individual assets in your Physna tenant.
 pcli2 asset create           # Upload a file as an asset
 pcli2 asset create-batch     # Upload multiple files as assets using glob patterns
 pcli2 asset list             # List assets in a folder with optional recursive listing (--recursive)
+pcli2 asset inventory        # List complete inventory of all assets in the tenant
+pcli2 asset counts           # Show asset health report with counts by state, type, and structure
 pcli2 asset get              # Get asset details
 pcli2 asset download         # Download an asset
 pcli2 asset delete           # Delete an asset
@@ -581,6 +583,27 @@ pcli2 asset list --folder-path "/Root/Models/" --format json --metadata
 
 # Force refresh folder cache before listing (useful after folder changes)
 pcli2 asset list --reload --folder-path "/Root/Models/" --format csv
+```
+
+#### Asset Inventory and Counts Commands
+
+The `asset inventory` and `asset counts` commands both retrieve all assets across the entire tenant (not scoped to a folder). They differ in output:
+
+- `asset inventory` outputs the full list of assets (same format as `asset list`)
+- `asset counts` outputs an aggregated health report with counts by processing state, file type, and structure
+
+```bash
+# Full inventory in CSV with headers
+pcli2 asset inventory --format csv --headers
+
+# Full inventory in JSON with metadata
+pcli2 asset inventory --format json --metadata
+
+# Asset health report in JSON
+pcli2 asset counts --format json
+
+# Asset health report in CSV
+pcli2 asset counts --format csv --headers
 ```
 
 #### Asset Metadata Commands

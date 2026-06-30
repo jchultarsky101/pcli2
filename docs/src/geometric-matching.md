@@ -6,6 +6,7 @@ PCLI2 provides powerful geometric matching capabilities to find similar assets i
 - [Overview](#overview)
 - [Single Asset Matching](#single-asset-matching)
 - [Folder-Based Matching](#folder-based-matching)
+- [Direct Asset Similarity (Match Scores)](#direct-asset-similarity-match-scores)
 - [Threshold Settings](#threshold-settings)
 - [Performance Options](#performance-options)
 - [Error Handling](#error-handling)
@@ -205,6 +206,83 @@ For folders with many assets, consider these strategies:
 2. **Increase concurrency**: Use more concurrent operations (but watch resource usage)
 3. **Process in batches**: Break large folders into smaller subfolders
 
+## Direct Asset Similarity (Match Scores)
+
+While `geometric-match` searches your tenant for assets similar to a single
+reference, `asset similarity` compares **two specific assets** and returns the
+pairwise match scores between them. Use it when you already know both assets you
+want to compare.
+
+Each asset can be identified by **either** its UUID **or** its path — PCLI2
+resolves paths to UUIDs automatically:
+
+- Reference (source) asset: `--reference-uuid` or `--reference-path`
+- Candidate (target) asset: `--candidate-uuid` or `--candidate-path`
+
+Both assets must be 3D models in a finished state, and they must be different
+assets (comparing an asset with itself is rejected by the API).
+
+### Basic Usage
+
+```bash
+# Compare two assets by path
+pcli2 asset similarity \
+  --reference-path /Root/Folder/block1.stl \
+  --candidate-path /Root/Folder/block2.stl
+
+# Mix identifiers: reference by UUID, candidate by path
+pcli2 asset similarity \
+  --reference-uuid 123e4567-e89b-12d3-a456-426614174000 \
+  --candidate-path /Root/Folder/block2.stl
+
+# CSV output with headers
+pcli2 asset similarity \
+  --reference-path /Root/Folder/block1.stl \
+  --candidate-path /Root/Folder/block2.stl \
+  --format csv --headers
+```
+
+> The command is also available under the alias `pcli2 asset match-scores`.
+
+### Output Formats
+
+#### JSON Format (Default)
+
+```json
+{
+  "referenceAssetPath": "/Root/Folder/block1.stl",
+  "referenceAssetUuid": "123e4567-e89b-12d3-a456-426614174000",
+  "candidateAssetPath": "/Root/Folder/block2.stl",
+  "candidateAssetUuid": "987fc321-fedc-ba98-7654-43210fedcba9",
+  "geometric": {
+    "matchPercentage": 90.21,
+    "forwardMatchPercentage": 86.58,
+    "reverseMatchPercentage": 86.58
+  },
+  "comparisonUrl": "https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=tenant-uuid&tenant2Id=tenant-uuid&searchType=geometric&matchPercentage=90.21"
+}
+```
+
+The `geometric` scores describe how similar the two models are:
+
+- **matchPercentage**: Overall geometric similarity (100% = geometrically identical)
+- **forwardMatchPercentage**: How much of the reference asset's geometry exists in the candidate
+- **reverseMatchPercentage**: How much of the candidate asset's geometry exists in the reference
+
+A `volumetric` object (with its own `matchPercentage`) is included **only** when
+volumetric scoring is enabled for your tenant; otherwise it is omitted. Contact
+Physna sales to enable volumetric scoring.
+
+#### CSV Format
+
+```csv
+REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,FORWARD_MATCH_PERCENTAGE,REVERSE_MATCH_PERCENTAGE,VOLUMETRIC_MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL
+/Root/Folder/block1.stl,/Root/Folder/block2.stl,90.21,86.58,86.58,,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=tenant-uuid&tenant2Id=tenant-uuid&searchType=geometric&matchPercentage=90.21
+```
+
+The `VOLUMETRIC_MATCH_PERCENTAGE` column is empty unless volumetric scoring is
+enabled for your tenant.
+
 ## Error Handling
 
 ### Common Errors
@@ -337,7 +415,8 @@ If you're not seeing expected matches:
 
 - `asset geometric-match` - Find matches for a single asset
 - `asset geometric-match-folder` - Find matches for all assets in a folder
+- `asset similarity` - Get pairwise match scores between two specific assets (alias: `asset match-scores`)
 - `asset list` - List assets in a folder
 - `asset get` - Get detailed asset information
 
-Use `pcli2 asset geometric-match --help` and `pcli2 asset geometric-match-folder --help` for detailed command information.
+Use `pcli2 asset geometric-match --help`, `pcli2 asset geometric-match-folder --help`, and `pcli2 asset similarity --help` for detailed command information.

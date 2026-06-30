@@ -70,8 +70,12 @@ impl Formattable for AssetHealthReport {
                 writeln!(out, "  Failed:                {}", self.failed).unwrap();
                 writeln!(out, "  Unsupported:           {}", self.unsupported).unwrap();
                 writeln!(out, "  No 3D data:            {}", self.no_3d_data).unwrap();
-                writeln!(out, "  Missing dependencies:  {}", self.missing_dependencies)
-                    .unwrap();
+                writeln!(
+                    out,
+                    "  Missing dependencies:  {}",
+                    self.missing_dependencies
+                )
+                .unwrap();
                 writeln!(out, "  Errors (total):        {}", self.error_total()).unwrap();
                 writeln!(out, "  Assemblies:            {}", self.assemblies).unwrap();
                 writeln!(out, "  Parts:                 {}", self.parts).unwrap();

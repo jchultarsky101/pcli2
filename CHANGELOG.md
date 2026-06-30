@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-30
+
+### Added
+- **`asset similarity` command** - Get the pairwise geometric (and, when enabled, volumetric) match scores between two specific assets, backed by the Physna `GetMatchScores` API endpoint. Unlike `asset geometric-match`, which searches the tenant for assets similar to one reference, this command compares two assets you already know.
+  - Each asset is identified by **either** a UUID **or** a path, resolved to a UUID via the shared `resolve_asset` helper: `--reference-uuid`/`--reference-path` and `--candidate-uuid`/`--candidate-path` (each pair is mutually exclusive and required)
+  - Output supports JSON (default) and CSV (with optional `--headers`), and includes a UI comparison URL, consistent with the other match commands
+  - The `volumetric` score is included only when volumetric scoring is enabled for the tenant; otherwise it is omitted from JSON and left blank in CSV
+  - Available under the alias `asset match-scores`
+  - Affects `pcli2 asset similarity` (and its `match-scores` alias)
+
 ## [1.1.10] - 2026-05-07
 
 ### Added

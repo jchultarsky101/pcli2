@@ -5,14 +5,15 @@
 
 use crate::commands::metadata::metadata_command;
 use crate::commands::params::{
-    asset_identifier_group, asset_identifier_multiple_group, file_parameter,
-    folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
-    format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    multiple_files_parameter, override_parameter, path_parameter, restore_metadata_parameter,
-    tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_COUNTS, COMMAND_CREATE,
-    COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD,
-    COMMAND_FULL_INVENTORY, COMMAND_GET,
-    COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_TEXT_MATCH,
+    asset_identifier_group, asset_identifier_multiple_group, candidate_identifier_group,
+    candidate_path_parameter, candidate_uuid_parameter, file_parameter, folder_identifier_group,
+    folder_path_parameter, folder_uuid_parameter, format_parameter, format_pretty_parameter,
+    format_with_headers_parameter, format_with_metadata_parameter, multiple_files_parameter,
+    override_parameter, path_parameter, reference_identifier_group, reference_path_parameter,
+    reference_uuid_parameter, restore_metadata_parameter, tenant_parameter, uuid_parameter,
+    COMMAND_ASSET, COMMAND_COUNTS, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE,
+    COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_LIST,
+    COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_TEXT_MATCH,
     COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE,
     PARAMETER_CONCURRENT, PARAMETER_FILE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
@@ -229,6 +230,22 @@ pub fn asset_command() -> Command {
             .arg(format_with_metadata_parameter())  // Add metadata flag to be consistent with other match commands
             .arg(format_pretty_parameter())
             .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])) // Only support JSON and CSV as requested
+    )
+    .subcommand(
+        Command::new(COMMAND_SIMILARITY)
+            .visible_alias("match-scores") // Add alias matching the API operation name
+            .about("Get pairwise match scores between two specific assets")
+            .arg(tenant_parameter())
+            .arg(reference_uuid_parameter())
+            .arg(reference_path_parameter())
+            .arg(candidate_uuid_parameter())
+            .arg(candidate_path_parameter())
+            .arg(format_with_headers_parameter())
+            .arg(format_with_metadata_parameter()) // Required by FormatParams::from_args; no effect on this output
+            .arg(format_pretty_parameter())
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .group(reference_identifier_group())
+            .group(candidate_identifier_group()),
     )
     .subcommand(
         Command::new(COMMAND_REPROCESS)

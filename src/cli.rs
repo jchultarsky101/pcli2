@@ -16,13 +16,13 @@ use pcli2::keyring::Keyring;
 use pcli2::{
     actions::{
         assets::{
-            count_assets, create_asset, create_asset_batch, create_asset_metadata_batch,
-            delete_asset, delete_asset_metadata, download_asset, download_asset_thumbnail,
-            geometric_match_asset, geometric_match_folder, inventory, list_assets,
-            metadata_inference,
-            part_match_asset, part_match_folder, print_asset, print_asset_dependencies,
-            print_asset_metadata, print_folder_dependencies, reprocess_asset, text_match,
-            update_asset_metadata, visual_match_asset, visual_match_folder,
+            asset_similarity, count_assets, create_asset, create_asset_batch,
+            create_asset_metadata_batch, delete_asset, delete_asset_metadata, download_asset,
+            download_asset_thumbnail, geometric_match_asset, geometric_match_folder, inventory,
+            list_assets, metadata_inference, part_match_asset, part_match_folder, print_asset,
+            print_asset_dependencies, print_asset_metadata, print_folder_dependencies,
+            reprocess_asset, text_match, update_asset_metadata, visual_match_asset,
+            visual_match_folder,
         },
         cache::clear_cache,
         folders::{
@@ -41,10 +41,10 @@ use pcli2::{
             COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG,
             COMMAND_COUNTS, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE,
             COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD, COMMAND_EXPORT, COMMAND_FOLDER,
-            COMMAND_FULL_INVENTORY, COMMAND_GET,
-            COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT,
-            COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_STATE,
-            COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD, COMMAND_USE,
+            COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST,
+            COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH,
+            COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_STATE, COMMAND_TENANT,
+            COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD, COMMAND_USE,
             COMMAND_VISUAL_MATCH, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE,
             PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY,
         },
@@ -351,6 +351,11 @@ pub async fn execute_command() -> Result<(), CliError> {
                 Some((COMMAND_TEXT_MATCH, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_TEXT_MATCH);
                     text_match(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_SIMILARITY, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_SIMILARITY);
+                    asset_similarity(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_METADATA, sub_matches)) => {

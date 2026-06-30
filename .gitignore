@@ -32,3 +32,6 @@ public/
 
 # Claude Code worktrees and settings
 .claude/
+
+# Slack release announcements are generated for copy/paste only, not stored in the repo
+SLACK_ANNOUNCEMENT*.md

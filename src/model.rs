@@ -1705,6 +1705,76 @@ impl GeometricMatchPair {
     }
 }
 
+/// Geometric similarity scores between two assets.
+///
+/// Returned by the "match scores" endpoint as part of [`MatchScoresResponse`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeometricMatchScores {
+    /// Overall geometric similarity. 100% means the two assets are geometrically identical.
+    #[serde(rename = "matchPercentage")]
+    pub match_percentage: f64,
+    /// How much of the source (reference) asset's geometry exists in the target (candidate) asset.
+    #[serde(rename = "forwardMatchPercentage")]
+    pub forward_match_percentage: f64,
+    /// How much of the target (candidate) asset's geometry exists in the source (reference) asset.
+    #[serde(rename = "reverseMatchPercentage")]
+    pub reverse_match_percentage: f64,
+}
+
+/// Volumetric similarity scores between two assets.
+///
+/// Volumetric scoring must be explicitly enabled for the tenant, so this is
+/// optional in [`MatchScoresResponse`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VolumetricMatchScores {
+    /// Overall volumetric similarity: how much of the source asset's volume is
+    /// contained in the target asset.
+    #[serde(rename = "matchPercentage")]
+    pub match_percentage: f64,
+}
+
+/// Response from the "match scores" endpoint.
+///
+/// Holds the pairwise match scores between two specific assets, as returned by
+/// `GET /tenants/{tenantId}/assets/{assetId}/match-scores/{targetAssetId}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MatchScoresResponse {
+    /// Geometric similarity scores (always present).
+    pub geometric: GeometricMatchScores,
+    /// Volumetric similarity scores (present only when enabled for the tenant).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volumetric: Option<VolumetricMatchScores>,
+}
+
+/// Pairwise similarity result between a reference and a candidate asset.
+///
+/// This is the output structure for the `asset similarity` command. It combines
+/// the identities of both assets with the match scores returned by the API and a
+/// link to the comparison view in the Physna UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetSimilarity {
+    /// The path of the reference (source) asset.
+    #[serde(rename = "referenceAssetPath")]
+    pub reference_asset_path: String,
+    /// The UUID of the reference (source) asset.
+    #[serde(rename = "referenceAssetUuid")]
+    pub reference_asset_uuid: Uuid,
+    /// The path of the candidate (target) asset.
+    #[serde(rename = "candidateAssetPath")]
+    pub candidate_asset_path: String,
+    /// The UUID of the candidate (target) asset.
+    #[serde(rename = "candidateAssetUuid")]
+    pub candidate_asset_uuid: Uuid,
+    /// Geometric similarity scores between the two assets.
+    pub geometric: GeometricMatchScores,
+    /// Volumetric similarity scores between the two assets, if available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volumetric: Option<VolumetricMatchScores>,
+    /// The comparison URL for viewing the two assets side by side in the UI.
+    #[serde(rename = "comparisonUrl", skip_serializing_if = "Option::is_none")]
+    pub comparison_url: Option<String>,
+}
+
 // Metadata field models for Physna V3 API
 
 /// Represents a metadata field definition

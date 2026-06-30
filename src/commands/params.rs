@@ -25,6 +25,7 @@ pub const COMMAND_PART_MATCH_FOLDER: &str = "part-match-folder"; // Allow non sn
 pub const COMMAND_VISUAL_MATCH: &str = "visual-match"; // Allow non snake case since it's used as a command name
 pub const COMMAND_VISUAL_MATCH_FOLDER: &str = "visual-match-folder"; // Allow non snake case since it's used as a command name
 pub const COMMAND_TEXT_MATCH: &str = "text-match"; // Allow non snake case since it's used as a command name
+pub const COMMAND_SIMILARITY: &str = "similarity";
 pub const COMMAND_REPROCESS: &str = "reprocess";
 pub const COMMAND_COUNTS: &str = "counts";
 pub const COMMAND_FULL_INVENTORY: &str = "inventory";
@@ -98,6 +99,10 @@ pub const PARAMETER_FOLDER_PATH: &str = "folder-path";
 pub const PARAMETER_PARENT_FOLDER_UUID: &str = "parent-folder-uuid";
 pub const PARAMETER_PARENT_FOLDER_PATH: &str = "parent-folder-path";
 pub const PARAMETER_PATH: &str = "path";
+pub const PARAMETER_REFERENCE_UUID: &str = "reference-uuid";
+pub const PARAMETER_REFERENCE_PATH: &str = "reference-path";
+pub const PARAMETER_CANDIDATE_UUID: &str = "candidate-uuid";
+pub const PARAMETER_CANDIDATE_PATH: &str = "candidate-path";
 pub const PARAMETER_REFRESH: &str = "refresh";
 pub const PARAMETER_RELOAD: &str = "reload";
 pub const PARAMETER_RECURSIVE: &str = "recursive";
@@ -279,6 +284,60 @@ pub fn asset_identifier_multiple_group() -> ArgGroup {
     ArgGroup::new("asset-identifier")
         .args([PARAMETER_UUID, PARAMETER_PATH])
         .multiple(true)
+        .required(true)
+}
+
+/// Create the reference asset UUID parameter.
+pub fn reference_uuid_parameter() -> Arg {
+    Arg::new(PARAMETER_REFERENCE_UUID)
+        .long(PARAMETER_REFERENCE_UUID)
+        .num_args(1)
+        .required(false) // used in a group with --reference-path
+        .value_parser(clap::value_parser!(Uuid))
+        .help("Reference (source) asset UUID")
+}
+
+/// Create the reference asset path parameter.
+pub fn reference_path_parameter() -> Arg {
+    Arg::new(PARAMETER_REFERENCE_PATH)
+        .long(PARAMETER_REFERENCE_PATH)
+        .num_args(1)
+        .required(false) // used in a group with --reference-uuid
+        .help("Reference (source) asset path (e.g., /Root/Child/part.stl)")
+}
+
+/// Create the candidate asset UUID parameter.
+pub fn candidate_uuid_parameter() -> Arg {
+    Arg::new(PARAMETER_CANDIDATE_UUID)
+        .long(PARAMETER_CANDIDATE_UUID)
+        .num_args(1)
+        .required(false) // used in a group with --candidate-path
+        .value_parser(clap::value_parser!(Uuid))
+        .help("Candidate (target) asset UUID")
+}
+
+/// Create the candidate asset path parameter.
+pub fn candidate_path_parameter() -> Arg {
+    Arg::new(PARAMETER_CANDIDATE_PATH)
+        .long(PARAMETER_CANDIDATE_PATH)
+        .num_args(1)
+        .required(false) // used in a group with --candidate-uuid
+        .help("Candidate (target) asset path (e.g., /Root/Child/part.stl)")
+}
+
+/// Create reference asset identifier group: it must be either --reference-uuid or --reference-path
+pub fn reference_identifier_group() -> ArgGroup {
+    ArgGroup::new("reference-identifier")
+        .args([PARAMETER_REFERENCE_UUID, PARAMETER_REFERENCE_PATH])
+        .multiple(false)
+        .required(true)
+}
+
+/// Create candidate asset identifier group: it must be either --candidate-uuid or --candidate-path
+pub fn candidate_identifier_group() -> ArgGroup {
+    ArgGroup::new("candidate-identifier")
+        .args([PARAMETER_CANDIDATE_UUID, PARAMETER_CANDIDATE_PATH])
+        .multiple(false)
         .required(true)
 }
 

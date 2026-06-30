@@ -5,9 +5,9 @@
 
 use crate::format::{CsvRecordProducer, FormattingError, OutputFormat, OutputFormatter};
 use crate::model::{
-    EnhancedGeometricSearchResponse, EnhancedPartSearchResponse, FolderGeometricMatch,
-    FolderGeometricMatchResponse, GeometricMatchPair, GeometricSearchResponse, PartMatchPair,
-    PartSearchResponse, VisualMatchPair,
+    AssetSimilarity, EnhancedGeometricSearchResponse, EnhancedPartSearchResponse,
+    FolderGeometricMatch, FolderGeometricMatchResponse, GeometricMatchPair,
+    GeometricSearchResponse, PartMatchPair, PartSearchResponse, VisualMatchPair,
 };
 
 impl CsvRecordProducer for PartSearchResponse {
@@ -797,5 +797,146 @@ impl EnhancedGeometricSearchResponse {
             }
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }
+    }
+}
+
+impl CsvRecordProducer for AssetSimilarity {
+    /// Get the CSV header row for AssetSimilarity records
+    fn csv_header() -> Vec<String> {
+        vec![
+            "REFERENCE_ASSET_PATH".to_string(),
+            "CANDIDATE_ASSET_PATH".to_string(),
+            "MATCH_PERCENTAGE".to_string(),
+            "FORWARD_MATCH_PERCENTAGE".to_string(),
+            "REVERSE_MATCH_PERCENTAGE".to_string(),
+            "VOLUMETRIC_MATCH_PERCENTAGE".to_string(),
+            "REFERENCE_ASSET_UUID".to_string(),
+            "CANDIDATE_ASSET_UUID".to_string(),
+            "COMPARISON_URL".to_string(),
+        ]
+    }
+
+    /// Convert the AssetSimilarity into a single CSV record
+    fn as_csv_records(&self) -> Vec<Vec<String>> {
+        vec![vec![
+            self.reference_asset_path.clone(),
+            self.candidate_asset_path.clone(),
+            format!("{}", self.geometric.match_percentage),
+            format!("{}", self.geometric.forward_match_percentage),
+            format!("{}", self.geometric.reverse_match_percentage),
+            self.volumetric
+                .as_ref()
+                .map(|v| format!("{}", v.match_percentage))
+                .unwrap_or_default(),
+            self.reference_asset_uuid.to_string(),
+            self.candidate_asset_uuid.to_string(),
+            self.comparison_url.clone().unwrap_or_default(),
+        ]]
+    }
+}
+
+impl OutputFormatter for AssetSimilarity {
+    type Item = AssetSimilarity;
+
+    /// Format the AssetSimilarity according to the specified output format
+    ///
+    /// # Arguments
+    /// * `f` - The output format to use (JSON, CSV)
+    ///
+    /// # Returns
+    /// * `Ok(String)` - The formatted output
+    /// * `Err(FormattingError)` - If formatting fails
+    fn format(&self, f: OutputFormat) -> Result<String, FormattingError> {
+        match f {
+            OutputFormat::Json(options) => {
+                if options.pretty {
+                    Ok(serde_json::to_string_pretty(self)?)
+                } else {
+                    Ok(serde_json::to_string(self)?)
+                }
+            }
+            OutputFormat::Csv(options) => Ok(self.to_csv(options.with_headers)?),
+            _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod similarity_tests {
+    use super::*;
+    use crate::format::OutputFormatOptions;
+    use crate::model::{GeometricMatchScores, VolumetricMatchScores};
+    use uuid::Uuid;
+
+    fn sample() -> AssetSimilarity {
+        AssetSimilarity {
+            reference_asset_path: "/Root/a.stl".to_string(),
+            reference_asset_uuid: Uuid::nil(),
+            candidate_asset_path: "/Root/b.stl".to_string(),
+            candidate_asset_uuid: Uuid::nil(),
+            geometric: GeometricMatchScores {
+                match_percentage: 87.5,
+                forward_match_percentage: 92.1,
+                reverse_match_percentage: 83.0,
+            },
+            volumetric: Some(VolumetricMatchScores {
+                match_percentage: 74.2,
+            }),
+            comparison_url: Some("https://example.com/compare".to_string()),
+        }
+    }
+
+    #[test]
+    fn json_contains_scores_and_assets() {
+        let json = sample()
+            .format(OutputFormat::Json(OutputFormatOptions::default()))
+            .unwrap();
+        assert!(json.contains("\"referenceAssetPath\":\"/Root/a.stl\""));
+        assert!(json.contains("\"candidateAssetPath\":\"/Root/b.stl\""));
+        assert!(json.contains("\"matchPercentage\":87.5"));
+        assert!(json.contains("\"forwardMatchPercentage\":92.1"));
+        assert!(json.contains("\"volumetric\""));
+    }
+
+    #[test]
+    fn json_omits_volumetric_when_absent() {
+        let mut s = sample();
+        s.volumetric = None;
+        let json = s
+            .format(OutputFormat::Json(OutputFormatOptions::default()))
+            .unwrap();
+        assert!(!json.contains("volumetric"));
+    }
+
+    #[test]
+    fn csv_with_headers_has_expected_columns() {
+        let opts = OutputFormatOptions {
+            with_metadata: false,
+            with_headers: true,
+            pretty: false,
+        };
+        let csv = sample().format(OutputFormat::Csv(opts)).unwrap();
+        let mut lines = csv.lines();
+        let header = lines.next().unwrap();
+        assert_eq!(
+            header,
+            "REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,FORWARD_MATCH_PERCENTAGE,REVERSE_MATCH_PERCENTAGE,VOLUMETRIC_MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL"
+        );
+        let row = lines.next().unwrap();
+        assert!(row.starts_with("/Root/a.stl,/Root/b.stl,87.5,92.1,83,74.2,"));
+    }
+
+    #[test]
+    fn csv_volumetric_empty_when_absent() {
+        let mut s = sample();
+        s.volumetric = None;
+        let opts = OutputFormatOptions {
+            with_metadata: false,
+            with_headers: false,
+            pretty: false,
+        };
+        let csv = s.format(OutputFormat::Csv(opts)).unwrap();
+        // Columns: ...,REVERSE(83),VOLUMETRIC(empty),REF_UUID,...
+        assert!(csv.contains("83,,00000000-0000-0000-0000-000000000000"));
     }
 }

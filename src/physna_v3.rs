@@ -2688,6 +2688,38 @@ impl PhysnaApiClient {
         Ok(final_response)
     }
 
+    /// Get pairwise match scores between two assets.
+    ///
+    /// Returns geometric (and, when enabled for the tenant, volumetric) match
+    /// percentages comparing how similar two 3D models are to each other. Both
+    /// assets must be 3D models in a finished state.
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The UUID of the tenant containing both assets
+    /// * `source_asset_uuid` - The UUID of the source (reference) asset
+    /// * `target_asset_uuid` - The UUID of the target (candidate) asset to compare against
+    ///
+    /// # Returns
+    /// * `Ok(MatchScoresResponse)` - The pairwise match scores
+    /// * `Err(ApiError)` - If there's an HTTP error, authentication issue, or other API error
+    pub async fn match_scores(
+        &mut self,
+        tenant_uuid: &Uuid,
+        source_asset_uuid: &Uuid,
+        target_asset_uuid: &Uuid,
+    ) -> Result<crate::model::MatchScoresResponse, ApiError> {
+        debug!(
+            "Getting match scores for tenant_uuid: {}, source_asset_uuid: {}, target_asset_uuid: {}",
+            tenant_uuid, source_asset_uuid, target_asset_uuid
+        );
+        let url = format!(
+            "{}/tenants/{}/assets/{}/match-scores/{}",
+            self.base_url, tenant_uuid, source_asset_uuid, target_asset_uuid
+        );
+
+        self.get(&url).await
+    }
+
     /// Perform a part search to find geometrically similar assets using the part search algorithm
     ///
     /// This method uses Physna's advanced part search algorithms to find assets with similar

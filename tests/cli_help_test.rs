@@ -74,6 +74,7 @@ mod cli_help_tests {
                 assert!(help_output.contains("geometric-match"));
                 assert!(help_output.contains("part-match"));
                 assert!(help_output.contains("visual-match"));
+                assert!(help_output.contains("similarity"));
                 assert!(help_output.contains("metadata"));
                 assert!(help_output.contains("dependencies"));
             } else if subcommand == "auth" {

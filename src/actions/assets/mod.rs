@@ -18,6 +18,7 @@ pub mod match_ops;
 pub mod metadata;
 pub mod print;
 pub mod reprocess;
+pub mod similarity;
 
 pub use create::{
     create_asset, create_asset_batch, create_asset_metadata_batch, update_asset_metadata,
@@ -35,3 +36,4 @@ pub use print::{
     print_asset, print_asset_dependencies, print_asset_metadata, print_folder_dependencies,
 };
 pub use reprocess::reprocess_asset;
+pub use similarity::asset_similarity;

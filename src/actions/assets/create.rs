@@ -4,6 +4,7 @@
 //! including batch operations and metadata management.
 
 use crate::{
+    actions::assets::metadata_batch_csv::{parse_batch_csv, BatchAssetRef, BatchCsvFormat},
     actions::folders::resolve_folder_uuid_by_path,
     actions::CliActionError,
     commands::params::{
@@ -354,51 +355,34 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
 
     let show_progress = sub_matches.get_flag("progress");
     let continue_on_error = sub_matches.get_flag(PARAMETER_CONTINUE_ON_ERROR);
+    let requested_format = sub_matches
+        .get_one::<String>("csv-format")
+        .map(|s| BatchCsvFormat::from_arg(s))
+        .unwrap_or(BatchCsvFormat::Auto);
+
+    // Parse and validate the whole CSV file (classic vertical or UI
+    // horizontal layout) before authenticating or making any API calls, so a
+    // malformed file fails fast instead of half-applying.
+    let file = std::fs::File::open(csv_file_path)
+        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
+    let parsed = parse_batch_csv(file, requested_format).map_err(CliError::ActionError)?;
+
+    debug!("Parsed batch CSV as {:?} format", parsed.format);
+    for warning in &parsed.warnings {
+        error_utils::report_warning(warning);
+    }
+    let entries = parsed.entries;
 
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-
-    // Read the CSV file and store raw string values
-    // Structure: {asset_path: {metadata_name: raw_string_value}}
-    let mut raw_asset_metadata: HashMap<String, HashMap<String, String>> = HashMap::new();
-
-    let file = std::fs::File::open(csv_file_path)
-        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
-    let mut reader = csv::Reader::from_reader(file);
-
-    for result in reader.records() {
-        let record: csv::StringRecord = result
-            .map_err(|e| CliError::FormattingError(crate::format::FormattingError::CsvError(e)))?;
-
-        if record.len() >= 3 {
-            let asset_path: &str = record[0].trim();
-            let metadata_name: &str = record[1].trim();
-            let metadata_value: &str = record[2].trim();
-
-            // Keep empty values - they mean "delete existing metadata"
-            if metadata_value.is_empty() {
-                debug!(
-                    "Empty value for metadata field '{}' on asset '{}' (will delete existing)",
-                    metadata_name, asset_path
-                );
-            }
-
-            // Group metadata by asset path (strip leading slash if present)
-            let clean_asset_path = asset_path.strip_prefix('/').unwrap_or(asset_path);
-            raw_asset_metadata
-                .entry(clean_asset_path.to_string())
-                .or_default()
-                .insert(metadata_name.to_string(), metadata_value.to_string());
-        }
-    }
 
     // Pre-flight token expiration check
     const TIME_PER_ASSET_SECONDS: u64 = 5;
     const SAFETY_MARGIN_SECONDS: u64 = 300;
 
     let time_remaining = api.get_token_time_remaining().unwrap_or(0);
-    let estimated_time_needed = (raw_asset_metadata.len() as u64) * TIME_PER_ASSET_SECONDS;
+    let estimated_time_needed = (entries.len() as u64) * TIME_PER_ASSET_SECONDS;
 
     if time_remaining > 0 && (time_remaining as u64) < estimated_time_needed + SAFETY_MARGIN_SECONDS
     {
@@ -416,7 +400,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     let mut asset_cache = AssetMetadataCache::new();
 
     // Process each asset
-    let total_assets = raw_asset_metadata.len();
+    let total_assets = entries.len();
     let mut success_count = 0;
     let mut failure_count = 0;
     let mut skipped_missing = 0;
@@ -454,9 +438,14 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         None => error_utils::report_warning(&msg),
     };
 
-    for (asset_path, raw_metadata) in &raw_asset_metadata {
+    for entry in &entries {
+        // Display key for progress, caching, and error messages: the asset
+        // path, or the UUID when the row identified the asset by UUID.
+        let asset_display = entry.asset.display();
+        let raw_metadata = &entry.metadata;
+
         if let Some(pb) = progress_bar.as_ref() {
-            pb.set_message(asset_path.clone());
+            pb.set_message(asset_display.clone());
             pb.inc(1);
         }
 
@@ -470,13 +459,17 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         }
 
         // Get the asset to read existing metadata types (use cache if available)
-        let asset = match asset_cache.get(asset_path) {
+        let asset = match asset_cache.get(&asset_display) {
             Some(cached) => cached.clone(),
             None => {
-                match api.get_asset_by_path(&tenant.uuid, asset_path).await {
+                let lookup_result = match &entry.asset {
+                    BatchAssetRef::Uuid(uuid) => api.get_asset_by_uuid(&tenant.uuid, uuid).await,
+                    BatchAssetRef::Path(path) => api.get_asset_by_path(&tenant.uuid, path).await,
+                };
+                match lookup_result {
                     Ok(asset) => {
                         // Cache the asset for potential reuse
-                        asset_cache.insert(asset_path.clone(), asset.clone());
+                        asset_cache.insert(asset_display.clone(), asset.clone());
                         asset
                     }
                     Err(e) => {
@@ -487,7 +480,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                         {
                             auth_failure_occurred = true;
                             report(
-                                format!("Authentication failed while looking up asset '{}': {}", asset_path, e),
+                                format!("Authentication failed while looking up asset '{}': {}", asset_display, e),
                                 &[
                                     "Your access token may have expired",
                                     "Try running 'pcli2 auth expiration' to check token status",
@@ -505,21 +498,27 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                         // detailed guidance to one summary at the end of the run.
                         if continue_on_error {
                             skipped_missing += 1;
-                            warn(format!("Skipped '{}' — asset not found", asset_path));
+                            warn(format!("Skipped '{}' — asset not found", asset_display));
                             continue;
                         }
 
-                        report(
-                            format!("Asset not found: '{}'", asset_path),
-                            &[
+                        let remediation_steps: &[&str] = match &entry.asset {
+                            BatchAssetRef::Uuid(_) => &[
+                                "Verify the UUID in the 'id' column matches an existing asset in Physna",
+                                "Check that the asset hasn't been deleted or re-uploaded (re-uploading changes the UUID)",
+                                "Verify you're using the correct tenant for this asset",
+                                "Or re-run with --continue-on-error to skip unresolvable assets",
+                            ],
+                            BatchAssetRef::Path(_) => &[
                                 "Verify the asset path in your CSV file matches the actual asset path in Physna",
                                 "Check that the asset hasn't been deleted from the system",
                                 "Verify you're using the correct tenant for this asset",
                                 "Check for path format mismatches (e.g., leading slash differences)",
                                 "Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command",
-                                "Or re-run with --continue-on-error to skip unresolved paths"
-                            ]
-                        );
+                                "Or re-run with --continue-on-error to skip unresolved paths",
+                            ],
+                        };
+                        report(format!("Asset not found: '{}'", asset_display), remediation_steps);
 
                         if let Some(pb) = progress_bar.as_ref() {
                             pb.finish_and_clear();
@@ -563,7 +562,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     report(
                         format!(
                             "Authentication failed while deleting metadata for asset '{}': {}",
-                            asset_path, e
+                            asset_display, e
                         ),
                         &[
                             "Your access token may have expired",
@@ -577,7 +576,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 report(
                     format!(
                         "Failed to delete metadata fields for asset '{}': {}",
-                        asset_path, e
+                        asset_display, e
                     ),
                     &[
                         "Verify the metadata field names exist on this asset",
@@ -616,7 +615,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     report(
                         format!(
                             "Authentication failed while updating metadata for asset '{}': {}",
-                            asset_path, e
+                            asset_display, e
                         ),
                         &[
                             "Your access token may have expired",
@@ -630,7 +629,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
 
                 if error_str.contains("must be a") || error_str.contains("Metadata type mismatch") {
                     report(
-                        format!("Type conflict for asset '{}': {}", asset_path, e),
+                        format!("Type conflict for asset '{}': {}", asset_display, e),
                         &[
                             "The metadata field already exists with a different type",
                             "Delete the existing field first if you need to change its type",
@@ -641,7 +640,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     report(
                         format!(
                             "Failed to update metadata for asset '{}': {}",
-                            asset_path, e
+                            asset_display, e
                         ),
                         &[
                             "Verify metadata field names and values are valid",
@@ -681,11 +680,11 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     // every skipped asset, to keep the per-asset output concise.
     if skipped_missing > 0 {
         eprintln!(
-            "\n⚠️  {} asset(s) were skipped because their paths could not be resolved in this tenant.",
+            "\n⚠️  {} asset(s) were skipped because they could not be resolved in this tenant.",
             skipped_missing
         );
         eprintln!("🔧 To resolve, verify that:");
-        eprintln!("  1. The ASSET_PATH values in your CSV match the actual asset paths in Physna");
+        eprintln!("  1. The asset paths (and UUIDs, if present) in your CSV match actual assets in Physna");
         eprintln!("  2. You are targeting the correct tenant");
         eprintln!("  3. The assets have not been deleted, and paths match (e.g., leading slash)");
         eprintln!("  List existing paths with 'pcli2 asset list --folder-path /' to compare.");

@@ -102,28 +102,40 @@ pub fn metadata_command() -> Command {
                 .visible_alias("update-batch")
                 .long_about(
                     "Create metadata for multiple assets from a CSV file.\n\n\
-                    The CSV file must have the following columns in the specified order:\n\
+                    Two CSV layouts are supported. The layout is detected automatically \
+                    from the header row, or can be forced with --csv-format.\n\n\
+                    CLASSIC (vertical) format — one row per asset+field combination:\n\
                     - ASSET_PATH: The full path of the asset in Physna\n\
                     - NAME: The name of the metadata field to set\n\
                     - VALUE: The value to set for the metadata field\n\n\
-                    CSV File Requirements:\n\
-                    - The first row must contain the headers ASSET_PATH,NAME,VALUE\n\
-                    - The file must be UTF-8 encoded\n\
-                    - Values containing commas, quotes, or newlines must be enclosed in double quotes\n\
-                    - Empty rows will be ignored\n\
-                    - Each row represents a single metadata field assignment for an asset\n\n\
                     If an asset has multiple metadata fields to update, include multiple rows \n\
-                    with the same ASSET_PATH but different NAME and VALUE combinations.\n\n\
-                    Example CSV format:\n\
+                    with the same ASSET_PATH but different NAME and VALUE combinations. \
+                    An empty VALUE deletes the metadata field from the asset.\n\n\
+                    Example:\n\
                     ASSET_PATH,NAME,VALUE\n\
                     folder/subfolder/asset1.stl,Material,Steel\n\
                     folder/subfolder/asset1.stl,Weight,\"15.5 kg\"\n\
                     folder/subfolder/asset2.ipt,Material,Aluminum\n\n\
-                    The command will group metadata by asset path and update all metadata \
+                    UI (horizontal) format — one row per asset, as exported by the Physna \
+                    web UI's bulk metadata upload:\n\
+                    - path: The full path of the asset in Physna\n\
+                    - id: Optional asset UUID; when present it takes precedence over the path\n\
+                    - metadata:<field name>: One column per metadata field to set\n\n\
+                    Empty metadata cells are skipped (the existing value is left untouched). \
+                    Columns other than path, id, and metadata:* are ignored with a warning.\n\n\
+                    Example:\n\
+                    path,id,metadata:Material,metadata:Color\n\
+                    /folder/part1.sldprt,,Steel,Blue\n\
+                    /folder/part2.step,123e4567-e89b-12d3-a456-426614174000,Aluminum,Red\n\n\
+                    General CSV requirements:\n\
+                    - The first row must contain the column headers\n\
+                    - The file must be UTF-8 encoded\n\
+                    - Values containing commas, quotes, or newlines must be enclosed in double quotes\n\n\
+                    The command groups metadata by asset and updates all metadata \
                     for each asset in a single API call.\n\n\
-                    By default, any error (such as an asset path that cannot be resolved \
+                    By default, any error (such as an asset that cannot be resolved \
                     or a failed metadata API call) terminates the batch operation. \
-                    Pass --continue-on-error to skip assets whose paths cannot be resolved \
+                    Pass --continue-on-error to skip assets that cannot be resolved \
                     and continue with the remaining rows. Metadata API errors always \
                     terminate execution regardless of this flag, because the API already \
                     retries transient failures internally."
@@ -136,6 +148,19 @@ pub fn metadata_command() -> Command {
                         .required(true)
                         .help("Path to the CSV file containing metadata entries")
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
+                )
+                .arg(
+                    Arg::new("csv-format")
+                        .long("csv-format")
+                        .num_args(1)
+                        .required(false)
+                        .value_parser(["auto", "classic", "ui"])
+                        .default_value("auto")
+                        .help(
+                            "CSV layout: 'classic' (ASSET_PATH,NAME,VALUE rows), 'ui' (one row \
+                            per asset with 'metadata:' columns, as exported by the Physna UI), \
+                            or 'auto' to detect from the header row",
+                        ),
                 )
                 .arg(
                     Arg::new("progress")

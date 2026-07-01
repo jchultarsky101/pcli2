@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-01
+
+### Added
+- **Physna UI CSV format support for `asset metadata create-batch`** - The command now accepts the horizontal CSV layout used by the Physna web UI's bulk metadata upload, in addition to the existing vertical `ASSET_PATH,NAME,VALUE` format. The layout is auto-detected from the header row (any column starting with `metadata:` selects the UI format) and can be forced with the new `--csv-format <auto|classic|ui>` option (default: `auto`).
+  - The UI format has one row per asset: a `path` column, an optional `id` column holding the asset UUID, and one `metadata:<field name>` column per metadata field (the prefix is stripped to obtain the field name).
+  - When a row's `id` is present and non-empty, the UUID **takes precedence** over the path and is used directly. An invalid UUID is an error - there is no fallback to the path, since that could silently target a different asset.
+  - **Empty metadata cells are skipped** (existing values are left untouched), unlike the classic format where an empty VALUE deletes the field. Spreadsheet-style exports naturally contain blank cells, so blanks are never treated as deletions in this layout.
+  - Columns other than `path`, `id`, and `metadata:*` are ignored with a warning. The whole file is parsed and validated (including UUID syntax) with line-numbered errors before authentication or any API call, so a malformed file fails fast instead of half-applying.
+  - The classic vertical format behavior is unchanged; existing CSV files continue to work without any flag.
+  - Affects `pcli2 asset metadata create-batch` (and its `update-batch` alias).
+
 ## [1.5.0] - 2026-07-01
 
 ### Added

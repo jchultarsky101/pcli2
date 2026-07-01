@@ -17,6 +17,7 @@ pub mod full_inventory;
 pub mod list;
 pub mod match_ops;
 pub mod metadata;
+pub mod metadata_batch_csv;
 pub mod print;
 pub mod reprocess;
 pub mod similarity;

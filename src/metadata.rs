@@ -191,3 +191,62 @@ fn sanitize_metadata_value(value: &str) -> String {
         // Keep other characters as they are
         .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_type_keeps_numeric_looking_value_as_string() {
+        // Regression: `--type text --value 100` must serialize as the JSON string
+        // "100", not the number 100. String-typed metadata fields on the tenant
+        // reject numbers with "Value for metadata field 'X' must be a string".
+        let value = convert_single_metadata_to_json_value("test_quantity", "100", "text");
+        assert_eq!(value, Value::String("100".to_string()));
+    }
+
+    #[test]
+    fn text_type_keeps_boolean_looking_value_as_string() {
+        let value = convert_single_metadata_to_json_value("flag", "true", "text");
+        assert_eq!(value, Value::String("true".to_string()));
+    }
+
+    #[test]
+    fn text_type_keeps_float_looking_value_as_string() {
+        let value = convert_single_metadata_to_json_value("ratio", "3.14", "text");
+        assert_eq!(value, Value::String("3.14".to_string()));
+    }
+
+    #[test]
+    fn text_type_preserves_non_numeric_value() {
+        let value = convert_single_metadata_to_json_value("test_quantity", "100pcs", "text");
+        assert_eq!(value, Value::String("100pcs".to_string()));
+    }
+
+    #[test]
+    fn number_type_serializes_integer() {
+        let value = convert_single_metadata_to_json_value("qty", "100", "number");
+        assert_eq!(value, Value::Number(serde_json::Number::from(100i64)));
+    }
+
+    #[test]
+    fn number_type_serializes_float() {
+        let value = convert_single_metadata_to_json_value("ratio", "2.5", "number");
+        assert_eq!(
+            value,
+            Value::Number(serde_json::Number::from_f64(2.5).unwrap())
+        );
+    }
+
+    #[test]
+    fn boolean_type_serializes_bool() {
+        assert_eq!(
+            convert_single_metadata_to_json_value("flag", "yes", "boolean"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            convert_single_metadata_to_json_value("flag", "off", "boolean"),
+            Value::Bool(false)
+        );
+    }
+}

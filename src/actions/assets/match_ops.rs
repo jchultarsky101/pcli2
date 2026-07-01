@@ -526,11 +526,12 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
 /// Excel outputs of `folder geometric-match`.
 ///
 /// Producing both formats from this one function guarantees they are always
-/// column-for-column identical — only the presentation differs. The base columns
-/// come from [`crate::model::GeometricMatchPair::csv_header`]; when
-/// `with_metadata` is set, paired `REF_<field>`/`CAN_<field>` metadata columns
-/// are appended after them, using the sorted union of metadata keys across all
-/// pairs.
+/// column-for-column identical — only the presentation differs. The columns are,
+/// in order: the base columns from [`crate::model::GeometricMatchPair::csv_header`]
+/// except `COMPARISON_URL`; then, when `with_metadata` is set, paired
+/// `REF_<field>`/`CAN_<field>` metadata columns (the sorted union of metadata keys
+/// across all pairs); and finally `COMPARISON_URL` as the last column (its long,
+/// rarely-read value is kept out of the way after the metadata).
 fn build_geometric_match_table(
     all_matches: &[crate::model::EnhancedGeometricSearchResponse],
     with_metadata: bool,
@@ -565,16 +566,21 @@ fn build_geometric_match_table(
         metadata_keys = sorted;
     }
 
-    // Headers: base columns, then REF_/CAN_ metadata pairs.
+    // Headers: base columns, then REF_/CAN_ metadata pairs, and finally
+    // COMPARISON_URL. The comparison URL is long and rarely read, so it is moved
+    // out of the base columns to the very last column, after the metadata.
+    const COMPARISON_URL_HEADER: &str = "COMPARISON_URL";
     let mut headers = crate::model::GeometricMatchPair::csv_header();
+    headers.retain(|header| header != COMPARISON_URL_HEADER);
     if with_metadata {
         for key in &metadata_keys {
             headers.push(format!("REF_{}", key.to_uppercase()));
             headers.push(format!("CAN_{}", key.to_uppercase()));
         }
     }
+    headers.push(COMPARISON_URL_HEADER.to_string());
 
-    // Rows, in the same column order as the headers.
+    // Rows, in the same column order as the headers (COMPARISON_URL last).
     let mut rows = Vec::with_capacity(flattened.len());
     for pair in &flattened {
         let mut values = vec![
@@ -583,7 +589,6 @@ fn build_geometric_match_table(
             format!("{}", pair.match_percentage),
             pair.reference_asset.uuid.to_string(),
             pair.candidate_asset.uuid.to_string(),
-            pair.comparison_url.clone().unwrap_or_default(),
         ];
         if with_metadata {
             for key in &metadata_keys {
@@ -605,6 +610,8 @@ fn build_geometric_match_table(
                 values.push(candidate_value);
             }
         }
+        // COMPARISON_URL last, matching the header order above.
+        values.push(pair.comparison_url.clone().unwrap_or_default());
         rows.push(values);
     }
 

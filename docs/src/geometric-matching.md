@@ -153,9 +153,9 @@ https://app.physna.com/tenants/{tenant_short_name}/compare?asset1Id={reference_a
 
 In addition to `json` and `csv`, the folder match command supports `--format xls`,
 which writes a **color-highlighted Excel workbook** designed for a human reader.
-It contains exactly the same columns as the CSV output (always including the
-`REF_`/`CAN_` metadata pairs), rendered with visual aids that make a large report
-easy to scan:
+It contains exactly the same columns, in the same order, as the CSV output
+(always including the `REF_`/`CAN_` metadata pairs), rendered with visual aids
+that make a large report easy to scan:
 
 - **Frozen headers and identity columns** — the two header rows and the leading
   reference path, candidate path, and match-percentage columns stay in view while
@@ -169,7 +169,8 @@ easy to scan:
 - **Match-score heat map** — the `MATCH_PERCENTAGE` column is shaded on a gradient
   (cool at 0%, through yellow at 50%, to red-hot at 100%) and the rows are sorted
   by match percentage, highest first.
-- **Clickable comparison links** — the `COMPARISON_URL` column is written as a
+- **Clickable comparison links** — `COMPARISON_URL` is the **last column** (its
+  long value is rarely read, so the metadata columns come before it), written as a
   hyperlink you can click to open the side-by-side comparison in a browser.
 
 Because Excel is a binary format, `xls` writes to a **file** rather than standard

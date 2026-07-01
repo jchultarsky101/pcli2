@@ -175,7 +175,9 @@ easy to scan:
 Because Excel is a binary format, `xls` writes to a **file** rather than standard
 output. Use `--output` (or `-o`) to choose the path; if omitted, the workbook is
 written to `match_report.xlsx` in the current directory. The extension is always
-normalized to `.xlsx` (the modern Office Open XML format).
+normalized to `.xlsx` (the modern Office Open XML format); if it had to be
+changed, a warning is printed to `stderr`. On success the command follows the
+UNIX convention of printing nothing to `stdout`.
 
 ```bash
 # Write a highlighted Excel report for a folder

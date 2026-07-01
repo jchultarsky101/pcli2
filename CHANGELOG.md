@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-01
+
+### Added
+- **`--threshold` option for visual match commands** - `asset visual-match` and `folder visual-match` now accept `--threshold` (short `-s`, default `80.0`), consistent with `geometric-match` and `part-match`. For visual search the value maps to the API's `sizeThreshold`: it filters matches by geometric size relative to the reference asset (higher is stricter; `0` disables size filtering).
+
+### Changed
+- **Visual search migrated to the new Physna API endpoint** - `asset visual-match` and `folder visual-match` now call `POST /tenants/assets/visual-search` (operation `CrossTenantVisualSearch`) instead of the soon-to-be-deprecated `POST /tenants/{tenantId}/assets/{assetId}/visual-search`. All inputs, including pagination, are carried in the request body; the search remains within the current tenant (the same tenant is passed as both the asset owner and the search target). The response format and command output are unchanged.
+
 ## [1.6.0] - 2026-07-01
 
 ### Added

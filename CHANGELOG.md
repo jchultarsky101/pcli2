@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-30
+
+### Fixed
+- **`visual-match` pagination** - Visual search now returns the full ranked result set instead of only the first ~20 matches. The `visual-search` API endpoint takes `page`/`perPage` as **query parameters**, but the client was sending them in the request body (which the API ignores), so every call returned only the first page. The client now sends pagination in the query string and walks all pages. Affects `pcli2 asset visual-match` and `pcli2 folder visual-match` (and their `visual-search` aliases).
+
+### Added
+- **`--limit` for the visual-match commands** - Cap the number of results returned by `asset visual-match` and `folder visual-match`, defaulting to **100**. Visual search ranks every asset by visual similarity (there is no similarity threshold in the API), so a limit keeps the output manageable; pass a higher `--limit` to retrieve more. The client requests only as many results per page as needed, so a small limit costs a single API call.
+
 ## [1.4.0] - 2026-06-30
 
 ### Added

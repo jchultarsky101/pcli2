@@ -307,6 +307,13 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     let asset_uuid_param = sub_matches.get_one::<uuid::Uuid>(PARAMETER_UUID);
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
+    // Maximum number of results to return (visual search ranks every asset, so a
+    // limit is required to keep the result set manageable).
+    let limit = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
+        .copied()
+        .unwrap_or(100);
+
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
     let format = format_params.format;
@@ -327,7 +334,10 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     .await?;
 
     // Perform visual search
-    let mut search_results = ctx.api().visual_search(&tenant_uuid, &asset.uuid()).await?;
+    let mut search_results = ctx
+        .api()
+        .visual_search(&tenant_uuid, &asset.uuid(), limit)
+        .await?;
 
     // Load configuration to get the UI base URL
     let configuration =
@@ -1689,6 +1699,12 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     let with_metadata = format_params.format_options.with_metadata;
     let with_headers = format_params.format_options.with_headers;
 
+    // Maximum number of visual-search results to return per asset.
+    let limit = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
+        .copied()
+        .unwrap_or(100);
+
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
 
@@ -1803,7 +1819,10 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 pb.set_message("Starting visual search...");
             }
 
-            let result = match api_clone.visual_search(&tenant_uuid, &asset_uuid).await {
+            let result = match api_clone
+                .visual_search(&tenant_uuid, &asset_uuid, limit)
+                .await
+            {
                 Ok(search_results) => {
                     // Update progress bar to show processing matches
                     if let Some(ref pb) = individual_pb {

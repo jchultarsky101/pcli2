@@ -161,32 +161,10 @@ pub fn convert_single_metadata_to_json_value(
             serde_json::Value::Bool(bool_val)
         }
         _ => {
-            // Default to text/string type, but intelligently detect booleans and numbers
-            // This helps when the API field is already defined as boolean/number but CSV doesn't specify type
-
-            // First, check for boolean values (case-insensitive)
-            let lower_value = value.to_lowercase();
-            if lower_value == "true" || lower_value == "yes" {
-                return serde_json::Value::Bool(true);
-            }
-            if lower_value == "false" || lower_value == "no" {
-                return serde_json::Value::Bool(false);
-            }
-
-            // Then, check for numeric values
-            if let Ok(int_val) = value.parse::<i64>() {
-                return serde_json::Value::Number(serde_json::Number::from(int_val));
-            }
-            if let Ok(float_val) = value.parse::<f64>() {
-                if float_val.fract() == 0.0 {
-                    return serde_json::Value::Number(serde_json::Number::from(float_val as i64));
-                }
-                if let Some(num) = serde_json::Number::from_f64(float_val) {
-                    return serde_json::Value::Number(num);
-                }
-            }
-
-            // Default to text/string type, with sanitization
+            // Text (the default): always serialize as a JSON string, even when the
+            // value looks numeric or boolean. The `--type` flag is authoritative, so
+            // `--type text --value 100` must produce the string "100" rather than the
+            // number 100 (which the API rejects for string-typed metadata fields).
             let sanitized_value = sanitize_metadata_value(value);
             serde_json::Value::String(sanitized_value)
         }
@@ -212,4 +190,63 @@ fn sanitize_metadata_value(value: &str) -> String {
         .replace("…", "...") // Ellipsis
         // Keep other characters as they are
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_type_keeps_numeric_looking_value_as_string() {
+        // Regression: `--type text --value 100` must serialize as the JSON string
+        // "100", not the number 100. String-typed metadata fields on the tenant
+        // reject numbers with "Value for metadata field 'X' must be a string".
+        let value = convert_single_metadata_to_json_value("test_quantity", "100", "text");
+        assert_eq!(value, Value::String("100".to_string()));
+    }
+
+    #[test]
+    fn text_type_keeps_boolean_looking_value_as_string() {
+        let value = convert_single_metadata_to_json_value("flag", "true", "text");
+        assert_eq!(value, Value::String("true".to_string()));
+    }
+
+    #[test]
+    fn text_type_keeps_float_looking_value_as_string() {
+        let value = convert_single_metadata_to_json_value("ratio", "3.14", "text");
+        assert_eq!(value, Value::String("3.14".to_string()));
+    }
+
+    #[test]
+    fn text_type_preserves_non_numeric_value() {
+        let value = convert_single_metadata_to_json_value("test_quantity", "100pcs", "text");
+        assert_eq!(value, Value::String("100pcs".to_string()));
+    }
+
+    #[test]
+    fn number_type_serializes_integer() {
+        let value = convert_single_metadata_to_json_value("qty", "100", "number");
+        assert_eq!(value, Value::Number(serde_json::Number::from(100i64)));
+    }
+
+    #[test]
+    fn number_type_serializes_float() {
+        let value = convert_single_metadata_to_json_value("ratio", "2.5", "number");
+        assert_eq!(
+            value,
+            Value::Number(serde_json::Number::from_f64(2.5).unwrap())
+        );
+    }
+
+    #[test]
+    fn boolean_type_serializes_bool() {
+        assert_eq!(
+            convert_single_metadata_to_json_value("flag", "yes", "boolean"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            convert_single_metadata_to_json_value("flag", "off", "boolean"),
+            Value::Bool(false)
+        );
+    }
 }

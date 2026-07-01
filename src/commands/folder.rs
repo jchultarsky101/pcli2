@@ -5,10 +5,10 @@
 use crate::commands::params::{
     folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    name_parameter, parent_folder_identifier_group, parent_folder_path_parameter,
-    parent_folder_uuid_parameter, tenant_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER,
-    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_VISUAL_MATCH,
-    PARAMETER_PROGRESS,
+    name_parameter, output_file_parameter, parent_folder_identifier_group,
+    parent_folder_path_parameter, parent_folder_uuid_parameter, tenant_parameter, COMMAND_CREATE,
+    COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH,
+    COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_XLS, PARAMETER_PROGRESS,
 };
 use clap::Command;
 
@@ -247,7 +247,10 @@ pub fn folder_command() -> Command {
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_XLS]))
+                .arg(output_file_parameter().help(
+                    "Output file path (required for --format xls; default: match_report.xlsx)",
+                ))
                 .arg(
                     clap::Arg::new("concurrent")
                         .long("concurrent")

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-30
+
+### Added
+- **`--format xls` for `folder geometric-match`** - A new Excel (`.xlsx`) output format that renders the match report as a color-highlighted, human-friendly workbook. It contains exactly the same columns as the CSV output (always including the `REF_`/`CAN_` metadata pairs), with visual aids for scanning large reports: frozen header rows and identity columns, grouped/boxed `REF_`/`CAN_` metadata pairs, per-cell metadata diff highlighting (green match / red differ / amber missing-on-one-side), a heat-map gradient over `MATCH_PERCENTAGE` with rows sorted by match descending, and clickable `COMPARISON_URL` hyperlinks.
+  - Because Excel is binary, `xls` writes to a file rather than stdout: use `--output`/`-o` to set the path (default `match_report.xlsx`); the extension is normalized to `.xlsx`, and a warning is printed to stderr if it had to be changed. On success the command prints nothing to stdout (UNIX convention).
+  - The `xls` format always includes metadata, so `--metadata` is implied.
+  - Ported from the standalone `match-report-analyzer` tool for a consistent look and feel.
+  - Affects `pcli2 folder geometric-match` (and its `geometric-search` alias).
+
+### Changed
+- **`folder geometric-match`: `COMPARISON_URL` moved to the last column** - In both the CSV and Excel output, the long, rarely-read `COMPARISON_URL` column is now the final column, after the `REF_`/`CAN_` metadata columns (previously it came before them). Affects `pcli2 folder geometric-match` when run with `--metadata` (and the new `--format xls`, which always includes metadata).
+- **Candidate metadata column prefix renamed `CAND_` → `CAN_`** - Match-report CSV output (and the new Excel output) now prefixes candidate-asset metadata columns with `CAN_` instead of `CAND_`, keeping it the same length as the `REF_` reference prefix for visual consistency and matching the `match-report-analyzer` convention. Affects the metadata columns of all match commands (`asset geometric-match`, `asset part-match`, `asset visual-match`, and their `folder` counterparts) when run with `--metadata`.
+
 ## [1.3.0] - 2026-06-30
 
 ### Added

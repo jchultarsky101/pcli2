@@ -493,6 +493,12 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
             crate::error::CliError::FolderListError(_) => {
                 CliActionError::MissingRequiredArgument("Folder list error".to_string())
             }
+            crate::error::CliError::XlsxReportError(xlsx_error) => {
+                CliActionError::MissingRequiredArgument(format!(
+                    "Excel report error: {}",
+                    xlsx_error
+                ))
+            }
             crate::error::CliError::UuidParsingError(uuid_error) => {
                 CliActionError::UuidPartsinError(uuid_error)
             }

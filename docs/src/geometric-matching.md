@@ -81,10 +81,10 @@ ReferenceModel.stl,SimilarModel.stl,95.75,/Root/Folder/ReferenceModel.stl,/Root/
 
 #### CSV Format with Metadata
 
-When using the `--metadata` flag, the output includes metadata fields from both the reference and candidate assets. This produces CSV output with additional metadata columns prefixed with `REF_` for reference asset metadata and `CAND_` for candidate asset metadata. The output also includes a `COMPARISON_URL` column that provides a link to view the comparison in the Physna UI:
+When using the `--metadata` flag, the output includes metadata fields from both the reference and candidate assets. This produces CSV output with additional metadata columns prefixed with `REF_` for reference asset metadata and `CAN_` for candidate asset metadata. The output also includes a `COMPARISON_URL` column that provides a link to view the comparison in the Physna UI:
 
 ```csv
-REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL,REF_MATERIAL,CAND_MATERIAL,REF_COLOR,CAND_COLOR
+REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL,REF_MATERIAL,CAN_MATERIAL,REF_COLOR,CAN_COLOR
 /Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,95.75,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=68555ebf-f09c-4861-96b1-692d2ec10de7&tenant2Id=68555ebf-f09c-4861-96b1-692d2ec10de7&searchType=geometric&matchPercentage=95.75,Steel,Aluminum,Red,Blue
 ```
 
@@ -112,7 +112,7 @@ pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 8
 
 Output:
 ```csv
-REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL,REF_MATERIAL,CAND_MATERIAL,REF_COLOR,CAND_COLOR
+REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL,REF_MATERIAL,CAN_MATERIAL,REF_COLOR,CAN_COLOR
 /Root/Folder/ReferenceModel.stl,/Root/DifferentFolder/SimilarModel.stl,95.75,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=68555ebf-f09c-4861-96b1-692d2ec10de7&tenant2Id=68555ebf-f09c-4861-96b1-692d2ec10de7&searchType=geometric&matchPercentage=95.75,Steel,Aluminum,Red,Blue
 ```
 
@@ -148,6 +148,48 @@ The URL follows this format:
 ```
 https://app.physna.com/tenants/{tenant_short_name}/compare?asset1Id={reference_asset_uuid}&asset2Id={candidate_asset_uuid}&tenant1Id={tenant_uuid}&tenant2Id={tenant_uuid}&searchType=geometric&matchPercentage={match_percentage}
 ```
+
+### Excel (XLSX) Output
+
+In addition to `json` and `csv`, the folder match command supports `--format xls`,
+which writes a **color-highlighted Excel workbook** designed for a human reader.
+It contains exactly the same columns, in the same order, as the CSV output
+(always including the `REF_`/`CAN_` metadata pairs), rendered with visual aids
+that make a large report easy to scan:
+
+- **Frozen headers and identity columns** — the two header rows and the leading
+  reference path, candidate path, and match-percentage columns stay in view while
+  you scroll a wide, tall report.
+- **Grouped metadata pairs** — each `REF_<field>`/`CAN_<field>` pair is boxed and
+  labeled once with the field name (e.g. `MATERIAL` over a `REF` and a `CAN`
+  sub-column), so the reference/candidate pairs stand out among the plain columns.
+- **Metadata diff highlighting** — for every pair, both cells are shaded:
+  🟩 green when the two values match, 🟥 red when they differ, and 🟨 amber when a
+  value is present on only one side.
+- **Match-score heat map** — the `MATCH_PERCENTAGE` column is shaded on a gradient
+  (cool at 0%, through yellow at 50%, to red-hot at 100%) and the rows are sorted
+  by match percentage, highest first.
+- **Clickable comparison links** — `COMPARISON_URL` is the **last column** (its
+  long value is rarely read, so the metadata columns come before it), written as a
+  hyperlink you can click to open the side-by-side comparison in a browser.
+
+Because Excel is a binary format, `xls` writes to a **file** rather than standard
+output. Use `--output` (or `-o`) to choose the path; if omitted, the workbook is
+written to `match_report.xlsx` in the current directory. The extension is always
+normalized to `.xlsx` (the modern Office Open XML format); if it had to be
+changed, a warning is printed to `stderr`. On success the command follows the
+UNIX convention of printing nothing to `stdout`.
+
+```bash
+# Write a highlighted Excel report for a folder
+pcli2 folder geometric-match --folder-path /Root/SearchFolder/ --threshold 80.0 --format xls --output report.xlsx
+
+# Multiple folders, default output filename (match_report.xlsx)
+pcli2 folder geometric-match --folder-path /Root/FolderA/ --folder-path /Root/FolderB/ --format xls
+```
+
+> The `xls` format always includes metadata (the metadata diff is its whole
+> point), so the `--metadata` flag is implied and does not need to be passed.
 
 ### Performance Options
 

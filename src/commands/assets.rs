@@ -218,6 +218,16 @@ pub fn asset_command() -> Command {
             .arg(uuid_parameter())
             .arg(path_parameter())
             .arg(limit_parameter())
+            .arg(
+                Arg::new("threshold")
+                    .short('s')
+                    .long("threshold")
+                    .num_args(1)
+                    .required(false)
+                    .default_value("80.0")
+                    .help("Size threshold (0.00 to 100.00): filters matches by geometric size relative to the reference asset; higher is stricter, 0 disables size filtering")
+                    .value_parser(clap::value_parser!(f64)),
+            )
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())

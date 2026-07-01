@@ -327,6 +327,16 @@ pub fn folder_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(limit_parameter())
                 .arg(
+                    clap::Arg::new("threshold")
+                        .short('s')
+                        .long("threshold")
+                        .num_args(1)
+                        .required(false)
+                        .default_value("80.0")
+                        .help("Size threshold (0.00 to 100.00): filters matches by geometric size relative to the reference asset; higher is stricter, 0 disables size filtering")
+                        .value_parser(clap::value_parser!(f64)),
+                )
+                .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .short('p')
                         .long(crate::commands::params::PARAMETER_FOLDER_PATH)

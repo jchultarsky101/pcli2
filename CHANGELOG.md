@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-01
+
+### Added
+- **`asset dependency-diff` command** - Compare the recursive dependency trees of two assemblies (a **reference** and a **candidate**) and report which parts differ between them. Each asset is identified by **either** a UUID **or** a path, consistent with the other asset commands: `--reference-uuid`/`--reference-path` and `--candidate-uuid`/`--candidate-path` (each pair is mutually exclusive and required).
+  - The comparison is a **structural** tree diff: the two trees are walked in parallel and nodes are matched by **filename**. It is **presence-only** - each node is reported as present in both (`=`), only in the reference (`-`), or only in the candidate (`+`); occurrence counts are not compared. A subassembly present on only one side has its entire subtree marked accordingly.
+  - Output supports `tree` (default view of the merged diff, with a legend and summary line), `json`, and `csv` (columns `STATUS`, `ASSEMBLY_PATH`, `FILENAME`, `ASSET_UUID`, `ASSET_STATE`), mirroring the existing `asset dependencies` command.
+  - If either asset cannot be resolved, the error identifies which input (reference or candidate) failed. An asset that is not an assembly is treated as having no dependencies.
+  - Available under the alias `asset deps-diff`.
+  - Affects `pcli2 asset dependency-diff` (and its `deps-diff` alias).
+
 ## [1.4.2] - 2026-07-01
 
 ### Fixed

@@ -40,6 +40,10 @@ pub enum CliError {
     #[error("API error: {0}")]
     PhysnaExtendedApiError(#[from] physna_v3::ApiError),
 
+    /// Error when one of the two input assets for a comparison cannot be resolved
+    #[error("Could not resolve {0} asset: {1}")]
+    AssetResolutionError(String, String),
+
     #[error("UUID parsing error: {0}")]
     UuidParsingError(#[from] uuid::Error),
 
@@ -71,6 +75,7 @@ impl CliError {
             CliError::JsonError(_) => PcliExitCode::DataError,
             CliError::TenantNotFound { .. } => PcliExitCode::UsageError,
             CliError::FolderNotFound { .. } => PcliExitCode::UsageError,
+            CliError::AssetResolutionError(..) => PcliExitCode::UsageError,
             CliError::XlsxReportError(_) => PcliExitCode::DataError,
             _ => PcliExitCode::SoftwareError,
         }

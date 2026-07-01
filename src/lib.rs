@@ -23,6 +23,7 @@ pub mod cache;
 pub mod commands;
 pub mod configuration;
 pub mod context;
+pub mod dependency_diff;
 pub mod dev_keyring;
 pub mod error;
 pub mod error_utils;

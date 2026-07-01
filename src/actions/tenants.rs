@@ -505,6 +505,12 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
             crate::error::CliError::FolderRenameFailed(_, _) => {
                 CliActionError::MissingRequiredArgument("Folder rename failed".to_string())
             }
+            crate::error::CliError::AssetResolutionError(which, msg) => {
+                CliActionError::MissingRequiredArgument(format!(
+                    "Could not resolve {} asset: {}",
+                    which, msg
+                ))
+            }
         })?;
 
     if let Some(state) = state_type {

@@ -12,11 +12,11 @@ use crate::commands::params::{
     multiple_files_parameter, override_parameter, path_parameter, reference_identifier_group,
     reference_path_parameter, reference_uuid_parameter, restore_metadata_parameter,
     tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_COUNTS, COMMAND_CREATE,
-    COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DOWNLOAD,
-    COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH,
-    COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL,
-    COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_CONCURRENT,
-    PARAMETER_FILE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
+    COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES, COMMAND_DEPENDENCY_DIFF,
+    COMMAND_DOWNLOAD, COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH,
+    COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_TEXT_MATCH,
+    COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE,
+    PARAMETER_CONCURRENT, PARAMETER_FILE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
 
@@ -131,6 +131,22 @@ pub fn asset_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
                 .group(asset_identifier_group()),
+        )
+        .subcommand(
+            Command::new(COMMAND_DEPENDENCY_DIFF)
+                .about("Diff the dependency trees of two assets")
+                .visible_alias("deps-diff")
+                .arg(tenant_parameter())
+                .arg(reference_uuid_parameter())
+                .arg(reference_path_parameter())
+                .arg(candidate_uuid_parameter())
+                .arg(candidate_path_parameter())
+                .arg(format_with_metadata_parameter())
+                .arg(format_with_headers_parameter())
+                .arg(format_pretty_parameter())
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
+                .group(reference_identifier_group())
+                .group(candidate_identifier_group()),
         )
         .subcommand(
             Command::new(COMMAND_DOWNLOAD)

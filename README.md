@@ -529,6 +529,7 @@ Quick reference for all available command aliases:
 | `pcli2 asset create` | `pcli2 asset upload` |
 | `pcli2 asset download` | `pcli2 asset dl` |
 | `pcli2 asset dependencies` | `pcli2 asset deps` |
+| `pcli2 asset dependency-diff` | `pcli2 asset deps-diff` |
 | `pcli2 asset thumbnail` | `pcli2 asset thumb` |
 
 ### Authentication Commands
@@ -562,6 +563,7 @@ pcli2 asset get              # Get asset details
 pcli2 asset download         # Download an asset
 pcli2 asset delete           # Delete an asset
 pcli2 asset dependencies     # Get dependencies for an asset
+pcli2 asset dependency-diff  # Diff the dependency trees of two assets
 pcli2 asset geometric-match  # Find geometrically similar assets
 pcli2 asset part-match       # Find part matches for an asset
 pcli2 asset visual-match     # Find visually similar assets (--limit N, default 100)
@@ -612,6 +614,56 @@ pcli2 asset counts --format json
 # Asset health report in CSV
 pcli2 asset counts --format csv --headers
 ```
+
+#### Asset Dependency Diff Command
+
+The `asset dependency-diff` command (alias `deps-diff`) compares the recursive dependency trees of two assemblies — a **reference** and a **candidate** — and reports which parts differ between them.
+
+Each asset is identified by either its UUID or its path, consistent with other asset commands. Provide exactly one identifier per side:
+
+- `--reference-uuid` or `--reference-path`
+- `--candidate-uuid` or `--candidate-path`
+
+The comparison is **structural**: the two trees are walked in parallel and their nodes are matched by **filename**. It is **presence-only** — a part is reported as present in both (`=`), only in the reference (`-`), or only in the candidate (`+`); occurrence counts are not compared. If a whole subassembly is present on only one side, its entire subtree is marked accordingly.
+
+Supported output formats: `tree` (default view of the merged diff), `json`, and `csv`.
+
+```bash
+# Diff two assemblies by path, rendered as a tree
+pcli2 asset dependency-diff \
+  --reference-path /Parts/AssemblyA.SLDASM \
+  --candidate-path /Parts/AssemblyB.SLDASM \
+  --format tree
+
+# Diff by UUID, as pretty JSON
+pcli2 asset deps-diff \
+  --reference-uuid 00000000-0000-0000-0000-000000000001 \
+  --candidate-uuid 00000000-0000-0000-0000-000000000002 \
+  --format json --pretty
+
+# Diff as CSV with headers (STATUS, ASSEMBLY_PATH, FILENAME, ASSET_UUID, ASSET_STATE)
+pcli2 asset deps-diff \
+  --reference-path /Parts/AssemblyA.SLDASM \
+  --candidate-path /Parts/AssemblyB.SLDASM \
+  --format csv --headers
+```
+
+Example tree output:
+
+```
+dependency diff: reference `/Parts/AssemblyA.SLDASM` vs candidate `/Parts/AssemblyB.SLDASM`
+├─ (=) gearbox.sldasm [finished] (…)
+│  ├─ (=) shaft.stl [finished] (…)
+│  ├─ (-) bearing-v1.stl [finished] (…)
+│  └─ (+) bearing-v2.stl [finished] (…)
+├─ (-) bracket-old.stl [finished] (…)
+└─ (+) bracket-new.stl [finished] (…)
+
+Legend: (=) in both  (-) only in reference  (+) only in candidate
+Summary: 2 common, 2 only in reference, 2 only in candidate
+```
+
+If either asset cannot be resolved, the command reports which input (reference or candidate) failed. An asset that is not an assembly is treated as having no dependencies.
 
 #### Asset Metadata Commands
 

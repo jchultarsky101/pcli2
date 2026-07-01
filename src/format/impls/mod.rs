@@ -14,6 +14,7 @@
 
 mod asset;
 mod dependencies;
+mod dependency_diff;
 mod folder;
 mod health;
 mod match_ops;

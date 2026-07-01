@@ -254,8 +254,7 @@ fn one_sided_group(
 ) -> DiffNode {
     summary.bump(status);
     let (uuid, state, path) = node_details(group[0]);
-    let children: Vec<&AssemblyNode> =
-        group.iter().flat_map(|node| node.children()).collect();
+    let children: Vec<&AssemblyNode> = group.iter().flat_map(|node| node.children()).collect();
     let child_nodes = one_sided_level(&children, status, summary);
     DiffNode {
         filename: filename.to_string(),
@@ -282,7 +281,7 @@ fn one_sided_level(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Asset, AssemblyTree};
+    use crate::model::{AssemblyTree, Asset};
     use uuid::Uuid;
 
     /// Create a simple finished, non-assembly asset from a path.
@@ -314,11 +313,15 @@ mod tests {
     #[test]
     fn identical_trees_are_all_common() {
         let mut reference = AssemblyTree::new(asset("/A.asm"));
-        reference.root_mut().add_child_mut(asset("/parts/shaft.stl"));
+        reference
+            .root_mut()
+            .add_child_mut(asset("/parts/shaft.stl"));
         reference.root_mut().add_child_mut(asset("/parts/gear.stl"));
 
         let mut candidate = AssemblyTree::new(asset("/B.asm"));
-        candidate.root_mut().add_child_mut(asset("/parts/shaft.stl"));
+        candidate
+            .root_mut()
+            .add_child_mut(asset("/parts/shaft.stl"));
         candidate.root_mut().add_child_mut(asset("/parts/gear.stl"));
 
         let diff = compute_dependency_diff(&reference, &candidate);
@@ -333,11 +336,15 @@ mod tests {
     #[test]
     fn detects_added_and_removed_parts() {
         let mut reference = AssemblyTree::new(asset("/A.asm"));
-        reference.root_mut().add_child_mut(asset("/parts/shaft.stl"));
+        reference
+            .root_mut()
+            .add_child_mut(asset("/parts/shaft.stl"));
         reference.root_mut().add_child_mut(asset("/parts/old.stl"));
 
         let mut candidate = AssemblyTree::new(asset("/B.asm"));
-        candidate.root_mut().add_child_mut(asset("/parts/shaft.stl"));
+        candidate
+            .root_mut()
+            .add_child_mut(asset("/parts/shaft.stl"));
         candidate.root_mut().add_child_mut(asset("/parts/new.stl"));
 
         let diff = compute_dependency_diff(&reference, &candidate);
@@ -346,8 +353,14 @@ mod tests {
         assert_eq!(diff.summary.only_in_reference, 1);
         assert_eq!(diff.summary.only_in_candidate, 1);
         assert_eq!(top_level(&diff, DiffStatus::Common), vec!["shaft.stl"]);
-        assert_eq!(top_level(&diff, DiffStatus::OnlyInReference), vec!["old.stl"]);
-        assert_eq!(top_level(&diff, DiffStatus::OnlyInCandidate), vec!["new.stl"]);
+        assert_eq!(
+            top_level(&diff, DiffStatus::OnlyInReference),
+            vec!["old.stl"]
+        );
+        assert_eq!(
+            top_level(&diff, DiffStatus::OnlyInCandidate),
+            vec!["new.stl"]
+        );
     }
 
     #[test]
@@ -355,14 +368,18 @@ mod tests {
         // Both have gearbox.asm, but its children differ.
         let mut reference = AssemblyTree::new(asset("/A.asm"));
         {
-            let gearbox = reference.root_mut().add_child_mut(asset("/parts/gearbox.asm"));
+            let gearbox = reference
+                .root_mut()
+                .add_child_mut(asset("/parts/gearbox.asm"));
             gearbox.add_child_mut(asset("/parts/bearing-v1.stl"));
             gearbox.add_child_mut(asset("/parts/shaft.stl"));
         }
 
         let mut candidate = AssemblyTree::new(asset("/B.asm"));
         {
-            let gearbox = candidate.root_mut().add_child_mut(asset("/parts/gearbox.asm"));
+            let gearbox = candidate
+                .root_mut()
+                .add_child_mut(asset("/parts/gearbox.asm"));
             gearbox.add_child_mut(asset("/parts/bearing-v2.stl"));
             gearbox.add_child_mut(asset("/parts/shaft.stl"));
         }

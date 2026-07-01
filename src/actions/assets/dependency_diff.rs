@@ -44,15 +44,23 @@ pub async fn compare_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), 
     let tenant_uuid = *ctx.tenant_uuid();
 
     // Resolve both assets, annotating which input failed for a clear error message.
-    let reference_asset =
-        crate::actions::utils::resolve_asset(ctx.api(), &tenant_uuid, reference_uuid, reference_path)
-            .await
-            .map_err(|e| CliError::AssetResolutionError("reference".to_string(), e.to_string()))?;
+    let reference_asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        reference_uuid,
+        reference_path,
+    )
+    .await
+    .map_err(|e| CliError::AssetResolutionError("reference".to_string(), e.to_string()))?;
 
-    let candidate_asset =
-        crate::actions::utils::resolve_asset(ctx.api(), &tenant_uuid, candidate_uuid, candidate_path)
-            .await
-            .map_err(|e| CliError::AssetResolutionError("candidate".to_string(), e.to_string()))?;
+    let candidate_asset = crate::actions::utils::resolve_asset(
+        ctx.api(),
+        &tenant_uuid,
+        candidate_uuid,
+        candidate_path,
+    )
+    .await
+    .map_err(|e| CliError::AssetResolutionError("candidate".to_string(), e.to_string()))?;
 
     // Fetch the full recursive dependency trees for both assets.
     let reference_tree = ctx

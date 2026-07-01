@@ -518,7 +518,10 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                                 "Or re-run with --continue-on-error to skip unresolved paths",
                             ],
                         };
-                        report(format!("Asset not found: '{}'", asset_display), remediation_steps);
+                        report(
+                            format!("Asset not found: '{}'", asset_display),
+                            remediation_steps,
+                        );
 
                         if let Some(pb) = progress_bar.as_ref() {
                             pb.finish_and_clear();

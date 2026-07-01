@@ -108,6 +108,7 @@ pub const PARAMETER_RELOAD: &str = "reload";
 pub const PARAMETER_RECURSIVE: &str = "recursive";
 pub const PARAMETER_CONCURRENT: &str = "concurrent";
 pub const PARAMETER_PROGRESS: &str = "progress";
+pub const PARAMETER_LIMIT: &str = "limit";
 pub const PARAMETER_FOLDER_PATHS: &str = "folder-paths";
 pub const PARAMETER_CONTINUE_ON_ERROR: &str = "continue-on-error";
 pub const PARAMETER_DELAY: &str = "delay";
@@ -165,6 +166,20 @@ pub fn format_with_metadata_parameter() -> Arg {
         .action(ArgAction::SetTrue)
         .required(false)
         .help("Format the output to include metadata")
+}
+
+/// Create the results limit parameter (default 100).
+///
+/// Used by the visual-match commands to cap the number of returned results,
+/// since visual search returns every asset ranked by visual similarity.
+pub fn limit_parameter() -> Arg {
+    Arg::new(PARAMETER_LIMIT)
+        .long(PARAMETER_LIMIT)
+        .num_args(1)
+        .required(false)
+        .default_value("100")
+        .help("Maximum number of results to return")
+        .value_parser(clap::value_parser!(usize))
 }
 
 /// Create the global output file parameter.

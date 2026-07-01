@@ -442,7 +442,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                     // Add metadata columns with prefixes
                     for key in &header_metadata_keys {
                         base_headers.push(format!("REF_{}", key.to_uppercase()));
-                        base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        base_headers.push(format!("CAN_{}", key.to_uppercase()));
                     }
                 }
 
@@ -522,6 +522,95 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     Ok(())
 }
 
+/// Build the canonical match-report table (headers + rows) shared by the CSV and
+/// Excel outputs of `folder geometric-match`.
+///
+/// Producing both formats from this one function guarantees they are always
+/// column-for-column identical — only the presentation differs. The base columns
+/// come from [`crate::model::GeometricMatchPair::csv_header`]; when
+/// `with_metadata` is set, paired `REF_<field>`/`CAN_<field>` metadata columns
+/// are appended after them, using the sorted union of metadata keys across all
+/// pairs.
+fn build_geometric_match_table(
+    all_matches: &[crate::model::EnhancedGeometricSearchResponse],
+    with_metadata: bool,
+) -> (Vec<String>, Vec<Vec<String>>) {
+    // Flatten every (reference, candidate) match into a single row model.
+    let flattened: Vec<crate::model::GeometricMatchPair> = all_matches
+        .iter()
+        .flat_map(|response| {
+            response.matches.iter().map(move |m| {
+                crate::model::GeometricMatchPair::from_reference_and_match(
+                    response.reference_asset.clone(),
+                    m.clone(),
+                )
+            })
+        })
+        .collect();
+
+    // Collect the sorted, unique metadata keys present across all pairs.
+    let mut metadata_keys: Vec<String> = Vec::new();
+    if with_metadata {
+        let mut keys = std::collections::HashSet::new();
+        for pair in &flattened {
+            for key in pair.reference_asset.metadata.keys() {
+                keys.insert(key.clone());
+            }
+            for key in pair.candidate_asset.metadata.keys() {
+                keys.insert(key.clone());
+            }
+        }
+        let mut sorted: Vec<String> = keys.into_iter().collect();
+        sorted.sort();
+        metadata_keys = sorted;
+    }
+
+    // Headers: base columns, then REF_/CAN_ metadata pairs.
+    let mut headers = crate::model::GeometricMatchPair::csv_header();
+    if with_metadata {
+        for key in &metadata_keys {
+            headers.push(format!("REF_{}", key.to_uppercase()));
+            headers.push(format!("CAN_{}", key.to_uppercase()));
+        }
+    }
+
+    // Rows, in the same column order as the headers.
+    let mut rows = Vec::with_capacity(flattened.len());
+    for pair in &flattened {
+        let mut values = vec![
+            pair.reference_asset.path.clone(),
+            pair.candidate_asset.path.clone(),
+            format!("{}", pair.match_percentage),
+            pair.reference_asset.uuid.to_string(),
+            pair.candidate_asset.uuid.to_string(),
+            pair.comparison_url.clone().unwrap_or_default(),
+        ];
+        if with_metadata {
+            for key in &metadata_keys {
+                let ref_value = pair
+                    .reference_asset
+                    .metadata
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                values.push(ref_value);
+                let candidate_value = pair
+                    .candidate_asset
+                    .metadata
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                values.push(candidate_value);
+            }
+        }
+        rows.push(values);
+    }
+
+    (headers, rows)
+}
+
 /// Perform geometric matching on assets in one or more folders.
 ///
 /// This function handles the "folder match geometric" command, finding geometrically
@@ -560,8 +649,18 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
     let format = format_params.format;
-    let with_metadata = format_params.format_options.with_metadata;
     let with_headers = format_params.format_options.with_headers;
+
+    // The `xls` (Excel) format is a binary file output, not a stdout format, and
+    // is intentionally not part of the `OutputFormat` enum — `FormatParams` would
+    // silently fall back to JSON for it. Detect it from the raw format string
+    // instead, and handle it separately below. Excel reports always include
+    // metadata (the metadata diff is the whole point), so force it on for xls.
+    let is_xls = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .map(|value| value.eq_ignore_ascii_case(crate::commands::params::FORMAT_XLS))
+        .unwrap_or(false);
+    let with_metadata = format_params.format_options.with_metadata || is_xls;
 
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
@@ -895,6 +994,28 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         ));
     }
 
+    // Excel (`xls`) output: write a styled .xlsx workbook to a file instead of
+    // printing. Handled here because `xls` is not an `OutputFormat` enum variant.
+    // The workbook is built from the same table as the CSV output, so the two
+    // formats are always column-for-column consistent.
+    if is_xls {
+        let (headers, rows) = build_geometric_match_table(&all_matches, with_metadata);
+        let output_path = sub_matches
+            .get_one::<std::path::PathBuf>(crate::commands::params::PARAMETER_OUTPUT)
+            .cloned()
+            .unwrap_or_else(|| std::path::PathBuf::from("match_report.xlsx"));
+        let output_path = crate::xlsx_report::normalize_output_path(&output_path);
+        let stats = crate::xlsx_report::write_match_report(headers, rows, &output_path)?;
+        println!(
+            "Wrote Excel match report to {} ({} rows, {} metadata pair(s), {} differing cell(s)).",
+            output_path.display(),
+            stats.rows,
+            stats.pairs,
+            stats.different
+        );
+        return Ok(());
+    }
+
     // Output the results based on format
     match format {
         crate::format::OutputFormat::Json(_) => {
@@ -913,97 +1034,22 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
         }
         crate::format::OutputFormat::Csv(_) => {
-            // For CSV, we can output all matches together
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(
-                        crate::model::GeometricMatchPair::from_reference_and_match(
-                            enhanced_response.reference_asset.clone(),
-                            match_result,
-                        ),
-                    );
-                }
-            }
+            // Build the shared table so CSV and Excel stay column-for-column
+            // identical; only the presentation differs between the two formats.
+            let (headers, rows) = build_geometric_match_table(&all_matches, with_metadata);
 
-            // For CSV with metadata, we need to create a custom implementation
             let mut wtr = csv::Writer::from_writer(vec![]);
 
-            // Pre-calculate the metadata keys that will be used for headers and all records
-            let mut header_metadata_keys = Vec::new();
-            if with_metadata {
-                // Collect all unique metadata keys from ALL match pairs for consistent headers
-                let mut all_metadata_keys = std::collections::HashSet::new();
-                for match_pair in &flattened_matches {
-                    for key in match_pair.reference_asset.metadata.keys() {
-                        all_metadata_keys.insert(key.clone());
-                    }
-                    for key in match_pair.candidate_asset.metadata.keys() {
-                        all_metadata_keys.insert(key.clone());
-                    }
-                }
-
-                // Sort metadata keys for consistent column ordering
-                let mut sorted_keys: Vec<String> = all_metadata_keys.into_iter().collect();
-                sorted_keys.sort();
-                header_metadata_keys = sorted_keys;
-            }
-
             if with_headers {
-                // Build header with metadata columns
-                let mut base_headers = crate::model::GeometricMatchPair::csv_header();
-
-                if with_metadata {
-                    // Add metadata columns with prefixes
-                    for key in &header_metadata_keys {
-                        base_headers.push(format!("REF_{}", key.to_uppercase()));
-                        base_headers.push(format!("CAND_{}", key.to_uppercase()));
-                    }
-                }
-
-                if let Err(e) = wtr.serialize(base_headers.as_slice()) {
+                if let Err(e) = wtr.serialize(headers.as_slice()) {
                     return Err(CliError::from(CliActionError::FormattingError(
                         crate::format::FormattingError::CsvError(e),
                     )));
                 }
             }
 
-            for match_pair in flattened_matches {
-                let mut base_values = vec![
-                    match_pair.reference_asset.path.clone(),
-                    match_pair.candidate_asset.path.clone(),
-                    format!("{}", match_pair.match_percentage),
-                    match_pair.reference_asset.uuid.to_string(),
-                    match_pair.candidate_asset.uuid.to_string(),
-                    match_pair.comparison_url.clone().unwrap_or_default(),
-                ];
-
-                if with_metadata {
-                    // Add metadata values for each key that was included in the header
-                    for key in &header_metadata_keys {
-                        // Add reference asset metadata value
-                        let ref_value = match_pair
-                            .reference_asset
-                            .metadata
-                            .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
-                        base_values.push(ref_value);
-
-                        // Add candidate asset metadata value
-                        let cand_value = match_pair
-                            .candidate_asset
-                            .metadata
-                            .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
-                        base_values.push(cand_value);
-                    }
-                }
-
-                if let Err(e) = wtr.serialize(base_values.as_slice()) {
+            for row in &rows {
+                if let Err(e) = wtr.serialize(row.as_slice()) {
                     return Err(CliError::from(CliActionError::FormattingError(
                         crate::format::FormattingError::CsvError(e),
                     )));
@@ -1502,7 +1548,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     // Add metadata columns with prefixes
                     for key in &header_metadata_keys {
                         base_headers.push(format!("REF_{}", key.to_uppercase()));
-                        base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        base_headers.push(format!("CAN_{}", key.to_uppercase()));
                     }
                 }
 
@@ -2019,7 +2065,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     // Add metadata columns with prefixes
                     for key in &header_metadata_keys {
                         base_headers.push(format!("REF_{}", key.to_uppercase()));
-                        base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                        base_headers.push(format!("CAN_{}", key.to_uppercase()));
                     }
                 }
 

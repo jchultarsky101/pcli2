@@ -143,7 +143,7 @@ impl EnhancedPartSearchResponse {
                         // Extend headers with metadata columns using the pre-calculated keys
                         for key in &header_metadata_keys {
                             base_headers.push(format!("REF_{}", key.to_uppercase()));
-                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAN_{}", key.to_uppercase()));
                         }
 
                         wtr.serialize(base_headers.as_slice())?;
@@ -422,7 +422,7 @@ impl OutputFormatter for GeometricMatchPair {
                         // Extend headers with metadata columns
                         for key in &sorted_keys {
                             base_headers.push(format!("REF_{}", key.to_uppercase()));
-                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAN_{}", key.to_uppercase()));
                         }
 
                         wtr.serialize(base_headers.as_slice())?;
@@ -582,7 +582,7 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                         // Extend headers with metadata columns
                         for key in &sorted_keys {
                             base_headers.push(format!("REF_{}", key.to_uppercase()));
-                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAN_{}", key.to_uppercase()));
                         }
 
                         wtr.serialize(base_headers.as_slice())?;
@@ -715,7 +715,7 @@ impl EnhancedGeometricSearchResponse {
                         // Extend headers with metadata columns
                         for key in &sorted_keys {
                             base_headers.push(format!("REF_{}", key.to_uppercase()));
-                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAN_{}", key.to_uppercase()));
                         }
 
                         wtr.serialize(base_headers.as_slice())?;

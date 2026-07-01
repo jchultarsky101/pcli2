@@ -48,6 +48,9 @@ pub enum CliError {
 
     #[error("{0}")]
     FolderListError(#[from] FolderHierarchyError),
+
+    #[error("Excel report error: {0}")]
+    XlsxReportError(#[from] crate::xlsx_report::XlsxReportError),
 }
 
 impl CliError {
@@ -68,6 +71,7 @@ impl CliError {
             CliError::JsonError(_) => PcliExitCode::DataError,
             CliError::TenantNotFound { .. } => PcliExitCode::UsageError,
             CliError::FolderNotFound { .. } => PcliExitCode::UsageError,
+            CliError::XlsxReportError(_) => PcliExitCode::DataError,
             _ => PcliExitCode::SoftwareError,
         }
     }

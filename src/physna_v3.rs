@@ -2891,7 +2891,7 @@ impl PhysnaApiClient {
     /// # let mut client = PhysnaApiClient::new();
     /// # let tenant_uuid = Uuid::nil();
     /// # let asset_uuid = Uuid::nil();
-    /// let matches = client.visual_search(&tenant_uuid, &asset_uuid).await?;
+    /// let matches = client.visual_search(&tenant_uuid, &asset_uuid, 100).await?;
     /// for match_result in &matches.matches {
     ///     println!("Found visually similar asset: {}", match_result.path());
     /// }
@@ -2902,60 +2902,124 @@ impl PhysnaApiClient {
         &mut self,
         tenant_uuid: &Uuid,
         asset_uuid: &Uuid,
+        limit: usize,
     ) -> Result<crate::model::PartSearchResponse, ApiError> {
         debug!(
-            "Starting visual search for tenant_uuid: {}, asset_uuid: {}",
-            tenant_uuid, asset_uuid
+            "Starting visual search for tenant_uuid: {}, asset_uuid: {}, limit: {}",
+            tenant_uuid, asset_uuid, limit
         );
-        let url = format!(
+        // The visual-search endpoint takes `page` and `perPage` as QUERY
+        // parameters (unlike geometric and part search, which take them in the
+        // request body). Sending them in the body has no effect, which is why
+        // this method previously always returned only the first page (~20
+        // results) while the web UI showed the full result set. Build the base
+        // URL here and append the pagination query per page below.
+        let base_url = format!(
             "{}/tenants/{}/assets/{}/visual-search",
             self.base_url, tenant_uuid, asset_uuid
         );
 
-        // Visual search - get first page with 50 results (top matches)
-        let page = 1;
-        let per_page = 50; // Reasonable page size for visual search
+        // Accumulate matches across pages until we have at least `limit`.
+        let mut all_matches = Vec::new();
+        let mut page = 1;
+        // Request only as many per page as we need (capped at the endpoint
+        // maximum of 1000), so a small limit costs a single request.
+        let per_page = limit.clamp(1, 1000);
 
-        // Build request body with the correct structure
-        let body = serde_json::json!({
-            "page": page,
-            "perPage": per_page,
-            "searchQuery": "",
-            "filters": {
-                "folders": [],
-                "metadata": {},
-                "extensions": []  // Empty array as requested
-            }
-        });
+        // Track the maximum last_page value seen to prevent infinite loops.
+        let mut max_last_page_seen = 0;
+        let max_pages_limit = 1000; // Hard limit to prevent excessive API calls
 
-        debug!("Sending visual search request to: {}", url);
-        // Execute POST request
-        let result: Result<crate::model::PartSearchResponse, ApiError> =
-            self.post(&url, &body).await;
-
-        match result {
-            Ok(mut response) => {
-                // Limit results to 50 to ensure we don't exceed expected page size
-                if response.matches.len() > 50 {
-                    response.matches.truncate(50);
-                }
-
-                // Clear pagination data since we're only getting the first page
-                response.page_data = None;
-
+        loop {
+            // Check if we've hit the hard limit.
+            if page > max_pages_limit {
                 debug!(
-                    "Visual search completed for asset_id: {} with {} total matches",
-                    asset_uuid,
-                    response.matches.len()
+                    "Reached hard page limit of {}, stopping visual search pagination",
+                    max_pages_limit
                 );
-                Ok(response)
+                break;
             }
-            Err(e) => {
-                // Return error immediately
-                debug!("Visual search failed: {}", e);
-                Err(e)
+
+            // `page` and `perPage` are query parameters for this endpoint. The
+            // request body carries only the optional filtering.
+            let url = format!("{}?page={}&perPage={}", base_url, page, per_page);
+            let body = serde_json::json!({
+                "searchQuery": "",
+                "filters": {
+                    "folders": [],
+                    "metadata": {}
+                }
+            });
+
+            debug!("Sending visual search request to: {}", url);
+            // Execute POST request.
+            let result: Result<crate::model::PartSearchResponse, ApiError> =
+                self.post(&url, &body).await;
+
+            match result {
+                Ok(response) => {
+                    // Check if we have pagination data.
+                    if let Some(page_data) = &response.page_data {
+                        debug!(
+                            "Page {}/{} with {} total matches",
+                            page_data.current_page, page_data.last_page, page_data.total
+                        );
+
+                        // Update the maximum last_page value seen.
+                        if page_data.last_page > max_last_page_seen {
+                            max_last_page_seen = page_data.last_page;
+                        }
+
+                        // Add matches from this page to our collection.
+                        all_matches.extend(response.matches);
+
+                        // Stop once we have enough results, reach the last page,
+                        // or the endpoint fails to advance `current_page` (guard
+                        // against looping forever on the same page).
+                        if all_matches.len() >= limit
+                            || page_data.current_page >= page_data.last_page
+                            || page_data.current_page < page
+                        {
+                            break;
+                        }
+
+                        // Move to the next page.
+                        page += 1;
+                    } else {
+                        // No pagination data - return this single page, capped at
+                        // the requested limit.
+                        debug!(
+                            "No pagination data in visual search response, returning single page"
+                        );
+                        let mut response = response;
+                        response.matches.truncate(limit);
+                        return Ok(response);
+                    }
+                }
+                Err(e) => {
+                    // Return error immediately.
+                    debug!("Visual search failed: {}", e);
+                    return Err(e);
+                }
             }
         }
+
+        // The last page may overshoot the requested limit; cap it here.
+        all_matches.truncate(limit);
+
+        // Create a response with all matches aggregated across pages.
+        let final_response = crate::model::PartSearchResponse {
+            matches: all_matches,
+            page_data: None, // We've aggregated all pages
+            filter_data: None,
+        };
+
+        debug!(
+            "Visual search completed for asset_id: {} with {} total matches",
+            asset_uuid,
+            final_response.matches.len()
+        );
+        Ok(final_response)
     }
 
     /// Performs a text search for assets matching the provided text query

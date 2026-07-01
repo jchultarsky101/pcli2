@@ -5,7 +5,7 @@
 use crate::commands::params::{
     folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
     format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    name_parameter, output_file_parameter, parent_folder_identifier_group,
+    limit_parameter, name_parameter, output_file_parameter, parent_folder_identifier_group,
     parent_folder_path_parameter, parent_folder_uuid_parameter, tenant_parameter, COMMAND_CREATE,
     COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH,
     COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_XLS, PARAMETER_PROGRESS,
@@ -325,6 +325,7 @@ pub fn folder_command() -> Command {
                 .visible_alias("visual-search") // Add alias for visual-search
                 .about("Find visually similar assets for all assets in one or more folders")
                 .arg(tenant_parameter())
+                .arg(limit_parameter())
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
                         .short('p')

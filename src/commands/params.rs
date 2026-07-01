@@ -33,6 +33,7 @@ pub const PARAMETER_FUZZY: &str = "fuzzy";
 pub const COMMAND_METADATA: &str = "metadata";
 pub const COMMAND_INFERENCE: &str = "inference"; // Allow non snake case since it's used as a command name
 pub const COMMAND_DEPENDENCIES: &str = "dependencies";
+pub const COMMAND_DEPENDENCY_DIFF: &str = "dependency-diff";
 pub const COMMAND_DOWNLOAD: &str = "download";
 pub const COMMAND_DOWNLOAD_FOLDER: &str = "download-folder";
 

@@ -314,6 +314,12 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         .copied()
         .unwrap_or(100);
 
+    // Get size threshold parameter
+    let threshold = sub_matches
+        .get_one::<f64>("threshold")
+        .copied()
+        .unwrap_or(80.0);
+
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
     let format = format_params.format;
@@ -336,7 +342,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     // Perform visual search
     let mut search_results = ctx
         .api()
-        .visual_search(&tenant_uuid, &asset.uuid(), limit)
+        .visual_search(&tenant_uuid, &asset.uuid(), limit, threshold)
         .await?;
 
     // Load configuration to get the UI base URL
@@ -1705,6 +1711,12 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         .copied()
         .unwrap_or(100);
 
+    // Get size threshold parameter
+    let threshold = sub_matches
+        .get_one::<f64>("threshold")
+        .copied()
+        .unwrap_or(80.0);
+
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
 
@@ -1820,7 +1832,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
             }
 
             let result = match api_clone
-                .visual_search(&tenant_uuid, &asset_uuid, limit)
+                .visual_search(&tenant_uuid, &asset_uuid, limit, threshold)
                 .await
             {
                 Ok(search_results) => {

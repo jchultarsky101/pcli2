@@ -2872,10 +2872,22 @@ impl PhysnaApiClient {
     /// This method performs a visual search to find assets that are visually similar to the provided asset.
     /// The search results are ordered by relevance as determined by the visual search algorithm.
     ///
+    /// It uses the `/tenants/assets/visual-search` endpoint (operation
+    /// `CrossTenantVisualSearch`), which supersedes the deprecated
+    /// `/tenants/{tenantId}/assets/{assetId}/visual-search` endpoint. All
+    /// inputs, including pagination, are carried in the request body. The
+    /// search is performed within a single tenant by passing the same tenant
+    /// UUID as both `assetTenantId` and `searchTenantId`.
+    ///
     /// # Arguments
     ///
-    /// * `tenant_uuid` - The UUID of the tenant to search within
+    /// * `tenant_uuid` - The UUID of the tenant that owns the reference asset and is searched for matches
     /// * `asset_uuid` - The UUID of the reference asset to search for visually similar matches
+    /// * `limit` - Maximum number of matches to return
+    /// * `threshold` - Size threshold percentage (0.00 to 100.00) controlling how strictly
+    ///   matches are filtered by geometric size relative to the reference asset.
+    ///   Higher values are stricter (90 means within ±10% of the reference size);
+    ///   0 disables size filtering entirely
     ///
     /// # Returns
     ///
@@ -2891,7 +2903,7 @@ impl PhysnaApiClient {
     /// # let mut client = PhysnaApiClient::new();
     /// # let tenant_uuid = Uuid::nil();
     /// # let asset_uuid = Uuid::nil();
-    /// let matches = client.visual_search(&tenant_uuid, &asset_uuid, 100).await?;
+    /// let matches = client.visual_search(&tenant_uuid, &asset_uuid, 100, 80.0).await?;
     /// for match_result in &matches.matches {
     ///     println!("Found visually similar asset: {}", match_result.path());
     /// }
@@ -2903,21 +2915,13 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         asset_uuid: &Uuid,
         limit: usize,
+        threshold: f64,
     ) -> Result<crate::model::PartSearchResponse, ApiError> {
         debug!(
-            "Starting visual search for tenant_uuid: {}, asset_uuid: {}, limit: {}",
-            tenant_uuid, asset_uuid, limit
+            "Starting visual search for tenant_uuid: {}, asset_uuid: {}, limit: {}, threshold: {}",
+            tenant_uuid, asset_uuid, limit, threshold
         );
-        // The visual-search endpoint takes `page` and `perPage` as QUERY
-        // parameters (unlike geometric and part search, which take them in the
-        // request body). Sending them in the body has no effect, which is why
-        // this method previously always returned only the first page (~20
-        // results) while the web UI showed the full result set. Build the base
-        // URL here and append the pagination query per page below.
-        let base_url = format!(
-            "{}/tenants/{}/assets/{}/visual-search",
-            self.base_url, tenant_uuid, asset_uuid
-        );
+        let url = format!("{}/tenants/assets/visual-search", self.base_url);
 
         // Accumulate matches across pages until we have at least `limit`.
         let mut all_matches = Vec::new();
@@ -2940,15 +2944,18 @@ impl PhysnaApiClient {
                 break;
             }
 
-            // `page` and `perPage` are query parameters for this endpoint. The
-            // request body carries only the optional filtering.
-            let url = format!("{}?page={}&perPage={}", base_url, page, per_page);
+            // Unlike the deprecated per-asset endpoint (which took pagination
+            // as query parameters), this endpoint carries everything in the
+            // request body, including the asset/tenant identifiers. The
+            // optional `filters` object is omitted entirely.
             let body = serde_json::json!({
+                "page": page,
+                "perPage": per_page,
                 "searchQuery": "",
-                "filters": {
-                    "folders": [],
-                    "metadata": {}
-                }
+                "assetId": asset_uuid,
+                "assetTenantId": tenant_uuid,
+                "searchTenantId": tenant_uuid,
+                "sizeThreshold": threshold
             });
 
             debug!("Sending visual search request to: {}", url);

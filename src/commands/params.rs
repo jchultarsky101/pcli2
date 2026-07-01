@@ -121,6 +121,7 @@ pub const PARAMETER_RESTORE_METADATA: &str = "restore-metadata";
 pub const FORMAT_CSV: &str = "csv";
 pub const FORMAT_JSON: &str = "json";
 pub const FORMAT_TREE: &str = "tree";
+pub const FORMAT_XLS: &str = "xls";
 
 /// Create the global format parameter.
 ///

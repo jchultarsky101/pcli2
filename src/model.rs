@@ -2402,7 +2402,7 @@ impl OutputFormatter for TextMatchPair {
                         // Extend headers with metadata columns
                         for key in &sorted_keys {
                             base_headers.push(format!("REF_{}", key.to_uppercase()));
-                            base_headers.push(format!("CAND_{}", key.to_uppercase()));
+                            base_headers.push(format!("CAN_{}", key.to_uppercase()));
                         }
 
                         wtr.serialize(base_headers.as_slice())?;

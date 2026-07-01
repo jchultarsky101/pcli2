@@ -282,6 +282,9 @@ pcli2 folder geometric-match --folder-path "/Root/SearchFolder/" --threshold 90.
 # Exclusive matching - only show matches where both assets belong to the specified paths
 pcli2 folder geometric-match --folder-path "/Root/SearchFolder/" --threshold 90.0 --exclusive
 
+# Color-highlighted Excel report (frozen headers, grouped metadata pairs, diff colors, match heat-map)
+pcli2 folder geometric-match --folder-path "/Root/SearchFolder/" --threshold 90.0 --format xls --output report.xlsx
+
 # Compare two specific assets and get their pairwise match scores
 # (each asset can be given by --*-path or --*-uuid; alias: asset match-scores)
 pcli2 asset similarity --reference-path "/Root/Models/block1.stl" --candidate-path "/Root/Models/block2.stl"

@@ -23,6 +23,7 @@ use crate::{
     physna_v3::{ApiError, PhysnaApiClient, TryDefault},
 };
 use clap::ArgMatches;
+use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -416,18 +417,47 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
 
     // Process each asset
     let total_assets = raw_asset_metadata.len();
-    let mut current_asset = 0;
     let mut success_count = 0;
     let mut failure_count = 0;
+    let mut skipped_missing = 0;
     let mut auth_failure_occurred = false;
 
+    // Progress bar drawn on stderr. Unlike a hand-rolled "\r"-prefixed line, it
+    // redraws cleanly instead of leaving stale characters behind when the next
+    // asset path is shorter than the previous one.
+    let progress_bar = if show_progress {
+        let pb = ProgressBar::new(total_assets as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}",
+                )
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+        Some(pb)
+    } else {
+        None
+    };
+
+    // Emit a diagnostic without corrupting the progress bar: suspend() clears
+    // the bar, runs the print, then redraws the bar on a fresh line.
+    let report = |msg: String, steps: &[&str]| match progress_bar.as_ref() {
+        Some(pb) => pb.suspend(|| error_utils::report_error_with_remediation(&msg, steps)),
+        None => error_utils::report_error_with_remediation(&msg, steps),
+    };
+
+    // Concise single-line warning (used for skipped rows in --continue-on-error
+    // mode, where repeating the full remediation block per asset is noise).
+    let warn = |msg: String| match progress_bar.as_ref() {
+        Some(pb) => pb.suspend(|| error_utils::report_warning(&msg)),
+        None => error_utils::report_warning(&msg),
+    };
+
     for (asset_path, raw_metadata) in &raw_asset_metadata {
-        if show_progress {
-            current_asset += 1;
-            eprint!(
-                "\rProcessing asset {}/{}: {}",
-                current_asset, total_assets, asset_path
-            );
+        if let Some(pb) = progress_bar.as_ref() {
+            pb.set_message(asset_path.clone());
+            pb.inc(1);
         }
 
         // Proactively refresh token if expiring soon
@@ -456,8 +486,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             || error_str.contains("forbidden")
                         {
                             auth_failure_occurred = true;
-                            error_utils::report_error_with_remediation(
-                                &format!("Authentication failed while looking up asset '{}': {}", asset_path, e),
+                            report(
+                                format!("Authentication failed while looking up asset '{}': {}", asset_path, e),
                                 &[
                                     "Your access token may have expired",
                                     "Try running 'pcli2 auth expiration' to check token status",
@@ -468,24 +498,31 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             break;
                         }
 
-                        error_utils::report_error_with_remediation(
-                            &format!("Asset not found: '{}'", asset_path),
+                        failure_count += 1;
+
+                        // In continue-on-error mode a missing asset is expected and
+                        // common, so emit a single concise line here and defer the
+                        // detailed guidance to one summary at the end of the run.
+                        if continue_on_error {
+                            skipped_missing += 1;
+                            warn(format!("Skipped '{}' — asset not found", asset_path));
+                            continue;
+                        }
+
+                        report(
+                            format!("Asset not found: '{}'", asset_path),
                             &[
                                 "Verify the asset path in your CSV file matches the actual asset path in Physna",
                                 "Check that the asset hasn't been deleted from the system",
                                 "Verify you're using the correct tenant for this asset",
                                 "Check for path format mismatches (e.g., leading slash differences)",
-                                "Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command"
+                                "Verify the asset exists using 'pcli2 asset list --folder-path /' or similar command",
+                                "Or re-run with --continue-on-error to skip unresolved paths"
                             ]
                         );
-                        failure_count += 1;
 
-                        if continue_on_error {
-                            continue;
-                        }
-
-                        if show_progress {
-                            eprintln!();
+                        if let Some(pb) = progress_bar.as_ref() {
+                            pb.finish_and_clear();
                         }
                         eprintln!(
                             "Batch operation stopped: {} successful, {} failed (use --continue-on-error to skip unresolvable asset paths)",
@@ -523,8 +560,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     || error_str.contains("forbidden")
                 {
                     auth_failure_occurred = true;
-                    error_utils::report_error_with_remediation(
-                        &format!(
+                    report(
+                        format!(
                             "Authentication failed while deleting metadata for asset '{}': {}",
                             asset_path, e
                         ),
@@ -537,8 +574,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     failure_count += 1;
                     break;
                 }
-                error_utils::report_error_with_remediation(
-                    &format!(
+                report(
+                    format!(
                         "Failed to delete metadata fields for asset '{}': {}",
                         asset_path, e
                     ),
@@ -548,8 +585,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     ],
                 );
                 failure_count += 1;
-                if show_progress {
-                    eprintln!();
+                if let Some(pb) = progress_bar.as_ref() {
+                    pb.finish_and_clear();
                 }
                 eprintln!(
                     "Batch operation stopped: {} successful, {} failed",
@@ -576,8 +613,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     || error_str.contains("forbidden")
                 {
                     auth_failure_occurred = true;
-                    error_utils::report_error_with_remediation(
-                        &format!(
+                    report(
+                        format!(
                             "Authentication failed while updating metadata for asset '{}': {}",
                             asset_path, e
                         ),
@@ -592,8 +629,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 }
 
                 if error_str.contains("must be a") || error_str.contains("Metadata type mismatch") {
-                    error_utils::report_error_with_remediation(
-                        &format!("Type conflict for asset '{}': {}", asset_path, e),
+                    report(
+                        format!("Type conflict for asset '{}': {}", asset_path, e),
                         &[
                             "The metadata field already exists with a different type",
                             "Delete the existing field first if you need to change its type",
@@ -601,8 +638,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                         ],
                     );
                 } else {
-                    error_utils::report_error_with_remediation(
-                        &format!(
+                    report(
+                        format!(
                             "Failed to update metadata for asset '{}': {}",
                             asset_path, e
                         ),
@@ -615,8 +652,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     );
                 }
                 failure_count += 1;
-                if show_progress {
-                    eprintln!();
+                if let Some(pb) = progress_bar.as_ref() {
+                    pb.finish_and_clear();
                 }
                 eprintln!(
                     "Batch operation stopped: {} successful, {} failed",
@@ -629,8 +666,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         success_count += 1;
     }
 
-    if show_progress {
-        eprintln!();
+    if let Some(pb) = progress_bar.as_ref() {
+        pb.finish_and_clear();
     }
 
     if show_progress || failure_count > 0 {
@@ -638,6 +675,20 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             "Batch operation completed: {} successful, {} failed",
             success_count, failure_count
         );
+    }
+
+    // Detailed guidance for skipped rows is shown once here, rather than after
+    // every skipped asset, to keep the per-asset output concise.
+    if skipped_missing > 0 {
+        eprintln!(
+            "\n⚠️  {} asset(s) were skipped because their paths could not be resolved in this tenant.",
+            skipped_missing
+        );
+        eprintln!("🔧 To resolve, verify that:");
+        eprintln!("  1. The ASSET_PATH values in your CSV match the actual asset paths in Physna");
+        eprintln!("  2. You are targeting the correct tenant");
+        eprintln!("  3. The assets have not been deleted, and paths match (e.g., leading slash)");
+        eprintln!("  List existing paths with 'pcli2 asset list --folder-path /' to compare.");
     }
 
     if auth_failure_occurred {

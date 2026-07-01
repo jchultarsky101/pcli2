@@ -2365,7 +2365,7 @@ dependencies = [
 
 [[package]]
 name = "pcli2"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "assert_cmd",
  "async-recursion",

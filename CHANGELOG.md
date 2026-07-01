@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-07-01
+
+### Fixed
+- **Progress indicator for `asset metadata create-batch`** - The `--progress` output previously used a hand-rolled carriage-return line that did not clear the previous message, so when a shorter asset path followed a longer one the leftover characters mangled the line (and error messages were printed directly onto the progress line). The command now renders a proper progress bar (spinner, elapsed time, position/total, current path) that redraws cleanly, matching the other batch commands.
+
+### Changed
+- **Cleaner error output for `asset metadata create-batch --continue-on-error`** - Unresolved asset paths are now reported as a single concise warning line per asset instead of repeating the full multi-step remediation block for every skipped row. The detailed guidance is shown once as a summary at the end of the run. Diagnostics are also emitted without corrupting the progress bar.
+
 ## [1.4.1] - 2026-06-30
 
 ### Fixed

@@ -120,7 +120,8 @@ pub fn parse_batch_csv<R: Read>(
 /// (trimmed, prefix stripped) when the header is a metadata column.
 fn is_metadata_column(header: &str) -> Option<&str> {
     let prefix_len = METADATA_COLUMN_PREFIX.len();
-    if header.len() >= prefix_len && header[..prefix_len].eq_ignore_ascii_case(METADATA_COLUMN_PREFIX)
+    if header.len() >= prefix_len
+        && header[..prefix_len].eq_ignore_ascii_case(METADATA_COLUMN_PREFIX)
     {
         Some(header[prefix_len..].trim())
     } else {
@@ -226,8 +227,7 @@ fn parse_ui<R: Read>(
 
     if path_column.is_none() && id_column.is_none() {
         return Err(CliActionError::BusinessLogicError(
-            "UI-format CSV must contain a 'path' or 'id' column identifying each asset"
-                .to_string(),
+            "UI-format CSV must contain a 'path' or 'id' column identifying each asset".to_string(),
         ));
     }
 

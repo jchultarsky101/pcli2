@@ -309,7 +309,8 @@ pcli2 asset metadata create --path "/Root/Models/part.stl" --name "Material" --v
 # Get all metadata for an asset
 pcli2 asset metadata get --path "/Root/Models/part.stl"
 
-# Bulk metadata update from CSV
+# Bulk metadata update from CSV (classic vertical or Physna UI horizontal
+# layout, auto-detected from the header row)
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
 ```
 
@@ -677,9 +678,11 @@ pcli2 asset metadata create-batch  # Create metadata for multiple assets from a 
 pcli2 asset metadata inference     # Apply metadata from a reference asset to geometrically similar assets
 ```
 
-#### Asset Metadata Create-Batch CSV Format
+#### Asset Metadata Create-Batch CSV Formats
 
-The CSV file for `asset metadata create-batch` must have the following columns in the specified order:
+The `asset metadata create-batch` command accepts two CSV layouts. The layout is auto-detected from the header row (any column starting with `metadata:` selects the UI format), or can be forced with `--csv-format classic|ui`.
+
+**Classic (vertical) format** — one row per asset+field combination:
 
 ```
 ASSET_PATH,NAME,VALUE
@@ -689,13 +692,27 @@ ASSET_PATH,NAME,VALUE
 /Root/Folder/Model2.ipt,Supplier,Richardson Electronics
 ```
 
-**CSV File Requirements**:
 - The first row must contain the headers `ASSET_PATH,NAME,VALUE`
+- Each row represents a single metadata field assignment for an asset
+- An empty `VALUE` deletes the metadata field from the asset
+- If an asset has multiple metadata fields to update, include multiple rows with the same `ASSET_PATH` but different `NAME` and `VALUE` combinations
+
+**UI (horizontal) format** — one row per asset, as exported by the Physna web UI's bulk metadata upload:
+
+```
+path,id,metadata:Material,metadata:Color
+/Root/Folder/Model1.stl,,Steel,Blue
+/Root/Folder/Model2.ipt,123e4567-e89b-12d3-a456-426614174000,Aluminum,Red
+```
+
+- `path` is the asset path; the optional `id` column holds the asset UUID and takes precedence over the path when present
+- Each `metadata:<field name>` column sets one metadata field (the prefix is stripped)
+- Empty metadata cells are skipped (existing values are left untouched); unrecognized columns are ignored with a warning
+
+**General requirements** (both formats):
 - The file must be UTF-8 encoded
 - Values containing commas, quotes, or newlines must be enclosed in double quotes
 - Empty rows will be ignored
-- Each row represents a single metadata field assignment for an asset
-- If an asset has multiple metadata fields to update, include multiple rows with the same `ASSET_PATH` but different `NAME` and `VALUE` combinations
 
 **Error Handling**:
 

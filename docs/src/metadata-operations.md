@@ -57,9 +57,13 @@ Create or update metadata for multiple assets from a CSV file:
 pcli2 asset metadata create-batch --csv-file "metadata.csv"
 ```
 
-## CSV Format for Batch Metadata Operations
+## CSV Formats for Batch Metadata Operations
 
-The CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --csv-file` is designed for seamless round-trip operations:
+The `create-batch` command accepts two CSV layouts. The layout is detected automatically from the header row: if any column name starts with `metadata:`, the file is treated as the UI (horizontal) format; otherwise it is treated as the classic (vertical) format. You can also force a layout explicitly with `--csv-format classic` or `--csv-format ui` (the default is `--csv-format auto`).
+
+### Classic (Vertical) Format
+
+The classic CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --csv-file` is designed for seamless round-trip operations:
 
 ```csv
 ASSET_PATH,NAME,VALUE
@@ -99,6 +103,35 @@ ASSET_PATH,NAME,VALUE
 In the example above, `ObsoleteField` is deleted and `Material` is set to `Steel` in a single pass.
 
 **Note:** The `create-batch` command groups all rows by asset path, then issues deletes (empty values) followed by updates (non-empty values) per asset in one batch. Multiple rows with the same ASSET_PATH are combined into a single API interaction.
+
+### UI (Horizontal) Format
+
+The Physna web UI's bulk metadata upload uses a horizontal layout with one row per asset and one column per metadata field. `create-batch` accepts these files directly:
+
+```csv
+"path","id","metadata:Material","metadata:Color","metadata:Weight"
+"/domain/assets/part1.sldprt","123e4567-e89b-12d3-a456-426614174000","Steel","Blue","2.5kg"
+"/domain/assets/part2.step","","Aluminum","Red","1.2kg"
+"/domain/assets/assembly.sldasm","","Mixed","",""
+```
+
+The UI format specifications:
+- **path**: Full path to the asset in Physna
+- **id**: Optional asset UUID. When present and non-empty, it takes precedence over the path and is used directly, without path resolution. An invalid UUID is an error (there is no fallback to the path, since that could silently target a different asset)
+- **metadata:&lt;field name&gt;**: One column per metadata field. The `metadata:` prefix is stripped to obtain the field name
+- **Empty metadata cells**: Skipped — the existing field value on the asset, if any, is left untouched. (This differs from the classic format, where an empty VALUE deletes the field. Spreadsheet-style exports naturally contain blank cells for fields that don't apply, so blanks are never treated as deletions in this layout)
+- **Other columns**: Any column that is not `path`, `id`, or `metadata:*` is ignored, with a warning listing the ignored columns
+- **Row identification**: Each row must provide a UUID or a path; a row with neither is an error
+
+The whole file is parsed and validated before any API call is made, so a malformed file (e.g. an invalid UUID) fails fast with a line-numbered error instead of half-applying.
+
+```bash
+# Auto-detected from the header row
+pcli2 asset metadata create-batch --csv-file "ui-export.csv"
+
+# Or forced explicitly
+pcli2 asset metadata create-batch --csv-file "ui-export.csv" --csv-format ui
+```
 
 ## Advanced Metadata Workflow: Export, Modify, Reimport
 

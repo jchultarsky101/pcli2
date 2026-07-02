@@ -1793,6 +1793,9 @@ pub struct MetadataFieldListResponse {
     /// List of metadata fields
     #[serde(rename = "metadataFields")]
     pub metadata_fields: Vec<MetadataField>,
+    /// Pagination information (absent if the endpoint returns an unpaginated list)
+    #[serde(rename = "pageData")]
+    pub page_data: Option<PageData>,
 }
 
 /// Represents a dependency relationship for an asset from the API

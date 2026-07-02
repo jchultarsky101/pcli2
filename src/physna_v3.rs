@@ -2275,21 +2275,46 @@ impl PhysnaApiClient {
 
     /// Get all metadata fields for a tenant
     ///
-    /// This method retrieves the list of all metadata fields defined for the specified tenant.
+    /// This method retrieves the list of all metadata fields defined for the specified
+    /// tenant, walking every page of the paginated endpoint. Without explicit
+    /// pagination the API returns only the first page (20 fields), which previously
+    /// made fields beyond that page look unregistered.
     ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant
     ///
     /// # Returns
-    /// * `Ok(MetadataFieldListResponse)` - List of metadata fields for the tenant
+    /// * `Ok(MetadataFieldListResponse)` - All metadata fields for the tenant
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn get_metadata_fields(
         &mut self,
         tenant_id: &str,
     ) -> Result<crate::model::MetadataFieldListResponse, ApiError> {
-        let url = format!("{}/tenants/{}/metadata-fields", self.base_url, tenant_id);
+        let mut page: usize = 1;
+        let per_page: usize = 200;
+        let mut metadata_fields: Vec<crate::model::MetadataField> = Vec::new();
 
-        self.get(&url).await
+        loop {
+            let url = format!(
+                "{}/tenants/{}/metadata-fields?page={}&perPage={}",
+                self.base_url, tenant_id, page, per_page
+            );
+            let response: crate::model::MetadataFieldListResponse = self.get(&url).await?;
+            metadata_fields.extend(response.metadata_fields);
+
+            match response.page_data {
+                Some(page_data) if page_data.current_page < page_data.last_page => {
+                    page = page_data.current_page + 1;
+                }
+                // No pagination info means the endpoint returned everything at once.
+                _ => break,
+            }
+        }
+
+        Ok(crate::model::MetadataFieldListResponse {
+            metadata_fields,
+            page_data: None,
+        })
     }
 
     /// Create a new asset by uploading a file

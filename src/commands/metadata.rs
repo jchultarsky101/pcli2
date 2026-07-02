@@ -3,9 +3,9 @@
 //! This module defines CLI commands related to asset metadata management.
 
 use crate::commands::params::{
-    continue_on_error_parameter, format_parameter, format_pretty_parameter,
-    format_with_headers_parameter, format_with_metadata_parameter, path_parameter,
-    tenant_parameter, uuid_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_GET,
+    continue_on_error_parameter, delete_if_empty_parameter, format_parameter,
+    format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
+    path_parameter, tenant_parameter, uuid_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_GET,
     COMMAND_METADATA,
 };
 use clap::{Arg, ArgAction, ArgGroup, Command};
@@ -109,8 +109,7 @@ pub fn metadata_command() -> Command {
                     - NAME: The name of the metadata field to set\n\
                     - VALUE: The value to set for the metadata field\n\n\
                     If an asset has multiple metadata fields to update, include multiple rows \n\
-                    with the same ASSET_PATH but different NAME and VALUE combinations. \
-                    An empty VALUE deletes the metadata field from the asset.\n\n\
+                    with the same ASSET_PATH but different NAME and VALUE combinations.\n\n\
                     Example:\n\
                     ASSET_PATH,NAME,VALUE\n\
                     folder/subfolder/asset1.stl,Material,Steel\n\
@@ -121,8 +120,12 @@ pub fn metadata_command() -> Command {
                     - path: The full path of the asset in Physna\n\
                     - id: Optional asset UUID; when present it takes precedence over the path\n\
                     - metadata:<field name>: One column per metadata field to set\n\n\
-                    Empty metadata cells are skipped (the existing value is left untouched). \
                     Columns other than path, id, and metadata:* are ignored with a warning.\n\n\
+                    In both formats, empty values are skipped by default (the existing \
+                    metadata field, if any, is left untouched), so the file can be used to \
+                    incrementally add or update fields. Pass --delete-if-empty to instead \
+                    delete the metadata field from the asset when its value is empty, e.g. \
+                    to replace an asset's metadata wholesale.\n\n\
                     Example:\n\
                     path,id,metadata:Material,metadata:Color\n\
                     /folder/part1.sldprt,,Steel,Blue\n\
@@ -169,6 +172,7 @@ pub fn metadata_command() -> Command {
                         .required(false)
                         .help("Display progress bar during processing"),
                 )
+                .arg(delete_if_empty_parameter())
                 .arg(continue_on_error_parameter()),
         )
         .subcommand(

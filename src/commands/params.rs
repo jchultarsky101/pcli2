@@ -112,6 +112,7 @@ pub const PARAMETER_PROGRESS: &str = "progress";
 pub const PARAMETER_LIMIT: &str = "limit";
 pub const PARAMETER_FOLDER_PATHS: &str = "folder-paths";
 pub const PARAMETER_CONTINUE_ON_ERROR: &str = "continue-on-error";
+pub const PARAMETER_DELETE_IF_EMPTY: &str = "delete-if-empty";
 pub const PARAMETER_DELAY: &str = "delay";
 pub const PARAMETER_LOCAL_PATH: &str = "local-path";
 pub const PARAMETER_SKIP_EXISTING: &str = "skip-existing";
@@ -494,6 +495,18 @@ pub fn continue_on_error_parameter() -> Arg {
         .action(ArgAction::SetTrue)
         .required(false)
         .help("Continue processing remaining items when a recoverable error occurs")
+}
+
+/// Create the delete-if-empty parameter.
+pub fn delete_if_empty_parameter() -> Arg {
+    Arg::new(PARAMETER_DELETE_IF_EMPTY)
+        .long(PARAMETER_DELETE_IF_EMPTY)
+        .action(ArgAction::SetTrue)
+        .required(false)
+        .help(
+            "Delete a metadata field from the asset when the input file contains \
+            an empty value for it (by default empty values are skipped)",
+        )
 }
 
 /// Create the delay parameter.

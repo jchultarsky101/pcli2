@@ -694,7 +694,6 @@ ASSET_PATH,NAME,VALUE
 
 - The first row must contain the headers `ASSET_PATH,NAME,VALUE`
 - Each row represents a single metadata field assignment for an asset
-- An empty `VALUE` deletes the metadata field from the asset
 - If an asset has multiple metadata fields to update, include multiple rows with the same `ASSET_PATH` but different `NAME` and `VALUE` combinations
 
 **UI (horizontal) format** — one row per asset, as exported by the Physna web UI's bulk metadata upload:
@@ -707,7 +706,9 @@ path,id,metadata:Material,metadata:Color
 
 - `path` is the asset path; the optional `id` column holds the asset UUID and takes precedence over the path when present
 - Each `metadata:<field name>` column sets one metadata field (the prefix is stripped)
-- Empty metadata cells are skipped (existing values are left untouched); unrecognized columns are ignored with a warning
+- Unrecognized columns are ignored with a warning
+
+In both formats, empty values are skipped by default (existing metadata is left untouched). Pass `--delete-if-empty` to instead delete a metadata field from the asset when the file contains an empty value for it.
 
 **General requirements** (both formats):
 - The file must be UTF-8 encoded

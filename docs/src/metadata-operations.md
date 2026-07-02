@@ -61,6 +61,8 @@ pcli2 asset metadata create-batch --csv-file "metadata.csv"
 
 The `create-batch` command accepts two CSV layouts. The layout is detected automatically from the header row: if any column name starts with `metadata:`, the file is treated as the UI (horizontal) format; otherwise it is treated as the classic (vertical) format. You can also force a layout explicitly with `--csv-format classic` or `--csv-format ui` (the default is `--csv-format auto`).
 
+In both layouts, **empty values are skipped by default**: the existing metadata field on the asset, if any, is left untouched, so a sparse file can be used to incrementally add or update fields. Pass `--delete-if-empty` to instead **delete** a metadata field from the asset when the file contains an empty value for it — useful when replacing an asset's metadata wholesale.
+
 ### Classic (Vertical) Format
 
 The classic CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --csv-file` is designed for seamless round-trip operations:
@@ -77,7 +79,7 @@ The CSV format specifications:
 - **Header Row**: Must contain exactly `ASSET_PATH,NAME,VALUE` in that order
 - **ASSET_PATH**: Full path to the asset in Physna (e.g., `/Root/Folder/Model.stl`)
 - **NAME**: Name of the metadata field to set
-- **VALUE**: Value to assign to the metadata field. Leave empty to **delete** the field from the asset
+- **VALUE**: Value to assign to the metadata field. An empty value is skipped by default, or deletes the field from the asset when `--delete-if-empty` is passed
 - **File Encoding**: Must be UTF-8 encoded
 - **Quoting**: Values containing commas, quotes, or newlines must be enclosed in double quotes
 - **Escaping**: Double quotes within values must be escaped by doubling them (e.g., `"15.5"" diameter"`)
@@ -92,7 +94,7 @@ pcli2 asset metadata create-batch --csv-file "metadata.csv"
 
 **Deleting metadata fields via CSV:**
 
-Leave the VALUE column empty to remove a metadata field from an asset:
+Pass `--delete-if-empty` and leave the VALUE column empty to remove a metadata field from an asset:
 
 ```csv
 ASSET_PATH,NAME,VALUE
@@ -100,9 +102,13 @@ ASSET_PATH,NAME,VALUE
 /Root/Folder/Model1.stl,Material,Steel
 ```
 
-In the example above, `ObsoleteField` is deleted and `Material` is set to `Steel` in a single pass.
+```bash
+pcli2 asset metadata create-batch --csv-file "metadata.csv" --delete-if-empty
+```
 
-**Note:** The `create-batch` command groups all rows by asset path, then issues deletes (empty values) followed by updates (non-empty values) per asset in one batch. Multiple rows with the same ASSET_PATH are combined into a single API interaction.
+In the example above, `ObsoleteField` is deleted and `Material` is set to `Steel` in a single pass. Without `--delete-if-empty`, the `ObsoleteField` row would be skipped with a warning and only `Material` would be updated.
+
+**Note:** The `create-batch` command groups all rows by asset path, then issues deletes (empty values, when `--delete-if-empty` is passed) followed by updates (non-empty values) per asset in one batch. Multiple rows with the same ASSET_PATH are combined into a single API interaction.
 
 ### UI (Horizontal) Format
 
@@ -119,7 +125,7 @@ The UI format specifications:
 - **path**: Full path to the asset in Physna
 - **id**: Optional asset UUID. When present and non-empty, it takes precedence over the path and is used directly, without path resolution. An invalid UUID is an error (there is no fallback to the path, since that could silently target a different asset)
 - **metadata:&lt;field name&gt;**: One column per metadata field. The `metadata:` prefix is stripped to obtain the field name
-- **Empty metadata cells**: Skipped — the existing field value on the asset, if any, is left untouched. (This differs from the classic format, where an empty VALUE deletes the field. Spreadsheet-style exports naturally contain blank cells for fields that don't apply, so blanks are never treated as deletions in this layout)
+- **Empty metadata cells**: Skipped by default — the existing field value on the asset, if any, is left untouched. With `--delete-if-empty`, an empty cell deletes the field from the asset instead
 - **Other columns**: Any column that is not `path`, `id`, or `metadata:*` is ignored, with a warning listing the ignored columns
 - **Row identification**: Each row must provide a UUID or a path; a row with neither is an error
 
@@ -149,13 +155,16 @@ One of the most powerful features of PCLI2 is the ability to export metadata, mo
 2. **Modify Metadata Externally**:
    - Open the CSV file in a spreadsheet application (Excel, Google Sheets, etc.)
    - Make the desired changes to metadata values
-   - To **delete** a field, clear its VALUE cell (leave it blank)
+   - To **delete** a field, clear its VALUE cell (leave it blank) and reimport with `--delete-if-empty`
    - Save the file in CSV format
 
 3. **Reimport Modified Metadata**:
    ```bash
-   # Update assets with modified metadata
+   # Update assets with modified metadata (blank values are skipped)
    pcli2 asset metadata create-batch --csv-file "modified_metadata.csv"
+
+   # Or replace metadata wholesale: blank values delete the field from the asset
+   pcli2 asset metadata create-batch --csv-file "modified_metadata.csv" --delete-if-empty
    ```
 
 This workflow enables powerful bulk metadata operations while maintaining the flexibility to use familiar spreadsheet tools for data manipulation.

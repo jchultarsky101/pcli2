@@ -8,9 +8,9 @@ use crate::{
     actions::folders::resolve_folder_uuid_by_path,
     actions::CliActionError,
     commands::params::{
-        PARAMETER_CONTINUE_ON_ERROR, PARAMETER_FILE, PARAMETER_FILES, PARAMETER_FOLDER_PATH,
-        PARAMETER_FOLDER_UUID, PARAMETER_OVERRIDE, PARAMETER_PATH, PARAMETER_RESTORE_METADATA,
-        PARAMETER_UUID,
+        PARAMETER_CONTINUE_ON_ERROR, PARAMETER_DELETE_IF_EMPTY, PARAMETER_FILE, PARAMETER_FILES,
+        PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_OVERRIDE, PARAMETER_PATH,
+        PARAMETER_RESTORE_METADATA, PARAMETER_UUID,
     },
     configuration::Configuration,
     error::CliError,
@@ -355,6 +355,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
 
     let show_progress = sub_matches.get_flag("progress");
     let continue_on_error = sub_matches.get_flag(PARAMETER_CONTINUE_ON_ERROR);
+    let delete_if_empty = sub_matches.get_flag(PARAMETER_DELETE_IF_EMPTY);
     let requested_format = sub_matches
         .get_one::<String>("csv-format")
         .map(|s| BatchCsvFormat::from_arg(s))
@@ -365,7 +366,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     // malformed file fails fast instead of half-applying.
     let file = std::fs::File::open(csv_file_path)
         .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
-    let parsed = parse_batch_csv(file, requested_format).map_err(CliError::ActionError)?;
+    let parsed =
+        parse_batch_csv(file, requested_format, delete_if_empty).map_err(CliError::ActionError)?;
 
     debug!("Parsed batch CSV as {:?} format", parsed.format);
     for warning in &parsed.warnings {
@@ -536,7 +538,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             }
         };
 
-        // Split into fields to delete (empty value) and fields to update (non-empty value)
+        // Split into fields to delete (empty value, only present when the file
+        // was parsed with --delete-if-empty) and fields to update (non-empty value)
         let mut fields_to_delete: Vec<String> = Vec::new();
         let mut typed_metadata: HashMap<String, serde_json::Value> = HashMap::new();
 

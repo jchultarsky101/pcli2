@@ -3,12 +3,15 @@
 //! Two input layouts are supported:
 //!
 //! - **Classic (vertical)**: `ASSET_PATH,NAME,VALUE` — one row per asset+field
-//!   combination. An empty VALUE means "delete this metadata field".
+//!   combination.
 //! - **UI (horizontal)**: one row per asset with a `path` column, an optional
 //!   `id` column (asset UUID, takes precedence over the path when present),
 //!   and one `metadata:<field name>` column per metadata field, as exported by
-//!   the Physna web UI's bulk metadata upload. Empty metadata cells are
-//!   skipped (the existing field value, if any, is left untouched).
+//!   the Physna web UI's bulk metadata upload.
+//!
+//! In both layouts an empty value is skipped by default (the existing field
+//! value, if any, is left untouched). With `--delete-if-empty` an empty value
+//! instead means "delete this metadata field from the asset".
 //!
 //! The layout is auto-detected from the header row: if any column name starts
 //! with the `metadata:` prefix the file is treated as UI format, otherwise as
@@ -68,8 +71,8 @@ impl BatchCsvFormat {
 pub struct BatchEntry {
     pub asset: BatchAssetRef,
     /// Raw string values keyed by metadata field name. An empty string means
-    /// "delete this field" (only the classic format produces empty values;
-    /// the UI parser skips empty cells).
+    /// "delete this field"; empty values are only produced when the file is
+    /// parsed with `delete_if_empty`, otherwise they are skipped.
     pub metadata: HashMap<String, String>,
 }
 
@@ -87,10 +90,14 @@ pub struct ParsedBatch {
 
 /// Parse a batch metadata CSV from `reader`, detecting the layout if
 /// `requested` is [`BatchCsvFormat::Auto`].
+///
+/// When `delete_if_empty` is true, empty values are kept in the entries as
+/// delete markers; otherwise they are skipped with a warning.
 #[allow(clippy::result_large_err)]
 pub fn parse_batch_csv<R: Read>(
     reader: R,
     requested: BatchCsvFormat,
+    delete_if_empty: bool,
 ) -> Result<ParsedBatch, CliActionError> {
     let mut csv_reader = csv::Reader::from_reader(reader);
     let headers = csv_reader.headers()?.clone();
@@ -111,8 +118,8 @@ pub fn parse_batch_csv<R: Read>(
     };
 
     match format {
-        BatchCsvFormat::Ui => parse_ui(csv_reader, &headers),
-        _ => parse_classic(csv_reader),
+        BatchCsvFormat::Ui => parse_ui(csv_reader, &headers, delete_if_empty),
+        _ => parse_classic(csv_reader, delete_if_empty),
     }
 }
 
@@ -157,8 +164,12 @@ impl EntryAccumulator {
 
 /// Parse the classic vertical ASSET_PATH,NAME,VALUE layout.
 #[allow(clippy::result_large_err)]
-fn parse_classic<R: Read>(mut csv_reader: csv::Reader<R>) -> Result<ParsedBatch, CliActionError> {
+fn parse_classic<R: Read>(
+    mut csv_reader: csv::Reader<R>,
+    delete_if_empty: bool,
+) -> Result<ParsedBatch, CliActionError> {
     let mut accumulator = EntryAccumulator::new();
+    let mut skipped_empty = 0usize;
 
     for result in csv_reader.records() {
         let record = result?;
@@ -167,7 +178,13 @@ fn parse_classic<R: Read>(mut csv_reader: csv::Reader<R>) -> Result<ParsedBatch,
             let metadata_name = record[1].trim();
             let metadata_value = record[2].trim();
 
-            // Empty values are kept - they mean "delete existing metadata"
+            // Empty values either mark the field for deletion (with
+            // --delete-if-empty) or are skipped, leaving the field untouched.
+            if metadata_value.is_empty() && !delete_if_empty {
+                skipped_empty += 1;
+                continue;
+            }
+
             let clean_asset_path = asset_path.strip_prefix('/').unwrap_or(asset_path);
             accumulator.add(
                 BatchAssetRef::Path(clean_asset_path.to_string()),
@@ -177,9 +194,17 @@ fn parse_classic<R: Read>(mut csv_reader: csv::Reader<R>) -> Result<ParsedBatch,
         }
     }
 
+    let mut warnings = Vec::new();
+    if skipped_empty > 0 {
+        warnings.push(format!(
+            "{} row(s) with an empty VALUE were skipped; pass --delete-if-empty to delete those metadata fields instead",
+            skipped_empty
+        ));
+    }
+
     Ok(ParsedBatch {
         entries: accumulator.entries,
-        warnings: Vec::new(),
+        warnings,
         format: BatchCsvFormat::Classic,
     })
 }
@@ -189,6 +214,7 @@ fn parse_classic<R: Read>(mut csv_reader: csv::Reader<R>) -> Result<ParsedBatch,
 fn parse_ui<R: Read>(
     mut csv_reader: csv::Reader<R>,
     headers: &csv::StringRecord,
+    delete_if_empty: bool,
 ) -> Result<ParsedBatch, CliActionError> {
     let mut warnings: Vec<String> = Vec::new();
     let mut path_column: Option<usize> = None;
@@ -280,9 +306,9 @@ fn parse_ui<R: Read>(
         let mut row_has_values = false;
         for (index, field_name) in &metadata_columns {
             let value = record.get(*index).map(str::trim).unwrap_or("");
-            // Empty cells mean "no value for this asset" and are skipped,
-            // unlike the classic format where an empty VALUE deletes the field.
-            if !value.is_empty() {
+            // Empty cells mark the field for deletion (with --delete-if-empty)
+            // or are skipped, leaving the existing field value untouched.
+            if !value.is_empty() || delete_if_empty {
                 accumulator.add(asset.clone(), field_name.clone(), value.to_string());
                 row_has_values = true;
             }
@@ -310,7 +336,15 @@ mod tests {
 
     #[allow(clippy::result_large_err)]
     fn parse(content: &str, format: BatchCsvFormat) -> Result<ParsedBatch, CliActionError> {
-        parse_batch_csv(content.as_bytes(), format)
+        parse_batch_csv(content.as_bytes(), format, false)
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn parse_delete_if_empty(
+        content: &str,
+        format: BatchCsvFormat,
+    ) -> Result<ParsedBatch, CliActionError> {
+        parse_batch_csv(content.as_bytes(), format, true)
     }
 
     #[test]
@@ -332,11 +366,36 @@ mod tests {
     }
 
     #[test]
-    fn classic_keeps_empty_values_for_deletion() {
+    fn classic_skips_empty_values_by_default() {
+        let csv = "ASSET_PATH,NAME,VALUE\n\
+                   folder/a.stl,Material,\n\
+                   folder/a.stl,Weight,15.5 kg\n";
+        let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        assert_eq!(parsed.entries.len(), 1);
+        let entry = &parsed.entries[0];
+        assert_eq!(entry.metadata.len(), 1);
+        assert_eq!(entry.metadata.get("Weight").unwrap(), "15.5 kg");
+        assert!(parsed
+            .warnings
+            .iter()
+            .any(|w| w.contains("--delete-if-empty")));
+    }
+
+    #[test]
+    fn classic_row_with_only_empty_values_produces_no_entry() {
         let csv = "ASSET_PATH,NAME,VALUE\n\
                    folder/a.stl,Material,\n";
         let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        assert!(parsed.entries.is_empty());
+    }
+
+    #[test]
+    fn classic_keeps_empty_values_with_delete_if_empty() {
+        let csv = "ASSET_PATH,NAME,VALUE\n\
+                   folder/a.stl,Material,\n";
+        let parsed = parse_delete_if_empty(csv, BatchCsvFormat::Auto).unwrap();
         assert_eq!(parsed.entries[0].metadata.get("Material").unwrap(), "");
+        assert!(parsed.warnings.is_empty());
     }
 
     #[test]
@@ -381,13 +440,35 @@ mod tests {
     }
 
     #[test]
-    fn ui_empty_cells_are_skipped_not_deleted() {
+    fn ui_empty_cells_are_skipped_by_default() {
         let csv = "path,id,metadata:Material,metadata:Color,metadata:Weight\n\
                    /domain/assembly.sldasm,,Mixed,,\n";
         let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
         let entry = &parsed.entries[0];
         assert_eq!(entry.metadata.len(), 1);
         assert_eq!(entry.metadata.get("Material").unwrap(), "Mixed");
+    }
+
+    #[test]
+    fn ui_empty_cells_are_kept_with_delete_if_empty() {
+        let csv = "path,id,metadata:Material,metadata:Color,metadata:Weight\n\
+                   /domain/assembly.sldasm,,Mixed,,\n";
+        let parsed = parse_delete_if_empty(csv, BatchCsvFormat::Auto).unwrap();
+        let entry = &parsed.entries[0];
+        assert_eq!(entry.metadata.len(), 3);
+        assert_eq!(entry.metadata.get("Material").unwrap(), "Mixed");
+        assert_eq!(entry.metadata.get("Color").unwrap(), "");
+        assert_eq!(entry.metadata.get("Weight").unwrap(), "");
+    }
+
+    #[test]
+    fn ui_row_with_all_empty_cells_is_kept_with_delete_if_empty() {
+        let csv = "path,id,metadata:Material\n\
+                   /domain/part1.sldprt,,\n";
+        let parsed = parse_delete_if_empty(csv, BatchCsvFormat::Auto).unwrap();
+        assert_eq!(parsed.entries.len(), 1);
+        assert_eq!(parsed.entries[0].metadata.get("Material").unwrap(), "");
+        assert!(parsed.warnings.is_empty());
     }
 
     #[test]

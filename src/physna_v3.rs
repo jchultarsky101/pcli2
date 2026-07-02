@@ -3239,22 +3239,7 @@ impl PhysnaApiClient {
         );
 
         // Expand the glob pattern to get matching files
-        // Support both glob patterns (e.g., "data/*.stl") and comma-separated lists (e.g., "file1.stl,file2.stl")
-        let paths: Vec<_> = if glob_pattern.contains(',') {
-            // Comma-separated list of file paths
-            glob_pattern
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(std::path::PathBuf::from)
-                .filter(|path| path.exists())
-                .collect()
-        } else {
-            // Glob pattern
-            glob(glob_pattern)?
-                .filter_map(|path_result| path_result.ok()) // Filter out any errors and extract the PathBuf
-                .collect()
-        };
+        let paths = expand_upload_paths(glob_pattern)?;
 
         debug!(
             "Found {} files matching pattern: {}",
@@ -5145,4 +5130,28 @@ fn extract_file_extension_from_error(error_msg: &str) -> String {
     }
     // If we can't extract the extension, return an empty string
     String::new()
+}
+
+/// Expand an upload file specification into the list of matching files.
+///
+/// Supports both glob patterns (e.g. "data/*.stl") and comma-separated
+/// lists (e.g. "file1.stl,file2.stl"). Comma-separated entries that do
+/// not exist on disk are silently skipped, matching upload behavior.
+pub fn expand_upload_paths(pattern: &str) -> Result<Vec<std::path::PathBuf>, ApiError> {
+    let paths = if pattern.contains(',') {
+        // Comma-separated list of file paths
+        pattern
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.exists())
+            .collect()
+    } else {
+        // Glob pattern
+        glob(pattern)?
+            .filter_map(|path_result| path_result.ok())
+            .collect()
+    };
+    Ok(paths)
 }

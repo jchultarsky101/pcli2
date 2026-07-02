@@ -6,8 +6,8 @@
 use crate::commands::metadata::metadata_command;
 use crate::commands::params::{
     asset_identifier_group, asset_identifier_multiple_group, candidate_identifier_group,
-    candidate_path_parameter, candidate_uuid_parameter, file_parameter, folder_identifier_group,
-    folder_path_parameter, folder_uuid_parameter, format_parameter, format_pretty_parameter,
+    candidate_path_parameter, candidate_uuid_parameter, dry_run_parameter, file_parameter,
+    folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter, format_pretty_parameter,
     format_with_headers_parameter, format_with_metadata_parameter, limit_parameter,
     multiple_files_parameter, override_parameter, path_parameter, reference_identifier_group,
     reference_path_parameter, reference_uuid_parameter, restore_metadata_parameter,
@@ -52,7 +52,8 @@ pub fn asset_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
                 .arg(override_parameter())
-                .arg(restore_metadata_parameter()),
+                .arg(restore_metadata_parameter())
+                .arg(dry_run_parameter()),
         )
         .subcommand(
             Command::new(COMMAND_CREATE_BATCH)
@@ -82,7 +83,8 @@ pub fn asset_command() -> Command {
                         .action(ArgAction::SetTrue)
                         .required(false)
                         .help("Display progress bar during upload"),
-                ),
+                )
+                .arg(dry_run_parameter()),
         )
         .subcommand(
             Command::new(COMMAND_DELETE)
@@ -91,7 +93,8 @@ pub fn asset_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(uuid_parameter())
                 .arg(path_parameter())
-                .group(asset_identifier_group()),
+                .group(asset_identifier_group())
+                .arg(dry_run_parameter()),
         )
         .subcommand(
             Command::new(COMMAND_LIST)

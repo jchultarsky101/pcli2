@@ -371,6 +371,16 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ));
     };
 
+    // Report and stop without deleting anything when --dry-run is given
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        println!(
+            "Dry run: would delete folder '{}'{}",
+            folder_path_param.unwrap_or(&folder_uuid.to_string()),
+            if force_flag { " and ALL its contents" } else { "" }
+        );
+        return Ok(());
+    }
+
     // Ask for confirmation unless --yes flag is provided
     if !yes_flag {
         let delete_msg = if force_flag {
@@ -1696,6 +1706,36 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // Get folder UUID or path from command line
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
+
+    // Report and stop before resolving the remote folder when --dry-run is
+    // given: resolution may create the target folder, which a dry run must
+    // never do.
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(local_dir_path)
+            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| !path.is_dir())
+            .collect();
+        files.sort();
+
+        let target = folder_path_param.cloned().unwrap_or_else(|| {
+            folder_uuid_param
+                .map(|uuid| uuid.to_string())
+                .unwrap_or_default()
+        });
+        println!(
+            "Dry run: would upload {} file(s) from '{}' to folder '{}':",
+            files.len(),
+            local_dir_path.display(),
+            target
+        );
+        for file in &files {
+            println!("  {}", file.display());
+        }
+        println!("Note: the target folder would be created if it does not exist.");
+        return Ok(());
+    }
 
     // Store the original folder path for asset path construction
     let original_folder_path = if let Some(path) = folder_path_param {

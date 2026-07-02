@@ -158,6 +158,16 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     debug!("Creating asset with path: {}", asset_path);
 
+    // Report and stop without uploading anything when --dry-run is given
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        println!(
+            "Dry run: would upload '{}' as asset '{}'",
+            file_path.display(),
+            asset_path
+        );
+        return Ok(());
+    }
+
     let override_flag = sub_matches.get_flag(PARAMETER_OVERRIDE);
     let restore_metadata = sub_matches.get_flag(PARAMETER_RESTORE_METADATA);
 
@@ -316,6 +326,26 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
             folder.set_path(path);
         }
+    }
+
+    // Report and stop without uploading anything when --dry-run is given
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        let mut paths = crate::physna_v3::expand_upload_paths(&glob_pattern)
+            .map_err(CliError::PhysnaExtendedApiError)?;
+        paths.sort();
+        if paths.is_empty() {
+            println!("Dry run: no files match '{}'", glob_pattern);
+            return Ok(());
+        }
+        println!(
+            "Dry run: would upload {} file(s) to folder '{}':",
+            paths.len(),
+            folder.path()
+        );
+        for path in &paths {
+            println!("  {}", path.display());
+        }
+        return Ok(());
     }
 
     let assets = api

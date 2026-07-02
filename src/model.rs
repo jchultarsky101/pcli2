@@ -93,9 +93,38 @@ pub fn normalize_path(path: impl AsRef<str>) -> String {
     out
 }
 
+/// True when `asset_path` refers to the folder itself or anything inside it.
+///
+/// Uses a path-component boundary rather than a bare string prefix:
+/// `/proj-archive/part.stl` is NOT within `/proj`, even though the string
+/// starts with it.
+pub fn path_is_within_folder(asset_path: impl AsRef<str>, folder_path: impl AsRef<str>) -> bool {
+    let folder = normalize_path(folder_path);
+    let asset = normalize_path(asset_path);
+    if folder == "/" {
+        return true;
+    }
+    asset == folder || asset.starts_with(&format!("{}/", folder))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn path_is_within_folder_respects_component_boundaries() {
+        // Regression: `--exclusive` match filtering used a bare string prefix,
+        // so a `/proj` filter leaked matches from sibling `/proj-archive`.
+        assert!(path_is_within_folder("/proj/part.stl", "/proj"));
+        assert!(path_is_within_folder("/proj/sub/part.stl", "/proj"));
+        assert!(path_is_within_folder("/proj", "/proj"));
+        assert!(!path_is_within_folder("/proj-archive/part.stl", "/proj"));
+        assert!(!path_is_within_folder("/proj2/part.stl", "/proj"));
+        // Root contains everything.
+        assert!(path_is_within_folder("/anything/part.stl", "/"));
+        // Paths without leading slashes normalize consistently.
+        assert!(path_is_within_folder("proj/part.stl", "/proj/"));
+    }
 
     #[test]
     fn test_normalize_path_basic_cases() {

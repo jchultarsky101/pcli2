@@ -130,15 +130,19 @@ pub const FORMAT_XLS: &str = "xls";
 ///
 /// This parameter is used across multiple commands for output formatting.
 pub fn format_parameter() -> Arg {
+    // PCLI2_FORMAT is deliberately NOT bound via clap's .env(): commands
+    // narrow the value parser (e.g. only json/csv), so an env value that is
+    // valid for one command (tree, xls) would hard-fail every other command
+    // at parse time, even without --format on the command line. The env var
+    // is resolved as a soft fallback in format_utils instead.
     Arg::new(PARAMETER_FORMAT)
         .short('f')
         .long(PARAMETER_FORMAT)
         .num_args(1)
         .required(false)
-        .env("PCLI2_FORMAT")
         .default_value("json")
         .global(true)
-        .help("Output data format")
+        .help("Output data format [env: PCLI2_FORMAT=]")
         .value_parser(OutputFormat::names())
 }
 
@@ -158,6 +162,9 @@ pub fn format_with_headers_parameter() -> Arg {
         .action(ArgAction::SetTrue)
         .required(false)
         .env("PCLI2_HEADERS")
+        // Accept 1/0/yes/no/on/off in the env var, not just literal
+        // true/false (PCLI2_HEADERS=1 previously aborted every command).
+        .value_parser(clap::builder::BoolishValueParser::new())
         .help("Format the output with headers")
 }
 

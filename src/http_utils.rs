@@ -210,9 +210,15 @@ impl HttpClient {
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(crate::physna_v3::ApiError::HttpError(
-                response.error_for_status().unwrap_err(),
-            ))
+            // error_for_status() only yields Err for 4xx/5xx; a 1xx/3xx
+            // (e.g. an unfollowed redirect) must not panic on unwrap_err.
+            match response.error_for_status() {
+                Err(e) => Err(crate::physna_v3::ApiError::HttpError(e)),
+                Ok(response) => Err(crate::physna_v3::ApiError::ConflictError(format!(
+                    "Unexpected HTTP status: {}",
+                    response.status()
+                ))),
+            }
         }
     }
 
@@ -275,10 +281,16 @@ impl HttpClient {
                 }
             }
         } else {
-            // For all other errors, return the error status
-            Err(crate::physna_v3::ApiError::HttpError(
-                response.error_for_status().unwrap_err(),
-            ))
+            // For all other errors, return the error status.
+            // error_for_status() only yields Err for 4xx/5xx; a 1xx/3xx
+            // (e.g. an unfollowed redirect) must not panic on unwrap_err.
+            match response.error_for_status() {
+                Err(e) => Err(crate::physna_v3::ApiError::HttpError(e)),
+                Ok(response) => Err(crate::physna_v3::ApiError::ConflictError(format!(
+                    "Unexpected HTTP status: {}",
+                    response.status()
+                ))),
+            }
         }
     }
 }

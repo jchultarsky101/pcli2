@@ -85,6 +85,11 @@ jobs:
           path: ./public
 
   deploy:
+    # The github-pages environment only allows deployments from main, so a
+    # manual dispatch from any other branch is doomed to fail at the
+    # environment gate. Skip the deploy in that case — the build job still
+    # validates that the documentation builds.
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}

@@ -122,6 +122,12 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
     };
 
     for match_result in search_results.matches {
+        // The reference asset matches itself at 100%; copying its own
+        // metadata onto itself is a no-op that inflates the updated count.
+        if match_result.asset.uuid == reference_asset.uuid() {
+            continue;
+        }
+
         // If exclusive flag is set, only process assets in the same parent folder
         if exclusive {
             let candidate_parent_folder_path = {
@@ -166,12 +172,15 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
         }
     }
 
-    // Create a response structure to output the results
+    // Create a response structure to output the results. `fields_copied`
+    // reports the fields that were actually copied (present on the reference
+    // asset), not everything that was requested.
     let response = serde_json::json!({
         "reference_asset_path": asset_path,
         "reference_asset_uuid": reference_asset.uuid(),
         "threshold": threshold,
-        "fields_copied": metadata_names,
+        "fields_requested": metadata_names,
+        "fields_copied": available_fields,
         "assets_updated": assets_updated.len(),
         "updated_assets": assets_updated
     });

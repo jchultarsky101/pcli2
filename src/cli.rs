@@ -36,7 +36,6 @@ use pcli2::{
         },
     },
     commands::{
-        create_cli_commands,
         params::{
             COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG,
             COMMAND_COUNTS, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE,
@@ -142,9 +141,7 @@ fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
     message.to_string()
 }
 
-pub async fn execute_command() -> Result<(), CliError> {
-    let commands = create_cli_commands();
-
+pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError> {
     trace!("Executing CLI command");
 
     match commands.subcommand() {

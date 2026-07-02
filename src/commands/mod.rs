@@ -126,6 +126,22 @@ pub fn create_full_command() -> Command {
                 .global(true)
                 .help("Automatically answer yes to confirmation prompts"),
         )
+        .arg(
+            clap::Arg::new("verbose")
+                .long("verbose")
+                .short('v')
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .conflicts_with("quiet")
+                .help("Enable verbose output (debug-level logging)"),
+        )
+        .arg(
+            clap::Arg::new("quiet")
+                .long("quiet")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .help("Suppress diagnostic output (error-level logging only)"),
+        )
         // Add examples
         .after_help(examples_after_help())
         // Add all the modularized command groups

@@ -29,13 +29,6 @@ pub fn config_command() -> Command {
                         .long("api")
                         .action(clap::ArgAction::SetTrue)
                         .help("Test API connectivity (requires valid credentials)"),
-                )
-                .arg(
-                    clap::Arg::new("verbose")
-                        .short('v')
-                        .long("verbose")
-                        .action(clap::ArgAction::SetTrue)
-                        .help("Show detailed validation results"),
                 ),
         )
         .subcommand(

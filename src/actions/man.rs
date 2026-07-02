@@ -20,6 +20,7 @@ pub fn generate_man_pages(output_dir: &Path) -> Result<usize, CliError> {
 }
 
 /// Recursively render a command and its subcommands to `<output_dir>/<name>.1`.
+#[allow(clippy::result_large_err)]
 fn render_command_tree(
     cmd: &clap::Command,
     name_prefix: &str,

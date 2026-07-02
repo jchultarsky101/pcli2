@@ -131,13 +131,7 @@ async fn fetch_latest_version() -> Option<String> {
         .map_err(|e| debug!("Update check parse failed: {}", e))
         .ok()?;
 
-    Some(
-        release
-            .tag_name
-            .trim_start_matches('v')
-            .trim()
-            .to_string(),
-    )
+    Some(release.tag_name.trim_start_matches('v').trim().to_string())
 }
 
 /// Parse a semantic version string ("1.8.2") into a numeric triple.

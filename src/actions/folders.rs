@@ -376,7 +376,11 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         println!(
             "Dry run: would delete folder '{}'{}",
             folder_path_param.unwrap_or(&folder_uuid.to_string()),
-            if force_flag { " and ALL its contents" } else { "" }
+            if force_flag {
+                " and ALL its contents"
+            } else {
+                ""
+            }
         );
         return Ok(());
     }

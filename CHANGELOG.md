@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-02
+
 ### Added
 - **`--delete-if-empty` flag for `asset metadata create-batch`** - Gives precise control over what an empty value in the input CSV means, in both the classic and UI layouts (default: `false`).
   - **Without the flag**, empty values are skipped: the existing metadata field on the asset, if any, is left untouched, so a sparse file can be used to incrementally add or update fields. Skipped classic-format rows are reported with a single aggregate warning that points at the flag.

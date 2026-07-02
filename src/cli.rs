@@ -141,6 +141,32 @@ fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
     message.to_string()
 }
 
+/// Interactively prompt for a missing credential when running in a terminal.
+///
+/// Returns `None` when stdin/stderr are not attached to a terminal (e.g. in
+/// scripts or CI), so callers can fall back to a missing-argument error.
+/// Secrets are prompted with masked input so they never appear on screen or
+/// in shell history.
+fn prompt_for_credential(label: &str, secret: bool) -> Option<String> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+        return None;
+    }
+
+    let prompt_label = format!("{}:", label);
+    let result = if secret {
+        inquire::Password::new(&prompt_label)
+            .without_confirmation()
+            .with_display_mode(inquire::PasswordDisplayMode::Masked)
+            .prompt()
+    } else {
+        inquire::Text::new(&prompt_label).prompt()
+    };
+
+    result.ok().filter(|value| !value.trim().is_empty())
+}
+
 pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError> {
     trace!("Executing CLI command");
 
@@ -450,17 +476,23 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     // Try to get client credentials from command line or stored values
                     #[allow(unused_mut)]
                     let mut keyring = Keyring::default();
+                    // Resolve each credential from the command line, then the
+                    // keyring, then an interactive prompt (terminal sessions
+                    // only). Prompting keeps secrets out of shell history.
                     let client_id = match sub_matches.get_one::<String>(PARAMETER_CLIENT_ID) {
                         Some(id) => id.clone(),
                         None => {
                             // Try to get stored client ID
                             match keyring.get(&environment_name, "client-id".to_string()) {
                                 Ok(Some(stored_id)) => stored_id,
-                                _ => {
-                                    return Err(CliError::MissingRequiredArgument(
-                                        PARAMETER_CLIENT_ID.to_string(),
-                                    ));
-                                }
+                                _ => match prompt_for_credential("Client ID", false) {
+                                    Some(id) => id,
+                                    None => {
+                                        return Err(CliError::MissingRequiredArgument(
+                                            PARAMETER_CLIENT_ID.to_string(),
+                                        ));
+                                    }
+                                },
                             }
                         }
                     };
@@ -472,11 +504,14 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                             // Try to get stored client secret
                             match keyring.get(&environment_name, "client-secret".to_string()) {
                                 Ok(Some(stored_secret)) => stored_secret,
-                                _ => {
-                                    return Err(CliError::MissingRequiredArgument(
-                                        PARAMETER_CLIENT_SECRET.to_string(),
-                                    ));
-                                }
+                                _ => match prompt_for_credential("Client secret", true) {
+                                    Some(secret) => secret,
+                                    None => {
+                                        return Err(CliError::MissingRequiredArgument(
+                                            PARAMETER_CLIENT_SECRET.to_string(),
+                                        ));
+                                    }
+                                },
                             }
                         }
                     };

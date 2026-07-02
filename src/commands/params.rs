@@ -236,7 +236,7 @@ pub fn client_secret_parameter() -> Arg {
         .long(PARAMETER_CLIENT_SECRET)
         .num_args(1)
         .required(false)
-        .help("Client secret for OAuth2 authentication")
+        .help("Client secret for OAuth2 authentication (prompted interactively if omitted)")
 }
 
 /// Create the UUID parameter.

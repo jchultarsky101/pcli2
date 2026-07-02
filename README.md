@@ -69,8 +69,13 @@ pcli2 config validate --verbose
 - **Flexible Output Formats** - JSON, CSV, and tree views
 - **Resume Capability** - Continue interrupted downloads seamlessly
 - **Performance Optimizations** - Concurrent operations and caching for faster processing
-- **Structured Logging** - Debug with `PCLI2_LOG_LEVEL` environment variable
+- **Structured Logging** - Debug with `--verbose`/`--quiet` flags or the `PCLI2_LOG_LEVEL` environment variable
 - **Progress Tracking** - Enhanced progress bars with throughput and ETA
+- **Dry Run Mode** - Preview deletes and uploads with `--dry-run` before making changes
+- **Automatic Retries** - Transient network and server errors retried with exponential backoff
+- **Man Pages** - Generate Unix man pages for every command with `pcli2 man`
+- **Update Notifications** - A gentle hint when a newer release is available
+- **Pipe-Friendly Output** - Colors disabled automatically when output is piped (respects `NO_COLOR`)
 
 ## 💻 Installation
 
@@ -173,7 +178,11 @@ sudo cp target/release/pcli2 /usr/local/bin/
 Securely authenticate with your Physna tenant:
 
 ```bash
-# First-time login
+# First-time login (interactive): prompts for the client ID and secret,
+# with masked input so the secret never lands in your shell history
+pcli2 auth login
+
+# First-time login (non-interactive)
 pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
 
 # Subsequent logins (uses cached credentials)
@@ -346,6 +355,48 @@ Skip existing files to resume large downloads:
 pcli2 folder download --folder-path "/Root/LargeFolder/" --resume --progress
 ```
 
+### 🧪 Dry Run Mode
+
+Preview destructive or bulk operations without changing anything on the server:
+
+```bash
+# See what a delete would remove
+pcli2 folder delete --folder-path "/Root/Old Projects/" --force --dry-run
+pcli2 asset delete --path "/Root/Models/part.stl" --dry-run
+
+# See exactly which files a batch upload would send, and where
+pcli2 asset create-batch --files "data/*.stl" --folder-path "/Root/Models/" --dry-run
+pcli2 folder upload --local-path ./models --folder-path "/Root/Models/" --dry-run
+```
+
+### 🔁 Automatic Retries
+
+Transient failures (network timeouts, connection errors, and HTTP
+408/429/502/503/504 responses) are retried automatically with exponential
+backoff, honoring the server's `Retry-After` header when present. The
+default is 2 retries; override it with the `PCLI2_MAX_RETRIES` environment
+variable (0 disables retries):
+
+```bash
+PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Root/Models/" --output ./downloads
+```
+
+### 🎨 Color Control
+
+Colors are disabled automatically when output is piped or redirected.
+You can also disable them explicitly with the `--no-color` flag, or the
+`NO_COLOR`/`PCLI2_NO_COLOR` environment variables.
+
+### 🔔 Update Notifications
+
+After a successful command, PCLI2 prints a one-line hint on stderr when a
+newer release is available (checked at most once per day, terminal sessions
+only, never in CI). Opt out with:
+
+```bash
+export PCLI2_NO_UPDATE_CHECK=1
+```
+
 ### 📊 Download and Upload Statistics Reports
 
 When using folder download and upload commands, you'll receive detailed statistics reports:
@@ -412,6 +463,31 @@ pcli2 asset list --folder-path "/Root/MyFolder" --metadata --format json | nu -c
 pcli2 asset list --folder-path "/Root/Inventory" --metadata --format json | nu -c 'from json | where metadata.Material != null | group-by metadata.Material | each {|it| {material: ($it | get 0).metadata.Material, count: ($it | length), avg_weight: ($it | get metadata.Weight | compact | math avg)}}'
 ```
 
+### 🤖 CI/CD Integration
+
+PCLI2 is designed to behave well in automation: colors and spinners turn off
+when output is piped, `--yes` skips confirmation prompts, `--quiet` limits
+diagnostics to errors, and exit codes identify the failure class (see
+[Exit Codes](#exit-codes)). Example GitHub Actions job that uploads build
+artifacts to Physna:
+
+```yaml
+jobs:
+  upload-models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pcli2
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
+      - name: Authenticate
+        run: pcli2 auth login --client-id "${{ secrets.PHYSNA_CLIENT_ID }}" --client-secret "${{ secrets.PHYSNA_CLIENT_SECRET }}"
+      - name: Upload models
+        run: |
+          pcli2 tenant use --name my-tenant
+          pcli2 asset create-batch --files "build/*.stl" \
+            --folder-path "/Root/CI Builds/" --quiet --format json
+```
+
 ### ⚙️ Configuration Management
 
 Manage multiple environments:
@@ -456,9 +532,17 @@ pcli2 config validate --verbose --api
 Enable debug logging for troubleshooting:
 
 ```bash
+# Quick verbosity control with global flags
+pcli2 --verbose folder download --path /Root/Models/   # debug-level logging
+pcli2 --quiet asset list --folder-path /Root/Models/   # errors only
+
+# Fine-grained control with environment variables
 PCLI2_LOG_LEVEL=debug pcli2 folder download --path /Root/Models/
 RUST_LOG=pcli2=trace pcli2 asset get --uuid xxx
 ```
+
+The `--verbose`/`-v` and `--quiet` flags work on every command and take
+precedence over the environment variables.
 
 ## 🛠️ Troubleshooting
 
@@ -478,6 +562,37 @@ RUST_LOG=pcli2=trace pcli2 asset get --uuid xxx
 - **"API rate limit exceeded"** - Reduce concurrency or add delays
 - **"Permission denied"** - Check your access permissions
 - **"Configuration file not found"** - Run `pcli2 config get path`
+
+### Exit Codes
+
+PCLI2 uses distinct exit codes (following BSD `sysexits.h` conventions where
+possible) so scripts can react to specific failure classes:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 64 | Command line usage error |
+| 65 | Data format error |
+| 66 | Cannot open input file |
+| 67 | Resource not found |
+| 68 | Service unavailable |
+| 69 | Temporary failure |
+| 70 | Internal software error |
+| 71 | Operating system error |
+| 78 | Configuration error |
+| 100 | Authentication error |
+| 101 | Network communication error |
+| 102 | Remote API error |
+
+```bash
+pcli2 asset get --path "/Root/Models/part.stl" --format json
+case $? in
+  0)   echo "found" ;;
+  100) pcli2 auth login ;;
+  101) echo "network problem, try again later" ;;
+  *)   echo "failed" ;;
+esac
+```
 
 ### Debugging Tips
 
@@ -847,6 +962,7 @@ Additional utility commands.
 ```
 pcli2 cache          # Cache management (clear cached data)
 pcli2 completions    # Generate shell completions for various shells
+pcli2 man            # Generate man pages for all commands
 ```
 
 #### Cache Management Command
@@ -933,6 +1049,23 @@ pcli2 completions fish > ~/.config/fish/completions/pcli2.fish
 pcli2 completions powershell > pcli2-completion.ps1
 # Then dot source it in your PowerShell profile:
 # . "/path/to/pcli2-completion.ps1"
+```
+
+#### Man Pages
+
+Generate Unix man pages for PCLI2 and every subcommand (one page per
+command, e.g. `pcli2-folder-delete.1`):
+
+```bash
+# Write pages to a directory
+pcli2 man --output-dir ./man
+
+# Install for the current user (path may vary by system)
+mkdir -p ~/.local/share/man/man1
+pcli2 man --output-dir ~/.local/share/man/man1
+
+# Read a page
+man pcli2-asset-create-batch
 ```
 
 ## 🤝 Support

@@ -7,6 +7,7 @@
 - [Geometric Matching](geometric-matching.md)
 - [Metadata Operations](metadata-operations.md)
 - [Metadata Inference](metadata-inference.md)
+- [Scripting and Automation](scripting.md)
 - [Cross-Platform Configuration](cross_platform.md)
 - [Documentation Deployment](documentation_deployment.md)
 

@@ -108,9 +108,17 @@ async fn main() {
     // PCLI2_LOG_LEVEL / RUST_LOG environment variables (default "warn")
     init_logging(&matches);
 
+    // Commands whose stdout is consumed by other tools (shell init,
+    // man page generation) must not trigger the update hint
+    let machine_output_command = matches!(matches.subcommand_name(), Some("completions" | "man"));
+
     // Execute the CLI command
     match execute_command(matches).await {
         Ok(()) => {
+            // Check for a newer release (cached, terminal sessions only)
+            if !machine_output_command {
+                pcli2::update_check::maybe_print_update_hint().await;
+            }
             // Success - exit with code 0
             process::exit(0);
         }

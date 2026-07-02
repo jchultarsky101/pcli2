@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-07-02
+
 ### Fixed
 - **Nonexistent folder paths no longer silently resolve to the root folder** - A mistyped `--path`/`--folder-path` (e.g. `asset delete --path "/Typo/part.stl"`) previously fell through to the ROOT folder and, because assets are matched by name within the resolved folder, could target a same-named asset at the root. A non-root path that doesn't resolve is now a "Folder not found" error. An absent or `/` folder path still means the root, as before.
 - **Folder cache is invalidated on folder create/delete/rename/move** - Mutating folder operations previously left the cached folder hierarchy stale for up to an hour, so path resolutions could target deleted/renamed folders (deleting the same folder twice even reported the misleading "Folder is not empty" error).

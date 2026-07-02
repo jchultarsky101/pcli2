@@ -3,6 +3,7 @@ use thiserror::Error;
 pub mod assets;
 pub mod cache;
 pub mod completions;
+pub mod man;
 pub mod folders;
 pub mod tenants;
 pub mod users;

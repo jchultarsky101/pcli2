@@ -14,6 +14,7 @@ pub mod completions;
 pub mod config;
 pub mod environment;
 pub mod folder;
+pub mod man;
 pub mod metadata;
 pub mod params;
 pub mod tenant;
@@ -153,5 +154,6 @@ pub fn create_full_command() -> Command {
         .subcommand(environment::environment_command())
         .subcommand(user::user_command())
         .subcommand(completions::completions_command())
+        .subcommand(man::man_command())
         .subcommand(cache::cache_command())
 }

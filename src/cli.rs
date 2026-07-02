@@ -1091,6 +1091,18 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
             pcli2::actions::completions::generate_completions(shell)?;
             Ok(())
         }
+        Some(("man", sub_matches)) => {
+            trace!("Command: man");
+
+            let output_dir = sub_matches
+                .get_one::<std::path::PathBuf>("output-dir")
+                .cloned()
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+            let count = pcli2::actions::man::generate_man_pages(&output_dir)?;
+            println!("Wrote {} man page(s) to '{}'", count, output_dir.display());
+            Ok(())
+        }
         Some(("user", sub_matches)) => {
             trace!("Command: user");
 

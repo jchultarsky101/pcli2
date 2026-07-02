@@ -126,7 +126,11 @@ pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionE
 
     let mut api = PhysnaApiClient::try_default()?;
 
-    match crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await {
+    let progress = crate::terminal::spinner("Fetching tenants...");
+    let tenants_result = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await;
+    progress.finish_and_clear();
+
+    match tenants_result {
         Ok(tenant_settings) => {
             // Convert to a format that can be handled by the Formattable trait
             let tenant_list = crate::model::TenantList::from(tenant_settings);

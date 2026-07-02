@@ -1002,7 +1002,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                         match pcli2::physna_v3::PhysnaApiClient::try_default() {
                                             Ok(mut api) => {
                                                 // Try to list tenants as a connectivity test
-                                                if let Ok(tenants) = api.list_tenants().await {
+                                                let progress = pcli2::terminal::spinner(
+                                                    "Testing API connectivity...",
+                                                );
+                                                let tenants_result = api.list_tenants().await;
+                                                progress.finish_and_clear();
+                                                if let Ok(tenants) = tenants_result {
                                                     if tenants.is_empty() {
                                                         messages.push((
                                                             "API connectivity: OK (no tenants)"

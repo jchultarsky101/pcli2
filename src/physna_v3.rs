@@ -3256,7 +3256,7 @@ impl PhysnaApiClient {
         let progress_bar = if show_progress {
             let pb = ProgressBar::new(paths.len() as u64);
             pb.set_style(ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec} {msg}")
                 .unwrap()
                 .progress_chars("#>-"));
             Some(pb)

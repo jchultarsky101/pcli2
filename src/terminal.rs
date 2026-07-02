@@ -28,6 +28,27 @@ pub fn colors_enabled() -> bool {
         && std::io::stdout().is_terminal()
 }
 
+/// Create a spinner shown on stderr while a quick operation runs.
+///
+/// The spinner is hidden when stderr is not attached to a terminal, so it
+/// never pollutes redirected output or CI logs. Callers should invoke
+/// `finish_and_clear()` when the operation completes.
+pub fn spinner(message: &str) -> indicatif::ProgressBar {
+    let progress_bar = if std::io::stderr().is_terminal() {
+        indicatif::ProgressBar::new_spinner()
+    } else {
+        indicatif::ProgressBar::hidden()
+    };
+    progress_bar.set_style(
+        indicatif::ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}")
+            .expect("valid spinner template"),
+    );
+    progress_bar.set_message(message.to_string());
+    progress_bar.enable_steady_tick(std::time::Duration::from_millis(100));
+    progress_bar
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

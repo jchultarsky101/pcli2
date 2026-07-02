@@ -783,7 +783,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
                     individual_pb.set_style(
                         ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} {msg}")
+                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Downloading: {}", asset_name));
@@ -1343,7 +1343,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                     let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
                     individual_pb.set_style(
                         ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} {msg}")
+                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Downloading thumbnail: {}", asset_name));
@@ -1954,7 +1954,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     let individual_pb = mp.add(indicatif::ProgressBar::new_spinner());
                     individual_pb.set_style(
                         indicatif::ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} {msg}")
+                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Uploading: {}", file_name_str));

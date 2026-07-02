@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Metadata field listing now retrieves all pages** - `get_metadata_fields` fetched the `/tenants/{id}/metadata-fields` endpoint without pagination parameters, so only the first page (20 fields) was returned. For tenants with more metadata fields this had two consequences: the type-mismatch pre-check during metadata updates silently did not protect fields beyond the first page, and every batch update issued a doomed field-registration attempt (HTTP 409 "already exists") for each field the truncated list was missing. The client now walks all pages (200 per page). Affects `asset metadata create-batch` and any command that registers or type-checks metadata fields.
+
 ## [1.8.0] - 2026-07-02
 
 ### Added

@@ -67,6 +67,10 @@ pub enum ApiError {
     #[error("Path not found: {0}")]
     PathNotFound(String),
 
+    /// A folder path did not resolve to an existing folder
+    #[error("Folder not found: {0}")]
+    FolderNotFound(String),
+
     #[error("Invalid path for asset. Check asset name: {0}")]
     InvalidAssetPath(String),
 
@@ -90,6 +94,25 @@ pub enum ApiError {
         expected_type: String,
         provided_type: String,
     },
+}
+
+impl ApiError {
+    /// True when the error indicates an authentication/authorization failure,
+    /// including a 401/403 that persisted through the automatic token-refresh
+    /// retry (which surfaces as `RetryFailed` rather than `AuthError`).
+    pub fn is_authentication_failure(&self) -> bool {
+        match self {
+            ApiError::AuthError(_) | ApiError::InvalidToken | ApiError::MissingCredentials => true,
+            ApiError::RetryFailed(msg) => {
+                let msg = msg.to_lowercase();
+                msg.contains("401")
+                    || msg.contains("403")
+                    || msg.contains("unauthorized")
+                    || msg.contains("forbidden")
+            }
+            _ => false,
+        }
+    }
 }
 
 pub trait TryDefault: Sized {
@@ -717,68 +740,15 @@ impl PhysnaApiClient {
                                 "Request still failed after token refresh: {} - {}",
                                 retry_status, retry_error_body
                             );
-                            return Err(ApiError::ConflictError(format!(
-                                "HTTP {} - {}",
-                                retry_status, retry_error_body
-                            )));
-                        }
-                    }
-                }
-            } else if status == reqwest::StatusCode::UNAUTHORIZED
-                || status == reqwest::StatusCode::FORBIDDEN
-            {
-                // Handle 401/403 errors as authentication issues
-                debug!(
-                    "Received {} error - treating as authentication error",
-                    status
-                );
-                if self.access_token.is_none() {
-                    return Err(ApiError::AuthError(
-                        "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
-                    ));
-                } else {
-                    // Try to refresh the token
-                    debug!("Attempting token refresh for {} error", status);
-                    if let Err(refresh_err) = self.refresh_token().await {
-                        debug!("Token refresh failed for {} error: {}", status, refresh_err);
-                        return Err(ApiError::AuthError(
-                            "Authentication required: Access token may be invalid or expired. Please log in with 'pcli2 auth login'.".to_string()
-                        ));
-                    } else {
-                        // If refresh succeeds, retry the request
-                        debug!(
-                            "Token refreshed successfully, retrying request after {} error",
-                            status
-                        );
-                        let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
-
-                        if let Some(token) = &self.access_token {
-                            retry_request =
-                                retry_request.header("Authorization", format!("Bearer {}", token));
-                        }
-
-                        let retry_response = retry_request.send().await?;
-
-                        if retry_response.status().is_success() {
-                            let response = retry_response.text().await?;
-                            match serde_json::from_str::<T>(&response) {
-                                Ok(result) => return Ok(result),
-                                Err(e) => {
-                                    error!("Failed to deserialize response after token refresh: {}. Raw response: {}", e, response);
-                                    return Err(ApiError::JsonError(e));
-                                }
+                            // A 404 that persists with a fresh token is a genuine
+                            // not-found, not a conflict; classify it so callers
+                            // can match on it.
+                            if retry_status == reqwest::StatusCode::NOT_FOUND {
+                                return Err(ApiError::NotFoundError(format!(
+                                    "HTTP {} - {}",
+                                    retry_status, retry_error_body
+                                )));
                             }
-                        } else {
-                            // Even after refresh, the request failed
-                            let retry_status = retry_response.status();
-                            let retry_error_body = retry_response
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".to_string());
-                            debug!(
-                                "Request still failed after token refresh: {} - {}",
-                                retry_status, retry_error_body
-                            );
                             return Err(ApiError::ConflictError(format!(
                                 "HTTP {} - {}",
                                 retry_status, retry_error_body
@@ -787,6 +757,8 @@ impl PhysnaApiClient {
                     }
                 }
             }
+            // 401/403 cannot reach this branch: they are consumed by the
+            // authentication-retry branch at the top of this function.
 
             // Try to parse the error as JSON to extract a more descriptive message
             if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
@@ -1589,18 +1561,97 @@ impl PhysnaApiClient {
         Ok(response.into())
     }
 
-    /// This method is a wrapper around get_folder_uuid_by_path(...), but it will return None if the path is the root.
+    /// List ALL direct subfolders of a folder, walking every page.
+    ///
+    /// `get_folder_contents` fetches a single page; callers that treat one
+    /// page as the complete subfolder set silently lose folders (and
+    /// everything beneath them) once a folder has more direct subfolders than
+    /// the page size. This wrapper accumulates every page.
+    pub async fn list_all_subfolders(
+        &mut self,
+        tenant_uuid: &Uuid,
+        folder_uuid: Option<&Uuid>,
+    ) -> Result<crate::model::FolderList, ApiError> {
+        let url = match folder_uuid {
+            Some(folder_uuid) => format!(
+                "{}/tenants/{}/folders/{}/contents",
+                self.base_url, tenant_uuid, folder_uuid
+            ),
+            None => format!(
+                "{}/tenants/{}/folders/root/contents",
+                self.base_url, tenant_uuid
+            ),
+        };
+
+        let mut all_folders: Vec<crate::model::FolderResponse> = Vec::new();
+        let mut page: usize = 1;
+        let per_page: usize = 200;
+
+        loop {
+            let page_str = page.to_string();
+            let per_page_str = per_page.to_string();
+            let query_params = vec![
+                ("contentType", "folders"),
+                ("page", page_str.as_str()),
+                ("perPage", per_page_str.as_str()),
+            ];
+            let paged_url = format!(
+                "{}?{}",
+                url,
+                serde_urlencoded::to_string(&query_params).unwrap()
+            );
+
+            let response: FolderListResponse = self.get(&paged_url).await?;
+            let current_page = response.page_data.current_page;
+            let last_page = response.page_data.last_page;
+            all_folders.extend(response.folders);
+
+            // Stop on the last page, or if the endpoint fails to advance
+            // `current_page` (guard against looping forever on one page).
+            if current_page >= last_page || current_page < page {
+                break;
+            }
+            page = current_page + 1;
+        }
+
+        let total = all_folders.len();
+        Ok(FolderListResponse {
+            folders: all_folders,
+            page_data: crate::model::PageData {
+                total,
+                per_page,
+                current_page: 1,
+                last_page: 1,
+                start_index: 0,
+                end_index: total,
+            },
+        }
+        .into())
+    }
+
+    /// Strictly resolve a folder path to a UUID.
+    ///
+    /// Returns `Ok(None)` ONLY for the root path "/" (which has no UUID).
+    /// A non-root path that does not resolve to an existing folder is an
+    /// error — it must never be silently treated as the root folder, since
+    /// downstream code that matches assets by name within the resolved
+    /// folder could otherwise target a completely different asset.
     pub async fn resolve_folder_uuid_by_path(
         &mut self,
         tenant_uuid: &Uuid,
         folder_path: &str,
     ) -> Result<Option<Uuid>, ApiError> {
-        if folder_path.eq("/") {
+        let normalized_path = crate::model::normalize_path(folder_path);
+        if normalized_path == "/" {
             Ok(None)
         } else {
-            Ok(self
+            match self
                 .get_folder_uuid_by_path(tenant_uuid, folder_path)
-                .await?)
+                .await?
+            {
+                Some(uuid) => Ok(Some(uuid)),
+                None => Err(ApiError::FolderNotFound(folder_path.to_string())),
+            }
         }
     }
 
@@ -2183,63 +2234,9 @@ impl PhysnaApiClient {
                 status, error_body
             );
 
-            // Handle 401/403 errors as authentication issues
-            if status == reqwest::StatusCode::UNAUTHORIZED
-                || status == reqwest::StatusCode::FORBIDDEN
-            {
-                debug!(
-                    "Received {} error - treating as authentication error",
-                    status
-                );
-                if self.access_token.is_none() {
-                    return Err(ApiError::AuthError(
-                        "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
-                    ));
-                } else {
-                    // Try to refresh the token
-                    debug!("Attempting token refresh for {} error", status);
-                    if let Err(refresh_err) = self.refresh_token().await {
-                        debug!("Token refresh failed for {} error: {}", status, refresh_err);
-                        return Err(ApiError::AuthError(
-                            "Authentication required: Access token may be invalid or expired. Please log in with 'pcli2 auth login'.".to_string()
-                        ));
-                    } else {
-                        // If refresh succeeds, retry the request
-                        debug!(
-                            "Token refreshed successfully, retrying request after {} error",
-                            status
-                        );
-                        let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
-
-                        if let Some(token) = &self.access_token {
-                            retry_request =
-                                retry_request.header("Authorization", format!("Bearer {}", token));
-                        }
-
-                        let retry_response = retry_request.send().await?;
-
-                        if retry_response.status().is_success() {
-                            // Success after retry
-                            return Ok(());
-                        } else {
-                            // Even after refresh, the request failed
-                            let retry_status = retry_response.status();
-                            let retry_error_body = retry_response
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".to_string());
-                            debug!(
-                                "Request still failed after token refresh: {} - {}",
-                                retry_status, retry_error_body
-                            );
-                            return Err(ApiError::ConflictError(format!(
-                                "HTTP {} - {}",
-                                retry_status, retry_error_body
-                            )));
-                        }
-                    }
-                }
-            } else if status == reqwest::StatusCode::NOT_FOUND {
+            // 401/403 cannot reach this point: they are consumed by the
+            // authentication-retry branch at the top of this function.
+            if status == reqwest::StatusCode::NOT_FOUND {
                 // Handle 404 errors that might be due to authentication issues
                 debug!("Received 404 error, checking if it's an authentication issue");
                 if self.access_token.is_none() {
@@ -2369,7 +2366,9 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         file_path: &Path,
         asset_path: &String,
-        folder_uuid: &Uuid,
+        // Kept for API stability; the upload targets the folder via the full
+        // asset path (`createMissingFolders=true`), not a folder id.
+        _folder_uuid: &Uuid,
         metadata: Option<&std::collections::HashMap<String, serde_json::Value>>,
     ) -> Result<crate::model::Asset, ApiError> {
         trace!("Creating new asset by uploading a file...");
@@ -2462,15 +2461,16 @@ impl PhysnaApiClient {
                 )
                 .unwrap();
 
-            // Build the multipart form with file part and required parameters
-            let mut retry_form = reqwest::multipart::Form::new()
+            // Build the retry form IDENTICALLY to the original attempt: the
+            // retry previously sent createMissingFolders="" plus an extra
+            // folderId field, so an upload that merely hit an expired token
+            // could behave differently (e.g. fail to create missing folders)
+            // on the retry.
+            let retry_form = reqwest::multipart::Form::new()
                 .part("file", retry_file_part)
                 .text("path", asset_path.clone()) // Use the full asset path including folder
                 .text("metadata", metadata_json.clone())
-                .text("createMissingFolders", ""); // Empty createMissingFolders as in the working example
-
-            // Add folder ID if provided
-            retry_form = retry_form.text("folderId", folder_uuid.to_string());
+                .text("createMissingFolders", "true"); // Enable creating missing folders
 
             debug!("Retrying asset creation with path: {}", asset_path);
 
@@ -2643,8 +2643,21 @@ impl PhysnaApiClient {
         let mut page = 1;
         let per_page = 100; // Larger page size for efficiency
 
+        // Hard limit to prevent runaway pagination if the server misbehaves,
+        // consistent with part_search and visual_search.
+        let max_pages_limit = 1000;
+
         loop {
             debug!("Fetching page {} of geometric search results", page);
+
+            if page > max_pages_limit {
+                eprintln!(
+                    "⚠️  Warning: geometric search results truncated at {} matches ({}-page safety limit); results are incomplete",
+                    all_matches.len(),
+                    max_pages_limit
+                );
+                break;
+            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({
@@ -2673,21 +2686,30 @@ impl PhysnaApiClient {
                             page_data.current_page, page_data.last_page, page_data.total
                         );
 
+                        // Guard against the endpoint failing to advance
+                        // `current_page` (would otherwise loop forever
+                        // re-appending duplicate matches).
+                        let stalled = page_data.current_page < page;
+                        let last_page_reached = page_data.current_page >= page_data.last_page;
+
                         // Add matches from this page to our collection
                         all_matches.extend(response.matches);
 
-                        // Check if we've reached the last page
-                        if page_data.current_page >= page_data.last_page {
-                            debug!("Reached last page of results");
+                        if last_page_reached || stalled {
+                            debug!("Reached last page of results (stalled: {})", stalled);
                             break;
                         }
 
                         // Move to next page
                         page += 1;
                     } else {
-                        // No pagination data - just return the response as-is
-                        debug!("No pagination data in response, returning single page");
-                        return Ok(response);
+                        // No pagination data - the endpoint returned everything
+                        // at once. Keep this page's matches together with any
+                        // previously accumulated pages instead of discarding
+                        // them.
+                        debug!("No pagination data in response, returning accumulated matches");
+                        all_matches.extend(response.matches);
+                        break;
                     }
                 }
                 Err(e) => {
@@ -2803,15 +2825,19 @@ impl PhysnaApiClient {
 
         // Track the maximum last_page value seen to prevent infinite loops
         let mut max_last_page_seen = 0;
-        let max_pages_limit = 50; // Hard limit to prevent excessive API calls
+        // Hard limit to prevent excessive API calls; aligned with
+        // visual_search (1000 pages) so large result sets aren't cut short.
+        let max_pages_limit = 1000;
 
         loop {
             debug!("Fetching page {} of part search results", page);
 
-            // Check if we've hit the hard limit
+            // Check if we've hit the hard limit. Truncation must be visible
+            // to the user, not just a debug log.
             if page > max_pages_limit {
-                debug!(
-                    "Reached hard page limit of {}, stopping to prevent excessive API calls",
+                eprintln!(
+                    "⚠️  Warning: part search results truncated at {} matches ({}-page safety limit); results are incomplete",
+                    all_matches.len(),
                     max_pages_limit
                 );
                 break;
@@ -2864,9 +2890,13 @@ impl PhysnaApiClient {
                         // Move to next page
                         page += 1;
                     } else {
-                        // No pagination data - just return the response as-is
-                        debug!("No pagination data in response, returning single page");
-                        return Ok(response);
+                        // No pagination data - the endpoint returned everything
+                        // at once. Keep this page's matches together with any
+                        // previously accumulated pages instead of discarding
+                        // them.
+                        debug!("No pagination data in response, returning accumulated matches");
+                        all_matches.extend(response.matches);
+                        break;
                     }
                 }
                 Err(e) => {
@@ -3060,9 +3090,13 @@ impl PhysnaApiClient {
     /// The search looks through asset names, paths, and associated metadata to find relevant matches.
     /// The search results are ordered by relevance as determined by the text search algorithm.
     ///
+    /// Results are accumulated across pages until `limit` matches are
+    /// collected or the last page is reached, mirroring `visual_search`.
+    ///
     /// # Arguments
     /// * `tenant_uuid` - The UUID of the tenant to search within
     /// * `text_query` - The text query to search for in assets
+    /// * `limit` - Maximum number of matches to return
     ///
     /// # Returns
     /// * `Ok(TextSearchResponse)` - The search results with text-matched assets
@@ -3071,60 +3105,107 @@ impl PhysnaApiClient {
         &mut self,
         tenant_uuid: &Uuid,
         text_query: &str,
+        limit: usize,
     ) -> Result<crate::model::TextSearchResponse, ApiError> {
         debug!(
-            "Starting text search for tenant_uuid: {}, query: {}",
-            tenant_uuid, text_query
+            "Starting text search for tenant_uuid: {}, query: {}, limit: {}",
+            tenant_uuid, text_query, limit
         );
         let url = format!(
             "{}/tenants/{}/assets/text-search",
             self.base_url, tenant_uuid
         );
 
-        // Text search - get first page with 50 results (top matches)
-        let page = 1;
-        let per_page = 50; // Reasonable page size for text search
+        // Accumulate matches across pages until we have at least `limit`.
+        let mut all_matches = Vec::new();
+        let mut page = 1;
+        // Request only as many per page as we need (capped at the endpoint
+        // maximum of 1000), so a small limit costs a single request.
+        let per_page = limit.clamp(1, 1000);
 
-        // Build request body with the correct structure
-        let body = serde_json::json!({
-            "page": page,
-            "perPage": per_page,
-            "searchQuery": text_query,
-            "filters": {
-                "folders": [],
-                "metadata": {},
-                "extensions": []  // Empty array as requested
-            }
-        });
+        // Track the maximum last_page value seen to prevent infinite loops.
+        let mut max_last_page_seen = 0;
+        let max_pages_limit = 1000; // Hard limit to prevent excessive API calls
 
-        debug!("Sending text search request to: {}", url);
-        // Execute POST request
-        let result: Result<crate::model::TextSearchResponse, ApiError> =
-            self.post(&url, &body).await;
-
-        match result {
-            Ok(mut response) => {
-                // Limit results to 50 to ensure we don't exceed expected page size
-                if response.matches.len() > 50 {
-                    response.matches.truncate(50);
-                }
-
-                // Clear pagination data since we're only getting the first page
-                response.page_data = None;
-
+        loop {
+            if page > max_pages_limit {
                 debug!(
-                    "Text search completed for query: '{}' with {} total matches",
-                    text_query,
-                    response.matches.len()
+                    "Reached hard page limit of {}, stopping text search pagination",
+                    max_pages_limit
                 );
-                Ok(response)
+                break;
             }
-            Err(e) => {
-                // Return error immediately
-                debug!("Text search failed: {}", e);
-                Err(e)
+
+            let body = serde_json::json!({
+                "page": page,
+                "perPage": per_page,
+                "searchQuery": text_query,
+                "filters": {
+                    "folders": [],
+                    "metadata": {},
+                    "extensions": []
+                }
+            });
+
+            debug!("Sending text search request to: {}", url);
+            let result: Result<crate::model::TextSearchResponse, ApiError> =
+                self.post(&url, &body).await;
+
+            match result {
+                Ok(response) => {
+                    if let Some(page_data) = &response.page_data {
+                        debug!(
+                            "Page {}/{} with {} total matches",
+                            page_data.current_page, page_data.last_page, page_data.total
+                        );
+
+                        if page_data.last_page > max_last_page_seen {
+                            max_last_page_seen = page_data.last_page;
+                        }
+
+                        all_matches.extend(response.matches);
+
+                        // Stop once we have enough results, reach the last page,
+                        // or the endpoint fails to advance `current_page` (guard
+                        // against looping forever on the same page).
+                        if all_matches.len() >= limit
+                            || page_data.current_page >= page_data.last_page
+                            || page_data.current_page < page
+                        {
+                            break;
+                        }
+
+                        page += 1;
+                    } else {
+                        // No pagination data - return this single page, capped at
+                        // the requested limit.
+                        debug!("No pagination data in text search response, returning single page");
+                        let mut response = response;
+                        response.matches.truncate(limit);
+                        return Ok(response);
+                    }
+                }
+                Err(e) => {
+                    debug!("Text search failed: {}", e);
+                    return Err(e);
+                }
             }
         }
+
+        // The last page may overshoot the requested limit; cap it here.
+        all_matches.truncate(limit);
+
+        debug!(
+            "Text search completed for query: '{}' with {} total matches",
+            text_query,
+            all_matches.len()
+        );
+
+        Ok(crate::model::TextSearchResponse {
+            matches: all_matches,
+            page_data: None, // We've aggregated all pages
+            filter_data: None,
+        })
     }
 
     /// Create multiple assets by uploading files matching a glob pattern
@@ -3203,12 +3284,38 @@ impl PhysnaApiClient {
         let base_url = self.base_url.clone();
         let access_token = self.access_token.clone();
         let client_credentials = self.client_credentials.clone();
+        // The per-file clients must inherit the parent's auth endpoint and
+        // environment: constructing them with defaults would refresh tokens
+        // against the production Cognito URL and save them under the
+        // "default" environment even when another environment is active.
+        let auth_url = self.auth_url.clone();
+        let environment_name = self.environment_name.clone();
         let folder_path = folder_path.map(|s| s.to_string());
 
         debug!(
             "Folder path for batch upload: {:?}, folder ID: {:?}",
             folder_path, folder_uuid
         );
+
+        // Both a folder path and a folder UUID are required by the per-file
+        // upload; validate up front instead of unwrapping inside spawned
+        // tasks, where a panic would be silently swallowed by the join.
+        let folder_path = match folder_path {
+            Some(p) => p,
+            None => {
+                return Err(ApiError::InvalidParameterError(
+                    "A folder path is required for batch upload".to_string(),
+                ))
+            }
+        };
+        let folder_uuid_required = match folder_uuid {
+            Some(u) => *u,
+            None => {
+                return Err(ApiError::InvalidParameterError(
+                    "A folder UUID is required for batch upload".to_string(),
+                ))
+            }
+        };
 
         // Use a semaphore to control concurrency
         use tokio::sync::Semaphore;
@@ -3221,9 +3328,6 @@ impl PhysnaApiClient {
         >(paths.len().max(1));
 
         // Process each file with controlled concurrency
-        // Convert folder_uuid to owned value to avoid lifetime issues
-        let folder_uuid_owned = folder_uuid.cloned();
-
         let tasks: Vec<_> = paths
             .into_iter()
             .map(|path_buf| {
@@ -3232,8 +3336,10 @@ impl PhysnaApiClient {
                 let base_url = base_url.clone();
                 let access_token = access_token.clone();
                 let client_credentials = client_credentials.clone();
+                let auth_url = auth_url.clone();
+                let environment_name = environment_name.clone();
                 let folder_path = folder_path.clone();
-                let folder_uuid = folder_uuid_owned;
+                let folder_uuid = folder_uuid_required;
                 let progress_bar = progress_bar.clone();
                 let tenant_uuid = *tenant_uuid;
                 let semaphore = semaphore.clone();
@@ -3262,8 +3368,13 @@ impl PhysnaApiClient {
                     };
 
                     // Create a new client that shares the HTTP client to leverage connection pooling
-                    let base_client =
+                    let mut base_client =
                         PhysnaApiClient::new_with_shared_http_client(shared_http_client, base_url);
+                    // Inherit the parent's auth endpoint and environment so
+                    // mid-batch token refreshes hit the right Cognito URL and
+                    // persist under the active environment.
+                    base_client.auth_url = auth_url;
+                    base_client.environment_name = environment_name;
                     let mut client = base_client.for_upload_operations(); // Use upload-optimized timeout
 
                     if let Some(token) = access_token {
@@ -3274,14 +3385,13 @@ impl PhysnaApiClient {
                     }
 
                     // Upload the file
-                    let asset_path =
-                        format!("{}/{}", folder_path.unwrap(), file_name.to_string_lossy());
+                    let asset_path = format!("{}/{}", folder_path, file_name.to_string_lossy());
                     debug!(
                         "Uploading file: {}, as asset_path: {}, folder_uuid: {:?}",
                         path_str, asset_path, folder_uuid
                     );
                     let result = client
-                        .create_asset(&tenant_uuid, &path_buf, &asset_path, &folder_uuid.unwrap())
+                        .create_asset(&tenant_uuid, &path_buf, &asset_path, &folder_uuid)
                         .await;
 
                     // Update progress bar if present
@@ -3317,9 +3427,12 @@ impl PhysnaApiClient {
             })
             .collect();
 
-        // Wait for all tasks to complete
+        // Wait for all tasks to complete. A panicked task would otherwise be
+        // silently dropped from both the success and failure counts.
         for task in tasks {
-            let _ = task.await;
+            if let Err(join_error) = task.await {
+                tracing::error!("Batch upload task failed to complete: {}", join_error);
+            }
         }
 
         // Drop the original sender so the receiver knows when all tasks are done
@@ -3407,7 +3520,7 @@ impl PhysnaApiClient {
         let encoded_asset_path = urlencoding::encode(physna_path);
 
         let url = format!(
-            "{}/tenants/{}/assets/{}/dependencies?page={}&per_page={}",
+            "{}/tenants/{}/assets/{}/dependencies?page={}&perPage={}",
             self.base_url, tenant_uuid, encoded_asset_path, page, per_page
         );
         debug!("Dependencies request URL: {}", url);
@@ -3438,51 +3551,11 @@ impl PhysnaApiClient {
                     Err(ApiError::NotFoundError(error_msg))
                 }
             }
-            Err(ApiError::HttpError(reqwest_err)) => {
-                // Check if this is a 404 error which might indicate no dependencies
-                if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                    // Return an empty response instead of an error
-                    debug!("Asset has no dependencies (404 received), returning empty response");
-                    Ok(AssetDependenciesResponse {
-                        dependencies: vec![],
-                        page_data: crate::model::PageData {
-                            current_page: page,
-                            per_page,
-                            total: 0,
-                            last_page: 1,
-                            start_index: 0,
-                            end_index: 0,
-                        },
-                        original_asset_path: physna_path.to_string(),
-                    })
-                } else {
-                    // Re-raise the original error if it's not a 404
-                    Err(ApiError::HttpError(reqwest_err))
-                }
-            }
-            Err(ApiError::AuthError(msg)) => {
-                // Check if the auth error message contains indication of "no dependencies"
-                // This happens when the 404 gets converted to auth error during token refresh
-                if msg.contains("No dependencies found for asset") || msg.contains("404") {
-                    debug!("Asset has no dependencies (converted auth error), returning empty response");
-                    Ok(AssetDependenciesResponse {
-                        dependencies: vec![],
-                        page_data: crate::model::PageData {
-                            current_page: page,
-                            per_page,
-                            total: 0,
-                            last_page: 1,
-                            start_index: 0,
-                            end_index: 0,
-                        },
-                        original_asset_path: physna_path.to_string(),
-                    })
-                } else {
-                    // Re-raise the auth error if it's not related to missing dependencies
-                    Err(ApiError::AuthError(msg))
-                }
-            }
-            Err(e) => Err(e), // Re-raise any other error
+            // A genuine 404 (e.g. the asset itself no longer exists) and auth
+            // errors propagate as errors. They must NOT be swallowed into an
+            // empty dependency list: only the explicit "No dependencies found"
+            // response above means "this asset has no dependencies".
+            Err(e) => Err(e),
         }
     }
 
@@ -3500,7 +3573,7 @@ impl PhysnaApiClient {
         );
 
         let url = format!(
-            "{}/tenants/{}/assets/{}/dependencies?page={}&per_page={}",
+            "{}/tenants/{}/assets/{}/dependencies?page={}&perPage={}",
             self.base_url, tenant_uuid, asset_uuid, page, per_page
         );
         debug!("Dependencies request URL: {}", url);
@@ -3531,51 +3604,11 @@ impl PhysnaApiClient {
                     Err(ApiError::NotFoundError(error_msg))
                 }
             }
-            Err(ApiError::HttpError(reqwest_err)) => {
-                // Check if this is a 404 error which might indicate no dependencies
-                if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                    // Return an empty response instead of an error
-                    debug!("Asset has no dependencies (404 received), returning empty response");
-                    Ok(AssetDependenciesResponse {
-                        dependencies: vec![],
-                        page_data: crate::model::PageData {
-                            current_page: page,
-                            per_page,
-                            total: 0,
-                            last_page: 1,
-                            start_index: 0,
-                            end_index: 0,
-                        },
-                        original_asset_path: asset_uuid.to_string(), // Store UUID as string for consistency
-                    })
-                } else {
-                    // Re-raise the original error if it's not a 404
-                    Err(ApiError::HttpError(reqwest_err))
-                }
-            }
-            Err(ApiError::AuthError(msg)) => {
-                // Check if the auth error message contains indication of "no dependencies"
-                // This happens when the 404 gets converted to auth error during token refresh
-                if msg.contains("No dependencies found for asset") || msg.contains("404") {
-                    debug!("Asset has no dependencies (converted auth error), returning empty response");
-                    Ok(AssetDependenciesResponse {
-                        dependencies: vec![],
-                        page_data: crate::model::PageData {
-                            current_page: page,
-                            per_page,
-                            total: 0,
-                            last_page: 1,
-                            start_index: 0,
-                            end_index: 0,
-                        },
-                        original_asset_path: asset_uuid.to_string(), // Store UUID as string for consistency
-                    })
-                } else {
-                    // Re-raise the auth error if it's not related to missing dependencies
-                    Err(ApiError::AuthError(msg))
-                }
-            }
-            Err(e) => Err(e), // Re-raise any other error
+            // A genuine 404 (e.g. the asset itself no longer exists) and auth
+            // errors propagate as errors. They must NOT be swallowed into an
+            // empty dependency list: only the explicit "No dependencies found"
+            // response above means "this asset has no dependencies".
+            Err(e) => Err(e),
         }
     }
 
@@ -3591,32 +3624,59 @@ impl PhysnaApiClient {
             .get_asset_by_path(tenant_uuid, asset_path.as_ref())
             .await?;
 
-        // Then use the UUID-based pagination method with default page values
-        self.get_asset_dependencies_by_uuid_with_pagination(
-            tenant_uuid,
-            &asset.uuid(),
-            1,   // page 1
-            100, // 100 per page
-        )
-        .await
+        self.get_asset_dependencies_list_by_uuid(tenant_uuid, &asset.uuid())
+            .await
     }
 
     /// Public method to get asset dependencies list by UUID
     ///
-    /// This method returns the raw dependencies response instead of building an assembly tree
+    /// This method returns the raw dependencies response instead of building
+    /// an assembly tree. All pages are accumulated: an asset with more direct
+    /// dependencies than one page returns the complete list.
     pub async fn get_asset_dependencies_list_by_uuid(
         &mut self,
         tenant_uuid: &Uuid,
         asset_uuid: &Uuid,
     ) -> Result<AssetDependenciesResponse, ApiError> {
-        // Use the UUID-based pagination method with default page values
-        self.get_asset_dependencies_by_uuid_with_pagination(
-            tenant_uuid,
-            asset_uuid,
-            1,   // page 1
-            100, // 100 per page
-        )
-        .await
+        let mut page: usize = 1;
+        let per_page: usize = 100;
+        let mut all_dependencies = Vec::new();
+
+        loop {
+            let response = self
+                .get_asset_dependencies_by_uuid_with_pagination(
+                    tenant_uuid,
+                    asset_uuid,
+                    page,
+                    per_page,
+                )
+                .await?;
+
+            let current_page = response.page_data.current_page;
+            let last_page = response.page_data.last_page;
+            all_dependencies.extend(response.dependencies);
+
+            // Stop on the last page, or if the endpoint fails to advance
+            // `current_page` (guard against looping forever on one page).
+            if current_page >= last_page || current_page < page {
+                break;
+            }
+            page = current_page + 1;
+        }
+
+        let total = all_dependencies.len();
+        Ok(AssetDependenciesResponse {
+            dependencies: all_dependencies,
+            page_data: crate::model::PageData {
+                total,
+                per_page,
+                current_page: 1,
+                last_page: 1,
+                start_index: 0,
+                end_index: total,
+            },
+            original_asset_path: String::new(),
+        })
     }
 
     #[async_recursion]
@@ -3953,13 +4013,13 @@ impl PhysnaApiClient {
 
         // Initialize pagination variables
         let mut page: usize = 1;
-        let per_page: usize = 100; // Reasonable page size for asset listings
+        let per_page: usize = 200; // Reasonable page size for asset listings
         let mut all_assets: Vec<Asset> = Vec::new();
 
         // Loop through all pages to get all assets with the specified state
         loop {
             let url = format!(
-                "{}/tenants/{}/assets/state/{}?page={}&per_page={}",
+                "{}/tenants/{}/assets/state/{}?page={}&perPage={}",
                 self.base_url, tenant_uuid, state, page, per_page
             );
             debug!("Assets by state request URL: {}", url);
@@ -4008,9 +4068,15 @@ impl PhysnaApiClient {
             // Increment the page number to avoid infinite loops
             page += 1;
 
-            // Safety check to prevent infinite loops in case of API issues
+            // Safety check to prevent infinite loops in case of API issues.
+            // If a tenant legitimately exceeds this, the truncation must be
+            // visible to the user, not just a debug log.
             if page > 1000 {
-                // Arbitrary large number to prevent infinite loops
+                eprintln!(
+                    "⚠️  Warning: asset listing for state '{}' was truncated at {} assets (1000-page safety limit); results are incomplete",
+                    state,
+                    all_assets.len()
+                );
                 debug!("Reached maximum page limit (1000) while fetching assets by state: {} for tenant: {}", state, tenant_uuid);
                 break;
             }
@@ -4451,24 +4517,52 @@ impl PhysnaApiClient {
 
             // Create an appropriate error based on the response status
             match status {
-                reqwest::StatusCode::UNAUTHORIZED => {
-                    // Check if we have an access token - if not, this is a general auth error
-                    if self.access_token.is_none() {
-                        Err(ApiError::AuthError(format!("Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.", asset_display)))
-                    } else {
-                        Err(ApiError::AuthError(format!("Unauthorized access for asset {}: Access token may have expired or is invalid.", asset_display)))
+                reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+                    // Refresh the token and retry once, consistent with the
+                    // non-streaming download_asset (previously this variant
+                    // failed terminally on an expired token).
+                    debug!(
+                        "Received {} for asset stream, attempting token refresh",
+                        status
+                    );
+                    self.refresh_token().await.map_err(|_| {
+                        ApiError::AuthError(format!(
+                            "Authentication required for asset {}: Access token may have expired or is invalid. Please log in with 'pcli2 auth login'.",
+                            asset_display
+                        ))
+                    })?;
+
+                    if let Err(e) = self.save_current_token_to_keyring_internal() {
+                        debug!("Failed to save refreshed token to keyring: {}", e);
                     }
-                }
-                reqwest::StatusCode::FORBIDDEN => {
-                    // Check if we have an access token - if not, this is a general auth error
-                    if self.access_token.is_none() {
-                        Err(ApiError::AuthError(format!("Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.", asset_display)))
+
+                    let token = self.access_token.as_ref().ok_or_else(|| {
+                        ApiError::AuthError(format!(
+                            "Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.",
+                            asset_display
+                        ))
+                    })?;
+
+                    let retry_response = self
+                        .http_client
+                        .client
+                        .get(&url)
+                        .header("Authorization", format!("Bearer {}", token))
+                        .send()
+                        .await?;
+
+                    if retry_response.status().is_success() {
+                        Ok(retry_response.bytes_stream())
                     } else {
-                        Err(ApiError::AuthError(format!("Access forbidden for asset {}: You don't have permission to download this asset.", asset_display)))
+                        let retry_status = retry_response.status();
+                        Err(ApiError::AuthError(format!(
+                            "Download failed for asset {} after token refresh (HTTP {}).",
+                            asset_display, retry_status
+                        )))
                     }
                 }
                 reqwest::StatusCode::NOT_FOUND => {
-                    Err(ApiError::ConflictError(format!("Asset not found - the asset {} may have been deleted or the path is incorrect. API Response: {}", asset_display, error_body)))
+                    Err(ApiError::NotFoundError(format!("Asset not found - the asset {} may have been deleted or the path is incorrect. API Response: {}", asset_display, error_body)))
                 }
                 _ => {
                     // For other error statuses, we return the error body that we captured earlier
@@ -4803,9 +4897,12 @@ impl PhysnaApiClient {
                 // Move to next page
                 page += 1;
             } else {
-                // No pagination data - just return the response as-is
-                debug!("No pagination data in response, returning single page");
-                return Ok(response);
+                // No pagination data - the endpoint returned everything at
+                // once. The page's users were already moved into `all_users`
+                // above, so break and return the accumulated list (returning
+                // `response` here would return an EMPTY user list).
+                debug!("No pagination data in response, returning accumulated users");
+                break;
             }
         }
 

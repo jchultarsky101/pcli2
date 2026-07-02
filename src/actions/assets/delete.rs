@@ -65,12 +65,15 @@ pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 return Ok(());
             }
             Err(e) => {
-                // Error in prompting (e.g., not a TTY), treat as cancellation
-                eprintln!(
-                    "Error prompting for confirmation: {}. Use --yes to skip confirmation.",
-                    e
-                );
-                return Ok(());
+                // The prompt itself failed (e.g. not a TTY). Nothing was
+                // deleted, so exit with an error instead of a success code
+                // that scripts would misread as "deleted".
+                return Err(CliError::ActionError(
+                    crate::actions::CliActionError::BusinessLogicError(format!(
+                        "Confirmation prompt failed ({}). Nothing was deleted. Use --yes to skip confirmation in non-interactive environments.",
+                        e
+                    )),
+                ));
             }
         }
     }

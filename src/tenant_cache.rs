@@ -194,12 +194,27 @@ impl TenantCache {
 
     /// Invalidate cache for all tenants
     ///
-    /// This method clears the cached tenant list.
+    /// This method clears the cached tenant list for EVERY environment.
+    /// Tenant cache files are per-environment (`tenant_cache_<env>.json`);
+    /// removing only the active environment's file would leave other
+    /// environments serving stale tenant lists after a "cache cleared"
+    /// confirmation.
     pub fn invalidate_all() -> Result<(), CacheError> {
-        let path = Self::get_cache_file_path()?;
-        if path.exists() {
-            std::fs::remove_file(&path)?;
-            trace!("Invalidated all tenant cache");
+        let active_path = Self::get_cache_file_path()?;
+        let cache_dir = active_path
+            .parent()
+            .ok_or_else(|| CacheError::Other("Could not determine cache directory".to_string()))?;
+
+        if cache_dir.exists() {
+            for entry in std::fs::read_dir(cache_dir)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                let name = name.to_string_lossy().to_string();
+                if name.starts_with("tenant_cache_") && name.ends_with(".json") {
+                    std::fs::remove_file(entry.path())?;
+                    trace!("Removed tenant cache file: {}", name);
+                }
+            }
         }
         Ok(())
     }

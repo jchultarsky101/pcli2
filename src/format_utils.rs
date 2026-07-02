@@ -47,16 +47,7 @@ impl FormatParams {
 
     /// Get format with custom default when no format is specified.
     pub fn from_args_with_default(sub_matches: &ArgMatches, default_format: &str) -> FormatParams {
-        let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
-            format_val.clone()
-        } else {
-            // Check environment variable first, then use provided default
-            if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-                env_format
-            } else {
-                default_format.to_string()
-            }
-        };
+        let format_str = get_format_string_with_default(sub_matches, default_format);
 
         // Extract all format flags consistently
         let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
@@ -82,16 +73,29 @@ impl FormatParams {
 }
 
 fn get_format_string(sub_matches: &ArgMatches) -> String {
-    if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
-        format_val.clone()
-    } else {
-        // Check environment variable first, then use default
+    get_format_string_with_default(sub_matches, "json")
+}
+
+/// Resolve the effective format string: an explicit `--format` always wins;
+/// otherwise the `PCLI2_FORMAT` environment variable takes precedence over
+/// the clap default. The env var is intentionally not bound via clap's
+/// `.env()`: commands narrow the allowed formats, so an env value valid for
+/// one command (e.g. `tree`) must not hard-fail every other command at parse
+/// time. Values a command cannot handle fall back downstream.
+fn get_format_string_with_default(sub_matches: &ArgMatches, default_format: &str) -> String {
+    let explicit =
+        sub_matches.value_source(PARAMETER_FORMAT) == Some(clap::parser::ValueSource::CommandLine);
+    if !explicit {
         if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-            env_format
-        } else {
-            "json".to_string() // Default format
+            if !env_format.trim().is_empty() {
+                return env_format;
+            }
         }
     }
+    sub_matches
+        .get_one::<String>(PARAMETER_FORMAT)
+        .cloned()
+        .unwrap_or_else(|| default_format.to_string())
 }
 
 /// Builder for format options to make them more flexible and extensible.

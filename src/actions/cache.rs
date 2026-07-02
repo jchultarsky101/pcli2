@@ -66,30 +66,53 @@ pub async fn clear_cache(sub_matches: &ArgMatches) -> Result<(), CliError> {
         }
     }
 
+    // Track failures so the command exits non-zero when a purge fails,
+    // instead of printing a success message that scripts would trust.
+    let mut failures: Vec<String> = Vec::new();
+
     // Clear folder cache
     if clear_all || clear_folder {
         match crate::folder_cache::FolderCache::purge_all() {
             Ok(()) => eprintln!("✓ Folder cache cleared"),
-            Err(e) => eprintln!("✗ Failed to clear folder cache: {}", e),
+            Err(e) => {
+                eprintln!("✗ Failed to clear folder cache: {}", e);
+                failures.push(format!("folder cache: {}", e));
+            }
         }
     }
 
     // Clear metadata cache
     if clear_all || clear_metadata {
-        // Metadata cache files are stored in the cache directory under metadata_cache/
-        // We need to delete all .json files in that directory
+        // The metadata cache lives in two historical locations: the
+        // metadata_cache/ directory and the metadata_cache.json file that
+        // MetadataCache actually writes. Purge both.
         let base_cache_dir = crate::cache::BaseCache::get_cache_dir();
+        let mut metadata_ok = true;
+
         let metadata_cache_dir = base_cache_dir.join("metadata_cache");
         if metadata_cache_dir.exists() {
-            match std::fs::remove_dir_all(&metadata_cache_dir) {
-                Ok(()) => eprintln!("✓ Metadata cache cleared"),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    eprintln!("✓ Metadata cache cleared (was empty)")
+            if let Err(e) = std::fs::remove_dir_all(&metadata_cache_dir) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("✗ Failed to clear metadata cache directory: {}", e);
+                    failures.push(format!("metadata cache: {}", e));
+                    metadata_ok = false;
                 }
-                Err(e) => eprintln!("✗ Failed to clear metadata cache: {}", e),
             }
-        } else {
-            eprintln!("✓ Metadata cache cleared (was empty)");
+        }
+
+        let metadata_cache_file = base_cache_dir.join("metadata_cache.json");
+        if metadata_cache_file.exists() {
+            if let Err(e) = std::fs::remove_file(&metadata_cache_file) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("✗ Failed to clear metadata cache file: {}", e);
+                    failures.push(format!("metadata cache file: {}", e));
+                    metadata_ok = false;
+                }
+            }
+        }
+
+        if metadata_ok {
+            eprintln!("✓ Metadata cache cleared");
         }
     }
 
@@ -97,12 +120,25 @@ pub async fn clear_cache(sub_matches: &ArgMatches) -> Result<(), CliError> {
     if clear_all || clear_tenant {
         match crate::tenant_cache::TenantCache::invalidate_all() {
             Ok(()) => eprintln!("✓ Tenant cache cleared"),
-            Err(e) => eprintln!("✗ Failed to clear tenant cache: {}", e),
+            Err(e) => {
+                eprintln!("✗ Failed to clear tenant cache: {}", e);
+                failures.push(format!("tenant cache: {}", e));
+            }
         }
     }
 
     eprintln!();
-    eprintln!("Cache cleared successfully. Fresh data will be fetched from the API on next use.");
-
-    Ok(())
+    if failures.is_empty() {
+        eprintln!(
+            "Cache cleared successfully. Fresh data will be fetched from the API on next use."
+        );
+        Ok(())
+    } else {
+        Err(CliError::ActionError(
+            crate::actions::CliActionError::BusinessLogicError(format!(
+                "Cache clear failed for: {}",
+                failures.join("; ")
+            )),
+        ))
+    }
 }

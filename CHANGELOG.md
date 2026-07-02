@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Nonexistent folder paths no longer silently resolve to the root folder** - A mistyped `--path`/`--folder-path` (e.g. `asset delete --path "/Typo/part.stl"`) previously fell through to the ROOT folder and, because assets are matched by name within the resolved folder, could target a same-named asset at the root. A non-root path that doesn't resolve is now a "Folder not found" error. An absent or `/` folder path still means the root, as before.
+- **Folder cache is invalidated on folder create/delete/rename/move** - Mutating folder operations previously left the cached folder hierarchy stale for up to an hour, so path resolutions could target deleted/renamed folders (deleting the same folder twice even reported the misleading "Folder is not empty" error).
+- **Metadata values are no longer rewritten on upload** - `asset metadata create` and `create-batch` silently substituted characters in text values (`Ø`→`O`, `°`→`" deg"`, `″`→`"`, `…`→`...`), corrupting engineering metadata. Values now round-trip verbatim.
+- **Pagination fixes across the API client**:
+  - Three endpoints sent the pagination page size as `per_page` instead of `perPage`, so the API served its default 20 items per page: asset dependencies (×2) and `assets/state` listing. Dependency traversal now makes ~5× fewer API calls, and the state listing's safety cap is effectively 200,000 assets instead of 20,000.
+  - `asset match text` fetched only the first 50 results and presented them as complete. It now paginates through all matches and accepts `--limit` (default 100), consistent with `visual-match`.
+  - `part-search` was silently capped at 5,000 matches (50 pages); the cap is now 1,000 pages, aligned with visual search, and hitting any pagination safety cap prints a visible truncation warning instead of a debug log.
+  - `folder download`/`folder thumbnail` read only the first 1,000 direct subfolders of each folder; folders beyond that (and their entire subtrees) were silently skipped. All subfolder pages are now walked.
+  - `user list` returned an empty list if the API responded without pagination data; accumulated users are now returned.
+  - `geometric-search` gained the same stall guard as its siblings (protects against infinite pagination loops), and mid-pagination responses without page data no longer discard previously accumulated matches.
+- **Auth and error handling**:
+  - A 404 that persists after the automatic token refresh is now classified as a not-found error instead of "Conflict", and dependency queries no longer swallow unrelated auth errors into an empty dependency list.
+  - `asset metadata create-batch` now detects authentication failures that persist through token refresh (previously each remaining CSV row triggered a redundant refresh+retry cycle instead of aborting).
+  - The authentication retry of a file upload now sends the identical multipart form as the first attempt (it previously disabled `createMissingFolders`, so an upload interrupted by token expiry could fail where a fresh attempt would succeed).
+  - Concurrent batch-upload clients now inherit the configured auth URL and environment; mid-batch token refreshes previously hit the production auth endpoint and saved tokens under the wrong environment.
+  - Keyring read errors (e.g. locked keychain) are now logged instead of being silently treated as "not logged in".
+- **`--exclusive` match filtering respects folder boundaries** - A `/proj` filter previously also matched sibling folders like `/proj-archive` (bare string-prefix comparison).
+- **`folder download --resume` now skips already-downloaded assemblies** - Assemblies download as a ZIP that is extracted and deleted, so the resume check (which looked for the ZIP) re-downloaded every assembly on every resume. The extracted assembly file is now used as the marker.
+- **`asset download-folder` no longer packages stale files** - The reusable temp directory is cleared at the start of each run, so leftovers from a previously failed run can't leak into the output ZIP.
+- **Download/upload statistics are accurate** - Skipped files were counted as successes; the "Skipped (already existed)" count was always 0 for downloads and counted subdirectories for uploads.
+- **Failed confirmations and failed cache clears exit non-zero** - `asset delete`/`folder delete` exited 0 without deleting when the confirmation prompt failed (e.g. non-TTY without `--yes`); `cache clear` printed "cleared successfully" even when every purge failed. Both now report errors. `cache clear` also clears the tenant cache for all environments and the actual metadata cache file.
+- **Environment variable handling** - `PCLI2_FORMAT` set to a format not supported by a given command (e.g. `tree`) no longer aborts that command; an explicit `--format` always wins and unsupported env values fall back to the default. `PCLI2_HEADERS` now accepts `1`/`0`/`yes`/`no` in addition to `true`/`false`.
+- **Crash fixes** - A batch CSV header containing a multi-byte UTF-8 character at the `metadata:` prefix boundary panicked the parser; `asset thumbnail --file thumb.png` (bare filename) was wrongly rejected with "Parent directory does not exist"; unfollowed HTTP 3xx responses could panic the HTTP layer.
+- **`asset metadata inference` reporting** - The output now distinguishes `fields_requested` from `fields_copied` (previously all requested fields were reported as copied), and the reference asset no longer matches itself into the updated-assets count.
+
 ## [1.8.1] - 2026-07-02
 
 ### Fixed

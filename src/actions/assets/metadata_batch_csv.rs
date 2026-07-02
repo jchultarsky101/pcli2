@@ -127,12 +127,14 @@ pub fn parse_batch_csv<R: Read>(
 /// (trimmed, prefix stripped) when the header is a metadata column.
 fn is_metadata_column(header: &str) -> Option<&str> {
     let prefix_len = METADATA_COLUMN_PREFIX.len();
-    if header.len() >= prefix_len
-        && header[..prefix_len].eq_ignore_ascii_case(METADATA_COLUMN_PREFIX)
-    {
-        Some(header[prefix_len..].trim())
-    } else {
-        None
+    // `get` (rather than direct slicing) avoids a panic when the byte at
+    // `prefix_len` falls inside a multi-byte UTF-8 character; such a header
+    // cannot start with the all-ASCII prefix anyway.
+    match (header.get(..prefix_len), header.get(prefix_len..)) {
+        (Some(prefix), Some(rest)) if prefix.eq_ignore_ascii_case(METADATA_COLUMN_PREFIX) => {
+            Some(rest.trim())
+        }
+        _ => None,
     }
 }
 
@@ -528,6 +530,17 @@ mod tests {
         let entry = &parsed.entries[0];
         assert_eq!(entry.metadata.get("Material").unwrap(), "Steel");
         assert_eq!(entry.metadata.get("Color").unwrap(), "Blue");
+    }
+
+    #[test]
+    fn multibyte_utf8_header_does_not_panic() {
+        // Regression: byte-slicing the header at the prefix length panicked
+        // when the boundary fell inside a multi-byte UTF-8 character.
+        let csv = "ASSET_PATH,NAME,metadataé\n\
+                   folder/a.stl,Material,Steel\n";
+        let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        // "metadataé" is not a metadata: column, so this is classic format.
+        assert_eq!(parsed.format, BatchCsvFormat::Classic);
     }
 
     #[test]

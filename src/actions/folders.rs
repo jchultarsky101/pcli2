@@ -208,6 +208,12 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ));
     }
 
+    // The cached folder hierarchy still holds the old name; drop it so the
+    // next path resolution rebuilds from the API.
+    crate::folder_cache::FolderCache::invalidate(&tenant_uuid.to_string()).unwrap_or_else(|e| {
+        tracing::debug!("Failed to invalidate folder cache: {}", e);
+    });
+
     Ok(())
 }
 
@@ -271,6 +277,12 @@ pub async fn move_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     )
     .await?;
 
+    // The cached folder hierarchy still shows the old location; drop it so
+    // the next path resolution rebuilds from the API.
+    crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(|e| {
+        tracing::debug!("Failed to invalidate folder cache: {}", e);
+    });
+
     Ok(())
 }
 
@@ -313,6 +325,12 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     api.create_folder(&tenant.uuid, name.as_str(), parent_folder_uuid)
         .await?;
+
+    // Drop the cached folder hierarchy so the new folder resolves without
+    // relying on the cache-miss refresh heuristic.
+    crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(|e| {
+        tracing::debug!("Failed to invalidate folder cache: {}", e);
+    });
 
     Ok(())
 }
@@ -379,12 +397,15 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 return Ok(());
             }
             Err(e) => {
-                // Error in prompting (e.g., not a TTY), treat as cancellation
-                eprintln!(
-                    "Error prompting for confirmation: {}. Use --yes to skip confirmation.",
-                    e
-                );
-                return Ok(());
+                // The prompt itself failed (e.g. not a TTY). Nothing was
+                // deleted, so exit with an error instead of a success code
+                // that scripts would misread as "deleted".
+                return Err(CliError::ActionError(
+                    crate::actions::CliActionError::BusinessLogicError(format!(
+                        "Confirmation prompt failed ({}). Nothing was deleted. Use --yes to skip confirmation in non-interactive environments.",
+                        e
+                    )),
+                ));
             }
         }
     }
@@ -393,7 +414,16 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .delete_folder(&tenant.uuid, &folder_uuid, force_flag)
         .await
     {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            // The cached folder hierarchy still contains the deleted folder;
+            // drop it so subsequent path resolutions don't target it.
+            crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(
+                |e| {
+                    tracing::debug!("Failed to invalidate folder cache: {}", e);
+                },
+            );
+            Ok(())
+        }
         Err(api_error) => {
             // Check if this is a 404 error on a folder deletion, which likely means the folder is not empty
             if api_error.to_string().contains("404 Not Found") && !force_flag {
@@ -625,16 +655,11 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             all_assets_with_paths.push((asset.clone(), relative_path, physna_path));
         }
 
-        // Get subfolders of current folder to process next
-        // Use get_folder_contents to get only direct children of the current folder
+        // Get subfolders of current folder to process next. Walks every page
+        // so folders with more direct subfolders than one page still have
+        // their full subtree processed.
         let subfolders_response = api
-            .get_folder_contents(
-                &tenant.uuid,
-                Some(&current_folder_uuid),
-                "folders",
-                Some(1),
-                Some(1000),
-            )
+            .list_all_subfolders(&tenant.uuid, Some(&current_folder_uuid))
             .await?;
         for folder in subfolders_response.folders() {
             // Get the full folder details to get the name
@@ -729,6 +754,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let asset_id = asset.uuid().to_string();
         let asset_name = asset.name().to_string();
         let asset_file_path = dest_dir.join(&relative_path);
+        let is_assembly = asset.is_assembly();
         let semaphore = semaphore.clone();
         let progress_bar_clone = progress_bar.clone();
         let multi_progress_clone = multi_progress.clone();
@@ -759,16 +785,24 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 None
             };
 
-            // Check if resume flag is set and file already exists
-            if resume_flag && asset_file_path.exists() {
-                tracing::debug!("Skipping existing file: {}", asset_file_path.display());
+            // Check if resume flag is set and the asset already exists on disk.
+            // Assemblies download as a ZIP that is extracted and then deleted,
+            // so the on-disk marker for an assembly is the extracted assembly
+            // file (its original name), not the transient .zip path.
+            let resume_marker = if is_assembly {
+                asset_file_path.with_file_name(&asset_name)
+            } else {
+                asset_file_path.clone()
+            };
+            if resume_flag && resume_marker.exists() {
+                tracing::debug!("Skipping existing file: {}", resume_marker.display());
 
                 // Update overall progress bar if present
                 if let Some(ref pb) = progress_bar_clone {
                     pb.inc(1);
                 }
 
-                return Ok(Ok(asset_name));
+                return Ok(Ok((asset_name, true)));
             }
 
             // Add delay if specified (only when actually downloading, not when skipping)
@@ -894,7 +928,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                         pb.inc(1);
                     }
 
-                    Ok(Ok(asset_name))
+                    Ok(Ok((asset_name, false)))
                 }
                 Err(e) => {
                     // Update individual progress bar for error
@@ -915,14 +949,21 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         tasks.push(task);
     }
 
+    // Track how many assets were skipped because they already existed
+    let mut skipped_count = 0;
+
     // Wait for all tasks to complete - always process all tasks to get accurate counts
     for task in tasks {
         match task.await {
             Ok(task_result) => {
                 match task_result {
                     Ok(asset_result) => match asset_result {
-                        Ok(_asset_name) => {
-                            success_count += 1;
+                        Ok((_asset_name, was_skipped)) => {
+                            if was_skipped {
+                                skipped_count += 1;
+                            } else {
+                                success_count += 1;
+                            }
                         }
                         Err((asset_name, physna_path, error, _is_recoverable)) => {
                             error_count += 1;
@@ -977,9 +1018,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Report summary with nice statistics - print this FIRST so errors appear above it
     print_download_summary(
         success_count,
+        skipped_count,
         error_count,
         total_assets,
-        resume_flag,
         &dest_dir,
     );
 
@@ -1010,22 +1051,15 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 /// Print download statistics summary
 fn print_download_summary(
     success_count: usize,
+    skipped_count: usize,
     error_count: usize,
     total_assets: usize,
-    resume_flag: bool,
     dest_dir: &std::path::PathBuf,
 ) {
     println!("\n📊 Download Statistics Report");
     println!("===========================");
     println!("✅ Successfully downloaded: {}", success_count);
-    if resume_flag {
-        // For resume, we need to calculate how many were skipped
-        // This requires knowing the total number of assets vs. how many were actually downloaded
-        let skipped_count = total_assets - success_count - error_count;
-        println!("⏭️  Skipped (already existed): {}", skipped_count);
-    } else {
-        println!("⏭️  Skipped (already existed): 0");
-    }
+    println!("⏭️  Skipped (already existed): {}", skipped_count);
     if error_count > 0 {
         println!("❌ Failed downloads: {}", error_count);
     } else {
@@ -1186,16 +1220,11 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             all_assets_with_paths.push((asset.clone(), relative_path, physna_path));
         }
 
-        // Get subfolders of current folder to process next
-        // Use get_folder_contents to get only direct children of the current folder
+        // Get subfolders of current folder to process next. Walks every page
+        // so folders with more direct subfolders than one page still have
+        // their full subtree processed.
         let subfolders_response = api
-            .get_folder_contents(
-                &tenant.uuid,
-                Some(&current_folder_uuid),
-                "folders",
-                Some(1),
-                Some(1000),
-            )
+            .list_all_subfolders(&tenant.uuid, Some(&current_folder_uuid))
             .await?;
         for folder in subfolders_response.folders() {
             // Get the full folder details to get the name
@@ -1809,6 +1838,13 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
+    // Only files are uploaded; excluding directories up front keeps the
+    // total (and therefore the skipped/failed accounting) accurate.
+    let entries: Vec<_> = entries
+        .into_iter()
+        .filter(|entry| !entry.path().is_dir())
+        .collect();
+
     // Store the total count before moving entries
     let total_entries_count = entries.len();
 
@@ -1931,7 +1967,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     if let Some(ref pb) = progress_bar_clone {
                         pb.inc(1);
                     }
-                    return Ok(Ok(file_name_str));
+                    return Ok(Ok((file_name_str, true)));
                 } else {
                     return Err(CliError::ActionError(crate::actions::CliActionError::BusinessLogicError(
                         format!("Asset already exists: {}. Use --skip-existing to skip existing assets.", file_name_str)
@@ -1992,7 +2028,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                         pb.inc(1);
                     }
 
-                    Ok(Ok(file_name_str))
+                    Ok(Ok((file_name_str, false)))
                 }
                 Err(e) => {
                     // Update individual progress bar for error
@@ -2025,6 +2061,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // Wait for all tasks to complete
     let mut success_count = 0;
     let mut error_count = 0;
+    let mut skipped_count = 0;
 
     for task in tasks {
         match task.await {
@@ -2032,12 +2069,16 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 match task_result {
                     Ok(asset_result) => {
                         match asset_result {
-                            Ok(asset_name) => {
-                                success_count += 1;
-                                // Only print individual success messages if progress is not shown
-                                // Otherwise, the progress bar already shows the status
-                                if !show_progress {
-                                    println!("Successfully uploaded: {}", asset_name);
+                            Ok((asset_name, was_skipped)) => {
+                                if was_skipped {
+                                    skipped_count += 1;
+                                } else {
+                                    success_count += 1;
+                                    // Only print individual success messages if progress is not shown
+                                    // Otherwise, the progress bar already shows the status
+                                    if !show_progress {
+                                        println!("Successfully uploaded: {}", asset_name);
+                                    }
                                 }
                             }
                             Err(cli_error) => {
@@ -2080,17 +2121,12 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
 
     // Calculate total assets processed
     let total_assets = total_entries_count;
-    let skipped_count = total_assets - success_count - error_count;
 
     // Print detailed statistics report
     println!("\n📊 Upload Statistics Report");
     println!("===========================");
     println!("✅ Successfully uploaded: {}", success_count);
-    if skip_existing {
-        println!("⏭️  Skipped (already existed): {}", skipped_count);
-    } else {
-        println!("⏭️  Skipped (already existed): 0");
-    }
+    println!("⏭️  Skipped (already existed): {}", skipped_count);
     if error_count > 0 {
         println!("❌ Failed uploads: {}", error_count);
     } else {

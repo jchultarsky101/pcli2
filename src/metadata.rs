@@ -104,12 +104,10 @@ pub fn convert_metadata_to_json_values(
     let mut json_metadata: HashMap<String, Value> = HashMap::new();
 
     for (key, value) in metadata {
-        // Sanitize the value to remove or replace problematic characters
-        let sanitized_value = sanitize_metadata_value(value);
-
-        // For now, treat all values as strings to avoid type mismatch issues
-        // The API might be expecting string values for all metadata fields
-        json_metadata.insert(key.clone(), Value::String(sanitized_value));
+        // Values are passed through verbatim: rewriting user data (e.g.
+        // substituting Unicode symbols like Ø or °) silently corrupts
+        // engineering metadata. The API accepts UTF-8 strings as-is.
+        json_metadata.insert(key.clone(), Value::String(value.clone()));
     }
 
     json_metadata
@@ -118,7 +116,7 @@ pub fn convert_metadata_to_json_values(
 /// Convert a single metadata value to appropriate JSON type based on the specified meta-type
 ///
 /// This function converts a single metadata value to the appropriate JSON type based on the
-/// provided metadata type (text, number, boolean), with proper sanitization.
+/// provided metadata type (text, number, boolean). Values are never rewritten.
 ///
 /// # Arguments
 /// * `name` - The metadata property name
@@ -165,31 +163,9 @@ pub fn convert_single_metadata_to_json_value(
             // value looks numeric or boolean. The `--type` flag is authoritative, so
             // `--type text --value 100` must produce the string "100" rather than the
             // number 100 (which the API rejects for string-typed metadata fields).
-            let sanitized_value = sanitize_metadata_value(value);
-            serde_json::Value::String(sanitized_value)
+            serde_json::Value::String(value.to_string())
         }
     }
-}
-
-/// Sanitize metadata values to handle special characters that might cause API issues
-///
-/// This function replaces or removes special characters that are known to cause issues
-/// with the Physna API, such as Unicode symbols that might not be properly encoded.
-///
-/// # Arguments
-/// * `value` - The metadata value to sanitize
-///
-/// # Returns
-/// * `String` - The sanitized metadata value
-fn sanitize_metadata_value(value: &str) -> String {
-    value
-        // Replace special Unicode characters with ASCII equivalents
-        .replace('Ø', "O") // Diameter symbol
-        .replace('°', " deg") // Degree symbol
-        .replace('″', "\"") // Double prime (inch symbol)
-        .replace("…", "...") // Ellipsis
-        // Keep other characters as they are
-        .to_string()
 }
 
 #[cfg(test)]
@@ -221,6 +197,22 @@ mod tests {
     fn text_type_preserves_non_numeric_value() {
         let value = convert_single_metadata_to_json_value("test_quantity", "100pcs", "text");
         assert_eq!(value, Value::String("100pcs".to_string()));
+    }
+
+    #[test]
+    fn text_values_are_never_rewritten() {
+        // Regression: values used to be "sanitized" (Ø→O, °→" deg", ″→", …→...),
+        // silently corrupting engineering metadata. Values must round-trip verbatim.
+        let value = convert_single_metadata_to_json_value("Diameter", "Ø25 ±0.1° … ″", "text");
+        assert_eq!(value, Value::String("Ø25 ±0.1° … ″".to_string()));
+
+        let mut map = std::collections::HashMap::new();
+        map.insert("Diameter".to_string(), "Ø25°".to_string());
+        let json = convert_metadata_to_json_values(&map);
+        assert_eq!(
+            json.get("Diameter").unwrap(),
+            &Value::String("Ø25°".to_string())
+        );
     }
 
     #[test]

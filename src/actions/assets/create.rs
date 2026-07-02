@@ -475,11 +475,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                         asset
                     }
                     Err(e) => {
-                        let error_str = format!("{}", e);
-                        if error_str.contains("Authentication")
-                            || error_str.contains("unauthorized")
-                            || error_str.contains("forbidden")
-                        {
+                        if e.is_authentication_failure() {
                             auth_failure_occurred = true;
                             report(
                                 format!("Authentication failed while looking up asset '{}': {}", asset_display, e),
@@ -559,11 +555,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 .delete_asset_metadata(&tenant.uuid.to_string(), &asset.uuid().to_string(), keys)
                 .await
             {
-                let error_str = format!("{}", e);
-                if error_str.contains("Authentication")
-                    || error_str.contains("unauthorized")
-                    || error_str.contains("forbidden")
-                {
+                if e.is_authentication_failure() {
                     auth_failure_occurred = true;
                     report(
                         format!(
@@ -611,12 +603,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 )
                 .await
             {
-                let error_str = format!("{}", e);
-
-                if error_str.contains("Authentication")
-                    || error_str.contains("unauthorized")
-                    || error_str.contains("forbidden")
-                {
+                if e.is_authentication_failure() {
                     auth_failure_occurred = true;
                     report(
                         format!(
@@ -633,6 +620,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     break;
                 }
 
+                let error_str = format!("{}", e);
                 if error_str.contains("must be a") || error_str.contains("Metadata type mismatch") {
                     report(
                         format!("Type conflict for asset '{}': {}", asset_display, e),

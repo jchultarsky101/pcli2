@@ -20,10 +20,11 @@ pub struct MetadataCache {
     /// Map of tenant ID to cached metadata field list response
     #[serde(rename = "tenantMetadataFields")]
     pub tenant_metadata_fields: HashMap<String, MetadataFieldListResponse>,
-    /// Timestamp when the cache was last updated (for future use)
-    #[serde(rename = "lastUpdated")]
-    #[serde(skip_serializing, skip_deserializing)]
-    pub last_updated: Option<u64>, // We'll track this internally but not serialize it
+    /// Timestamp when the cache was last updated. Persisted: if it were
+    /// reset on every load, `is_expired` could never return true and cached
+    /// entries would be served forever.
+    #[serde(rename = "lastUpdated", default)]
+    pub last_updated: Option<u64>,
 }
 
 impl MetadataCache {
@@ -86,14 +87,9 @@ impl MetadataCache {
 
         if path.exists() {
             let data = fs::read_to_string(path)?;
-            let mut cache: MetadataCache = serde_json::from_str(&data)?;
-            // Set the internal timestamp to current time to indicate when it was loaded
-            cache.last_updated = Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            );
+            // The persisted timestamp is kept as-is: overwriting it with
+            // "now" on load would make the cache immortal.
+            let cache: MetadataCache = serde_json::from_str(&data)?;
             debug!("Loaded metadata cache from file");
             Ok(cache)
         } else {
@@ -172,10 +168,17 @@ impl MetadataCache {
         // Fetch from API
         let metadata_fields_response = client.get_metadata_fields(tenant_id).await?;
 
-        // Update cache
+        // Update cache, stamping the refresh time so expiry is measured from
+        // this write.
         cache
             .tenant_metadata_fields
             .insert(tenant_id.to_string(), metadata_fields_response.clone());
+        cache.last_updated = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        );
         if let Err(e) = cache.save() {
             warn!("Failed to save metadata cache: {}", e);
         }

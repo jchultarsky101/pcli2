@@ -868,7 +868,10 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                                     crate::model::normalize_path(folder_path);
                                 let normalized_candidate_path =
                                     crate::model::normalize_path(&match_result.asset.path);
-                                normalized_candidate_path.starts_with(&normalized_folder_path)
+                                crate::model::path_is_within_folder(
+                                    &normalized_candidate_path,
+                                    &normalized_folder_path,
+                                )
                             });
 
                         let reference_in_specified_folders =
@@ -877,7 +880,10 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                                     crate::model::normalize_path(folder_path);
                                 let normalized_reference_path =
                                     crate::model::normalize_path(asset_clone.path());
-                                normalized_reference_path.starts_with(&normalized_folder_path)
+                                crate::model::path_is_within_folder(
+                                    &normalized_reference_path,
+                                    &normalized_folder_path,
+                                )
                             });
 
                         if exclusive
@@ -1368,7 +1374,10 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                                     crate::model::normalize_path(folder_path);
                                 let normalized_candidate_path =
                                     crate::model::normalize_path(&match_result.asset.path);
-                                normalized_candidate_path.starts_with(&normalized_folder_path)
+                                crate::model::path_is_within_folder(
+                                    &normalized_candidate_path,
+                                    &normalized_folder_path,
+                                )
                             });
 
                         let reference_in_specified_folders =
@@ -1377,7 +1386,10 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                                     crate::model::normalize_path(folder_path);
                                 let normalized_reference_path =
                                     crate::model::normalize_path(asset_clone.path());
-                                normalized_reference_path.starts_with(&normalized_folder_path)
+                                crate::model::path_is_within_folder(
+                                    &normalized_reference_path,
+                                    &normalized_folder_path,
+                                )
                             });
 
                         if exclusive
@@ -1898,7 +1910,10 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                                     crate::model::normalize_path(folder_path);
                                 let normalized_candidate_path =
                                     crate::model::normalize_path(&match_result.asset.path);
-                                normalized_candidate_path.starts_with(&normalized_folder_path)
+                                crate::model::path_is_within_folder(
+                                    &normalized_candidate_path,
+                                    &normalized_folder_path,
+                                )
                             });
 
                         let reference_in_specified_folders =
@@ -1907,7 +1922,10 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                                     crate::model::normalize_path(folder_path);
                                 let normalized_reference_path =
                                     crate::model::normalize_path(asset_clone.path());
-                                normalized_reference_path.starts_with(&normalized_folder_path)
+                                crate::model::path_is_within_folder(
+                                    &normalized_reference_path,
+                                    &normalized_folder_path,
+                                )
                             });
 
                         if exclusive
@@ -2237,12 +2255,22 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
     let format = format_params.format;
 
+    // Maximum number of results to return; the search paginates until the
+    // limit is reached or all matches are collected.
+    let limit = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
+        .copied()
+        .unwrap_or(100);
+
     // Extract tenant info before calling text search
     let tenant_uuid = *ctx.tenant_uuid();
     let tenant_name = ctx.tenant().name.clone();
 
     // Perform text search
-    let mut search_results = ctx.api().text_search(&tenant_uuid, &search_query).await?;
+    let mut search_results = ctx
+        .api()
+        .text_search(&tenant_uuid, &search_query, limit)
+        .await?;
 
     // Load configuration to get the UI base URL
     let configuration =

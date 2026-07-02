@@ -62,9 +62,26 @@ mod implementation {
             &self,
             tenant: &str,
         ) -> Result<(Option<String>, Option<String>, Option<String>), KeyringError> {
-            let access_token = self.get(tenant, "access-token".to_string()).ok().flatten();
-            let client_id = self.get(tenant, "client-id".to_string()).ok().flatten();
-            let client_secret = self.get(tenant, "client-secret".to_string()).ok().flatten();
+            // A keyring ERROR (locked keychain, access denied) is not the same
+            // as "no stored credential": surface it in the log instead of
+            // silently telling the user to log in again.
+            let fetch = |key: &str| match self.get(tenant, key.to_string()) {
+                Ok(value) => value,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to read '{}' for environment '{}' from the system keyring: {}. \
+                         Treating it as absent; if you are already logged in, check that the keychain is unlocked and accessible.",
+                        key,
+                        tenant,
+                        e
+                    );
+                    None
+                }
+            };
+
+            let access_token = fetch("access-token");
+            let client_id = fetch("client-id");
+            let client_secret = fetch("client-secret");
 
             Ok((access_token, client_id, client_secret))
         }

@@ -151,9 +151,11 @@ pub async fn download_asset_thumbnail(sub_matches: &ArgMatches) -> Result<(), Cl
             ));
         }
 
-        // Check if the parent directory exists
+        // Check if the parent directory exists. A bare filename like
+        // "thumb.png" has `parent() == Some("")`, which means the current
+        // directory and is always valid.
         if let Some(parent) = output_path.parent() {
-            if !parent.exists() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
                 return Err(CliError::MissingRequiredArgument(format!(
                     "Parent directory does not exist: {}",
                     parent.display()
@@ -292,8 +294,15 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Check if progress should be displayed
     let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
 
-    // Create a temporary directory to store downloaded files
+    // Create a temporary directory to store downloaded files. Remove any
+    // leftovers from a previous (failed) run first: the ZIP-building step
+    // below archives every file in this directory, so stale files from an
+    // earlier run would silently end up inside the output archive.
     let temp_dir = std::env::temp_dir().join(format!("pcli2_temp_{}", folder_uuid));
+    if temp_dir.exists() {
+        std::fs::remove_dir_all(&temp_dir)
+            .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
+    }
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
 

@@ -254,6 +254,7 @@ pub fn asset_command() -> Command {
                     .action(clap::ArgAction::SetTrue)
                     .help("Perform fuzzy search instead of exact search (default: false, which means exact search with quoted text)"),
             )
+            .arg(limit_parameter())
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())  // Add metadata flag to be consistent with other match commands
             .arg(format_pretty_parameter())

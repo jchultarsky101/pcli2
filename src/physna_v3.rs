@@ -2651,8 +2651,8 @@ impl PhysnaApiClient {
             debug!("Fetching page {} of geometric search results", page);
 
             if page > max_pages_limit {
-                eprintln!(
-                    "⚠️  Warning: geometric search results truncated at {} matches ({}-page safety limit); results are incomplete",
+                tracing::warn!(
+                    "Geometric search results truncated at {} matches ({}-page safety limit); results are incomplete",
                     all_matches.len(),
                     max_pages_limit
                 );
@@ -2833,10 +2833,10 @@ impl PhysnaApiClient {
             debug!("Fetching page {} of part search results", page);
 
             // Check if we've hit the hard limit. Truncation must be visible
-            // to the user, not just a debug log.
+            // to the user, not just a debug log (warn is the default level).
             if page > max_pages_limit {
-                eprintln!(
-                    "⚠️  Warning: part search results truncated at {} matches ({}-page safety limit); results are incomplete",
+                tracing::warn!(
+                    "Part search results truncated at {} matches ({}-page safety limit); results are incomplete",
                     all_matches.len(),
                     max_pages_limit
                 );
@@ -4055,10 +4055,11 @@ impl PhysnaApiClient {
 
             // Safety check to prevent infinite loops in case of API issues.
             // If a tenant legitimately exceeds this, the truncation must be
-            // visible to the user, not just a debug log.
+            // visible to the user, not just a debug log (warn is the default
+            // level).
             if page > 1000 {
-                eprintln!(
-                    "⚠️  Warning: asset listing for state '{}' was truncated at {} assets (1000-page safety limit); results are incomplete",
+                tracing::warn!(
+                    "Asset listing for state '{}' was truncated at {} assets (1000-page safety limit); results are incomplete",
                     state,
                     all_assets.len()
                 );

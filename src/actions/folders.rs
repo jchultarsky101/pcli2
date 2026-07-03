@@ -1522,7 +1522,10 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                     Err((asset_name, physna_path, error, is_recoverable)) => {
                         if is_recoverable {
                             error_count += 1;
-                            eprintln!("⚠️  Warning: Failed to download thumbnail for asset '{}' (Physna path: {}): {}", asset_name, physna_path, error);
+                            crate::error_utils::report_warning(&format!(
+                                "Failed to download thumbnail for asset '{}' (Physna path: {}): {}",
+                                asset_name, physna_path, error
+                            ));
                         } else {
                             return Err(CliError::PhysnaExtendedApiError(error));
                         }
@@ -1531,10 +1534,10 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                 Err(cli_error) => {
                     if continue_on_error {
                         error_count += 1;
-                        eprintln!(
-                            "⚠️  Warning: Failed to download thumbnail due to CLI error: {}",
+                        crate::error_utils::report_warning(&format!(
+                            "Failed to download thumbnail due to CLI error: {}",
                             cli_error
-                        );
+                        ));
                     } else {
                         return Err(cli_error);
                     }
@@ -1543,7 +1546,10 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             Err(join_error) => {
                 if continue_on_error {
                     error_count += 1;
-                    eprintln!("⚠️  Warning: Task failed to execute: {}", join_error);
+                    crate::error_utils::report_warning(&format!(
+                        "Task failed to execute: {}",
+                        join_error
+                    ));
                 } else {
                     return Err(CliError::ActionError(
                         crate::actions::CliActionError::IoError(std::io::Error::other(

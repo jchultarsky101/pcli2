@@ -73,7 +73,12 @@ fn init_logging(matches: &clap::ArgMatches) {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&log_level))
     };
 
-    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    // Diagnostics go to stderr so stdout stays clean for command output
+    // (pipes, --format json/csv, shell completions)
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_writer(std::io::stderr)
+        .init();
 }
 
 /// Main entry point for the Physna CLI client application.

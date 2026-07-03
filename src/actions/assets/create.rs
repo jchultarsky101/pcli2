@@ -419,13 +419,11 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     if time_remaining > 0 && (time_remaining as u64) < estimated_time_needed + SAFETY_MARGIN_SECONDS
     {
         let time_remaining_min = time_remaining / 60;
-        eprintln!(
-            ":warning: Warning: Token expires in approximately {} minutes, but batch operation may take {} minutes",
+        error_utils::report_warning(&format!(
+            "Token expires in approximately {} minutes, but batch operation may take {} minutes. Token will be refreshed automatically if needed during processing.",
             time_remaining_min,
             (estimated_time_needed / 60).max(1)
-        );
-        eprintln!("  Token will be refreshed automatically if needed during processing.");
-        eprintln!();
+        ));
     }
 
     // Create in-memory cache for asset metadata to avoid repeated API calls

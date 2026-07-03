@@ -1034,15 +1034,14 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             .cloned()
             .unwrap_or_else(|| std::path::PathBuf::from("match_report.xlsx"));
         let output_path = crate::xlsx_report::normalize_output_path(&requested_path);
-        // Warn if we had to coerce the extension to `.xlsx`. Written straight to
-        // stderr (not via `report_warning`, whose `tracing` line lands on stdout)
-        // so that stdout stays clean per UNIX convention.
+        // Warn if we had to coerce the extension to `.xlsx`. Tracing output
+        // goes to stderr, so stdout stays clean per UNIX convention.
         if output_path != requested_path {
-            eprintln!(
-                "⚠️  Warning: output file extension changed to '.xlsx': writing '{}' instead of '{}'",
+            crate::error_utils::report_warning(&format!(
+                "Output file extension changed to '.xlsx': writing '{}' instead of '{}'",
                 output_path.display(),
                 requested_path.display()
-            );
+            ));
         }
         crate::xlsx_report::write_match_report(headers, rows, &output_path)?;
         // UNIX-style: on success there is no data to print, so print nothing.

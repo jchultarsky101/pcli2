@@ -371,6 +371,20 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ));
     };
 
+    // Report and stop without deleting anything when --dry-run is given
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        println!(
+            "Dry run: would delete folder '{}'{}",
+            folder_path_param.unwrap_or(&folder_uuid.to_string()),
+            if force_flag {
+                " and ALL its contents"
+            } else {
+                ""
+            }
+        );
+        return Ok(());
+    }
+
     // Ask for confirmation unless --yes flag is provided
     if !yes_flag {
         let delete_msg = if force_flag {
@@ -773,7 +787,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
                     individual_pb.set_style(
                         ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} {msg}")
+                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Downloading: {}", asset_name));
@@ -1333,7 +1347,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                     let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
                     individual_pb.set_style(
                         ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} {msg}")
+                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Downloading thumbnail: {}", asset_name));
@@ -1508,7 +1522,10 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                     Err((asset_name, physna_path, error, is_recoverable)) => {
                         if is_recoverable {
                             error_count += 1;
-                            eprintln!("⚠️  Warning: Failed to download thumbnail for asset '{}' (Physna path: {}): {}", asset_name, physna_path, error);
+                            crate::error_utils::report_warning(&format!(
+                                "Failed to download thumbnail for asset '{}' (Physna path: {}): {}",
+                                asset_name, physna_path, error
+                            ));
                         } else {
                             return Err(CliError::PhysnaExtendedApiError(error));
                         }
@@ -1517,10 +1534,10 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                 Err(cli_error) => {
                     if continue_on_error {
                         error_count += 1;
-                        eprintln!(
-                            "⚠️  Warning: Failed to download thumbnail due to CLI error: {}",
+                        crate::error_utils::report_warning(&format!(
+                            "Failed to download thumbnail due to CLI error: {}",
                             cli_error
-                        );
+                        ));
                     } else {
                         return Err(cli_error);
                     }
@@ -1529,7 +1546,10 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             Err(join_error) => {
                 if continue_on_error {
                     error_count += 1;
-                    eprintln!("⚠️  Warning: Task failed to execute: {}", join_error);
+                    crate::error_utils::report_warning(&format!(
+                        "Task failed to execute: {}",
+                        join_error
+                    ));
                 } else {
                     return Err(CliError::ActionError(
                         crate::actions::CliActionError::IoError(std::io::Error::other(
@@ -1696,6 +1716,36 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // Get folder UUID or path from command line
     let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
+
+    // Report and stop before resolving the remote folder when --dry-run is
+    // given: resolution may create the target folder, which a dry run must
+    // never do.
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(local_dir_path)
+            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| !path.is_dir())
+            .collect();
+        files.sort();
+
+        let target = folder_path_param.cloned().unwrap_or_else(|| {
+            folder_uuid_param
+                .map(|uuid| uuid.to_string())
+                .unwrap_or_default()
+        });
+        println!(
+            "Dry run: would upload {} file(s) from '{}' to folder '{}':",
+            files.len(),
+            local_dir_path.display(),
+            target
+        );
+        for file in &files {
+            println!("  {}", file.display());
+        }
+        println!("Note: the target folder would be created if it does not exist.");
+        return Ok(());
+    }
 
     // Store the original folder path for asset path construction
     let original_folder_path = if let Some(path) = folder_path_param {
@@ -1914,7 +1964,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                     let individual_pb = mp.add(indicatif::ProgressBar::new_spinner());
                     individual_pb.set_style(
                         indicatif::ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} {msg}")
+                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
                             .unwrap(),
                     );
                     individual_pb.set_message(format!("Uploading: {}", file_name_str));

@@ -4,7 +4,6 @@
 //! across the application to ensure uniform user experience.
 
 use thiserror::Error;
-use tracing::error;
 
 /// Common error types used throughout the application
 #[derive(Debug, Error)]
@@ -106,19 +105,14 @@ pub fn report_error_with_remediation<E: std::fmt::Display>(error: &E, remediatio
     );
 }
 
-/// Report an error with a custom user message for better clarity.
+/// Report a warning through the tracing subsystem.
 ///
-/// This function allows providing a more user-friendly message while still
-/// logging the technical error details for debugging.
-pub fn report_error_with_message<E: std::fmt::Display>(error: &E, user_message: &str) {
-    error!("{} (original error: {})", user_message, error);
-    eprintln!("❌ Error: {}", user_message);
-}
-
-/// Report a warning consistently with both logging and user-facing output.
+/// Warnings are emitted only via tracing (never printed directly), so the
+/// user controls their visibility with --verbose/--quiet, RUST_LOG, or
+/// PCLI2_LOG_LEVEL. The default level is "warn", so warnings are visible
+/// unless the user opts down to errors only.
 pub fn report_warning<E: std::fmt::Display>(warning: &E) {
     tracing::warn!("{}", warning);
-    eprintln!("⚠️  Warning: {}", warning);
 }
 
 /// Create a user-friendly error message from a technical error

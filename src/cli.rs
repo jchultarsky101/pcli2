@@ -35,19 +35,16 @@ use pcli2::{
             set_active_tenant,
         },
     },
-    commands::{
-        create_cli_commands,
-        params::{
-            COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG,
-            COMMAND_COUNTS, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE,
-            COMMAND_DEPENDENCIES, COMMAND_DEPENDENCY_DIFF, COMMAND_DOWNLOAD, COMMAND_EXPORT,
-            COMMAND_FOLDER, COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_IMPORT, COMMAND_INFERENCE,
-            COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_METADATA,
-            COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_STATE,
-            COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD, COMMAND_USE,
-            COMMAND_VISUAL_MATCH, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE,
-            PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY,
-        },
+    commands::params::{
+        COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG,
+        COMMAND_COUNTS, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE,
+        COMMAND_DEPENDENCIES, COMMAND_DEPENDENCY_DIFF, COMMAND_DOWNLOAD, COMMAND_EXPORT,
+        COMMAND_FOLDER, COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_IMPORT, COMMAND_INFERENCE,
+        COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_METADATA,
+        COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_STATE, COMMAND_TENANT,
+        COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH,
+        PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT,
+        PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY,
     },
     format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions},
     physna_v3::TryDefault,
@@ -142,9 +139,33 @@ fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
     message.to_string()
 }
 
-pub async fn execute_command() -> Result<(), CliError> {
-    let commands = create_cli_commands();
+/// Interactively prompt for a missing credential when running in a terminal.
+///
+/// Returns `None` when stdin/stderr are not attached to a terminal (e.g. in
+/// scripts or CI), so callers can fall back to a missing-argument error.
+/// Secrets are prompted with masked input so they never appear on screen or
+/// in shell history.
+fn prompt_for_credential(label: &str, secret: bool) -> Option<String> {
+    use std::io::IsTerminal;
 
+    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+        return None;
+    }
+
+    let prompt_label = format!("{}:", label);
+    let result = if secret {
+        inquire::Password::new(&prompt_label)
+            .without_confirmation()
+            .with_display_mode(inquire::PasswordDisplayMode::Masked)
+            .prompt()
+    } else {
+        inquire::Text::new(&prompt_label).prompt()
+    };
+
+    result.ok().filter(|value| !value.trim().is_empty())
+}
+
+pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError> {
     trace!("Executing CLI command");
 
     match commands.subcommand() {
@@ -453,17 +474,23 @@ pub async fn execute_command() -> Result<(), CliError> {
                     // Try to get client credentials from command line or stored values
                     #[allow(unused_mut)]
                     let mut keyring = Keyring::default();
+                    // Resolve each credential from the command line, then the
+                    // keyring, then an interactive prompt (terminal sessions
+                    // only). Prompting keeps secrets out of shell history.
                     let client_id = match sub_matches.get_one::<String>(PARAMETER_CLIENT_ID) {
                         Some(id) => id.clone(),
                         None => {
                             // Try to get stored client ID
                             match keyring.get(&environment_name, "client-id".to_string()) {
                                 Ok(Some(stored_id)) => stored_id,
-                                _ => {
-                                    return Err(CliError::MissingRequiredArgument(
-                                        PARAMETER_CLIENT_ID.to_string(),
-                                    ));
-                                }
+                                _ => match prompt_for_credential("Client ID", false) {
+                                    Some(id) => id,
+                                    None => {
+                                        return Err(CliError::MissingRequiredArgument(
+                                            PARAMETER_CLIENT_ID.to_string(),
+                                        ));
+                                    }
+                                },
                             }
                         }
                     };
@@ -475,11 +502,14 @@ pub async fn execute_command() -> Result<(), CliError> {
                             // Try to get stored client secret
                             match keyring.get(&environment_name, "client-secret".to_string()) {
                                 Ok(Some(stored_secret)) => stored_secret,
-                                _ => {
-                                    return Err(CliError::MissingRequiredArgument(
-                                        PARAMETER_CLIENT_SECRET.to_string(),
-                                    ));
-                                }
+                                _ => match prompt_for_credential("Client secret", true) {
+                                    Some(secret) => secret,
+                                    None => {
+                                        return Err(CliError::MissingRequiredArgument(
+                                            PARAMETER_CLIENT_SECRET.to_string(),
+                                        ));
+                                    }
+                                },
                             }
                         }
                     };
@@ -970,7 +1000,12 @@ pub async fn execute_command() -> Result<(), CliError> {
                                         match pcli2::physna_v3::PhysnaApiClient::try_default() {
                                             Ok(mut api) => {
                                                 // Try to list tenants as a connectivity test
-                                                if let Ok(tenants) = api.list_tenants().await {
+                                                let progress = pcli2::terminal::spinner(
+                                                    "Testing API connectivity...",
+                                                );
+                                                let tenants_result = api.list_tenants().await;
+                                                progress.finish_and_clear();
+                                                if let Ok(tenants) = tenants_result {
                                                     if tenants.is_empty() {
                                                         messages.push((
                                                             "API connectivity: OK (no tenants)"
@@ -1057,6 +1092,18 @@ pub async fn execute_command() -> Result<(), CliError> {
 
             // Generate completions for the specified shell
             pcli2::actions::completions::generate_completions(shell)?;
+            Ok(())
+        }
+        Some(("man", sub_matches)) => {
+            trace!("Command: man");
+
+            let output_dir = sub_matches
+                .get_one::<std::path::PathBuf>("output-dir")
+                .cloned()
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+            let count = pcli2::actions::man::generate_man_pages(&output_dir)?;
+            println!("Wrote {} man page(s) to '{}'", count, output_dir.display());
             Ok(())
         }
         Some(("user", sub_matches)) => {

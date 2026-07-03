@@ -43,13 +43,16 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let tenant_uuid = *ctx.tenant_uuid();
 
     // Resolve asset ID from either UUID parameter or path using the helper function
+    let progress = crate::terminal::spinner("Fetching asset...");
     let asset = crate::actions::utils::resolve_asset(
         ctx.api(),
         &tenant_uuid,
         asset_uuid_param,
         asset_path_param,
     )
-    .await?;
+    .await;
+    progress.finish_and_clear();
+    let asset = asset?;
 
     // Format the asset considering the metadata flag
     println!(

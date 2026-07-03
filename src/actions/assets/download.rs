@@ -310,7 +310,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let progress_bar = if show_progress {
         let pb = ProgressBar::new(assets.len() as u64);
         pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - Downloading assets")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec} - Downloading assets")
             .unwrap()
             .progress_chars("#>-"));
         Some(pb)

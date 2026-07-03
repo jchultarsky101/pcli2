@@ -2651,8 +2651,8 @@ impl PhysnaApiClient {
             debug!("Fetching page {} of geometric search results", page);
 
             if page > max_pages_limit {
-                eprintln!(
-                    "⚠️  Warning: geometric search results truncated at {} matches ({}-page safety limit); results are incomplete",
+                tracing::warn!(
+                    "Geometric search results truncated at {} matches ({}-page safety limit); results are incomplete",
                     all_matches.len(),
                     max_pages_limit
                 );
@@ -2833,10 +2833,10 @@ impl PhysnaApiClient {
             debug!("Fetching page {} of part search results", page);
 
             // Check if we've hit the hard limit. Truncation must be visible
-            // to the user, not just a debug log.
+            // to the user, not just a debug log (warn is the default level).
             if page > max_pages_limit {
-                eprintln!(
-                    "⚠️  Warning: part search results truncated at {} matches ({}-page safety limit); results are incomplete",
+                tracing::warn!(
+                    "Part search results truncated at {} matches ({}-page safety limit); results are incomplete",
                     all_matches.len(),
                     max_pages_limit
                 );
@@ -3239,22 +3239,7 @@ impl PhysnaApiClient {
         );
 
         // Expand the glob pattern to get matching files
-        // Support both glob patterns (e.g., "data/*.stl") and comma-separated lists (e.g., "file1.stl,file2.stl")
-        let paths: Vec<_> = if glob_pattern.contains(',') {
-            // Comma-separated list of file paths
-            glob_pattern
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(std::path::PathBuf::from)
-                .filter(|path| path.exists())
-                .collect()
-        } else {
-            // Glob pattern
-            glob(glob_pattern)?
-                .filter_map(|path_result| path_result.ok()) // Filter out any errors and extract the PathBuf
-                .collect()
-        };
+        let paths = expand_upload_paths(glob_pattern)?;
 
         debug!(
             "Found {} files matching pattern: {}",
@@ -3271,7 +3256,7 @@ impl PhysnaApiClient {
         let progress_bar = if show_progress {
             let pb = ProgressBar::new(paths.len() as u64);
             pb.set_style(ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec} {msg}")
                 .unwrap()
                 .progress_chars("#>-"));
             Some(pb)
@@ -4070,10 +4055,11 @@ impl PhysnaApiClient {
 
             // Safety check to prevent infinite loops in case of API issues.
             // If a tenant legitimately exceeds this, the truncation must be
-            // visible to the user, not just a debug log.
+            // visible to the user, not just a debug log (warn is the default
+            // level).
             if page > 1000 {
-                eprintln!(
-                    "⚠️  Warning: asset listing for state '{}' was truncated at {} assets (1000-page safety limit); results are incomplete",
+                tracing::warn!(
+                    "Asset listing for state '{}' was truncated at {} assets (1000-page safety limit); results are incomplete",
                     state,
                     all_assets.len()
                 );
@@ -5145,4 +5131,28 @@ fn extract_file_extension_from_error(error_msg: &str) -> String {
     }
     // If we can't extract the extension, return an empty string
     String::new()
+}
+
+/// Expand an upload file specification into the list of matching files.
+///
+/// Supports both glob patterns (e.g. "data/*.stl") and comma-separated
+/// lists (e.g. "file1.stl,file2.stl"). Comma-separated entries that do
+/// not exist on disk are silently skipped, matching upload behavior.
+pub fn expand_upload_paths(pattern: &str) -> Result<Vec<std::path::PathBuf>, ApiError> {
+    let paths = if pattern.contains(',') {
+        // Comma-separated list of file paths
+        pattern
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.exists())
+            .collect()
+    } else {
+        // Glob pattern
+        glob(pattern)?
+            .filter_map(|path_result| path_result.ok())
+            .collect()
+    };
+    Ok(paths)
 }

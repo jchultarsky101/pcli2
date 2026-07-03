@@ -14,10 +14,68 @@ pub mod completions;
 pub mod config;
 pub mod environment;
 pub mod folder;
+pub mod man;
 pub mod metadata;
 pub mod params;
 pub mod tenant;
 pub mod user;
+
+/// Usage examples appended to the top-level help output, with ANSI colors.
+const EXAMPLES_COLORED: &str = color_print::cstr!(
+    "<bold>Examples:</bold>
+  <cyan># Authenticate with your Physna tenant</cyan>
+  <green>pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET</green>
+
+  <cyan># List folders in tree format</cyan>
+  <green>pcli2 folder list --format tree</green>
+
+  <cyan># Upload an asset to a folder</cyan>
+  <green>pcli2 asset create --file model.stl --folder-path /Root/Models/</green>
+
+  <cyan># Find geometrically similar assets</cyan>
+  <green>pcli2 asset geometric-match --path /Root/Models/part.stl --threshold 85.0</green>
+
+  <cyan># Download all assets from a folder</cyan>
+  <green>pcli2 folder download --folder-path /Root/Models/ --output ./downloads --progress</green>
+
+  <cyan># Use short aliases for common commands</cyan>
+  <green>pcli2 folder ls          # List folders</green>
+  <green>pcli2 asset ls           # List assets</green>
+  <green>pcli2 auth in            # Login</green>
+  <green>pcli2 env list           # List environments</green>"
+);
+
+/// Usage examples appended to the top-level help output, without ANSI colors.
+const EXAMPLES_PLAIN: &str = "Examples:
+  # Authenticate with your Physna tenant
+  pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+
+  # List folders in tree format
+  pcli2 folder list --format tree
+
+  # Upload an asset to a folder
+  pcli2 asset create --file model.stl --folder-path /Root/Models/
+
+  # Find geometrically similar assets
+  pcli2 asset geometric-match --path /Root/Models/part.stl --threshold 85.0
+
+  # Download all assets from a folder
+  pcli2 folder download --folder-path /Root/Models/ --output ./downloads --progress
+
+  # Use short aliases for common commands
+  pcli2 folder ls          # List folders
+  pcli2 asset ls           # List assets
+  pcli2 auth in            # Login
+  pcli2 env list           # List environments";
+
+/// Select the examples text for the top-level help based on terminal capabilities.
+fn examples_after_help() -> &'static str {
+    if crate::terminal::colors_enabled() {
+        EXAMPLES_COLORED
+    } else {
+        EXAMPLES_PLAIN
+    }
+}
 
 /// Create and configure all CLI commands and their arguments.
 ///
@@ -47,6 +105,11 @@ pub fn create_full_command() -> Command {
         .propagate_version(true)
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .color(if crate::terminal::colors_enabled() {
+            clap::ColorChoice::Auto
+        } else {
+            clap::ColorChoice::Never
+        })
         // Add global arguments
         .arg(
             clap::Arg::new("no-color")
@@ -64,30 +127,24 @@ pub fn create_full_command() -> Command {
                 .global(true)
                 .help("Automatically answer yes to confirmation prompts"),
         )
+        .arg(
+            clap::Arg::new("verbose")
+                .long("verbose")
+                .short('v')
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .conflicts_with("quiet")
+                .help("Enable verbose output (debug-level logging)"),
+        )
+        .arg(
+            clap::Arg::new("quiet")
+                .long("quiet")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .help("Suppress diagnostic output (error-level logging only)"),
+        )
         // Add examples
-        .after_help(color_print::cstr!(
-            "<bold>Examples:</bold>
-  <cyan># Authenticate with your Physna tenant</cyan>
-  <green>pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET</green>
-  
-  <cyan># List folders in tree format</cyan>
-  <green>pcli2 folder list --format tree</green>
-  
-  <cyan># Upload an asset to a folder</cyan>
-  <green>pcli2 asset create --file model.stl --folder-path /Root/Models/</green>
-  
-  <cyan># Find geometrically similar assets</cyan>
-  <green>pcli2 asset geometric-match --path /Root/Models/part.stl --threshold 85.0</green>
-  
-  <cyan># Download all assets from a folder</cyan>
-  <green>pcli2 folder download --folder-path /Root/Models/ --output ./downloads --progress</green>
-  
-  <cyan># Use short aliases for common commands</cyan>
-  <green>pcli2 folder ls          # List folders</green>
-  <green>pcli2 asset ls           # List assets</green>
-  <green>pcli2 auth in            # Login</green>
-  <green>pcli2 env list           # List environments</green>"
-        ))
+        .after_help(examples_after_help())
         // Add all the modularized command groups
         .subcommand(tenant::tenant_command())
         .subcommand(folder::folder_command())
@@ -97,5 +154,6 @@ pub fn create_full_command() -> Command {
         .subcommand(environment::environment_command())
         .subcommand(user::user_command())
         .subcommand(completions::completions_command())
+        .subcommand(man::man_command())
         .subcommand(cache::cache_command())
 }

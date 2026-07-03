@@ -3,12 +3,13 @@
 //! This module defines CLI commands related to folder management.
 
 use crate::commands::params::{
-    folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
-    format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    limit_parameter, name_parameter, output_file_parameter, parent_folder_identifier_group,
-    parent_folder_path_parameter, parent_folder_uuid_parameter, tenant_parameter, COMMAND_CREATE,
-    COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH,
-    COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_XLS, PARAMETER_PROGRESS,
+    dry_run_parameter, folder_identifier_group, folder_path_parameter, folder_uuid_parameter,
+    format_parameter, format_pretty_parameter, format_with_headers_parameter,
+    format_with_metadata_parameter, limit_parameter, name_parameter, output_file_parameter,
+    parent_folder_identifier_group, parent_folder_path_parameter, parent_folder_uuid_parameter,
+    tenant_parameter, COMMAND_CREATE, COMMAND_DELETE, COMMAND_FOLDER, COMMAND_GET, COMMAND_LIST,
+    COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_XLS,
+    PARAMETER_PROGRESS,
 };
 use clap::Command;
 
@@ -80,7 +81,8 @@ pub fn folder_command() -> Command {
                         .action(clap::ArgAction::SetTrue)
                         .help("Force deletion of non-empty folder by deleting all contents first"),
                 )
-                .group(folder_identifier_group()),
+                .group(folder_identifier_group())
+                .arg(dry_run_parameter()),
         )
         .subcommand(
             Command::new("rename")
@@ -441,6 +443,7 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Continue uploading other assets if one fails"),
                 )
+                .arg(dry_run_parameter())
         )
         .subcommand(
             Command::new(crate::commands::params::COMMAND_THUMBNAIL)

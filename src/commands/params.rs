@@ -119,12 +119,24 @@ pub const PARAMETER_SKIP_EXISTING: &str = "skip-existing";
 pub const PARAMETER_RESUME: &str = "resume";
 pub const PARAMETER_OVERRIDE: &str = "override";
 pub const PARAMETER_RESTORE_METADATA: &str = "restore-metadata";
+pub const PARAMETER_DRY_RUN: &str = "dry-run";
 
 // Format options
 pub const FORMAT_CSV: &str = "csv";
 pub const FORMAT_JSON: &str = "json";
 pub const FORMAT_TREE: &str = "tree";
 pub const FORMAT_XLS: &str = "xls";
+
+/// Create the dry-run parameter.
+///
+/// Commands that support it report what would be done without making
+/// any changes on the server.
+pub fn dry_run_parameter() -> Arg {
+    Arg::new(PARAMETER_DRY_RUN)
+        .long(PARAMETER_DRY_RUN)
+        .action(clap::ArgAction::SetTrue)
+        .help("Show what would be done without making any changes")
+}
 
 /// Create the global format parameter.
 ///
@@ -236,7 +248,7 @@ pub fn client_secret_parameter() -> Arg {
         .long(PARAMETER_CLIENT_SECRET)
         .num_args(1)
         .required(false)
-        .help("Client secret for OAuth2 authentication")
+        .help("Client secret for OAuth2 authentication (prompted interactively if omitted)")
 }
 
 /// Create the UUID parameter.

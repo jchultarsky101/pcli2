@@ -158,6 +158,16 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     debug!("Creating asset with path: {}", asset_path);
 
+    // Report and stop without uploading anything when --dry-run is given
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        println!(
+            "Dry run: would upload '{}' as asset '{}'",
+            file_path.display(),
+            asset_path
+        );
+        return Ok(());
+    }
+
     let override_flag = sub_matches.get_flag(PARAMETER_OVERRIDE);
     let restore_metadata = sub_matches.get_flag(PARAMETER_RESTORE_METADATA);
 
@@ -318,6 +328,26 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         }
     }
 
+    // Report and stop without uploading anything when --dry-run is given
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        let mut paths = crate::physna_v3::expand_upload_paths(&glob_pattern)
+            .map_err(CliError::PhysnaExtendedApiError)?;
+        paths.sort();
+        if paths.is_empty() {
+            println!("Dry run: no files match '{}'", glob_pattern);
+            return Ok(());
+        }
+        println!(
+            "Dry run: would upload {} file(s) to folder '{}':",
+            paths.len(),
+            folder.path()
+        );
+        for path in &paths {
+            println!("  {}", path.display());
+        }
+        return Ok(());
+    }
+
     let assets = api
         .create_assets_batch(
             &tenant.uuid,
@@ -389,13 +419,11 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     if time_remaining > 0 && (time_remaining as u64) < estimated_time_needed + SAFETY_MARGIN_SECONDS
     {
         let time_remaining_min = time_remaining / 60;
-        eprintln!(
-            ":warning: Warning: Token expires in approximately {} minutes, but batch operation may take {} minutes",
+        error_utils::report_warning(&format!(
+            "Token expires in approximately {} minutes, but batch operation may take {} minutes. Token will be refreshed automatically if needed during processing.",
             time_remaining_min,
             (estimated_time_needed / 60).max(1)
-        );
-        eprintln!("  Token will be refreshed automatically if needed during processing.");
-        eprintln!();
+        ));
     }
 
     // Create in-memory cache for asset metadata to avoid repeated API calls
@@ -416,7 +444,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         pb.set_style(
             ProgressStyle::default_bar()
                 .template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}",
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec} {wide_msg}",
                 )
                 .unwrap()
                 .progress_chars("#>-"),

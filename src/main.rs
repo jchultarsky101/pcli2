@@ -56,18 +56,29 @@ impl MainError {
 /// Initialize the logging subsystem with the specified log level
 ///
 /// Supports log levels: error, warn, info, debug, trace
-/// Can be set via --log-level flag, PCLI2_LOG_LEVEL env var, or RUST_LOG env var
-fn init_logging() {
-    // Check for PCLI2_LOG_LEVEL environment variable first
-    let log_level = env::var("PCLI2_LOG_LEVEL")
-        .or_else(|_| env::var("RUST_LOG"))
-        .unwrap_or_else(|_| "warn".to_string());
+/// Precedence: --quiet/--verbose flags, then RUST_LOG, then PCLI2_LOG_LEVEL,
+/// then the default of "warn".
+fn init_logging(matches: &clap::ArgMatches) {
+    let env_filter = if matches.get_flag("quiet") {
+        EnvFilter::new("error")
+    } else if matches.get_flag("verbose") {
+        EnvFilter::new("debug")
+    } else {
+        // Check for PCLI2_LOG_LEVEL environment variable first
+        let log_level = env::var("PCLI2_LOG_LEVEL")
+            .or_else(|_| env::var("RUST_LOG"))
+            .unwrap_or_else(|_| "warn".to_string());
 
-    // Parse the log level and create filter
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&log_level));
+        // Parse the log level and create filter
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&log_level))
+    };
 
-    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    // Diagnostics go to stderr so stdout stays clean for command output
+    // (pipes, --format json/csv, shell completions)
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_writer(std::io::stderr)
+        .init();
 }
 
 /// Main entry point for the Physna CLI client application.
@@ -94,14 +105,25 @@ async fn main() {
         banner::print_banner();
     }
 
-    // Initialize the logging subsystem
-    // Log level can be set via PCLI2_LOG_LEVEL or RUST_LOG environment variables
-    // Default is "warn" if not set
-    init_logging();
+    // Parse the command line; clap exits directly on --help/--version/usage errors
+    let matches = pcli2::commands::create_cli_commands();
 
-    // Parse and execute the CLI command
-    match execute_command().await {
+    // Initialize the logging subsystem
+    // Log level can be set via --verbose/--quiet flags or the
+    // PCLI2_LOG_LEVEL / RUST_LOG environment variables (default "warn")
+    init_logging(&matches);
+
+    // Commands whose stdout is consumed by other tools (shell init,
+    // man page generation) must not trigger the update hint
+    let machine_output_command = matches!(matches.subcommand_name(), Some("completions" | "man"));
+
+    // Execute the CLI command
+    match execute_command(matches).await {
         Ok(()) => {
+            // Check for a newer release (cached, terminal sessions only)
+            if !machine_output_command {
+                pcli2::update_check::maybe_print_update_hint().await;
+            }
             // Success - exit with code 0
             process::exit(0);
         }

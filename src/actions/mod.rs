@@ -4,6 +4,7 @@ pub mod assets;
 pub mod cache;
 pub mod completions;
 pub mod folders;
+pub mod man;
 pub mod tenants;
 pub mod users;
 pub mod utils;

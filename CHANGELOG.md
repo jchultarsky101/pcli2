@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-02
+
+### Added
+- **`--dry-run` flag for destructive and bulk commands** - `asset delete`, `folder delete`, `asset create`, `asset create-batch`, and `folder upload` can now report exactly what they would delete or upload and exit without making any changes. For `folder upload` the check runs before remote folder resolution, so a dry run never creates the target folder.
+- **Global `--verbose`/`-v` and `--quiet` flags** - Quick verbosity control on every command: `--verbose` enables debug-level logging, `--quiet` limits diagnostics to errors. Both take precedence over the `PCLI2_LOG_LEVEL`/`RUST_LOG` environment variables. The local `--verbose` on `config validate` is replaced by the global flag (same behavior).
+- **Automatic retries for transient failures** - Network timeouts, connection errors, and HTTP 408/429/502/503/504 responses are now retried with exponential backoff and jitter, honoring the server's `Retry-After` header. Default is 2 retries; `PCLI2_MAX_RETRIES` overrides (0 disables).
+- **`pcli2 man` command** - Generates Unix man pages for pcli2 and every subcommand (one page per command, e.g. `pcli2-folder-delete.1`) into a directory given by `--output-dir`.
+- **Update notifications** - After a successful command in an interactive terminal session, pcli2 prints a one-line stderr hint when a newer release is available on GitHub. Checked at most once per 24 hours with a 3-second timeout; skipped in CI, for redirected output, and for `completions`/`man`; opt out with `PCLI2_NO_UPDATE_CHECK`.
+- **Spinners for quick operations** - Single API round-trips (`asset get`, `tenant list`, `config validate --api`) show a spinner on stderr so the CLI never appears hung. Hidden automatically when stderr is not a terminal.
+- **Scripting and Automation documentation** - New docs page (and README sections) covering exit codes, machine-friendly output, dry-run mode, retries, and a GitHub Actions integration example.
+
+### Changed
+- **Interactive `auth login`** - When `--client-id`/`--client-secret` are omitted and no stored credentials exist, pcli2 now prompts for them interactively (masked input for the secret, keeping it out of shell history) instead of erroring. Non-interactive sessions keep the previous missing-argument error.
+- **Colors are TTY-aware and respect `NO_COLOR`** - The banner, help examples, and help styling no longer emit ANSI escape codes when output is piped or redirected, when `NO_COLOR`/`PCLI2_NO_COLOR` is set, or when the global `--no-color` flag (previously defined but inoperative) is passed.
+- **Consistent progress bars** - All overall progress bars now show ETA and throughput (the batch upload, asset download, and batch create bars were missing one or both), and per-file spinners show elapsed time.
+
+### Fixed
+- **Warnings are no longer printed twice** - Warnings (e.g. skipped rows in `asset metadata create-batch --continue-on-error`) were emitted both through tracing and a direct stderr print. They now go through tracing only, so their visibility is controlled by `--verbose`/`--quiet`, `RUST_LOG`, or `PCLI2_LOG_LEVEL`. The tracing subscriber also writes to stderr (previously stdout), so diagnostics never pollute piped command output.
+
 ## [1.8.2] - 2026-07-02
 
 ### Fixed

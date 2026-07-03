@@ -46,6 +46,10 @@ This is the original approach using the API documentation interface:
 Once you have your credentials, you can authenticate with PCLI2:
 
 ```bash
+# Login interactively (prompts for the client ID and secret, with
+# masked input so the secret never lands in your shell history)
+pcli2 auth login
+
 # Login with client credentials
 pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
 

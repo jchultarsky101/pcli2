@@ -46,11 +46,22 @@ pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     )
     .await?;
 
+    let asset_identifier = asset_path_param
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| asset.uuid().to_string());
+
+    // Report and stop without deleting anything when --dry-run is given
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        println!(
+            "Dry run: would delete asset '{}' (UUID: {})",
+            asset_identifier,
+            asset.uuid()
+        );
+        return Ok(());
+    }
+
     // Ask for confirmation unless --yes flag is provided
     if !yes_flag {
-        let asset_identifier = asset_path_param
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| asset.uuid().to_string());
         let delete_msg = format!("Delete asset '{}'?", asset_identifier);
 
         let confirm = inquire::Confirm::new(&delete_msg)

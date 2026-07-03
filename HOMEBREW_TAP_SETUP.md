@@ -333,3 +333,37 @@ Your Homebrew tap is now live! Users can install PCLI2 with:
 brew tap jchultarsky101/pcli2
 brew install pcli2
 ```
+
+---
+
+## 🤖 Automated Publishing (since v1.9.0)
+
+As of 2026-07-02, the tap formula is published **automatically** by
+cargo-dist on every release: the `publish-homebrew-formula` job in
+`.github/workflows/release.yml` pushes `Formula/pcli2.rb` to this tap.
+Manual formula updates (the process above) are no longer needed.
+
+### The HOMEBREW_TAP_TOKEN secret
+
+The publish job authenticates with the `HOMEBREW_TAP_TOKEN` repository
+secret on the `pcli2` repo. It is currently set to the **`gh` CLI's OAuth
+token** (broad `repo` scope), stored on 2026-07-02 with:
+
+```bash
+gh auth token | gh secret set HOMEBREW_TAP_TOKEN --repo jchultarsky101/pcli2
+```
+
+⚠️ **Caveat**: if you ever re-authenticate the CLI (`gh auth login` or
+`gh auth refresh`), that token rotates and the stored secret stops
+working - the next release's `publish-homebrew-formula` job will fail
+with an authentication error. The fix is to re-run the one-liner above.
+A more robust alternative is a fine-grained PAT scoped to only the
+`homebrew-pcli2` repo (Contents: read & write), set via
+`gh secret set HOMEBREW_TAP_TOKEN --repo jchultarsky101/pcli2`.
+
+### One-time cleanup after the first automated publish
+
+The hand-written `pcli2.rb` at the tap repository **root** (updated to
+v1.9.0 binaries on 2026-07-02) becomes redundant once cargo-dist
+publishes `Formula/pcli2.rb`. Delete the root file at that point so the
+tap has a single source of truth.

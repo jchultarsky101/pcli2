@@ -1,10 +1,22 @@
 name: Deploy Documentation
 
 on:
+  # Deploy after the tag-triggered cargo-dist run completes, so oranda bakes
+  # the new version's install links into the site.
+  #
+  # Why not `release: types: [published]`: release.yml publishes the GitHub
+  # Release with GITHUB_TOKEN, and events caused by GITHUB_TOKEN do not
+  # trigger other workflows (recursion prevention) - update-latest-tag.yml
+  # uses that trigger and has been dead since 2025 for the same reason.
+  #
+  # Why no `branches: [main]` filter: a tag run's head branch is the tag
+  # (e.g. v1.9.0), not main, so that filter matched the back-merge PR's
+  # plan-only check instead - docs then built before the release existed and
+  # shipped stale install links (observed with v1.9.0). The build job's
+  # `if` selects the tag push run (event == push) and ignores PR runs.
   workflow_run:
     workflows: ["Release"]
     types: [completed]
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +34,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -98,13 +110,21 @@ jobs:
     steps:
       # The Pages backend occasionally stalls a deployment in "queued" until
       # the action's 10-minute timeout (and a stalled deployment also breaks
-      # manual re-runs of this job with "Deployment cancelled"). A fresh
-      # deployment attempt supersedes the stalled one, so retry once before
-      # failing the run.
+      # manual re-runs of this job with "Deployment cancelled"), or rejects
+      # deployments outright with "Deployment failed, try again later." for a
+      # short window. A fresh deployment attempt supersedes the stalled one,
+      # so retry once before failing the run - but wait first: an immediate
+      # retry of a fast rejection lands inside the same backend outage window
+      # (observed with v1.9.0, where both back-to-back attempts failed within
+      # seconds and a later manual re-run succeeded).
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
         continue-on-error: true
+
+      - name: Wait before retrying
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 90
 
       - name: Retry deployment after transient Pages failure
         id: deployment_retry

@@ -381,11 +381,24 @@ variable (0 disables retries):
 PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Root/Models/" --output ./downloads
 ```
 
+The request timeout defaults to 30 minutes because very large model files
+legitimately take that long to transfer. If you work with small files and
+prefer fast failures, lower it with `PCLI2_TIMEOUT` (seconds):
+
+```bash
+PCLI2_TIMEOUT=120 pcli2 asset list --folder-path "/Root/Models/"
+```
+
 ### 🎨 Color Control
 
 Colors are disabled automatically when output is piped or redirected.
 You can also disable them explicitly with the `--no-color` flag, or the
 `NO_COLOR`/`PCLI2_NO_COLOR` environment variables.
+
+These rules apply to both streams independently: command output on
+stdout and diagnostics (warnings, `--verbose` logs) on stderr. Capturing
+either one to a file (`> out.json`, `2> warnings.log`) yields plain text
+with no ANSI escape codes.
 
 ### 🔔 Update Notifications
 
@@ -1057,16 +1070,23 @@ Generate Unix man pages for PCLI2 and every subcommand (one page per
 command, e.g. `pcli2-folder-delete.1`):
 
 ```bash
-# Write pages to a directory
-pcli2 man --output-dir ./man
-
-# Install for the current user (path may vary by system)
+# Install for the current user, then read pages by name.
+# Note: `man` only searches the directories listed by `manpath` - it never
+# looks in the current directory, so the pages must be installed (or opened
+# by path) to be found. If ~/.local/share/man is not in your `manpath`
+# output, use a directory that is (e.g. /usr/local/share/man/man1).
 mkdir -p ~/.local/share/man/man1
 pcli2 man --output-dir ~/.local/share/man/man1
-
-# Read a page
+man pcli2
 man pcli2-asset-create-batch
+
+# Or read a generated file directly without installing
+pcli2 man --output-dir ./man
+man ./man/pcli2.1
 ```
+
+The pages are a snapshot of the CLI at generation time - re-run the install
+command after upgrading PCLI2 to refresh them.
 
 ## 🤝 Support
 

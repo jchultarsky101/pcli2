@@ -67,7 +67,11 @@ pub async fn maybe_print_update_hint() {
 }
 
 /// Get the latest released version, from the cache when fresh, otherwise
-/// from the GitHub API (updating the cache on success).
+/// from the GitHub API.
+///
+/// The check timestamp is recorded even when the fetch fails (offline,
+/// firewalled, rate-limited), so a failed check is not re-attempted on
+/// every command - at most one network attempt is made per cache window.
 async fn latest_version() -> Option<String> {
     let cache_path = crate::cache::BaseCache::get_cache_dir().join("update-check.json");
 
@@ -76,17 +80,24 @@ async fn latest_version() -> Option<String> {
         .unwrap_or_default()
         .as_secs();
 
+    let cached: Option<UpdateCheckCache> = std::fs::read_to_string(&cache_path)
+        .ok()
+        .and_then(|contents| serde_json::from_str(&contents).ok());
+
     // Serve from cache while fresh
-    if let Ok(contents) = std::fs::read_to_string(&cache_path) {
-        if let Ok(cache) = serde_json::from_str::<UpdateCheckCache>(&contents) {
-            if now.saturating_sub(cache.last_checked) < CACHE_TTL.as_secs() {
-                return Some(cache.latest_version);
-            }
+    if let Some(ref cache) = cached {
+        if now.saturating_sub(cache.last_checked) < CACHE_TTL.as_secs() {
+            return Some(cache.latest_version.clone());
         }
     }
 
-    // Cache is stale or missing: ask GitHub
-    let latest = fetch_latest_version().await?;
+    // Cache is stale or missing: ask GitHub. On failure, fall back to the
+    // previously known version (a release that existed still exists), or
+    // the current version so the timestamp still advances.
+    let latest = fetch_latest_version()
+        .await
+        .or(cached.map(|cache| cache.latest_version))
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
 
     let cache = UpdateCheckCache {
         last_checked: now,

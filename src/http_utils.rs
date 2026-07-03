@@ -21,16 +21,35 @@ fn default_max_retries() -> u32 {
         .unwrap_or(2)
 }
 
+/// Default request timeout in seconds.
+///
+/// The default is intentionally long (30 minutes) because uploads and
+/// downloads of very large model files legitimately take that long. Users
+/// working with small files can lower it with the PCLI2_TIMEOUT environment
+/// variable (seconds).
+fn default_timeout() -> u64 {
+    std::env::var("PCLI2_TIMEOUT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|&seconds| seconds > 0)
+        .unwrap_or(1800)
+}
+
 /// HTTP status codes that indicate a transient condition worth retrying:
 /// request timeout, rate limiting, and upstream gateway failures.
 fn is_transient_status(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 408 | 429 | 502 | 503 | 504)
 }
 
-/// Network-level errors that are worth retrying (timeouts and failures
-/// to establish a connection).
-fn is_transient_network_error(error: &reqwest::Error) -> bool {
-    error.is_timeout() || error.is_connect()
+/// Network-level errors that are safe to retry for the given request.
+///
+/// A connect error means the request never reached the server, so it is
+/// safe to retry regardless of method. A timeout may fire after the server
+/// has started processing the request, so only idempotent requests (GETs)
+/// are retried on timeouts - retrying a timed-out POST could apply the
+/// operation twice.
+fn is_retryable_network_error(error: &reqwest::Error, idempotent: bool) -> bool {
+    error.is_connect() || (idempotent && error.is_timeout())
 }
 
 /// Compute the delay before the next retry attempt.
@@ -78,14 +97,15 @@ impl Default for HttpRequestConfig {
         let mut default_headers = HashMap::new();
         default_headers.insert("User-Agent".to_string(), "PCLI2".to_string());
 
+        let timeout = default_timeout();
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
             default_headers,
-            timeout: 1800, // 30 minutes (1800 seconds)
+            timeout,
             retry_on_auth_error: true,
-            upload_timeout: Some(1800), // 30 minutes (1800 seconds) for upload operations
-            download_timeout: Some(1800), // 30 minutes (1800 seconds) for download operations
-            search_timeout: Some(1800), // 30 minutes (1800 seconds) for search operations
+            upload_timeout: Some(timeout),
+            download_timeout: Some(timeout),
+            search_timeout: Some(timeout),
             max_retries: default_max_retries(),
         }
     }
@@ -96,14 +116,15 @@ impl HttpRequestConfig {
         let mut default_headers = HashMap::new();
         default_headers.insert("User-Agent".to_string(), "PCLI2".to_string());
 
+        let timeout = default_timeout();
         Self {
             base_url: configuration.get_api_base_url(),
             default_headers,
-            timeout: 1800, // 30 minutes (1800 seconds)
+            timeout,
             retry_on_auth_error: true,
-            upload_timeout: Some(1800), // 30 minutes (1800 seconds) for upload operations
-            download_timeout: Some(1800), // 30 minutes (1800 seconds) for download operations
-            search_timeout: Some(1800), // 30 minutes (1800 seconds) for search operations
+            upload_timeout: Some(timeout),
+            download_timeout: Some(timeout),
+            search_timeout: Some(timeout),
             max_retries: default_max_retries(),
         }
     }
@@ -183,6 +204,7 @@ impl HttpClient {
         self.execute_request(
             |client_builder| client_builder.get(format!("{}{}", self.config.base_url, path)),
             auth_token,
+            true,
         )
         .await
     }
@@ -205,6 +227,7 @@ impl HttpClient {
                     .json(body)
             },
             auth_token,
+            false,
         )
         .await
     }
@@ -227,6 +250,7 @@ impl HttpClient {
                     .json(body)
             },
             auth_token,
+            false,
         )
         .await
     }
@@ -241,6 +265,7 @@ impl HttpClient {
             .send_with_retry(
                 |client| client.delete(format!("{}{}", self.config.base_url, path)),
                 auth_token,
+                false,
             )
             .await?;
 
@@ -261,7 +286,8 @@ impl HttpClient {
 
     /// Send a request, retrying transient failures with exponential backoff.
     ///
-    /// Transient failures are network timeouts, connection errors, and the
+    /// Transient failures are connection errors, network timeouts (idempotent
+    /// requests only - see `is_retryable_network_error`), and the
     /// 408/429/502/503/504 status codes. The Retry-After header is honored
     /// when the server provides one. Non-transient responses (including
     /// other error statuses) are returned to the caller for handling.
@@ -269,6 +295,7 @@ impl HttpClient {
         &self,
         request_builder: F,
         auth_token: Option<&str>,
+        idempotent: bool,
     ) -> Result<reqwest::Response, crate::physna_v3::ApiError>
     where
         F: Fn(&Client) -> reqwest::RequestBuilder,
@@ -292,7 +319,7 @@ impl HttpClient {
             let response = match request.send().await {
                 Ok(response) => response,
                 Err(e) => {
-                    if is_transient_network_error(&e) && attempt < max_retries {
+                    if is_retryable_network_error(&e, idempotent) && attempt < max_retries {
                         let delay = retry_delay(None, attempt);
                         attempt += 1;
                         warn!(
@@ -332,12 +359,15 @@ impl HttpClient {
         &self,
         request_builder: F,
         auth_token: Option<&str>,
+        idempotent: bool,
     ) -> Result<T, crate::physna_v3::ApiError>
     where
         F: Fn(&Client) -> reqwest::RequestBuilder,
         T: DeserializeOwned,
     {
-        let response = self.send_with_retry(request_builder, auth_token).await?;
+        let response = self
+            .send_with_retry(request_builder, auth_token, idempotent)
+            .await?;
 
         // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
         // We retry on both 401 and 403 as they can both indicate authentication issues

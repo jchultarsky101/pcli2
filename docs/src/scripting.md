@@ -32,6 +32,10 @@ pcli2 asset list --folder-path "/Root/Models/" --format csv --headers > assets.c
 To disable colors explicitly, use the `--no-color` flag or set the
 `NO_COLOR` (or `PCLI2_NO_COLOR`) environment variable.
 
+The same rules apply to diagnostics on stderr: warnings and `--verbose`
+logs captured with `2> warnings.log` are plain text with no ANSI escape
+codes, so they can be grepped and parsed directly.
+
 ## Skipping Prompts
 
 Destructive commands ask for confirmation when run interactively. In
@@ -115,6 +119,18 @@ retries; tune it with `PCLI2_MAX_RETRIES` (0 disables retries):
 ```bash
 PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Root/Models/" --output ./downloads
 ```
+
+The request timeout defaults to 30 minutes (large model files take that
+long to transfer). Lower it with `PCLI2_TIMEOUT` (seconds) if you prefer
+fast failures over patience:
+
+```bash
+PCLI2_TIMEOUT=120 pcli2 asset list --folder-path "/Root/Models/"
+```
+
+Note that timeouts abort-and-retry only read requests (GETs); a timed-out
+write is never retried automatically because the server may have already
+processed it.
 
 ## Update Notifications
 

@@ -16,25 +16,41 @@ pub fn generate_man_pages(output_dir: &Path) -> Result<usize, CliError> {
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
     let cmd = crate::commands::create_full_command();
-    render_command_tree(&cmd, "", output_dir)
+    render_command_tree(&cmd, "", "", output_dir)
 }
 
 /// Recursively render a command and its subcommands to `<output_dir>/<name>.1`.
+///
+/// `name_prefix` is the dash-joined command path (used for file and page
+/// names, e.g. `pcli2-folder-delete`); `invocation_prefix` is the
+/// space-joined path (used in SYNOPSIS so it shows the real command line,
+/// e.g. `pcli2 folder delete`). They are tracked separately because command
+/// names themselves may contain dashes (`create-batch`).
 #[allow(clippy::result_large_err)]
 fn render_command_tree(
     cmd: &clap::Command,
     name_prefix: &str,
+    invocation_prefix: &str,
     output_dir: &Path,
 ) -> Result<usize, CliError> {
-    let page_name = if name_prefix.is_empty() {
-        cmd.get_name().to_string()
+    let (page_name, invocation) = if name_prefix.is_empty() {
+        (cmd.get_name().to_string(), cmd.get_name().to_string())
     } else {
-        format!("{}-{}", name_prefix, cmd.get_name())
+        (
+            format!("{}-{}", name_prefix, cmd.get_name()),
+            format!("{} {}", invocation_prefix, cmd.get_name()),
+        )
     };
 
-    // clap_mangen renders one command per page; give each page the full
-    // dash-joined command path as its title so pages don't collide.
-    let man = clap_mangen::Man::new(cmd.clone().name(page_name.clone()));
+    // The command name renders into SYNOPSIS/usage lines, so use the real
+    // invocation there; the page header and NAME section use the dash-joined
+    // page name (git-style, e.g. pcli2-folder-delete(1)).
+    let man = clap_mangen::Man::new(
+        cmd.clone()
+            .name(invocation.clone())
+            .display_name(page_name.clone()),
+    )
+    .title(page_name.clone());
     let mut buffer: Vec<u8> = Vec::new();
     man.render(&mut buffer)
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
@@ -49,7 +65,7 @@ fn render_command_tree(
         if subcommand.get_name() == "help" {
             continue;
         }
-        count += render_command_tree(subcommand, &page_name, output_dir)?;
+        count += render_command_tree(subcommand, &page_name, &invocation, output_dir)?;
     }
 
     Ok(count)

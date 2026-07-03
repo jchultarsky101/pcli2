@@ -1,10 +1,11 @@
 [package]
 name = "pcli2"
-version = "1.9.0"
+version = "1.10.0"
 edition = "2021"
 authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
 description = "CLI client for the Physna public API - Advanced 3D Geometry Search and Analysis"
 repository = "https://github.com/jchultarsky101/pcli2"
+homepage = "https://jchultarsky101.github.io/pcli2/"
 
 [package.metadata.wix]
 upgrade-guid = "1A4B1568-B3A4-4FF3-8F28-7794C0181133"

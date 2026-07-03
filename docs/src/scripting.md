@@ -32,6 +32,10 @@ pcli2 asset list --folder-path "/Root/Models/" --format csv --headers > assets.c
 To disable colors explicitly, use the `--no-color` flag or set the
 `NO_COLOR` (or `PCLI2_NO_COLOR`) environment variable.
 
+The same rules apply to diagnostics on stderr: warnings and `--verbose`
+logs captured with `2> warnings.log` are plain text with no ANSI escape
+codes, so they can be grepped and parsed directly.
+
 ## Skipping Prompts
 
 Destructive commands ask for confirmation when run interactively. In

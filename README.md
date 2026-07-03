@@ -395,6 +395,11 @@ Colors are disabled automatically when output is piped or redirected.
 You can also disable them explicitly with the `--no-color` flag, or the
 `NO_COLOR`/`PCLI2_NO_COLOR` environment variables.
 
+These rules apply to both streams independently: command output on
+stdout and diagnostics (warnings, `--verbose` logs) on stderr. Capturing
+either one to a file (`> out.json`, `2> warnings.log`) yields plain text
+with no ANSI escape codes.
+
 ### 🔔 Update Notifications
 
 After a successful command, PCLI2 prints a one-line hint on stderr when a

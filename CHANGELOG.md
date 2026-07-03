@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Timed-out requests are retried only for reads** - A network timeout can fire after the server has started processing a request, so retrying a timed-out write (POST/PUT/DELETE) could apply an operation twice. Timeouts now retry only GET requests; connection failures (request never reached the server) and transient status codes (408/429/502/503/504) retry for all methods as before.
+- **Failed update checks are not re-attempted until the next daily window** - Previously an unreachable GitHub API (offline, firewalled, rate-limited) caused the version check to be re-attempted on every command once its cache went stale, adding up to 3 seconds per command. A failed check now counts as the day's attempt.
+- **Man page SYNOPSIS shows the real invocation** - Pages now read `pcli2 folder delete [OPTIONS]` instead of `pcli2-folder-delete [OPTIONS]`, while page names/headers keep the git-style dashed form (`pcli2-folder-delete(1)`).
+
 ## [1.9.0] - 2026-07-02
 
 ### Added

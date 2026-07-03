@@ -74,10 +74,13 @@ fn init_logging(matches: &clap::ArgMatches) {
     };
 
     // Diagnostics go to stderr so stdout stays clean for command output
-    // (pipes, --format json/csv, shell completions)
+    // (pipes, --format json/csv, shell completions). ANSI colors are
+    // disabled when stderr is redirected or the user opted out, since
+    // tracing-subscriber would otherwise emit escape codes unconditionally.
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .with_writer(std::io::stderr)
+        .with_ansi(pcli2::terminal::stderr_colors_enabled())
         .init();
 }
 

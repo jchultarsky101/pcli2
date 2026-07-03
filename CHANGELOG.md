@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Homebrew formula published automatically** - Releases now push an updated formula to the `jchultarsky101/homebrew-pcli2` tap via cargo-dist, so `brew install jchultarsky101/pcli2/pcli2` installs the current version (the tap had been stuck at v1.0.0). Requires the `HOMEBREW_TAP_TOKEN` repository secret.
 - **`PCLI2_TIMEOUT` environment variable** - Overrides the request timeout (seconds). The default remains 30 minutes, which large model transfers require; users working with small files can opt into faster failures.
 
+### Fixed
+- **Redirected diagnostics are free of ANSI escape codes** - tracing output (warnings, debug logs) emitted color codes even when stderr was redirected to a file. Colors on stderr now follow the same rules as stdout: disabled when not a terminal, or when `NO_COLOR`/`PCLI2_NO_COLOR`/`--no-color` is set.
+
 ### Removed
 - **`update-latest-tag.yml` workflow** - It triggered on `release: published`, an event GitHub suppresses for releases created with `GITHUB_TOKEN`, so it had not run since October 2025. Nothing consumes the `latest` git tag it maintained (installers use GitHub's `releases/latest` URLs, which are independent); the stale tag has been deleted.
 

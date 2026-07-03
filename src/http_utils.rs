@@ -21,6 +21,20 @@ fn default_max_retries() -> u32 {
         .unwrap_or(2)
 }
 
+/// Default request timeout in seconds.
+///
+/// The default is intentionally long (30 minutes) because uploads and
+/// downloads of very large model files legitimately take that long. Users
+/// working with small files can lower it with the PCLI2_TIMEOUT environment
+/// variable (seconds).
+fn default_timeout() -> u64 {
+    std::env::var("PCLI2_TIMEOUT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|&seconds| seconds > 0)
+        .unwrap_or(1800)
+}
+
 /// HTTP status codes that indicate a transient condition worth retrying:
 /// request timeout, rate limiting, and upstream gateway failures.
 fn is_transient_status(status: reqwest::StatusCode) -> bool {
@@ -83,14 +97,15 @@ impl Default for HttpRequestConfig {
         let mut default_headers = HashMap::new();
         default_headers.insert("User-Agent".to_string(), "PCLI2".to_string());
 
+        let timeout = default_timeout();
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
             default_headers,
-            timeout: 1800, // 30 minutes (1800 seconds)
+            timeout,
             retry_on_auth_error: true,
-            upload_timeout: Some(1800), // 30 minutes (1800 seconds) for upload operations
-            download_timeout: Some(1800), // 30 minutes (1800 seconds) for download operations
-            search_timeout: Some(1800), // 30 minutes (1800 seconds) for search operations
+            upload_timeout: Some(timeout),
+            download_timeout: Some(timeout),
+            search_timeout: Some(timeout),
             max_retries: default_max_retries(),
         }
     }
@@ -101,14 +116,15 @@ impl HttpRequestConfig {
         let mut default_headers = HashMap::new();
         default_headers.insert("User-Agent".to_string(), "PCLI2".to_string());
 
+        let timeout = default_timeout();
         Self {
             base_url: configuration.get_api_base_url(),
             default_headers,
-            timeout: 1800, // 30 minutes (1800 seconds)
+            timeout,
             retry_on_auth_error: true,
-            upload_timeout: Some(1800), // 30 minutes (1800 seconds) for upload operations
-            download_timeout: Some(1800), // 30 minutes (1800 seconds) for download operations
-            search_timeout: Some(1800), // 30 minutes (1800 seconds) for search operations
+            upload_timeout: Some(timeout),
+            download_timeout: Some(timeout),
+            search_timeout: Some(timeout),
             max_retries: default_max_retries(),
         }
     }

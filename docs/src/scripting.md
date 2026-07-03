@@ -116,6 +116,18 @@ retries; tune it with `PCLI2_MAX_RETRIES` (0 disables retries):
 PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Root/Models/" --output ./downloads
 ```
 
+The request timeout defaults to 30 minutes (large model files take that
+long to transfer). Lower it with `PCLI2_TIMEOUT` (seconds) if you prefer
+fast failures over patience:
+
+```bash
+PCLI2_TIMEOUT=120 pcli2 asset list --folder-path "/Root/Models/"
+```
+
+Note that timeouts abort-and-retry only read requests (GETs); a timed-out
+write is never retried automatically because the server may have already
+processed it.
+
 ## Update Notifications
 
 In interactive terminal sessions, PCLI2 prints a one-line hint on stderr

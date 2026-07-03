@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Homebrew formula published automatically** - Releases now push an updated formula to the `jchultarsky101/homebrew-pcli2` tap via cargo-dist, so `brew install jchultarsky101/pcli2/pcli2` installs the current version (the tap had been stuck at v1.0.0). Requires the `HOMEBREW_TAP_TOKEN` repository secret.
+- **`PCLI2_TIMEOUT` environment variable** - Overrides the request timeout (seconds). The default remains 30 minutes, which large model transfers require; users working with small files can opt into faster failures.
+
+### Removed
+- **`update-latest-tag.yml` workflow** - It triggered on `release: published`, an event GitHub suppresses for releases created with `GITHUB_TOKEN`, so it had not run since October 2025. Nothing consumes the `latest` git tag it maintained (installers use GitHub's `releases/latest` URLs, which are independent); the stale tag has been deleted.
+
 ### Changed
 - **Timed-out requests are retried only for reads** - A network timeout can fire after the server has started processing a request, so retrying a timed-out write (POST/PUT/DELETE) could apply an operation twice. Timeouts now retry only GET requests; connection failures (request never reached the server) and transient status codes (408/429/502/503/504) retry for all methods as before.
 - **Failed update checks are not re-attempted until the next daily window** - Previously an unreachable GitHub API (offline, firewalled, rate-limited) caused the version check to be re-attempted on every command once its cache went stale, adding up to 3 seconds per command. A failed check now counts as the day's attempt.
@@ -30,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Warnings are no longer printed twice** - Warnings (e.g. skipped rows in `asset metadata create-batch --continue-on-error`) were emitted both through tracing and a direct stderr print. They now go through tracing only, so their visibility is controlled by `--verbose`/`--quiet`, `RUST_LOG`, or `PCLI2_LOG_LEVEL`. The tracing subscriber also writes to stderr (previously stdout), so diagnostics never pollute piped command output.
+  - **Note for script authors**: warning lines now use the tracing format (`<timestamp> WARN <module>: <message>`) instead of the previous `⚠️  Warning: <message>` prefix - scripts that matched the old literal prefix on stderr need updating.
+  - **Note on `--quiet`**: warnings are suppressed under `--quiet` (errors only). End-of-run summaries (batch statistics and remediation blocks) are still printed.
 
 ## [1.8.2] - 2026-07-02
 

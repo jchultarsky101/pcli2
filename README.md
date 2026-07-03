@@ -381,6 +381,14 @@ variable (0 disables retries):
 PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Root/Models/" --output ./downloads
 ```
 
+The request timeout defaults to 30 minutes because very large model files
+legitimately take that long to transfer. If you work with small files and
+prefer fast failures, lower it with `PCLI2_TIMEOUT` (seconds):
+
+```bash
+PCLI2_TIMEOUT=120 pcli2 asset list --folder-path "/Root/Models/"
+```
+
 ### 🎨 Color Control
 
 Colors are disabled automatically when output is piped or redirected.

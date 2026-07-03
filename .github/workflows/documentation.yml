@@ -1,14 +1,22 @@
 name: Deploy Documentation
 
 on:
-  # Deploy after the GitHub Release is published so oranda bakes the new
-  # version's install links into the site. The previous workflow_run trigger
-  # ("Release" completed on main) matched the back-merge PR's plan-only check
-  # rather than the tag-triggered cargo-dist run (whose head branch is the
-  # tag, not main), so docs could build before the release existed and ship
-  # stale install links (observed with v1.9.0, which deployed v1.8.2 links).
-  release:
-    types: [published]
+  # Deploy after the tag-triggered cargo-dist run completes, so oranda bakes
+  # the new version's install links into the site.
+  #
+  # Why not `release: types: [published]`: release.yml publishes the GitHub
+  # Release with GITHUB_TOKEN, and events caused by GITHUB_TOKEN do not
+  # trigger other workflows (recursion prevention) - update-latest-tag.yml
+  # uses that trigger and has been dead since 2025 for the same reason.
+  #
+  # Why no `branches: [main]` filter: a tag run's head branch is the tag
+  # (e.g. v1.9.0), not main, so that filter matched the back-merge PR's
+  # plan-only check instead - docs then built before the release existed and
+  # shipped stale install links (observed with v1.9.0). The build job's
+  # `if` selects the tag push run (event == push) and ignores PR runs.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +34,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-02
+
 ### Added
 - **Homebrew formula published automatically** - Releases now push an updated formula to the `jchultarsky101/homebrew-pcli2` tap via cargo-dist, so `brew install jchultarsky101/pcli2/pcli2` installs the current version (the tap had been stuck at v1.0.0). Requires the `HOMEBREW_TAP_TOKEN` repository secret.
 - **`PCLI2_TIMEOUT` environment variable** - Overrides the request timeout (seconds). The default remains 30 minutes, which large model transfers require; users working with small files can opt into faster failures.

@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Colors are TTY-aware and respect `NO_COLOR`** - The banner, help examples, and help styling no longer emit ANSI escape codes when output is piped or redirected, when `NO_COLOR`/`PCLI2_NO_COLOR` is set, or when the global `--no-color` flag (previously defined but inoperative) is passed.
 - **Consistent progress bars** - All overall progress bars now show ETA and throughput (the batch upload, asset download, and batch create bars were missing one or both), and per-file spinners show elapsed time.
 
+### Fixed
+- **Warnings are no longer printed twice** - Warnings (e.g. skipped rows in `asset metadata create-batch --continue-on-error`) were emitted both through tracing and a direct stderr print. They now go through tracing only, so their visibility is controlled by `--verbose`/`--quiet`, `RUST_LOG`, or `PCLI2_LOG_LEVEL`. The tracing subscriber also writes to stderr (previously stdout), so diagnostics never pollute piped command output.
+
 ## [1.8.2] - 2026-07-02
 
 ### Fixed

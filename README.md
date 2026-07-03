@@ -1057,16 +1057,23 @@ Generate Unix man pages for PCLI2 and every subcommand (one page per
 command, e.g. `pcli2-folder-delete.1`):
 
 ```bash
-# Write pages to a directory
-pcli2 man --output-dir ./man
-
-# Install for the current user (path may vary by system)
+# Install for the current user, then read pages by name.
+# Note: `man` only searches the directories listed by `manpath` - it never
+# looks in the current directory, so the pages must be installed (or opened
+# by path) to be found. If ~/.local/share/man is not in your `manpath`
+# output, use a directory that is (e.g. /usr/local/share/man/man1).
 mkdir -p ~/.local/share/man/man1
 pcli2 man --output-dir ~/.local/share/man/man1
-
-# Read a page
+man pcli2
 man pcli2-asset-create-batch
+
+# Or read a generated file directly without installing
+pcli2 man --output-dir ./man
+man ./man/pcli2.1
 ```
+
+The pages are a snapshot of the CLI at generation time - re-run the install
+command after upgrading PCLI2 to refresh them.
 
 ## 🤝 Support
 

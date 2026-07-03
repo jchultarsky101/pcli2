@@ -269,6 +269,9 @@ After completing this quick start guide, explore these topics:
 For help with any command, use the built-in help system:
 
 ```bash
+# Install man pages for offline reference (man pcli2, man pcli2-asset-create, ...)
+mkdir -p ~/.local/share/man/man1 && pcli2 man --output-dir ~/.local/share/man/man1
+
 # General help
 pcli2 --help
 

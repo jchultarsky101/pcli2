@@ -1,10 +1,14 @@
 name: Deploy Documentation
 
 on:
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
-    branches: [main]
+  # Deploy after the GitHub Release is published so oranda bakes the new
+  # version's install links into the site. The previous workflow_run trigger
+  # ("Release" completed on main) matched the back-merge PR's plan-only check
+  # rather than the tag-triggered cargo-dist run (whose head branch is the
+  # tag, not main), so docs could build before the release existed and ship
+  # stale install links (observed with v1.9.0, which deployed v1.8.2 links).
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +26,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

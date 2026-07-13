@@ -60,9 +60,9 @@ pub fn metadata_command() -> Command {
                         .long("type")
                         .num_args(1)
                         .required(false)
-                        .value_parser(["text", "number", "boolean"])
+                        .value_parser(["text", "number", "boolean", "url"])
                         .default_value("text")
-                        .help("Metadata field type (text, number, boolean) - default: text")
+                        .help("Metadata field type (text, number, boolean, url) - default: text")
                 )
                 .group(
                     ArgGroup::new("asset_identifier")
@@ -107,14 +107,20 @@ pub fn metadata_command() -> Command {
                     CLASSIC (vertical) format — one row per asset+field combination:\n\
                     - ASSET_PATH: The full path of the asset in Physna\n\
                     - NAME: The name of the metadata field to set\n\
-                    - VALUE: The value to set for the metadata field\n\n\
+                    - VALUE: The value to set for the metadata field\n\
+                    - TYPE: Optional field type (text, number, boolean, url); \
+                    default text. Values are automatically coerced to each \
+                    field's type — a number-typed field receives 18, not \"18\". \
+                    For a field that already exists in Physna its registered type \
+                    is authoritative and TYPE only applies when registering a new \
+                    field.\n\n\
                     If an asset has multiple metadata fields to update, include multiple rows \n\
                     with the same ASSET_PATH but different NAME and VALUE combinations.\n\n\
                     Example:\n\
-                    ASSET_PATH,NAME,VALUE\n\
-                    folder/subfolder/asset1.stl,Material,Steel\n\
-                    folder/subfolder/asset1.stl,Weight,\"15.5 kg\"\n\
-                    folder/subfolder/asset2.ipt,Material,Aluminum\n\n\
+                    ASSET_PATH,NAME,VALUE,TYPE\n\
+                    folder/subfolder/asset1.stl,Material,Steel,text\n\
+                    folder/subfolder/asset1.stl,Inventory Qty,18,number\n\
+                    folder/subfolder/asset2.ipt,Exportable,true,boolean\n\n\
                     UI (horizontal) format — one row per asset, as exported by the Physna \
                     web UI's bulk metadata upload:\n\
                     - path: The full path of the asset in Physna\n\
@@ -136,12 +142,13 @@ pub fn metadata_command() -> Command {
                     - Values containing commas, quotes, or newlines must be enclosed in double quotes\n\n\
                     The command groups metadata by asset and updates all metadata \
                     for each asset in a single API call.\n\n\
-                    By default, any error (such as an asset that cannot be resolved \
-                    or a failed metadata API call) terminates the batch operation. \
-                    Pass --continue-on-error to skip assets that cannot be resolved \
-                    and continue with the remaining rows. Metadata API errors always \
-                    terminate execution regardless of this flag, because the API already \
-                    retries transient failures internally."
+                    By default, any error (such as an asset that cannot be resolved, \
+                    a metadata type conflict, or a failed metadata API call) terminates \
+                    the batch operation. Pass --continue-on-error to skip the offending \
+                    asset — whether it cannot be resolved or its metadata update fails — \
+                    and continue with the remaining rows. A type conflict occurs when a \
+                    value cannot be represented as the field's registered type (for \
+                    example the text \"N/A\" for a number field)."
                 )
                 .arg(tenant_parameter())
                 .arg(

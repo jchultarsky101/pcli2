@@ -563,7 +563,11 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         };
 
         // Split into fields to delete (empty value, only present when the file
-        // was parsed with --delete-if-empty) and fields to update (non-empty value)
+        // was parsed with --delete-if-empty) and fields to update (non-empty
+        // value). Values are kept as JSON strings here; the actual coercion to
+        // each field's type (registered type wins, else the declared TYPE
+        // column) happens in update_asset_metadata_with_registration, which is
+        // the only layer that knows the tenant's field-type registry.
         let mut fields_to_delete: Vec<String> = Vec::new();
         let mut typed_metadata: HashMap<String, serde_json::Value> = HashMap::new();
 
@@ -575,6 +579,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 typed_metadata.insert(field_name.clone(), json_value);
             }
         }
+        let declared_types = &entry.types;
 
         // Delete fields with empty values
         if !fields_to_delete.is_empty() {
@@ -599,6 +604,16 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     failure_count += 1;
                     break;
                 }
+                failure_count += 1;
+
+                if continue_on_error {
+                    warn(format!(
+                        "Skipped '{}' — metadata delete failed: {}",
+                        asset_display, e
+                    ));
+                    continue;
+                }
+
                 report(
                     format!(
                         "Failed to delete metadata fields for asset '{}': {}",
@@ -607,9 +622,9 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     &[
                         "Verify the metadata field names exist on this asset",
                         "Check that you have sufficient permissions to modify this asset",
+                        "Or re-run with --continue-on-error to skip failing assets",
                     ],
                 );
-                failure_count += 1;
                 if let Some(pb) = progress_bar.as_ref() {
                     pb.finish_and_clear();
                 }
@@ -628,6 +643,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     &tenant.uuid,
                     &asset.uuid(),
                     &typed_metadata,
+                    Some(declared_types),
                 )
                 .await
             {
@@ -648,6 +664,19 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     break;
                 }
 
+                failure_count += 1;
+
+                // In continue-on-error mode a per-asset failure (most often a
+                // metadata type conflict) skips just this asset and the run
+                // proceeds, mirroring how unresolved assets are handled.
+                if continue_on_error {
+                    warn(format!(
+                        "Skipped '{}' — metadata update failed: {}",
+                        asset_display, e
+                    ));
+                    continue;
+                }
+
                 let error_str = format!("{}", e);
                 if error_str.contains("must be a") || error_str.contains("Metadata type mismatch") {
                     report(
@@ -656,6 +685,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             "The metadata field already exists with a different type",
                             "Delete the existing field first if you need to change its type",
                             "Or provide a value that matches the existing field type",
+                            "Or re-run with --continue-on-error to skip conflicting assets",
                         ],
                     );
                 } else {
@@ -669,10 +699,10 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             "Check that you have sufficient permissions to modify this asset",
                             "Verify your network connectivity",
                             "Confirm the asset hasn't been deleted or modified recently",
+                            "Or re-run with --continue-on-error to skip failing assets",
                         ],
                     );
                 }
-                failure_count += 1;
                 if let Some(pb) = progress_bar.as_ref() {
                     pb.finish_and_clear();
                 }
@@ -766,6 +796,12 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
         std::collections::HashMap::new();
     metadata.insert(metadata_name.clone(), json_value);
 
+    // The --type flag declares how the field should be registered if it does
+    // not yet exist. For an existing field the registered type wins.
+    let mut declared_types: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    declared_types.insert(metadata_name.clone(), metadata_type.to_string());
+
     // Resolve asset ID from either UUID parameter or path
     let asset = if let Some(uuid) = asset_uuid_param {
         api.get_asset_by_uuid(&tenant.uuid, uuid).await?
@@ -780,8 +816,13 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
     };
 
     // Update the asset's metadata with automatic registration of new keys
-    api.update_asset_metadata_with_registration(&tenant.uuid, &asset.uuid(), &metadata)
-        .await?;
+    api.update_asset_metadata_with_registration(
+        &tenant.uuid,
+        &asset.uuid(),
+        &metadata,
+        Some(&declared_types),
+    )
+    .await?;
 
     // No output on success (per requirements)
 

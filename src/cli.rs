@@ -210,6 +210,27 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     pcli2::actions::tenants::get_tenant_state_counts(sub_matches).await?;
                     Ok(())
                 }
+                Some((COMMAND_METADATA, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_METADATA);
+
+                    match sub_matches.subcommand() {
+                        Some((COMMAND_LIST, sub_matches)) => {
+                            trace!(
+                                "Command: {} {} {}",
+                                COMMAND_TENANT,
+                                COMMAND_METADATA,
+                                COMMAND_LIST
+                            );
+
+                            pcli2::actions::tenants::list_tenant_metadata_fields(sub_matches)
+                                .await?;
+                            Ok(())
+                        }
+                        _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                            sub_matches,
+                        ))),
+                    }
+                }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                     sub_matches,
                 ))),

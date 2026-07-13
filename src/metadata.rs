@@ -159,10 +159,11 @@ pub fn convert_single_metadata_to_json_value(
             serde_json::Value::Bool(bool_val)
         }
         _ => {
-            // Text (the default): always serialize as a JSON string, even when the
-            // value looks numeric or boolean. The `--type` flag is authoritative, so
-            // `--type text --value 100` must produce the string "100" rather than the
-            // number 100 (which the API rejects for string-typed metadata fields).
+            // Text (the default) and other string-backed types such as `url`:
+            // always serialize as a JSON string, even when the value looks
+            // numeric or boolean. The `--type` flag is authoritative, so
+            // `--type text --value 100` must produce the string "100" rather than
+            // the number 100 (which the API rejects for string-typed fields).
             serde_json::Value::String(value.to_string())
         }
     }
@@ -228,6 +229,14 @@ mod tests {
             value,
             Value::Number(serde_json::Number::from_f64(2.5).unwrap())
         );
+    }
+
+    #[test]
+    fn url_type_serializes_as_string() {
+        // A url-typed field stores a plain JSON string.
+        let value =
+            convert_single_metadata_to_json_value("Supplier Link", "https://example.com/", "url");
+        assert_eq!(value, Value::String("https://example.com/".to_string()));
     }
 
     #[test]

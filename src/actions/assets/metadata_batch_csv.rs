@@ -18,11 +18,33 @@
 //! classic. Detection can be overridden with the `--csv-format` argument.
 
 use crate::actions::CliActionError;
+use crate::model::normalize_path;
 use std::collections::HashMap;
 use std::io::Read;
 
+/// Normalize an asset path from a batch CSV row to the form the API lookup
+/// expects.
+///
+/// Applies the shared [`normalize_path`] rules — which, per Physna convention,
+/// treat a leading `/Home` (case-insensitive) as the root and collapse
+/// redundant slashes — then drops the single leading slash to match how batch
+/// asset paths are resolved. So `/Home/NX/1.prt`, `/NX/1.prt`, and `NX/1.prt`
+/// all resolve to the same asset (`NX/1.prt`).
+fn normalize_batch_asset_path(raw: &str) -> String {
+    let normalized = normalize_path(raw);
+    normalized
+        .strip_prefix('/')
+        .unwrap_or(&normalized)
+        .to_string()
+}
+
 /// Column-name prefix that marks a metadata column in the UI format.
 pub const METADATA_COLUMN_PREFIX: &str = "metadata:";
+
+/// Field types accepted in the classic layout's optional `TYPE` column. The
+/// registered Physna type is authoritative for existing fields; this declared
+/// type only governs how a *new* field is registered.
+pub const DECLARED_TYPES: [&str; 4] = ["text", "number", "boolean", "url"];
 
 /// How an asset is identified by a batch CSV row.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -74,6 +96,11 @@ pub struct BatchEntry {
     /// "delete this field"; empty values are only produced when the file is
     /// parsed with `delete_if_empty`, otherwise they are skipped.
     pub metadata: HashMap<String, String>,
+    /// Optional caller-declared field type keyed by metadata field name, from
+    /// the classic layout's fourth `TYPE` column. Only used when *registering*
+    /// a new field; for a field that already exists in Physna the registered
+    /// type is authoritative. Absent entries default to `text`.
+    pub types: HashMap<String, String>,
 }
 
 /// Result of parsing a batch CSV file.
@@ -99,7 +126,10 @@ pub fn parse_batch_csv<R: Read>(
     requested: BatchCsvFormat,
     delete_if_empty: bool,
 ) -> Result<ParsedBatch, CliActionError> {
-    let mut csv_reader = csv::Reader::from_reader(reader);
+    // Flexible mode allows rows to have a different field count than the header.
+    // This makes the classic layout's fourth TYPE column optional per row: some
+    // rows may supply it and others may omit it without a length error.
+    let mut csv_reader = csv::ReaderBuilder::new().flexible(true).from_reader(reader);
     let headers = csv_reader.headers()?.clone();
 
     let has_metadata_columns = headers
@@ -152,14 +182,26 @@ impl EntryAccumulator {
         }
     }
 
-    fn add(&mut self, asset: BatchAssetRef, field: String, value: String) {
+    fn add(
+        &mut self,
+        asset: BatchAssetRef,
+        field: String,
+        value: String,
+        declared_type: Option<String>,
+    ) {
         let index = *self.index_by_asset.entry(asset.clone()).or_insert_with(|| {
             self.entries.push(BatchEntry {
                 asset,
                 metadata: HashMap::new(),
+                types: HashMap::new(),
             });
             self.entries.len() - 1
         });
+        if let Some(declared_type) = declared_type {
+            self.entries[index]
+                .types
+                .insert(field.clone(), declared_type);
+        }
         self.entries[index].metadata.insert(field, value);
     }
 }
@@ -172,6 +214,8 @@ fn parse_classic<R: Read>(
 ) -> Result<ParsedBatch, CliActionError> {
     let mut accumulator = EntryAccumulator::new();
     let mut skipped_empty = 0usize;
+    let mut warnings = Vec::new();
+    let mut invalid_types: Vec<String> = Vec::new();
 
     for result in csv_reader.records() {
         let record = result?;
@@ -179,6 +223,8 @@ fn parse_classic<R: Read>(
             let asset_path = record[0].trim();
             let metadata_name = record[1].trim();
             let metadata_value = record[2].trim();
+            // Optional fourth column declares the field type for registration.
+            let declared_type_raw = record.get(3).map(str::trim).unwrap_or("");
 
             // Empty values either mark the field for deletion (with
             // --delete-if-empty) or are skipped, leaving the field untouched.
@@ -187,20 +233,44 @@ fn parse_classic<R: Read>(
                 continue;
             }
 
-            let clean_asset_path = asset_path.strip_prefix('/').unwrap_or(asset_path);
+            // Normalize and validate the declared type. An unrecognized type is
+            // not fatal: it is reported and the field falls back to the default
+            // (text for a new field, or the registered type if it already
+            // exists).
+            let declared_type = if declared_type_raw.is_empty() {
+                None
+            } else {
+                let normalized = declared_type_raw.to_ascii_lowercase();
+                if DECLARED_TYPES.contains(&normalized.as_str()) {
+                    Some(normalized)
+                } else {
+                    invalid_types.push(declared_type_raw.to_string());
+                    None
+                }
+            };
+
             accumulator.add(
-                BatchAssetRef::Path(clean_asset_path.to_string()),
+                BatchAssetRef::Path(normalize_batch_asset_path(asset_path)),
                 metadata_name.to_string(),
                 metadata_value.to_string(),
+                declared_type,
             );
         }
     }
 
-    let mut warnings = Vec::new();
     if skipped_empty > 0 {
         warnings.push(format!(
             "{} row(s) with an empty VALUE were skipped; pass --delete-if-empty to delete those metadata fields instead",
             skipped_empty
+        ));
+    }
+    if !invalid_types.is_empty() {
+        invalid_types.sort();
+        invalid_types.dedup();
+        warnings.push(format!(
+            "Ignoring unrecognized TYPE value(s): {} (expected one of: {}); those fields fall back to their existing or default (text) type",
+            invalid_types.join(", "),
+            DECLARED_TYPES.join(", ")
         ));
     }
 
@@ -296,8 +366,7 @@ fn parse_ui<R: Read>(
             })?;
             BatchAssetRef::Uuid(uuid)
         } else if !path_value.is_empty() {
-            let clean_path = path_value.strip_prefix('/').unwrap_or(path_value);
-            BatchAssetRef::Path(clean_path.to_string())
+            BatchAssetRef::Path(normalize_batch_asset_path(path_value))
         } else {
             return Err(CliActionError::BusinessLogicError(format!(
                 "Line {}: row has neither an 'id' nor a 'path' value to identify the asset",
@@ -311,7 +380,9 @@ fn parse_ui<R: Read>(
             // Empty cells mark the field for deletion (with --delete-if-empty)
             // or are skipped, leaving the existing field value untouched.
             if !value.is_empty() || delete_if_empty {
-                accumulator.add(asset.clone(), field_name.clone(), value.to_string());
+                // The UI layout has no type column; new fields register as text
+                // and existing fields use their registered type.
+                accumulator.add(asset.clone(), field_name.clone(), value.to_string(), None);
                 row_has_values = true;
             }
         }
@@ -365,6 +436,85 @@ mod tests {
         // Leading slash is stripped
         let b = &parsed.entries[1];
         assert_eq!(b.asset, BatchAssetRef::Path("folder/b.stl".to_string()));
+    }
+
+    #[test]
+    fn classic_home_prefix_normalizes_to_root() {
+        // Physna shows the root folder as "Home"; a "/Home/..." path means the
+        // same asset as the equivalent root-relative path. All three spellings
+        // must resolve to the same asset reference.
+        let csv = "ASSET_PATH,NAME,VALUE\n\
+                   /Home/NX/1.prt,Qty,1\n\
+                   /NX/1.prt,Color,Blue\n\
+                   NX/1.prt,Material,Steel\n\
+                   /home/NX/2.prt,Qty,2\n";
+        let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        // First three rows all target NX/1.prt and merge into one entry.
+        assert_eq!(parsed.entries.len(), 2);
+        let a = &parsed.entries[0];
+        assert_eq!(a.asset, BatchAssetRef::Path("NX/1.prt".to_string()));
+        assert_eq!(a.metadata.len(), 3);
+        // Case-insensitive: "/home/..." also normalizes.
+        let b = &parsed.entries[1];
+        assert_eq!(b.asset, BatchAssetRef::Path("NX/2.prt".to_string()));
+    }
+
+    #[test]
+    fn ui_home_prefix_normalizes_to_root() {
+        let csv = "path,id,metadata:Material\n\
+                   /Home/NX/1.prt,,Steel\n\
+                   NX/1.prt,,Aluminum\n";
+        let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        // Both rows target NX/1.prt; the second row wins on the field conflict.
+        assert_eq!(parsed.entries.len(), 1);
+        assert_eq!(
+            parsed.entries[0].asset,
+            BatchAssetRef::Path("NX/1.prt".to_string())
+        );
+        assert_eq!(
+            parsed.entries[0].metadata.get("Material").unwrap(),
+            "Aluminum"
+        );
+    }
+
+    #[test]
+    fn classic_reads_optional_type_column() {
+        let csv = "ASSET_PATH,NAME,VALUE,TYPE\n\
+                   NX/1.prt,Inventory Qty,18,number\n\
+                   NX/1.prt,Supplier Link,https://x.com/,url\n\
+                   NX/1.prt,Description,A part,\n\
+                   NX/1.prt,Material,Steel\n";
+        let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        assert_eq!(parsed.format, BatchCsvFormat::Classic);
+        let entry = &parsed.entries[0];
+        assert_eq!(entry.metadata.get("Inventory Qty").unwrap(), "18");
+        assert_eq!(entry.types.get("Inventory Qty").unwrap(), "number");
+        assert_eq!(entry.types.get("Supplier Link").unwrap(), "url");
+        // Empty TYPE cell and a missing TYPE column both mean "no declared type".
+        assert!(!entry.types.contains_key("Description"));
+        assert!(!entry.types.contains_key("Material"));
+    }
+
+    #[test]
+    fn classic_type_column_is_case_insensitive() {
+        let csv = "ASSET_PATH,NAME,VALUE,TYPE\n\
+                   NX/1.prt,Qty,18,NUMBER\n";
+        let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        assert_eq!(parsed.entries[0].types.get("Qty").unwrap(), "number");
+    }
+
+    #[test]
+    fn classic_unknown_type_is_warned_and_ignored() {
+        let csv = "ASSET_PATH,NAME,VALUE,TYPE\n\
+                   NX/1.prt,Qty,18,integer\n";
+        let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        // Value is still captured; only the bad type declaration is dropped.
+        assert_eq!(parsed.entries[0].metadata.get("Qty").unwrap(), "18");
+        assert!(!parsed.entries[0].types.contains_key("Qty"));
+        assert!(parsed
+            .warnings
+            .iter()
+            .any(|w| w.contains("unrecognized TYPE") && w.contains("integer")));
     }
 
     #[test]

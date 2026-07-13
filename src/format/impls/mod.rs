@@ -8,6 +8,7 @@
 //! - `tenant`: Tenant and TenantList formatting
 //! - `asset`: Asset, AssetList, and thumbnail variants formatting
 //! - `metadata`: AssetMetadata formatting
+//! - `metadata_field`: tenant metadata-field registry (`tenant metadata list`)
 //! - `match_ops`: Search and match response formatting (part search, geometric search, etc.)
 //! - `dependencies`: Asset dependency and assembly tree formatting
 //! - `state`: Asset state counts formatting
@@ -19,5 +20,6 @@ mod folder;
 mod health;
 mod match_ops;
 mod metadata;
+mod metadata_field;
 mod state;
 mod tenant;

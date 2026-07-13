@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-07-13
+
+### Added
+- **`tenant metadata list` command** - Lists every metadata field registered in the tenant along with its data type (`text`, `number`, `boolean`, `url`). Supports `--format json|csv|tree` (alias `ls`). The CSV output uses the same column header as the classic `asset metadata create-batch` input (`ASSET_PATH,NAME,VALUE,TYPE`), with `NAME` and `TYPE` filled from the registry and `ASSET_PATH`/`VALUE` left blank — so a listing can be saved and turned directly into a batch-upload template.
+- **Optional `TYPE` column for `asset metadata create-batch`** - The classic CSV layout accepts an optional fourth `TYPE` column (`text`, `number`, `boolean`, or `url`; default `text`), applied per row. It sets the type used when *registering a new* metadata field; for a field that already exists, its registered type stays authoritative. The `url` type is now also accepted by single `asset metadata create --type`.
+
+### Fixed
+- **Batch metadata upload no longer fails on non-text fields** - `asset metadata create-batch` sent every CSV value as a string, so `number`, `boolean`, and `url` fields were rejected with a "type mismatch" error. Values are now automatically coerced to each field's registered type (e.g. `18` for a number field, `true` for a boolean, a URL string for a url field), so existing typed fields populate without any extra configuration. A value that cannot be represented as the field's type (e.g. `N/A` for a number field) is reported as a type conflict.
+- **`/Home` asset paths in batch uploads resolve to the root** - A leading `/Home` (the name Physna shows for the root folder) in an `ASSET_PATH` is normalized to the root, so `/Home/NX/part.prt` and `NX/part.prt` refer to the same asset. Rows that spell the same asset differently now merge onto one asset instead of splitting into separate lookups.
+
+### Changed
+- **`asset metadata create-batch --continue-on-error` also skips metadata failures** - Previously the flag skipped only assets whose path could not be resolved; a failed metadata update or delete (such as a type conflict) always terminated the batch. It now skips the offending asset and continues, consistent with how unresolved paths are handled. Authentication failures remain fatal.
+
 ## [1.10.0] - 2026-07-02
 
 ### Added

@@ -636,6 +636,7 @@ Quick reference for all available command aliases:
 | `pcli2 tenant list` | `pcli2 tenant ls` |
 | `pcli2 tenant use` | `pcli2 tenant select` |
 | `pcli2 tenant clear` | `pcli2 tenant unset` |
+| `pcli2 tenant metadata list` | `pcli2 tenant metadata ls` |
 
 ### Folder Commands
 | Full Command | Alias |
@@ -813,16 +814,18 @@ The `asset metadata create-batch` command accepts two CSV layouts. The layout is
 **Classic (vertical) format** — one row per asset+field combination:
 
 ```
-ASSET_PATH,NAME,VALUE
-/Root/Folder/Model1.stl,Material,Steel
-/Root/Folder/Model1.stl,Weight,"15.5 kg"
-/Root/Folder/Model2.ipt,Material,Aluminum
-/Root/Folder/Model2.ipt,Supplier,Richardson Electronics
+ASSET_PATH,NAME,VALUE,TYPE
+/Root/Folder/Model1.stl,Material,Steel,text
+/Root/Folder/Model1.stl,Weight,15.5,number
+/Root/Folder/Model2.ipt,Inventory Qty,42,number
+/Root/Folder/Model2.ipt,Supplier Link,https://example.com/,url
 ```
 
-- The first row must contain the headers `ASSET_PATH,NAME,VALUE`
+- The first row must contain the headers `ASSET_PATH,NAME,VALUE`, optionally followed by `TYPE`
 - Each row represents a single metadata field assignment for an asset
 - If an asset has multiple metadata fields to update, include multiple rows with the same `ASSET_PATH` but different `NAME` and `VALUE` combinations
+- **`TYPE`** is optional (default `text`; one of `text`, `number`, `boolean`, `url`) and only sets the type used when *registering a new* field — for an existing field, its registered type is authoritative and `TYPE` is ignored
+- A leading `/Home` in `ASSET_PATH` (Physna's name for the root folder) is treated as the root, so `/Home/NX/part.prt` and `NX/part.prt` refer to the same asset
 
 **UI (horizontal) format** — one row per asset, as exported by the Physna web UI's bulk metadata upload:
 
@@ -838,6 +841,8 @@ path,id,metadata:Material,metadata:Color
 
 In both formats, empty values are skipped by default (existing metadata is left untouched). Pass `--delete-if-empty` to instead delete a metadata field from the asset when the file contains an empty value for it.
 
+**Automatic type coercion**: because a CSV cell is text, each value is coerced to the field's registered type before upload — a `number` field receives `18` (not `"18"`), a `boolean` field accepts `true`/`false`/`yes`/`no`/`1`/`0`, and `text`/`url` fields store the value as a string. A value that cannot be represented as the field's type (e.g. `N/A` for a number field) is a type conflict and is reported as an error.
+
 **General requirements** (both formats):
 - The file must be UTF-8 encoded
 - Values containing commas, quotes, or newlines must be enclosed in double quotes
@@ -845,7 +850,9 @@ In both formats, empty values are skipped by default (existing metadata is left 
 
 **Error Handling**:
 
-By default, the batch stops on the first error and reports how many assets were processed successfully. Pass `--continue-on-error` to skip rows whose `ASSET_PATH` cannot be resolved and continue with the remaining assets. Metadata API failures (e.g. a failed update for a resolved asset) always terminate the batch regardless of the flag, because the API layer already retries transient HTTP failures internally.
+By default, the batch stops on the first error and reports how many assets were processed successfully. Pass `--continue-on-error` to skip the offending asset — whether its `ASSET_PATH` cannot be resolved or its metadata update fails (including a type conflict) — and continue with the remaining assets. Authentication failures always terminate the batch regardless of the flag.
+
+To generate a starting CSV of the fields already registered in the tenant (with their types), use `pcli2 tenant metadata list --format csv --headers` (see [Tenant Commands](#tenant-commands)).
 
 ### Folder Commands
 
@@ -920,12 +927,19 @@ pcli2 folder list --reload --format tree
 Manage tenant-level operations.
 
 ```
-pcli2 tenant list     # List all tenants
-pcli2 tenant get      # Get tenant details
-pcli2 tenant use      # Set the active tenant
-pcli2 tenant current  # Get the active tenant
-pcli2 tenant clear    # Clear the active tenant
-pcli2 tenant state    # Get asset state counts for the current tenant
+pcli2 tenant list           # List all tenants
+pcli2 tenant get            # Get tenant details
+pcli2 tenant use            # Set the active tenant
+pcli2 tenant current        # Get the active tenant
+pcli2 tenant clear          # Clear the active tenant
+pcli2 tenant state          # Get asset state counts for the current tenant
+pcli2 tenant metadata list  # List the tenant's registered metadata fields with their types
+```
+
+The `tenant metadata list` output (CSV) uses the same header as the classic `create-batch` input (`ASSET_PATH,NAME,VALUE,TYPE`) with `NAME` and `TYPE` filled from the registry and `ASSET_PATH`/`VALUE` blank, so it can be saved and turned into a batch-upload template:
+
+```bash
+pcli2 tenant metadata list --format csv --headers > fields.csv
 ```
 
 ### Authentication Commands

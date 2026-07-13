@@ -1907,11 +1907,11 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         asset_uuid: &Uuid,
         metadata: &std::collections::HashMap<String, serde_json::Value>,
+        declared_types: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<(), ApiError> {
         // Get existing metadata fields for the tenant
         let existing_fields_response = self.get_metadata_fields(&tenant_uuid.to_string()).await;
 
-        let mut existing_field_names = std::collections::HashSet::new();
         let mut field_type_map: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 
@@ -1925,7 +1925,6 @@ impl PhysnaApiClient {
                     "Found metadata field: '{}' with type: '{}'",
                     field.name, field.field_type
                 );
-                existing_field_names.insert(field.name.clone());
                 field_type_map.insert(field.name, field.field_type);
             }
         } else {
@@ -1935,54 +1934,79 @@ impl PhysnaApiClient {
             );
         }
 
-        // Check each metadata key for type compatibility before updating
-        for (key, value) in metadata.iter() {
-            debug!(
-                "Checking metadata key '{}' with value type '{}'",
-                key,
-                Self::infer_json_value_type(value)
-            );
-            if existing_field_names.contains(key) {
-                // Field exists - check for type mismatch
-                if let Some(expected_type) = field_type_map.get(key) {
-                    let provided_type = Self::infer_json_value_type(value);
+        // Build the outgoing payload, coercing every value to the type the field
+        // is (or will be) registered with. The registered type is authoritative:
+        // a string "18" is sent as the JSON number 18 for a number-typed field, a
+        // URL string is kept as a string for a url-typed field, and so on. A
+        // value that cannot be represented as the field's type is a genuine
+        // conflict and returns MetadataTypeMismatch.
+        let mut coerced: std::collections::HashMap<String, serde_json::Value> =
+            std::collections::HashMap::with_capacity(metadata.len());
 
-                    // Check if types are incompatible
-                    if !Self::is_type_compatible(expected_type, &provided_type) {
+        for (key, value) in metadata.iter() {
+            if let Some(expected_type) = field_type_map.get(key) {
+                // Field already exists: coerce the value to its registered type.
+                match Self::coerce_value_to_type(value, expected_type) {
+                    Some(coerced_value) => {
                         debug!(
-                            "Type mismatch detected: field '{}' expected '{}' but got '{}'",
-                            key, expected_type, provided_type
+                            "Coerced metadata field '{}' to registered type '{}'",
+                            key, expected_type
                         );
+                        coerced.insert(key.clone(), coerced_value);
+                    }
+                    None => {
                         return Err(ApiError::MetadataTypeMismatch {
                             field_name: key.clone(),
                             expected_type: expected_type.clone(),
-                            provided_type,
+                            provided_type: Self::infer_json_value_type(value),
                         });
                     }
                 }
             } else {
-                debug!(
-                    "Metadata field '{}' not found in existing fields, will attempt to register",
-                    key
-                );
-                // Register the new metadata field (default to text type)
-                let field_result = self
-                    .create_metadata_field(&tenant_uuid.to_string(), key, Some("text"))
-                    .await;
+                // New field: register it with the caller-declared type when
+                // provided, otherwise infer it from the value (defaulting to
+                // text). A declared type must still be able to hold the value.
+                let register_type = declared_types
+                    .and_then(|m| m.get(key))
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| match Self::infer_json_value_type(value).as_str() {
+                        "number" => "number",
+                        "boolean" => "boolean",
+                        _ => "text",
+                    });
 
-                // Log the result of field creation
-                match field_result {
+                let coerced_value = match Self::coerce_value_to_type(value, register_type) {
+                    Some(v) => v,
+                    None => {
+                        return Err(ApiError::MetadataTypeMismatch {
+                            field_name: key.clone(),
+                            expected_type: register_type.to_string(),
+                            provided_type: Self::infer_json_value_type(value),
+                        });
+                    }
+                };
+
+                debug!(
+                    "Metadata field '{}' not found; registering as type '{}'",
+                    key, register_type
+                );
+                match self
+                    .create_metadata_field(&tenant_uuid.to_string(), key, Some(register_type))
+                    .await
+                {
                     Ok(_) => debug!("Successfully registered new metadata field: {}", key),
                     Err(e) => {
                         debug!("Failed to register metadata field '{}': {}", key, e);
-                        // Continue anyway, as the API might allow setting values for unregistered keys
+                        // Continue anyway, as the API might allow setting values
+                        // for unregistered keys.
                     }
                 }
+                coerced.insert(key.clone(), coerced_value);
             }
         }
 
-        // Now update the asset metadata
-        self.update_asset_metadata(tenant_uuid, asset_uuid, metadata)
+        // Now update the asset metadata with the coerced values
+        self.update_asset_metadata(tenant_uuid, asset_uuid, &coerced)
             .await
     }
 
@@ -2004,22 +2028,65 @@ impl PhysnaApiClient {
         }
     }
 
-    /// Check if two metadata types are compatible
+    /// Coerce a JSON value so it matches a metadata field's declared type, or
+    /// return `None` when the value cannot be represented as that type.
     ///
-    /// This function determines if a provided type can be assigned to a field with an expected type.
-    /// For now, we use strict type matching, but this could be extended to allow compatible conversions
-    /// (e.g., number to text).
+    /// The field's type (as registered in Physna) is authoritative, so this is
+    /// how a batch CSV — which carries only string values — gets its values
+    /// turned into the JSON scalars the API requires:
     ///
-    /// # Arguments
-    /// * `expected_type` - The type of the existing metadata field
-    /// * `provided_type` - The type of the value being assigned
+    /// - `number`: an existing JSON number is kept; a string that parses as an
+    ///   integer or float becomes a JSON number; anything else is a conflict.
+    /// - `boolean`: an existing JSON bool is kept; `true/false/1/0/yes/no/on/off`
+    ///   (case-insensitive) parse to a bool; anything else is a conflict.
+    /// - `text`, `url`, and any other string-backed type: the value is stored as
+    ///   a JSON string, stringifying numbers and bools as needed. This is why a
+    ///   URL string is accepted by a `url`-typed field even though the JSON type
+    ///   is "string".
     ///
-    /// # Returns
-    /// * `bool` - true if the types are compatible, false otherwise
-    fn is_type_compatible(expected_type: &str, provided_type: &str) -> bool {
-        // For now, use strict type matching
-        // Future enhancement: allow number -> text conversion since numbers can be stringified
-        expected_type == provided_type
+    /// `Null` is never produced here; empty values are handled as deletes before
+    /// reaching this function.
+    fn coerce_value_to_type(
+        value: &serde_json::Value,
+        field_type: &str,
+    ) -> Option<serde_json::Value> {
+        use serde_json::Value;
+        match field_type {
+            "number" => match value {
+                Value::Number(_) => Some(value.clone()),
+                Value::String(s) => {
+                    let s = s.trim();
+                    if let Ok(i) = s.parse::<i64>() {
+                        Some(Value::Number(i.into()))
+                    } else if let Ok(f) = s.parse::<f64>() {
+                        if f.fract() == 0.0 && f.abs() < i64::MAX as f64 {
+                            Some(Value::Number((f as i64).into()))
+                        } else {
+                            serde_json::Number::from_f64(f).map(Value::Number)
+                        }
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            },
+            "boolean" => match value {
+                Value::Bool(_) => Some(value.clone()),
+                Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+                    "true" | "1" | "yes" | "on" => Some(Value::Bool(true)),
+                    "false" | "0" | "no" | "off" => Some(Value::Bool(false)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            // text, url, and anything else are stored as JSON strings.
+            _ => match value {
+                Value::String(_) => Some(value.clone()),
+                Value::Number(n) => Some(Value::String(n.to_string())),
+                Value::Bool(b) => Some(Value::String(b.to_string())),
+                _ => None,
+            },
+        }
     }
 
     /// Delete specific metadata fields from an asset
@@ -5038,24 +5105,67 @@ mod tests {
     }
 
     #[test]
-    fn test_is_type_compatible_same_types() {
-        assert!(PhysnaApiClient::is_type_compatible("text", "text"));
-        assert!(PhysnaApiClient::is_type_compatible("number", "number"));
-        assert!(PhysnaApiClient::is_type_compatible("boolean", "boolean"));
+    fn test_coerce_string_to_number() {
+        // A batch CSV carries "18" as a string; a number-typed field must
+        // receive the JSON number 18, not the string "18".
+        let v = serde_json::Value::String("18".to_string());
+        assert_eq!(
+            PhysnaApiClient::coerce_value_to_type(&v, "number"),
+            Some(serde_json::Value::Number(18.into()))
+        );
+
+        let v = serde_json::Value::String("84.50".to_string());
+        assert_eq!(
+            PhysnaApiClient::coerce_value_to_type(&v, "number"),
+            serde_json::Number::from_f64(84.5).map(serde_json::Value::Number)
+        );
     }
 
     #[test]
-    fn test_is_type_compatible_different_types() {
-        assert!(!PhysnaApiClient::is_type_compatible("text", "number"));
-        assert!(!PhysnaApiClient::is_type_compatible("number", "boolean"));
-        assert!(!PhysnaApiClient::is_type_compatible("text", "boolean"));
+    fn test_coerce_non_numeric_string_to_number_is_conflict() {
+        let v = serde_json::Value::String("N/A".to_string());
+        assert_eq!(PhysnaApiClient::coerce_value_to_type(&v, "number"), None);
     }
 
     #[test]
-    fn test_is_type_compatible_null_and_array() {
-        assert!(!PhysnaApiClient::is_type_compatible("text", "null"));
-        assert!(!PhysnaApiClient::is_type_compatible("text", "array"));
-        assert!(!PhysnaApiClient::is_type_compatible("text", "object"));
+    fn test_coerce_string_to_boolean() {
+        for (input, expected) in [
+            ("true", true),
+            ("FALSE", false),
+            ("yes", true),
+            ("off", false),
+        ] {
+            let v = serde_json::Value::String(input.to_string());
+            assert_eq!(
+                PhysnaApiClient::coerce_value_to_type(&v, "boolean"),
+                Some(serde_json::Value::Bool(expected)),
+                "input: {input}"
+            );
+        }
+
+        let v = serde_json::Value::String("maybe".to_string());
+        assert_eq!(PhysnaApiClient::coerce_value_to_type(&v, "boolean"), None);
+    }
+
+    #[test]
+    fn test_coerce_url_and_text_keep_string() {
+        // A url-typed field stores a plain JSON string; the value must not be
+        // rejected just because its declared type is "url" rather than "text".
+        let v = serde_json::Value::String("https://example.com/".to_string());
+        assert_eq!(
+            PhysnaApiClient::coerce_value_to_type(&v, "url"),
+            Some(v.clone())
+        );
+        assert_eq!(PhysnaApiClient::coerce_value_to_type(&v, "text"), Some(v));
+    }
+
+    #[test]
+    fn test_coerce_number_to_text_stringifies() {
+        let v = serde_json::Value::Number(18.into());
+        assert_eq!(
+            PhysnaApiClient::coerce_value_to_type(&v, "text"),
+            Some(serde_json::Value::String("18".to_string()))
+        );
     }
 
     #[test]

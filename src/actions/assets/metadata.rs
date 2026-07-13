@@ -164,6 +164,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
                 &tenant.uuid,
                 &match_result.asset.uuid,
                 &new_metadata_map,
+                None,
             )
             .await?;
 

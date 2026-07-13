@@ -68,18 +68,20 @@ In both layouts, **empty values are skipped by default**: the existing metadata 
 The classic CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --csv-file` is designed for seamless round-trip operations:
 
 ```csv
-ASSET_PATH,NAME,VALUE
-/Root/Folder/Model1.stl,Material,Steel
-/Root/Folder/Model1.stl,Weight,"15.5 kg"
-/Root/Folder/Model2.ipt,Material,Aluminum
-/Root/Folder/Model2.ipt,Supplier,Richardson Electronics
+ASSET_PATH,NAME,VALUE,TYPE
+/Root/Folder/Model1.stl,Material,Steel,text
+/Root/Folder/Model1.stl,Weight,15.5,number
+/Root/Folder/Model2.ipt,Inventory Qty,42,number
+/Root/Folder/Model2.ipt,Supplier Link,https://example.com/,url
+/Root/Folder/Model2.ipt,Exportable,true,boolean
 ```
 
 The CSV format specifications:
-- **Header Row**: Must contain exactly `ASSET_PATH,NAME,VALUE` in that order
-- **ASSET_PATH**: Full path to the asset in Physna (e.g., `/Root/Folder/Model.stl`)
+- **Header Row**: Must contain `ASSET_PATH,NAME,VALUE` in that order, optionally followed by `TYPE`
+- **ASSET_PATH**: Path to the asset in Physna (e.g., `/Root/Folder/Model.stl`). A leading `/Home` — the name Physna shows for the root folder — is treated as the root, so `/Home/NX/part.prt`, `/NX/part.prt`, and `NX/part.prt` all refer to the same asset
 - **NAME**: Name of the metadata field to set
-- **VALUE**: Value to assign to the metadata field. An empty value is skipped by default, or deletes the field from the asset when `--delete-if-empty` is passed
+- **VALUE**: Value to assign to the metadata field. Values are automatically coerced to the field's type (see [Metadata Field Types](#metadata-field-types)). An empty value is skipped by default, or deletes the field from the asset when `--delete-if-empty` is passed
+- **TYPE** *(optional)*: One of `text` (default), `number`, `boolean`, or `url`. This only governs the type used when **registering a new** field; for a field that already exists in Physna, the existing registered type is authoritative and the `TYPE` column is ignored. The column is optional per row — some rows may include it and others may omit it
 - **File Encoding**: Must be UTF-8 encoded
 - **Quoting**: Values containing commas, quotes, or newlines must be enclosed in double quotes
 - **Escaping**: Double quotes within values must be escaped by doubling them (e.g., `"15.5"" diameter"`)
@@ -139,6 +141,43 @@ pcli2 asset metadata create-batch --csv-file "ui-export.csv"
 pcli2 asset metadata create-batch --csv-file "ui-export.csv" --csv-format ui
 ```
 
+## Listing a Tenant's Registered Metadata Fields
+
+Metadata fields are registered per tenant, each with a name and a type. Use
+`tenant metadata list` to see every field currently registered in the active
+tenant:
+
+```bash
+# JSON (default)
+pcli2 tenant metadata list
+
+# CSV, ready to turn into a create-batch file
+pcli2 tenant metadata list --format csv --headers
+```
+
+The CSV output uses the **same column headers as the classic `create-batch`
+input** (`ASSET_PATH,NAME,VALUE,TYPE`), with `NAME` and `TYPE` filled from the
+registry and `ASSET_PATH` and `VALUE` left blank:
+
+```csv
+ASSET_PATH,NAME,VALUE,TYPE
+,Description,,text
+,Exportable,,boolean
+,Inventory Qty,,number
+,Supplier Link,,url
+,Unit Price ($),,number
+```
+
+This makes it easy to build a batch-upload template: save the listing, then for
+each asset fill in `ASSET_PATH` and `VALUE` (replicating the field rows per
+asset). Because values are coerced to each field's registered type, you do not
+need to touch the `TYPE` column for fields that already exist.
+
+```bash
+# Save the field list as a starting template
+pcli2 tenant metadata list --format csv --headers > fields.csv
+```
+
 ## Advanced Metadata Workflow: Export, Modify, Reimport
 
 One of the most powerful features of PCLI2 is the ability to export metadata, modify it externally, and reimport it:
@@ -171,7 +210,7 @@ This workflow enables powerful bulk metadata operations while maintaining the fl
 
 ## Metadata Field Types
 
-PCLI2 supports three metadata field types:
+PCLI2 supports four metadata field types:
 
 1. **Text** (default): String values
    ```bash
@@ -187,6 +226,34 @@ PCLI2 supports three metadata field types:
    ```bash
    pcli2 asset metadata create --path "/Root/Model.stl" --name "Approved" --value "true" --type "boolean"
    ```
+
+4. **URL**: Link values (stored as a string)
+   ```bash
+   pcli2 asset metadata create --path "/Root/Model.stl" --name "Supplier Link" --value "https://example.com/" --type "url"
+   ```
+
+### Automatic type coercion
+
+Every metadata field in a tenant is registered with a type, and the Physna API
+rejects a value whose JSON type does not match. Because a CSV cell is just text,
+PCLI2 **coerces each value to the field's registered type** before sending it —
+so `create-batch` works against typed fields without you having to declare
+anything:
+
+- A `number` field receives `18` (a JSON number) rather than the string `"18"`;
+  `84.50` is sent as `84.5`
+- A `boolean` field accepts `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`
+  (case-insensitive)
+- `text` and `url` fields store the value as a string
+
+If a value cannot be represented as the field's type — for example the text
+`N/A` for a `number` field — that row is a **type conflict** and is reported as
+an error (see [`create-batch` Error Behavior](#create-batch-error-behavior)).
+
+> The registered type always wins. The `--type` flag (single `create`) and the
+> `TYPE` column (batch) only decide the type used when a field is registered for
+> the first time; they cannot change the type of an existing field. To change a
+> field's type, delete and recreate it.
 
 ## Best Practices
 
@@ -209,10 +276,12 @@ Specifically:
 
 - **CSV parsing errors**: always terminate immediately — the input file is expected to be well-formed
 - **Unresolvable asset paths** (asset not found): by default, terminates the batch. Pass `--continue-on-error` to skip the failing asset and continue with the remaining rows
-- **Metadata API failures** (delete/update): always terminate the batch, regardless of `--continue-on-error`. The API layer already retries transient HTTP failures, so a surfaced failure usually indicates a persistent problem (permissions, type conflict, etc.) that is likely to affect subsequent calls as well
-- **Authentication failures**: always terminate with a remediation message directing the user to re-authenticate
+- **Metadata update/delete failures**, including **type conflicts** (a value that cannot be represented as the field's registered type): by default, terminate the batch. Pass `--continue-on-error` to skip the offending asset and continue with the remaining rows
+- **Authentication failures**: always terminate with a remediation message directing the user to re-authenticate, regardless of `--continue-on-error`
 
-**Example — skip unresolvable asset paths:**
+With `--continue-on-error`, skipped assets are reported with a concise warning as they are encountered, and the final summary reports how many assets succeeded and how many failed.
+
+**Example — skip both unresolvable paths and conflicting values:**
 
 ```bash
 pcli2 asset metadata create-batch --csv-file "metadata.csv" --continue-on-error
@@ -257,7 +326,7 @@ pcli2 asset metadata get --path "/Root/Parts/Model.stl" --format csv > metadata_
 
 1. **API Rate Limits**: Extensive operations may be rate-limited by the Physna API
 2. **Processing Time**: Large batch operations can take considerable time
-3. **Metadata Types**: Only supports text, number, and boolean metadata fields
+3. **Metadata Types**: Supports text, number, boolean, and url metadata fields
 4. **Asset Access**: Can only process assets accessible to your authenticated user
 5. **Field Names**: Metadata field names must be unique per asset and follow Physna naming conventions
 

@@ -529,3 +529,47 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
 
     Ok(())
 }
+
+/// List all metadata fields registered in the tenant, with their data types.
+///
+/// This backs the `tenant metadata list` command. The CSV output deliberately
+/// mirrors the classic `asset metadata create-batch` input header
+/// (`ASSET_PATH,NAME,VALUE,TYPE`) so the listing can be turned into a
+/// batch-upload template: NAME and TYPE come from the registry, ASSET_PATH and
+/// VALUE are left empty for the user to fill.
+pub async fn list_tenant_metadata_fields(
+    sub_matches: &ArgMatches,
+) -> Result<(), crate::error::CliError> {
+    trace!("Executing tenant metadata list command...");
+
+    // Build format options directly (mirroring `tenant state`) rather than via
+    // FormatParams, which requires a --with-metadata flag this command does not
+    // define. Metadata fields have no per-record metadata of their own.
+    let format_str = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .cloned()
+        .unwrap_or_else(|| "json".to_string());
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata: false,
+        with_headers,
+        pretty,
+    };
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(crate::error::CliError::FormattingError)?;
+
+    let configuration = Configuration::load_or_create_default()?;
+    let mut api = PhysnaApiClient::try_default()?;
+    let tenant = crate::param_utils::get_tenant(&mut api, sub_matches, &configuration).await?;
+
+    let fields = api
+        .get_metadata_fields(&tenant.uuid.to_string())
+        .await
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+
+    println!("{}", fields.format(format)?);
+
+    Ok(())
+}

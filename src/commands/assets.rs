@@ -257,7 +257,10 @@ pub fn asset_command() -> Command {
                     .action(clap::ArgAction::SetTrue)
                     .help("Perform fuzzy search instead of exact search (default: false, which means exact search with quoted text)"),
             )
-            .arg(limit_parameter())
+            // Text search ranks name matches above metadata-only matches, so a
+            // small limit silently drops the latter; default high and warn on
+            // truncation instead (see text_match in actions/assets/match_ops.rs).
+            .arg(limit_parameter().default_value("1000"))
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())  // Add metadata flag to be consistent with other match commands
             .arg(format_pretty_parameter())

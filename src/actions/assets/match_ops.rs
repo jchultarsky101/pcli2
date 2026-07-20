@@ -2266,10 +2266,19 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let tenant_name = ctx.tenant().name.clone();
 
     // Perform text search
-    let mut search_results = ctx
+    let (mut search_results, truncated) = ctx
         .api()
         .text_search(&tenant_uuid, &search_query, limit)
         .await?;
+
+    // Warn on stderr (so piped stdout data is unaffected) when the limit
+    // truncated the result set.
+    if truncated {
+        eprintln!(
+            "⚠️  Result limit reached: showing the first {} matching assets; increase --limit to retrieve more",
+            search_results.matches.len()
+        );
+    }
 
     // Load configuration to get the UI base URL
     let configuration =

@@ -697,7 +697,7 @@ pcli2 asset dependency-diff  # Diff the dependency trees of two assets
 pcli2 asset geometric-match  # Find geometrically similar assets
 pcli2 asset part-match       # Find part matches for an asset
 pcli2 asset visual-match     # Find visually similar assets (--limit N, default 100; --threshold N size filter, default 80)
-pcli2 asset text-match       # Find assets using text search
+pcli2 asset text-match       # Find assets using text search (--limit N, default 1000; warns on stderr when more matches exist)
 pcli2 asset reprocess        # Reprocess an asset to refresh its analysis
 pcli2 asset thumbnail        # Download asset thumbnail
 pcli2 asset metadata         # Manage asset metadata

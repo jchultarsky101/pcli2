@@ -3166,14 +3166,16 @@ impl PhysnaApiClient {
     /// * `limit` - Maximum number of matches to return
     ///
     /// # Returns
-    /// * `Ok(TextSearchResponse)` - The search results with text-matched assets
+    /// * `Ok((TextSearchResponse, bool))` - The search results with
+    ///   text-matched assets, plus a flag that is `true` when `limit` cut the
+    ///   result set short (more matches were available from the endpoint)
     ///
     pub async fn text_search(
         &mut self,
         tenant_uuid: &Uuid,
         text_query: &str,
         limit: usize,
-    ) -> Result<crate::model::TextSearchResponse, ApiError> {
+    ) -> Result<(crate::model::TextSearchResponse, bool), ApiError> {
         debug!(
             "Starting text search for tenant_uuid: {}, query: {}, limit: {}",
             tenant_uuid, text_query, limit
@@ -3193,6 +3195,16 @@ impl PhysnaApiClient {
         // Track the maximum last_page value seen to prevent infinite loops.
         let mut max_last_page_seen = 0;
         let max_pages_limit = 1000; // Hard limit to prevent excessive API calls
+
+        // Total number of matches reported by the endpoint. Note: the endpoint
+        // may report a larger total than it actually serves across pages, so
+        // this is informational only — truncation is detected from pagination
+        // state, not from this figure.
+        let mut total_available: Option<usize> = None;
+
+        // Set when pagination stops early because `limit` was reached while
+        // more pages remained.
+        let mut truncated = false;
 
         loop {
             if page > max_pages_limit {
@@ -3230,6 +3242,8 @@ impl PhysnaApiClient {
                             max_last_page_seen = page_data.last_page;
                         }
 
+                        total_available = Some(page_data.total);
+
                         all_matches.extend(response.matches);
 
                         // Stop once we have enough results, reach the last page,
@@ -3239,6 +3253,8 @@ impl PhysnaApiClient {
                             || page_data.current_page >= page_data.last_page
                             || page_data.current_page < page
                         {
+                            truncated = all_matches.len() >= limit
+                                && page_data.current_page < page_data.last_page;
                             break;
                         }
 
@@ -3248,8 +3264,11 @@ impl PhysnaApiClient {
                         // the requested limit.
                         debug!("No pagination data in text search response, returning single page");
                         let mut response = response;
+                        total_available = Some(response.matches.len());
+                        truncated = response.matches.len() > limit;
                         response.matches.truncate(limit);
-                        return Ok(response);
+                        all_matches = response.matches;
+                        break;
                     }
                 }
                 Err(e) => {
@@ -3260,19 +3279,35 @@ impl PhysnaApiClient {
         }
 
         // The last page may overshoot the requested limit; cap it here.
+        truncated = truncated || all_matches.len() > limit;
         all_matches.truncate(limit);
 
         debug!(
-            "Text search completed for query: '{}' with {} total matches",
+            "Text search completed for query: '{}' with {} total matches (truncated: {})",
             text_query,
-            all_matches.len()
+            all_matches.len(),
+            truncated
         );
 
-        Ok(crate::model::TextSearchResponse {
-            matches: all_matches,
-            page_data: None, // We've aggregated all pages
-            filter_data: None,
-        })
+        // All pages have been aggregated into a single result set; keep the
+        // endpoint-reported total for informational purposes.
+        let page_data = total_available.map(|total| crate::model::PageData {
+            total,
+            per_page,
+            current_page: 1,
+            last_page: 1,
+            start_index: 0,
+            end_index: all_matches.len(),
+        });
+
+        Ok((
+            crate::model::TextSearchResponse {
+                matches: all_matches,
+                page_data,
+                filter_data: None,
+            },
+            truncated,
+        ))
     }
 
     /// Create multiple assets by uploading files matching a glob pattern

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-07-20
+
+### Changed
+- **`asset text-match` no longer silently drops results** - Text search ranks name matches above metadata-only matches, so the previous default `--limit` of 100 could silently omit assets whose only match is in a metadata value. The default limit is now 1000 (the limit remains as a guard against excessive queries), and when the limit does cut the result set short a warning is printed to stderr (`⚠️  Result limit reached: showing the first N matching assets; increase --limit to retrieve more`). The warning goes to stderr only, so JSON/CSV data piped from stdout is unaffected.
+
 ## [1.11.0] - 2026-07-13
 
 ### Added

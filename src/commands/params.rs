@@ -193,6 +193,8 @@ pub fn format_with_metadata_parameter() -> Arg {
 ///
 /// Used by the visual-match commands to cap the number of returned results,
 /// since visual search returns every asset ranked by visual similarity.
+/// The text-match command overrides the default to 1000 so lower-ranked
+/// metadata-only matches are not silently dropped.
 pub fn limit_parameter() -> Arg {
     Arg::new(PARAMETER_LIMIT)
         .long(PARAMETER_LIMIT)

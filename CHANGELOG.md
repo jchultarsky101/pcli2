@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-07-30
+
 ### Changed
 - **`folder geometric-match --format xls` now refuses a report too tall for a worksheet, instead of failing deep inside the workbook writer** - An Excel worksheet holds 1,048,576 rows; this report spends two of them on its header band, leaving 1,048,574 for data. A real run produced 1,293,068 rows, which cannot be represented. The command now fails immediately after matching with `the report has 1293068 rows, more than the 1048574 an Excel worksheet can hold - use '--format csv' for the complete report`, before building a single row. Truncating to fit was considered and rejected: a workbook silently missing a quarter of its rows looks complete to whoever opens it. Use `--format csv`, which has no such limit.
 

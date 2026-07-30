@@ -12,6 +12,28 @@ pub enum DevKeyringError {
     JsonError(#[from] serde_json::Error),
 }
 
+/// Restrict a credential file to its owner (`0600` on Unix).
+///
+/// This file holds the client secret and a live access token in plain text. Written
+/// with the process umask it lands at `0644`, readable by every other account and
+/// every unprivileged process on the machine. Anything stored here is only as private
+/// as its mode bits, so the mode is set explicitly on every write rather than left to
+/// whatever umask happened to be in effect when the file was first created.
+///
+/// Windows has no equivalent mode bits and inherits directory ACLs instead, so this is
+/// a no-op there.
+#[cfg(unix)]
+fn restrict_to_owner(path: &std::path::Path) -> Result<(), DevKeyringError> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_path: &std::path::Path) -> Result<(), DevKeyringError> {
+    Ok(())
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct EnvironmentCredentials {
     client_id: String,
@@ -68,6 +90,20 @@ impl DevKeyring {
 
     fn load_credentials(&mut self) -> Result<(), DevKeyringError> {
         if self.file_path.exists() {
+            // Repair a file written before the mode was enforced, so an existing
+            // world-readable credential file is tightened on first use rather than
+            // waiting for the next login to rewrite it. A failure here is not worth
+            // blocking the read over - the credentials are still usable, just as
+            // exposed as they already were - so it is logged and stepped over.
+            if let Err(e) = restrict_to_owner(&self.file_path) {
+                tracing::warn!(
+                    "Could not restrict permissions on '{}': {}. \
+                     It may be readable by other users on this machine.",
+                    self.file_path.display(),
+                    e
+                );
+            }
+
             let content = fs::read_to_string(&self.file_path)?;
             match serde_json::from_str::<AllCredentials>(&content) {
                 Ok(parsed_credentials) => {
@@ -97,6 +133,7 @@ impl DevKeyring {
         if let Some(credentials) = &self.credentials {
             let content = serde_json::to_string_pretty(credentials)?;
             fs::write(&self.file_path, content)?;
+            restrict_to_owner(&self.file_path)?;
         }
         Ok(())
     }
@@ -231,5 +268,81 @@ impl DevKeyring {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A unique scratch path per test, since these touch the real filesystem.
+    fn scratch_path() -> PathBuf {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "pcli2_dev_keyring_test_{}_{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
+        path.push("dev_credentials.json");
+        path
+    }
+
+    fn keyring_at(file_path: PathBuf) -> DevKeyring {
+        DevKeyring {
+            file_path,
+            credentials: None,
+        }
+    }
+
+    fn mode_of(path: &std::path::Path) -> u32 {
+        fs::metadata(path)
+            .expect("file exists")
+            .permissions()
+            .mode()
+            & 0o777
+    }
+
+    #[test]
+    fn written_credentials_are_owner_only() {
+        // The file holds a client secret and a live access token in plain text. Left
+        // to the umask it lands at 0644 - readable by every other account on the box.
+        let path = scratch_path();
+        let mut keyring = keyring_at(path.clone());
+        keyring
+            .put("shared", "client-secret".to_string(), "s3cret".to_string())
+            .expect("put should succeed");
+
+        assert_eq!(mode_of(&path), 0o600, "credential file must be owner-only");
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_existing_world_readable_file_is_tightened_on_read() {
+        // Files written before the mode was enforced must be repaired on first use,
+        // not left exposed until the next login happens to rewrite them.
+        let path = scratch_path();
+        fs::create_dir_all(path.parent().unwrap()).expect("create scratch dir");
+        fs::write(&path, r#"{"environments":{}}"#).expect("seed file");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("loosen");
+        assert_eq!(mode_of(&path), 0o644, "precondition: starts world-readable");
+
+        let mut keyring = keyring_at(path.clone());
+        let _ = keyring.get("shared", "client-id".to_string());
+
+        assert_eq!(mode_of(&path), 0o600, "reading must repair the mode");
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_missing_file_does_not_error_on_read() {
+        // The no-credentials-yet path must stay quiet rather than failing on a chmod
+        // of a file that is not there.
+        let mut keyring = keyring_at(scratch_path());
+        assert!(keyring.get("shared", "client-id".to_string()).is_ok());
     }
 }

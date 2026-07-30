@@ -153,15 +153,18 @@ impl ReportProgress {
             return;
         }
         if let Some(bar) = &self.bar {
+            // Length and position first, style last. The steady tick redraws on its
+            // own thread, so flipping to the counter template before the length is
+            // set leaves a window where it renders a meaningless "0/0 (0%)".
+            bar.set_length(total as u64);
+            bar.set_position(0);
+            bar.set_message(message.into());
             bar.set_style(
                 indicatif::ProgressStyle::default_bar()
                     .template(REPORT_COUNTER_TEMPLATE)
                     .expect("valid counter template")
                     .progress_chars("#>-"),
             );
-            bar.set_message(message.into());
-            bar.set_length(total as u64);
-            bar.set_position(0);
         }
     }
 
@@ -172,6 +175,21 @@ impl ReportProgress {
             if should_report_row(index) {
                 bar.set_position(index as u64);
             }
+        }
+    }
+
+    /// Run `f` with the display temporarily cleared.
+    ///
+    /// Warnings and the bar both go to stderr, so printing one while the other is
+    /// drawing leaves the message shredded across a redraw. Use this for anything
+    /// that writes to stderr mid-phase.
+    pub fn suspend<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        match &self.bar {
+            Some(bar) => bar.suspend(f),
+            None => f(),
         }
     }
 

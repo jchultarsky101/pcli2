@@ -19,6 +19,119 @@ use crate::{
 use clap::ArgMatches;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::trace;
+use uuid::Uuid;
+
+/// Count the direct subfolders of the given folder paths.
+///
+/// Used only to make the "no assets found" message actionable: a folder that holds
+/// nothing but subfolders looks empty to a non-recursive report, and the user needs to
+/// be told that `--recursive` is what they want. Returns 0 if the hierarchy is
+/// unavailable, which merely costs a less specific message.
+async fn count_subfolders(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &Uuid,
+    folder_paths: &[String],
+) -> usize {
+    let Ok(hierarchy) = crate::folder_cache::FolderCache::get_or_fetch(api, tenant_uuid).await
+    else {
+        return 0;
+    };
+
+    folder_paths
+        .iter()
+        .map(|folder_path| {
+            let normalized = crate::model::normalize_path(folder_path);
+            if normalized == "/" {
+                return hierarchy.root_uuids.len();
+            }
+            let lookup = normalized.strip_prefix('/').unwrap_or(&normalized);
+            hierarchy
+                .get_folder_by_path(lookup)
+                .map(|node| node.children.len())
+                .unwrap_or(0)
+        })
+        .sum()
+}
+
+/// Collect the assets to report on from the given folder paths.
+///
+/// By default this is only the assets sitting directly in each folder, matching the
+/// Physna contents endpoint. With `recursive` it is every asset in the subtree, which is
+/// what a container folder holding nothing but subfolders needs to produce any output.
+///
+/// Assets are keyed by UUID, so a folder path that overlaps another one supplied on the
+/// same command line contributes each asset only once.
+///
+/// # Returns
+/// * `Ok(Some(assets))` - The assets found, guaranteed non-empty
+/// * `Ok(None)` - Nothing was found; remediation advice has already been printed and the
+///   caller should return without producing a report
+/// * `Err(CliError)` - A path did not resolve, or an API call failed
+async fn collect_assets_in_folders(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &Uuid,
+    folder_paths: &[String],
+    recursive: bool,
+) -> Result<Option<std::collections::HashMap<Uuid, crate::model::Asset>>, CliError> {
+    let mut all_assets = std::collections::HashMap::new();
+
+    for folder_path in folder_paths {
+        trace!(
+            "Listing assets for folder path: {} (recursive: {})",
+            folder_path,
+            recursive
+        );
+        let assets_response = if recursive {
+            api.list_assets_by_parent_folder_path_recursive(tenant_uuid, folder_path.as_str())
+                .await?
+        } else {
+            api.list_assets_by_parent_folder_path(tenant_uuid, folder_path.as_str())
+                .await?
+        };
+
+        for asset in assets_response.get_all_assets() {
+            all_assets.insert(asset.uuid(), asset.clone());
+        }
+    }
+
+    trace!("Found {} assets across all folders", all_assets.len());
+
+    if all_assets.is_empty() {
+        // The paths themselves resolved - listing returns `FolderNotFound` otherwise -
+        // so this is a genuinely empty result, not a typo in the path.
+        let subfolders = if recursive {
+            0
+        } else {
+            count_subfolders(api, tenant_uuid, folder_paths).await
+        };
+
+        if subfolders > 0 {
+            error_utils::report_error_with_remediation(
+                &"No assets found directly in the specified folder(s)",
+                &[
+                    &format!(
+                        "The folder(s) contain {} subfolder(s) - pass --recursive to include the assets in them",
+                        subfolders
+                    ),
+                    "Run 'pcli2 folder list --folder-path <path>' to see what the folder contains",
+                    "Ensure you have permissions to access the specified folder(s)",
+                ],
+            );
+        } else {
+            error_utils::report_error_with_remediation(
+                &"No assets found in the specified folder(s)",
+                &[
+                    "Run 'pcli2 folder list --folder-path <path>' to see what the folder contains",
+                    "Check that the assets have finished processing ('pcli2 asset list' shows their state)",
+                    "Ensure you have permissions to access the specified folder(s)",
+                ],
+            );
+        }
+        return Ok(None);
+    }
+
+    Ok(Some(all_assets))
+}
 
 /// Perform geometric matching on a single asset.
 ///
@@ -705,33 +818,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     let show_progress = sub_matches.get_flag("progress");
 
-    // Collect all assets from the specified folders
-    let mut all_assets = std::collections::HashMap::new();
+    let recursive = sub_matches.get_flag(crate::commands::params::PARAMETER_RECURSIVE);
 
-    for folder_path in &folder_paths {
-        trace!("Listing assets for folder path: {}", folder_path);
-        let assets_response = api
-            .list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str())
-            .await?;
-
-        for asset in assets_response.get_all_assets() {
-            all_assets.insert(asset.uuid(), asset.clone());
-        }
-    }
-
-    trace!("Found {} assets across all folders", all_assets.len());
-
-    if all_assets.is_empty() {
-        error_utils::report_error_with_remediation(
-            &"No assets found in the specified folder(s)",
-            &[
-                "Verify the folder path is correct",
-                "Check that the folder contains assets",
-                "Ensure you have permissions to access the specified folder(s)",
-            ],
-        );
-        return Ok(());
-    }
+    // Collect all assets from the specified folders, descending into subfolders only
+    // when --recursive was requested
+    let all_assets =
+        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
+            Some(assets) => assets,
+            None => return Ok(()),
+        };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -1208,33 +1303,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
     let show_progress = sub_matches.get_flag("progress");
 
-    // Collect all assets from the specified folders
-    let mut all_assets = std::collections::HashMap::new();
+    let recursive = sub_matches.get_flag(crate::commands::params::PARAMETER_RECURSIVE);
 
-    for folder_path in &folder_paths {
-        trace!("Listing assets for folder path: {}", folder_path);
-        let assets_response = api
-            .list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str())
-            .await?;
-
-        for asset in assets_response.get_all_assets() {
-            all_assets.insert(asset.uuid(), asset.clone());
-        }
-    }
-
-    trace!("Found {} assets across all folders", all_assets.len());
-
-    if all_assets.is_empty() {
-        error_utils::report_error_with_remediation(
-            &"No assets found in the specified folder(s)",
-            &[
-                "Verify the folder path is correct",
-                "Check that the folder contains assets",
-                "Ensure you have permissions to access the specified folder(s)",
-            ],
-        );
-        return Ok(());
-    }
+    // Collect all assets from the specified folders, descending into subfolders only
+    // when --recursive was requested
+    let all_assets =
+        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
+            Some(assets) => assets,
+            None => return Ok(()),
+        };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -1748,33 +1825,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
     let show_progress = sub_matches.get_flag("progress");
 
-    // Collect all assets from the specified folders
-    let mut all_assets = std::collections::HashMap::new();
+    let recursive = sub_matches.get_flag(crate::commands::params::PARAMETER_RECURSIVE);
 
-    for folder_path in &folder_paths {
-        trace!("Listing assets for folder path: {}", folder_path);
-        let assets_response = api
-            .list_assets_by_parent_folder_path(&tenant.uuid, folder_path.as_str())
-            .await?;
-
-        for asset in assets_response.get_all_assets() {
-            all_assets.insert(asset.uuid(), asset.clone());
-        }
-    }
-
-    trace!("Found {} assets across all folders", all_assets.len());
-
-    if all_assets.is_empty() {
-        error_utils::report_error_with_remediation(
-            &"No assets found in the specified folder(s)",
-            &[
-                "Verify the folder path is correct",
-                "Check that the folder contains assets",
-                "Ensure you have permissions to access the specified folder(s)",
-            ],
-        );
-        return Ok(());
-    }
+    // Collect all assets from the specified folders, descending into subfolders only
+    // when --recursive was requested
+    let all_assets =
+        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
+            Some(assets) => assets,
+            None => return Ok(()),
+        };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {

@@ -229,6 +229,7 @@ pub fn folder_command() -> Command {
                         .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
                         .action(clap::ArgAction::Append), // Allow multiple --path flags
                 )
+                .arg(crate::commands::params::recursive_parameter())
                 .arg(
                     clap::Arg::new("threshold")
                         .short('s')
@@ -284,6 +285,7 @@ pub fn folder_command() -> Command {
                         .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
                         .action(clap::ArgAction::Append), // Allow multiple --path flags
                 )
+                .arg(crate::commands::params::recursive_parameter())
                 .arg(
                     clap::Arg::new("threshold")
                         .short('s')
@@ -347,6 +349,7 @@ pub fn folder_command() -> Command {
                         .help("Folder path(s) to process (can be provided multiple times or as comma-separated values)")
                         .action(clap::ArgAction::Append), // Allow multiple --path flags
                 )
+                .arg(crate::commands::params::recursive_parameter())
                 .arg(
                     clap::Arg::new("exclusive")
                         .long("exclusive")

@@ -701,10 +701,10 @@ type CsvStdoutWriter = csv::Writer<std::io::BufWriter<std::io::StdoutLock<'stati
 /// and starts producing output immediately.
 ///
 /// The tradeoff is that output is no longer atomic: a failure partway through
-/// leaves a truncated report on stdout rather than printing nothing at all. That is
-/// survivable for CSV - a truncated file still parses, the error goes to stderr,
-/// and the exit code is non-zero - and it is precisely why the JSON outputs still
-/// buffer, since half a JSON document is not a document.
+/// leaves a truncated report on stdout rather than printing nothing at all. The
+/// error still goes to stderr and the exit code is still non-zero, and a truncated
+/// CSV still parses. See [`stream_json_report`], which makes the same trade on
+/// harsher terms.
 ///
 /// The lock is held for the whole write, which is both correct and faster than
 /// re-acquiring it per row. A `--progress` display keeps drawing on stderr
@@ -724,24 +724,50 @@ fn csv_stream_error(error: std::io::Error) -> CliError {
     ))
 }
 
-/// Serialize a finished match report as pretty JSON.
+/// Serialize a finished match report as pretty JSON straight to `stdout`.
 ///
-/// Deliberately separate from the `println!` that prints it: the whole document is
-/// built as a single `String`, which on a large report is the slowest step of all.
-/// Evaluated inline as a format argument it would run *after* the progress display
-/// had been cleared, which is exactly the silent wait this reporting exists to cover.
+/// Streams for the same reasons the CSV output does: building the document as one
+/// `String` first holds the whole report in memory a second time - pretty-printed
+/// JSON is bulkier than the rows it came from - and nothing reaches the terminal
+/// until the last byte is ready.
 ///
-/// Returns the raw `serde_json` error rather than a `CliError`; callers convert it
-/// with `?`, which keeps this signature clear of the large `CliError` enum.
-fn serialize_json_report<T: serde::Serialize>(
+/// The atomicity trade is harsher here than for CSV. A truncated CSV still parses;
+/// a truncated JSON document does not parse at all, so a mid-write failure leaves
+/// output that no consumer can read. The error still goes to stderr with a non-zero
+/// exit code, which is what distinguishes it from a silently short file.
+///
+/// Byte-for-byte identical to the previous `println!("{}", to_string_pretty(…)?)`:
+/// `to_string_pretty` is the same serializer against a `String` sink, and the
+/// trailing newline `println!` added is written explicitly below.
+///
+/// Errors surface as `io::Error` - `serde_json::Error` converts into one - so this
+/// signature stays clear of the large `CliError` enum; callers wrap it with
+/// [`json_stream_error`].
+fn stream_json_report<T: serde::Serialize>(
     rows: &[T],
     progress: &ReportProgress,
-) -> Result<String, serde_json::Error> {
+) -> std::io::Result<()> {
+    use std::io::Write;
+
     progress.phase(format!(
-        "Serializing {} rows as JSON...",
+        "Writing {} rows as JSON...",
         HumanCount(rows.len() as u64)
     ));
-    serde_json::to_string_pretty(rows)
+    let mut writer = std::io::BufWriter::new(std::io::stdout().lock());
+    serde_json::to_writer_pretty(&mut writer, rows)?;
+    writer.write_all(b"\n")?;
+    // Explicit: a BufWriter dropped with data still buffered discards the error,
+    // which would truncate the document without anyone noticing.
+    writer.flush()
+}
+
+/// Wrap a failure to write the JSON stream to stdout as a `CliError`.
+fn json_stream_error(error: std::io::Error) -> CliError {
+    CliError::from(CliActionError::FormattingError(
+        crate::format::FormattingError::FormatFailure {
+            cause: Box::new(error),
+        },
+    ))
 }
 
 /// The closing summary line printed once a report is complete.
@@ -1352,9 +1378,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         crate::format::OutputFormat::Json(_) => {
             // For JSON, we need to flatten all matches into a single array
             let flattened_matches = flatten_geometric_matches(all_matches, &report_progress);
-            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
-            println!("{}", output);
         }
         crate::format::OutputFormat::Csv(_) => {
             // Build the shared table so CSV and Excel stay column-for-column
@@ -1388,9 +1413,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         _ => {
             // Default to JSON
             let flattened_matches = flatten_geometric_matches(all_matches, &report_progress);
-            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
-            println!("{}", output);
         }
     }
 
@@ -1803,9 +1827,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         crate::format::OutputFormat::Json(_) => {
             // For JSON, we need to flatten all matches into a single array
             let flattened_matches = flatten_part_matches(all_matches, &report_progress);
-            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
-            println!("{}", output);
         }
         crate::format::OutputFormat::Csv(_) => {
             // For CSV, we can output all matches together
@@ -1911,9 +1934,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         _ => {
             // Default to JSON
             let flattened_matches = flatten_part_matches(all_matches, &report_progress);
-            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
-            println!("{}", output);
         }
     }
 
@@ -2308,9 +2330,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         crate::format::OutputFormat::Json(_) => {
             // For JSON, we need to flatten all matches into a single array
             let flattened_matches = flatten_visual_matches(all_matches, &report_progress);
-            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
-            println!("{}", output);
         }
         crate::format::OutputFormat::Csv(_) => {
             // For CSV, we can output all matches together
@@ -2410,9 +2431,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         _ => {
             // Default to JSON
             let flattened_matches = flatten_visual_matches(all_matches, &report_progress);
-            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
-            println!("{}", output);
         }
     }
 

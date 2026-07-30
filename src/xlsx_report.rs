@@ -26,12 +26,15 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
+use indicatif::HumanCount;
 use rust_xlsxwriter::{
     Color, ConditionalFormat3ColorScale, ConditionalFormatType, DocProperties, Format, FormatAlign,
     FormatBorder, Url, Workbook, XlsxError,
 };
 use thiserror::Error;
 use tracing::{debug, info};
+
+use crate::terminal::ReportProgress;
 
 /// Prefix marking a column that holds a *reference* asset's metadata value.
 const REF_PREFIX: &str = "REF_";
@@ -332,10 +335,14 @@ pub fn normalize_output_path(path: &Path) -> PathBuf {
 ///
 /// Returns an error if the data lacks the columns a match report requires, or if
 /// the workbook cannot be built or saved.
+///
+/// On a large report every phase here takes real time, so `progress` is given the
+/// running commentary; pass `ReportProgress::disabled()` to stay silent.
 pub fn write_match_report(
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
     output: &Path,
+    progress: &ReportProgress,
 ) -> Result<ConversionStats, XlsxReportError> {
     let mut report = Report::new(headers, rows);
 
@@ -346,14 +353,23 @@ pub fn write_match_report(
 
     // Surface the most relevant pairs first: highest match percentage at the top.
     if let Some(column) = report.schema.column_index(MATCH_PERCENTAGE_COLUMN) {
+        progress.phase(format!(
+            "Sorting {} rows by match percentage...",
+            HumanCount(report.rows.len() as u64)
+        ));
         report.sort_by_numeric_desc(column);
     }
 
-    write_workbook(&report, output)
+    write_workbook(&report, output, progress)
 }
 
-/// Writes `report` to an `.xlsx` workbook at `output`.
-fn write_workbook(report: &Report, output: &Path) -> Result<ConversionStats, XlsxReportError> {
+/// Writes `report` to an `.xlsx` workbook at `output`, reporting each phase to
+/// `progress`.
+fn write_workbook(
+    report: &Report,
+    output: &Path,
+    progress: &ReportProgress,
+) -> Result<ConversionStats, XlsxReportError> {
     let band_format = Format::new()
         .set_bold()
         .set_font_color(Color::White)
@@ -437,9 +453,12 @@ fn write_workbook(report: &Report, output: &Path) -> Result<ConversionStats, Xls
     worksheet.set_row_height(GROUP_HEADER_ROW, HEADER_ROW_HEIGHT)?;
     worksheet.set_row_height(LABEL_HEADER_ROW, HEADER_ROW_HEIGHT)?;
 
-    // Data rows follow the two header rows.
+    // Data rows follow the two header rows. This is the longest phase of the write
+    // by a wide margin - every cell is classified and individually formatted.
+    progress.start_rows("Writing worksheet cells", report.rows.len());
     let last_data_index = report.rows.len().saturating_sub(1);
     for (row_idx, record) in report.rows.iter().enumerate() {
+        progress.set_row(row_idx);
         let excel_row = row_idx as u32 + DATA_START_ROW;
         let is_last_row = row_idx == last_data_index;
         for col in 0..schema.column_count() {
@@ -505,7 +524,10 @@ fn write_workbook(report: &Report, output: &Path) -> Result<ConversionStats, Xls
     }
     stats.rows = report.rows.len();
 
-    // Size every column to its content (capped) for legibility.
+    // Size every column to its content (capped) for legibility. Another full pass
+    // over every cell, so it is worth naming rather than leaving the cell counter
+    // parked at 100%.
+    progress.phase("Sizing columns...");
     for (col, width) in column_widths(report).into_iter().enumerate() {
         worksheet.set_column_width(col as u16, width)?;
     }
@@ -543,6 +565,9 @@ fn write_workbook(report: &Report, output: &Path) -> Result<ConversionStats, Xls
     }
 
     debug!(?output, "saving workbook");
+    // Serializing and zipping the workbook happens entirely inside `save`, with no
+    // way to report from within, so the message has to stand for the whole step.
+    progress.phase(format!("Saving {}...", output.display()));
     workbook.save(output)?;
     info!(
         rows = stats.rows,
@@ -734,6 +759,7 @@ mod tests {
             headers(&["REF_XUNITS", "CAN_XUNITS"]),
             rows(vec![vec!["mm", "mm"]]),
             Path::new("/tmp/should_not_be_written.xlsx"),
+            &ReportProgress::disabled(),
         );
         assert!(matches!(
             result,
@@ -780,7 +806,8 @@ mod tests {
             ]),
         );
         let path = std::env::temp_dir().join("pcli2_xlsx_report_test.xlsx");
-        let stats = write_workbook(&r, &path).expect("write should succeed");
+        let stats =
+            write_workbook(&r, &path, &ReportProgress::disabled()).expect("write should succeed");
         assert_eq!(stats.rows, 3);
         assert_eq!(stats.pairs, 1);
         assert_eq!(stats.matching, 2); // mm/mm, both cells
@@ -803,6 +830,7 @@ mod tests {
             ]),
             rows(vec![vec!["a", "b", "50"], vec!["c", "d", "90"]]),
             &std::env::temp_dir().join("pcli2_xlsx_report_sort_test.xlsx"),
+            &ReportProgress::disabled(),
         )
         .expect("write should succeed");
         assert_eq!(r.rows, 2);

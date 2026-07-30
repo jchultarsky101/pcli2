@@ -15,9 +15,10 @@ use crate::{
     format::{CsvRecordProducer, OutputFormatter},
     param_utils::get_tenant,
     physna_v3::{PhysnaApiClient, TryDefault},
+    terminal::ReportProgress,
 };
 use clap::ArgMatches;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{HumanCount, MultiProgress, ProgressBar, ProgressStyle};
 use tracing::trace;
 use uuid::Uuid;
 
@@ -62,6 +63,10 @@ async fn count_subfolders(
 /// Assets are keyed by UUID, so a folder path that overlaps another one supplied on the
 /// same command line contributes each asset only once.
 ///
+/// A recursive scan costs one API call per folder in the subtree and runs before any
+/// matching starts, so with `show_progress` it reports what it is doing. Without the
+/// flag it stays silent, keeping the default output unchanged.
+///
 /// # Returns
 /// * `Ok(Some(assets))` - The assets found, guaranteed non-empty
 /// * `Ok(None)` - Nothing was found; remediation advice has already been printed and the
@@ -72,8 +77,18 @@ async fn collect_assets_in_folders(
     tenant_uuid: &Uuid,
     folder_paths: &[String],
     recursive: bool,
+    show_progress: bool,
 ) -> Result<Option<std::collections::HashMap<Uuid, crate::model::Asset>>, CliError> {
     let mut all_assets = std::collections::HashMap::new();
+
+    // Only a recursive scan is slow enough to need reporting; the non-recursive path is
+    // a single call per folder. The spinner hides itself when stderr is not a terminal,
+    // so redirected output stays clean.
+    let scan_progress = if recursive && show_progress {
+        Some(crate::terminal::spinner("Scanning folders..."))
+    } else {
+        None
+    };
 
     for folder_path in folder_paths {
         trace!(
@@ -82,8 +97,21 @@ async fn collect_assets_in_folders(
             recursive
         );
         let assets_response = if recursive {
-            api.list_assets_by_parent_folder_path_recursive(tenant_uuid, folder_path.as_str())
-                .await?
+            let path_label = folder_path.clone();
+            let progress = scan_progress.as_ref();
+            api.list_assets_by_parent_folder_path_recursive(
+                tenant_uuid,
+                folder_path.as_str(),
+                |scanned, total, assets| {
+                    if let Some(progress) = progress {
+                        progress.set_message(format!(
+                            "Scanning {}: {}/{} folders, {} assets found",
+                            path_label, scanned, total, assets
+                        ));
+                    }
+                },
+            )
+            .await?
         } else {
             api.list_assets_by_parent_folder_path(tenant_uuid, folder_path.as_str())
                 .await?
@@ -92,6 +120,16 @@ async fn collect_assets_in_folders(
         for asset in assets_response.get_all_assets() {
             all_assets.insert(asset.uuid(), asset.clone());
         }
+    }
+
+    // Clear the spinner before the match progress bars take over the terminal.
+    if let Some(progress) = scan_progress {
+        progress.finish_and_clear();
+        eprintln!(
+            "Scanned {} folder path(s), found {} asset(s) to match",
+            folder_paths.len(),
+            all_assets.len()
+        );
     }
 
     trace!("Found {} assets across all folders", all_assets.len());
@@ -651,6 +689,134 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     Ok(())
 }
 
+/// The buffered, locked `stdout` handle the CSV outputs stream through.
+type CsvStdoutWriter = csv::Writer<std::io::BufWriter<std::io::StdoutLock<'static>>>;
+
+/// Open a CSV writer that streams rows straight to `stdout` as they are produced.
+///
+/// The alternative - serializing into a `Vec<u8>`, converting that to a `String`,
+/// and printing the lot in one go - holds the whole report in memory three times
+/// over. On a large match report that is hundreds of megabytes, and the user waits
+/// through all of it before a single byte appears. Streaming keeps peak memory flat
+/// and starts producing output immediately.
+///
+/// The tradeoff is that output is no longer atomic: a failure partway through
+/// leaves a truncated report on stdout rather than printing nothing at all. That is
+/// survivable for CSV - a truncated file still parses, the error goes to stderr,
+/// and the exit code is non-zero - and it is precisely why the JSON outputs still
+/// buffer, since half a JSON document is not a document.
+///
+/// The lock is held for the whole write, which is both correct and faster than
+/// re-acquiring it per row. A `--progress` display keeps drawing on stderr
+/// meanwhile; it never writes to stdout, so redirected output stays clean whatever
+/// the terminal ends up looking like.
+fn csv_stdout_writer() -> CsvStdoutWriter {
+    csv::Writer::from_writer(std::io::BufWriter::new(std::io::stdout().lock()))
+}
+
+/// Wrap a failure to write the CSV stream to stdout as a `CliError`.
+fn csv_stream_error(error: std::io::Error) -> CliError {
+    CliError::from(CliActionError::FormattingError(
+        crate::format::FormattingError::CsvWriterError(format!(
+            "failed writing CSV to stdout: {}",
+            error
+        )),
+    ))
+}
+
+/// Serialize a finished match report as pretty JSON.
+///
+/// Deliberately separate from the `println!` that prints it: the whole document is
+/// built as a single `String`, which on a large report is the slowest step of all.
+/// Evaluated inline as a format argument it would run *after* the progress display
+/// had been cleared, which is exactly the silent wait this reporting exists to cover.
+///
+/// Returns the raw `serde_json` error rather than a `CliError`; callers convert it
+/// with `?`, which keeps this signature clear of the large `CliError` enum.
+fn serialize_json_report<T: serde::Serialize>(
+    rows: &[T],
+    progress: &ReportProgress,
+) -> Result<String, serde_json::Error> {
+    progress.phase(format!(
+        "Serializing {} rows as JSON...",
+        HumanCount(rows.len() as u64)
+    ));
+    serde_json::to_string_pretty(rows)
+}
+
+/// The closing summary line printed once a report is complete.
+fn report_summary(rows: usize) -> String {
+    format!("Built report of {} row(s)", HumanCount(rows as u64))
+}
+
+/// Flatten every (reference, candidate) match into the row model the JSON output
+/// serializes.
+///
+/// Each pair clones its reference asset, metadata included, so on a large report this
+/// is a slow pass - and it runs after the match progress bar has already finished.
+fn flatten_geometric_matches(
+    all_matches: Vec<crate::model::EnhancedGeometricSearchResponse>,
+    progress: &ReportProgress,
+) -> Vec<crate::model::GeometricMatchPair> {
+    progress.start_rows("Flattening matches", all_matches.len());
+    let mut flattened = Vec::new();
+    for (index, enhanced_response) in all_matches.into_iter().enumerate() {
+        progress.set_row(index);
+        for match_result in enhanced_response.matches {
+            flattened.push(crate::model::GeometricMatchPair::from_reference_and_match(
+                enhanced_response.reference_asset.clone(),
+                match_result,
+            ));
+        }
+    }
+    flattened
+}
+
+/// Flatten part matches into the row model shared by the JSON and CSV outputs.
+///
+/// See [`flatten_geometric_matches`] for why this pass is worth reporting.
+fn flatten_part_matches(
+    all_matches: Vec<crate::model::EnhancedPartSearchResponse>,
+    progress: &ReportProgress,
+) -> Vec<crate::model::PartMatchPair> {
+    progress.start_rows("Flattening matches", all_matches.len());
+    let mut flattened = Vec::new();
+    for (index, enhanced_response) in all_matches.into_iter().enumerate() {
+        progress.set_row(index);
+        for match_result in enhanced_response.matches {
+            flattened.push(crate::model::PartMatchPair::from_reference_and_match(
+                enhanced_response.reference_asset.clone(),
+                match_result,
+            ));
+        }
+    }
+    flattened
+}
+
+/// Flatten visual matches into the row model shared by the JSON and CSV outputs.
+///
+/// Visual search reuses [`crate::model::EnhancedPartSearchResponse`] as its carrier;
+/// only the pair type it flattens into differs from [`flatten_part_matches`]. See
+/// [`flatten_geometric_matches`] for why this pass is worth reporting.
+fn flatten_visual_matches(
+    all_matches: Vec<crate::model::EnhancedPartSearchResponse>,
+    progress: &ReportProgress,
+) -> Vec<crate::model::VisualMatchPair> {
+    progress.start_rows("Flattening matches", all_matches.len());
+    let mut flattened = Vec::new();
+    for (index, enhanced_response) in all_matches.into_iter().enumerate() {
+        progress.set_row(index);
+        for match_result in enhanced_response.matches {
+            flattened.push(crate::model::VisualMatchPair {
+                reference_asset: enhanced_response.reference_asset.clone(),
+                candidate_asset: match_result.asset,
+                comparison_url: match_result.comparison_url,
+            });
+        }
+    }
+    flattened
+}
+
 /// Build the canonical match-report table (headers + rows) shared by the CSV and
 /// Excel outputs of `folder geometric-match`.
 ///
@@ -661,11 +827,20 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
 /// `REF_<field>`/`CAN_<field>` metadata columns (the sorted union of metadata keys
 /// across all pairs); and finally `COMPARISON_URL` as the last column (its long,
 /// rarely-read value is kept out of the way after the metadata).
+///
+/// Each phase reports to `progress`: on a large report every one of them costs real
+/// time, and they all run after the match progress bar has already finished.
 fn build_geometric_match_table(
     all_matches: &[crate::model::EnhancedGeometricSearchResponse],
     with_metadata: bool,
+    progress: &ReportProgress,
 ) -> (Vec<String>, Vec<Vec<String>>) {
-    // Flatten every (reference, candidate) match into a single row model.
+    // Flatten every (reference, candidate) match into a single row model. Each pair
+    // clones its reference asset, metadata included, so this is not a cheap pass.
+    progress.phase(format!(
+        "Flattening {} matches...",
+        HumanCount(all_matches.len() as u64)
+    ));
     let flattened: Vec<crate::model::GeometricMatchPair> = all_matches
         .iter()
         .flat_map(|response| {
@@ -681,8 +856,10 @@ fn build_geometric_match_table(
     // Collect the sorted, unique metadata keys present across all pairs.
     let mut metadata_keys: Vec<String> = Vec::new();
     if with_metadata {
+        progress.start_rows("Collecting metadata columns", flattened.len());
         let mut keys = std::collections::HashSet::new();
-        for pair in &flattened {
+        for (index, pair) in flattened.iter().enumerate() {
+            progress.set_row(index);
             for key in pair.reference_asset.metadata.keys() {
                 keys.insert(key.clone());
             }
@@ -710,8 +887,10 @@ fn build_geometric_match_table(
     headers.push(COMPARISON_URL_HEADER.to_string());
 
     // Rows, in the same column order as the headers (COMPARISON_URL last).
+    progress.start_rows("Building rows", flattened.len());
     let mut rows = Vec::with_capacity(flattened.len());
-    for pair in &flattened {
+    for (index, pair) in flattened.iter().enumerate() {
+        progress.set_row(index);
         let mut values = vec![
             pair.reference_asset.path.clone(),
             pair.candidate_asset.path.clone(),
@@ -822,11 +1001,18 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
-    let all_assets =
-        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
-            Some(assets) => assets,
-            None => return Ok(()),
-        };
+    let all_assets = match collect_assets_in_folders(
+        &mut api,
+        &tenant.uuid,
+        &folder_paths,
+        recursive,
+        show_progress,
+    )
+    .await?
+    {
+        Some(assets) => assets,
+        None => return Ok(()),
+    };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -1118,12 +1304,25 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         ));
     }
 
+    // Everything from here on is CPU- and memory-bound rather than network-bound, and
+    // on a large result set it runs for minutes after the match bar has already
+    // finished. Report it so the command does not look wedged.
+    let report_progress = ReportProgress::new(
+        show_progress,
+        &format!(
+            "Building report from {} matches...",
+            HumanCount(all_matches.len() as u64)
+        ),
+    );
+
     // Excel (`xls`) output: write a styled .xlsx workbook to a file instead of
     // printing. Handled here because `xls` is not an `OutputFormat` enum variant.
     // The workbook is built from the same table as the CSV output, so the two
     // formats are always column-for-column consistent.
     if is_xls {
-        let (headers, rows) = build_geometric_match_table(&all_matches, with_metadata);
+        let (headers, rows) =
+            build_geometric_match_table(&all_matches, with_metadata, &report_progress);
+        let row_count = rows.len();
         let requested_path = sub_matches
             .get_one::<std::path::PathBuf>(crate::commands::params::PARAMETER_OUTPUT)
             .cloned()
@@ -1138,7 +1337,12 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 requested_path.display()
             ));
         }
-        crate::xlsx_report::write_match_report(headers, rows, &output_path)?;
+        crate::xlsx_report::write_match_report(headers, rows, &output_path, &report_progress)?;
+        report_progress.finish_with_summary(&format!(
+            "Wrote {} row(s) to {}",
+            HumanCount(row_count as u64),
+            output_path.display()
+        ));
         // UNIX-style: on success there is no data to print, so print nothing.
         return Ok(());
     }
@@ -1147,25 +1351,18 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     match format {
         crate::format::OutputFormat::Json(_) => {
             // For JSON, we need to flatten all matches into a single array
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(
-                        crate::model::GeometricMatchPair::from_reference_and_match(
-                            enhanced_response.reference_asset.clone(),
-                            match_result,
-                        ),
-                    );
-                }
-            }
-            println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
+            let flattened_matches = flatten_geometric_matches(all_matches, &report_progress);
+            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
+            println!("{}", output);
         }
         crate::format::OutputFormat::Csv(_) => {
             // Build the shared table so CSV and Excel stay column-for-column
             // identical; only the presentation differs between the two formats.
-            let (headers, rows) = build_geometric_match_table(&all_matches, with_metadata);
+            let (headers, rows) =
+                build_geometric_match_table(&all_matches, with_metadata, &report_progress);
 
-            let mut wtr = csv::Writer::from_writer(vec![]);
+            let mut wtr = csv_stdout_writer();
 
             if with_headers {
                 if let Err(e) = wtr.serialize(headers.as_slice()) {
@@ -1175,7 +1372,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
             }
 
-            for row in &rows {
+            report_progress.start_rows("Writing CSV", rows.len());
+            for (index, row) in rows.iter().enumerate() {
+                report_progress.set_row(index);
                 if let Err(e) = wtr.serialize(row.as_slice()) {
                     return Err(CliError::from(CliActionError::FormattingError(
                         crate::format::FormattingError::CsvError(e),
@@ -1183,39 +1382,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
             }
 
-            let data = match wtr.into_inner() {
-                Ok(data) => data,
-                Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::CsvIntoInnerError(e),
-                    )));
-                }
-            };
-            let output = match String::from_utf8(data) {
-                Ok(s) => s,
-                Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::Utf8Error(e),
-                    )));
-                }
-            };
-
-            print!("{}", output);
+            wtr.flush().map_err(csv_stream_error)?;
+            report_progress.finish_with_summary(&report_summary(rows.len()));
         }
         _ => {
             // Default to JSON
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(
-                        crate::model::GeometricMatchPair::from_reference_and_match(
-                            enhanced_response.reference_asset.clone(),
-                            match_result,
-                        ),
-                    );
-                }
-            }
-            println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
+            let flattened_matches = flatten_geometric_matches(all_matches, &report_progress);
+            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
+            println!("{}", output);
         }
     }
 
@@ -1307,11 +1482,18 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
-    let all_assets =
-        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
-            Some(assets) => assets,
-            None => return Ok(()),
-        };
+    let all_assets = match collect_assets_in_folders(
+        &mut api,
+        &tenant.uuid,
+        &folder_paths,
+        recursive,
+        show_progress,
+    )
+    .await?
+    {
+        Some(assets) => assets,
+        None => return Ok(()),
+    };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -1605,42 +1787,41 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         ));
     }
 
+    // Everything from here on is CPU- and memory-bound rather than network-bound, and
+    // on a large result set it runs for minutes after the match bar has already
+    // finished. Report it so the command does not look wedged.
+    let report_progress = ReportProgress::new(
+        show_progress,
+        &format!(
+            "Building report from {} matches...",
+            HumanCount(all_matches.len() as u64)
+        ),
+    );
+
     // Output the results based on format
     match format {
         crate::format::OutputFormat::Json(_) => {
             // For JSON, we need to flatten all matches into a single array
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result,
-                    ));
-                }
-            }
-            println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
+            let flattened_matches = flatten_part_matches(all_matches, &report_progress);
+            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
+            println!("{}", output);
         }
         crate::format::OutputFormat::Csv(_) => {
             // For CSV, we can output all matches together
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result,
-                    ));
-                }
-            }
+            let flattened_matches = flatten_part_matches(all_matches, &report_progress);
 
             // For CSV with metadata, we need to create a custom implementation
-            let mut wtr = csv::Writer::from_writer(vec![]);
+            let mut wtr = csv_stdout_writer();
 
             // Pre-calculate the metadata keys that will be used for headers and all records
             let mut header_metadata_keys = Vec::new();
             if with_metadata {
                 // Collect all unique metadata keys from ALL match pairs for consistent headers
+                report_progress.start_rows("Collecting metadata columns", flattened_matches.len());
                 let mut all_metadata_keys = std::collections::HashSet::new();
-                for match_pair in &flattened_matches {
+                for (index, match_pair) in flattened_matches.iter().enumerate() {
+                    report_progress.set_row(index);
                     for key in match_pair.reference_asset.metadata.keys() {
                         all_metadata_keys.insert(key.clone());
                     }
@@ -1674,7 +1855,10 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 }
             }
 
-            for match_pair in flattened_matches {
+            let total_rows = flattened_matches.len();
+            report_progress.start_rows("Writing CSV", total_rows);
+            for (index, match_pair) in flattened_matches.into_iter().enumerate() {
+                report_progress.set_row(index);
                 let mut base_values = vec![
                     match_pair.reference_asset.path.clone(),
                     match_pair.candidate_asset.path.clone(),
@@ -1721,37 +1905,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 }
             }
 
-            let data = match wtr.into_inner() {
-                Ok(data) => data,
-                Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::CsvIntoInnerError(e),
-                    )));
-                }
-            };
-            let output = match String::from_utf8(data) {
-                Ok(s) => s,
-                Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::Utf8Error(e),
-                    )));
-                }
-            };
-
-            print!("{}", output);
+            wtr.flush().map_err(csv_stream_error)?;
+            report_progress.finish_with_summary(&report_summary(total_rows));
         }
         _ => {
             // Default to JSON
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::PartMatchPair::from_reference_and_match(
-                        enhanced_response.reference_asset.clone(),
-                        match_result,
-                    ));
-                }
-            }
-            println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
+            let flattened_matches = flatten_part_matches(all_matches, &report_progress);
+            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
+            println!("{}", output);
         }
     }
 
@@ -1829,11 +1991,18 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
-    let all_assets =
-        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
-            Some(assets) => assets,
-            None => return Ok(()),
-        };
+    let all_assets = match collect_assets_in_folders(
+        &mut api,
+        &tenant.uuid,
+        &folder_paths,
+        recursive,
+        show_progress,
+    )
+    .await?
+    {
+        Some(assets) => assets,
+        None => return Ok(()),
+    };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -2123,44 +2292,41 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         ));
     }
 
+    // Everything from here on is CPU- and memory-bound rather than network-bound, and
+    // on a large result set it runs for minutes after the match bar has already
+    // finished. Report it so the command does not look wedged.
+    let report_progress = ReportProgress::new(
+        show_progress,
+        &format!(
+            "Building report from {} matches...",
+            HumanCount(all_matches.len() as u64)
+        ),
+    );
+
     // Output the results based on format
     match format {
         crate::format::OutputFormat::Json(_) => {
             // For JSON, we need to flatten all matches into a single array
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::VisualMatchPair {
-                        reference_asset: enhanced_response.reference_asset.clone(),
-                        candidate_asset: match_result.asset,
-                        comparison_url: match_result.comparison_url,
-                    });
-                }
-            }
-            println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
+            let flattened_matches = flatten_visual_matches(all_matches, &report_progress);
+            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
+            println!("{}", output);
         }
         crate::format::OutputFormat::Csv(_) => {
             // For CSV, we can output all matches together
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::VisualMatchPair {
-                        reference_asset: enhanced_response.reference_asset.clone(),
-                        candidate_asset: match_result.asset,
-                        comparison_url: match_result.comparison_url,
-                    });
-                }
-            }
+            let flattened_matches = flatten_visual_matches(all_matches, &report_progress);
 
             // For CSV with metadata, we need to create a custom implementation
-            let mut wtr = csv::Writer::from_writer(vec![]);
+            let mut wtr = csv_stdout_writer();
 
             // Pre-calculate the metadata keys that will be used for headers and all records
             let mut header_metadata_keys = Vec::new();
             if with_metadata {
                 // Collect all unique metadata keys from ALL match pairs for consistent headers
+                report_progress.start_rows("Collecting metadata columns", flattened_matches.len());
                 let mut all_metadata_keys = std::collections::HashSet::new();
-                for match_pair in &flattened_matches {
+                for (index, match_pair) in flattened_matches.iter().enumerate() {
+                    report_progress.set_row(index);
                     for key in match_pair.reference_asset.metadata.keys() {
                         all_metadata_keys.insert(key.clone());
                     }
@@ -2194,7 +2360,10 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 }
             }
 
-            for match_pair in flattened_matches {
+            let total_rows = flattened_matches.len();
+            report_progress.start_rows("Writing CSV", total_rows);
+            for (index, match_pair) in flattened_matches.into_iter().enumerate() {
+                report_progress.set_row(index);
                 let mut base_values = vec![
                     match_pair.reference_asset.path.clone(),
                     match_pair.candidate_asset.path.clone(),
@@ -2235,38 +2404,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 }
             }
 
-            let data = match wtr.into_inner() {
-                Ok(data) => data,
-                Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::CsvIntoInnerError(e),
-                    )));
-                }
-            };
-            let output = match String::from_utf8(data) {
-                Ok(s) => s,
-                Err(e) => {
-                    return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::Utf8Error(e),
-                    )));
-                }
-            };
-
-            print!("{}", output);
+            wtr.flush().map_err(csv_stream_error)?;
+            report_progress.finish_with_summary(&report_summary(total_rows));
         }
         _ => {
             // Default to JSON
-            let mut flattened_matches = Vec::new();
-            for enhanced_response in all_matches {
-                for match_result in enhanced_response.matches {
-                    flattened_matches.push(crate::model::VisualMatchPair {
-                        reference_asset: enhanced_response.reference_asset.clone(),
-                        candidate_asset: match_result.asset,
-                        comparison_url: match_result.comparison_url,
-                    });
-                }
-            }
-            println!("{}", serde_json::to_string_pretty(&flattened_matches)?);
+            let flattened_matches = flatten_visual_matches(all_matches, &report_progress);
+            let output = serialize_json_report(&flattened_matches, &report_progress)?;
+            report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
+            println!("{}", output);
         }
     }
 

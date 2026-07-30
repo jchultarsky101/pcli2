@@ -1699,15 +1699,23 @@ impl PhysnaApiClient {
     /// * `tenant_uuid` - The UUID of the tenant
     /// * `parent_folder_path` - The path of the folder to list assets from. The tenant
     ///   root (`/`) means every folder in the tenant, plus any assets sitting at root.
+    /// * `on_progress` - Called after each folder in the subtree is queried, with
+    ///   `(folders_scanned, folders_total, assets_so_far)`. A deep tree takes one API
+    ///   call per folder, so a caller showing a progress display needs this to avoid
+    ///   looking hung. Pass `|_, _, _| {}` when there is nothing to report to.
     ///
     /// # Returns
     /// * `Ok(AssetList)` - Every asset in the subtree, de-duplicated by UUID
     /// * `Err(ApiError)` - If the path does not resolve, or an API call fails
-    pub async fn list_assets_by_parent_folder_path_recursive(
+    pub async fn list_assets_by_parent_folder_path_recursive<F>(
         &mut self,
         tenant_uuid: &Uuid,
         parent_folder_path: &str,
-    ) -> Result<AssetList, ApiError> {
+        mut on_progress: F,
+    ) -> Result<AssetList, ApiError>
+    where
+        F: FnMut(usize, usize, usize),
+    {
         debug!(
             "Recursively listing assets in a folder by path: {} for tenant: {}",
             parent_folder_path, tenant_uuid
@@ -1746,6 +1754,11 @@ impl PhysnaApiClient {
 
         let mut assets = AssetList::empty();
 
+        // The root level is an extra query on top of the subtree folders, so it counts
+        // towards the total the caller is shown.
+        let total = subtree_uuids.len() + usize::from(include_root_level);
+        let mut scanned = 0;
+
         if include_root_level {
             for asset in self
                 .list_assets_by_parent_folder_uuid(tenant_uuid, None)
@@ -1754,6 +1767,8 @@ impl PhysnaApiClient {
             {
                 assets.insert(asset.clone());
             }
+            scanned += 1;
+            on_progress(scanned, total, assets.len());
         }
 
         for folder_uuid in &subtree_uuids {
@@ -1764,6 +1779,8 @@ impl PhysnaApiClient {
             {
                 assets.insert(asset.clone());
             }
+            scanned += 1;
+            on_progress(scanned, total, assets.len());
         }
 
         debug!(

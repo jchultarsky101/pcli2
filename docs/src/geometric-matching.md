@@ -252,6 +252,23 @@ When using both `--concurrent` and `--progress` flags together, the command will
 - Individual progress bars for each concurrent operation showing which assets are being processed
 - Status messages indicating the current stage of each operation (starting search, processing matches, completion)
 
+With `--recursive`, `--progress` also covers the folder scan that happens *before*
+any matching starts. A deep tree costs one API call per folder, so this phase can
+run for a while on its own:
+
+```
+⠹ Scanning /Creo Files: 46/312 folders, 1174 assets found
+```
+
+followed by a summary once the scan completes:
+
+```
+Scanned 1 folder path(s), found 3182 asset(s) to match
+```
+
+All of this goes to `stderr`, so piping `stdout` to a file or another command is
+unaffected. Without `--progress` the scan is silent.
+
 #### Performance Options
 
 ##### Concurrency and Progress Combined

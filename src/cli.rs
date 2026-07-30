@@ -501,9 +501,14 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     let client_id = match sub_matches.get_one::<String>(PARAMETER_CLIENT_ID) {
                         Some(id) => id.clone(),
                         None => {
-                            // Try to get stored client ID
+                            // Try to get stored client ID. A stored *empty* value is
+                            // treated as absent: it cannot authenticate, and passing it
+                            // through produces an opaque `invalid_client` from the auth
+                            // server that points the user at their credentials when the
+                            // real problem is local state. Falling through to the prompt
+                            // lets them fix it in place.
                             match keyring.get(&environment_name, "client-id".to_string()) {
-                                Ok(Some(stored_id)) => stored_id,
+                                Ok(Some(stored_id)) if !stored_id.trim().is_empty() => stored_id,
                                 _ => match prompt_for_credential("Client ID", false) {
                                     Some(id) => id,
                                     None => {
@@ -520,9 +525,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     {
                         Some(secret) => secret.clone(),
                         None => {
-                            // Try to get stored client secret
+                            // Try to get stored client secret. Empty means absent, for
+                            // the same reason as the client ID above.
                             match keyring.get(&environment_name, "client-secret".to_string()) {
-                                Ok(Some(stored_secret)) => stored_secret,
+                                Ok(Some(stored_secret)) if !stored_secret.trim().is_empty() => {
+                                    stored_secret
+                                }
                                 _ => match prompt_for_credential("Client secret", true) {
                                     Some(secret) => secret,
                                     None => {

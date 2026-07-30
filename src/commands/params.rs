@@ -473,13 +473,17 @@ pub fn refresh_parameter() -> Arg {
 }
 
 /// Create the recursive parameter.
+///
+/// Folder-wide reports only look at the assets sitting directly in the named folder.
+/// This flag extends them to every subfolder as well, which is what a folder that holds
+/// nothing but subfolders needs in order to produce any output at all.
 pub fn recursive_parameter() -> Arg {
     Arg::new(PARAMETER_RECURSIVE)
         .short('R')
         .long(PARAMETER_RECURSIVE)
         .action(ArgAction::SetTrue)
         .required(false)
-        .help("Recursively apply operation (default: false for CSV/JSON, true for tree)")
+        .help("Include assets in subfolders, not just those directly in the folder")
 }
 
 /// Create the API URL parameter.

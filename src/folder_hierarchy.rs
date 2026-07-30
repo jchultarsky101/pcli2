@@ -243,6 +243,63 @@ impl FolderHierarchy {
         self.nodes.get(uuid)
     }
 
+    /// Collect the UUIDs of a folder and every folder beneath it, breadth-first.
+    ///
+    /// The starting folder is always the first element. Folders already visited are
+    /// skipped, so a malformed hierarchy containing a cycle terminates rather than
+    /// looping forever.
+    ///
+    /// # Arguments
+    /// * `root_uuid` - The folder to start from
+    ///
+    /// # Returns
+    /// The starting folder's UUID followed by all of its descendants. Empty if the
+    /// starting folder is not part of this hierarchy.
+    pub fn subtree_uuids(&self, root_uuid: &Uuid) -> Vec<Uuid> {
+        if !self.nodes.contains_key(root_uuid) {
+            return Vec::new();
+        }
+
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        let mut ordered = Vec::new();
+
+        queue.push_back(*root_uuid);
+        visited.insert(*root_uuid);
+
+        while let Some(uuid) = queue.pop_front() {
+            ordered.push(uuid);
+            if let Some(node) = self.nodes.get(&uuid) {
+                for child in &node.children {
+                    if visited.insert(*child) {
+                        queue.push_back(*child);
+                    }
+                }
+            }
+        }
+
+        ordered
+    }
+
+    /// Collect the UUIDs of every folder in the hierarchy, breadth-first from each root.
+    ///
+    /// Used when an operation targets the tenant root, which has no folder UUID of its
+    /// own but conceptually contains every folder.
+    pub fn all_subtree_uuids(&self) -> Vec<Uuid> {
+        let mut visited = std::collections::HashSet::new();
+        let mut ordered = Vec::new();
+
+        for root_uuid in &self.root_uuids {
+            for uuid in self.subtree_uuids(root_uuid) {
+                if visited.insert(uuid) {
+                    ordered.push(uuid);
+                }
+            }
+        }
+
+        ordered
+    }
+
     /// Get a folder node by its path
     ///
     /// # Arguments
@@ -602,5 +659,96 @@ mod tests {
         assert!(hierarchy
             .get_folder_by_path("parent/Child Folder")
             .is_some());
+    }
+
+    /// Build a folder with the given name, parent and children, for traversal tests.
+    fn folder(name: &str, parent: Option<Uuid>) -> FolderResponse {
+        FolderResponse {
+            uuid: Uuid::new_v4(),
+            tenant_uuid: Uuid::new_v4(),
+            name: name.to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            assets_count: 0,
+            folders_count: 0,
+            parent_folder_uuid: parent,
+            owner_id: None,
+        }
+    }
+
+    /// Assemble a hierarchy from `(node, children)` pairs.
+    fn hierarchy_of(folders: Vec<FolderResponse>, edges: &[(Uuid, Uuid)]) -> FolderHierarchy {
+        let mut nodes = HashMap::new();
+        let mut root_uuids = Vec::new();
+
+        for folder in folders {
+            if folder.parent_folder_uuid.is_none() {
+                root_uuids.push(folder.uuid);
+            }
+            nodes.insert(folder.uuid, FolderNode::new(folder));
+        }
+
+        for (parent, child) in edges {
+            nodes.get_mut(parent).unwrap().children.push(*child);
+        }
+
+        FolderHierarchy { nodes, root_uuids }
+    }
+
+    #[test]
+    fn subtree_uuids_includes_the_folder_and_every_descendant() {
+        // Regression: folder match reports listed only a folder's direct assets, so a
+        // container folder such as "Creo Files" - which holds nothing but subfolders -
+        // reported zero assets even though its subtree was full of them.
+        let root = folder("Creo Files", None);
+        let root_uuid = root.uuid;
+        let child = folder("Demo - Local", Some(root_uuid));
+        let child_uuid = child.uuid;
+        let grandchild = folder("Nested", Some(child_uuid));
+        let grandchild_uuid = grandchild.uuid;
+        let sibling = folder("Creo", None);
+        let sibling_uuid = sibling.uuid;
+
+        let hierarchy = hierarchy_of(
+            vec![root, child, grandchild, sibling],
+            &[(root_uuid, child_uuid), (child_uuid, grandchild_uuid)],
+        );
+
+        let subtree = hierarchy.subtree_uuids(&root_uuid);
+        assert_eq!(subtree.len(), 3);
+        assert_eq!(subtree[0], root_uuid, "the folder itself comes first");
+        assert!(subtree.contains(&child_uuid));
+        assert!(subtree.contains(&grandchild_uuid));
+        assert!(
+            !subtree.contains(&sibling_uuid),
+            "an unrelated root folder must not be pulled in"
+        );
+
+        // A leaf folder is its own complete subtree.
+        assert_eq!(
+            hierarchy.subtree_uuids(&grandchild_uuid),
+            vec![grandchild_uuid]
+        );
+
+        // Every root's subtree, with no duplicates.
+        let all = hierarchy.all_subtree_uuids();
+        assert_eq!(all.len(), 4);
+    }
+
+    #[test]
+    fn subtree_uuids_handles_unknown_folders_and_cycles() {
+        assert!(FolderHierarchy::new()
+            .subtree_uuids(&Uuid::new_v4())
+            .is_empty());
+
+        // A malformed hierarchy whose children loop back must terminate rather than
+        // recursing forever.
+        let a = folder("a", None);
+        let a_uuid = a.uuid;
+        let b = folder("b", Some(a_uuid));
+        let b_uuid = b.uuid;
+        let hierarchy = hierarchy_of(vec![a, b], &[(a_uuid, b_uuid), (b_uuid, a_uuid)]);
+
+        assert_eq!(hierarchy.subtree_uuids(&a_uuid), vec![a_uuid, b_uuid]);
     }
 }

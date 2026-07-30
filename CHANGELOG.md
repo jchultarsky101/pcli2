@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-07-30
+
+### Added
+- **`--recursive` for folder match reports** - `folder geometric-match`, `folder part-match`, and `folder visual-match` accept `--recursive` (`-R`) to include the assets in every subfolder, not just those sitting directly in the named folder. The default is unchanged, so existing commands keep their current scope and runtime; recursion is opt-in because it can widen the work dramatically (a folder with a single asset of its own may have thousands underneath it, and each one costs a search).
+
+### Fixed
+- **Folder match reports no longer look like a broken path on container folders** - A folder that holds nothing but subfolders has no assets of its own, so a match report over it found nothing and failed with `No assets found in the specified folder(s)`, whose first suggestion was to verify the folder path. The path had in fact resolved correctly, which sent users hunting for a typo that was never there. The message now reports how many subfolders the folder actually contains and points at `--recursive`:
+
+  ```
+  ❌ Error: No assets found directly in the specified folder(s)
+
+  🔧 To resolve this issue, try the following:
+    1. The folder(s) contain 8 subfolder(s) - pass --recursive to include the assets in them
+  ```
+
 ## [1.12.0] - 2026-07-20
 
 ### Changed

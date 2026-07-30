@@ -137,6 +137,32 @@ Find geometrically similar assets for all assets in a specified folder. This com
 pcli2 asset geometric-match-folder --folder-path /Root/SearchFolder/ --threshold 85.0
 ```
 
+### Including Subfolders
+
+By default only the assets sitting **directly** in the named folder are matched.
+A folder that holds nothing but subfolders therefore produces no report:
+
+```bash
+# /Creo Files contains 8 subfolders and no assets of its own
+pcli2 folder geometric-match --folder-path "/Creo Files" --threshold 85.0
+# ❌ Error: No assets found directly in the specified folder(s)
+#    1. The folder(s) contain 8 subfolder(s) - pass --recursive to include the assets in them
+```
+
+Pass `--recursive` (`-R`) to walk the whole subtree:
+
+```bash
+# Matches every asset under /Creo Files, including all of its subfolders
+pcli2 folder geometric-match --folder-path "/Creo Files" --threshold 85.0 --recursive
+```
+
+> `--recursive` can widen the scope dramatically — a folder with one asset of its
+> own may have thousands underneath it, and each one costs a search. Raise
+> `--concurrent` (up to 10) to speed it up, or name a deeper folder to narrow the
+> scope.
+
+The same flag is available on `folder part-match` and `folder visual-match`.
+
 ### Comparison Viewer URL
 
 Both `geometric-match` and `geometric-match-folder` commands include a comparison URL in their output that allows you to view the geometric match in the Physna UI. The URL is available in both JSON and CSV formats:

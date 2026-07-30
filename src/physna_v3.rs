@@ -14,7 +14,7 @@ use reqwest;
 use serde_json;
 use serde_urlencoded;
 use std::path::Path;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, trace, warn};
 use uuid::Uuid;
 
 /// Error emitted by the Physna V3 Api
@@ -1685,6 +1685,94 @@ impl PhysnaApiClient {
         let assets = self
             .list_assets_by_parent_folder_uuid(tenant_uuid, parent_folder_uuid.clone().as_ref())
             .await?;
+        Ok(assets)
+    }
+
+    /// List the assets in a folder *and* in every folder beneath it.
+    ///
+    /// The Physna contents endpoint only ever returns a folder's direct children, so a
+    /// container folder that holds nothing but subfolders reports zero assets. This
+    /// method walks the cached folder hierarchy and queries each folder in the subtree,
+    /// which is what folder-wide reports (match reports in particular) need.
+    ///
+    /// # Arguments
+    /// * `tenant_uuid` - The UUID of the tenant
+    /// * `parent_folder_path` - The path of the folder to list assets from. The tenant
+    ///   root (`/`) means every folder in the tenant, plus any assets sitting at root.
+    ///
+    /// # Returns
+    /// * `Ok(AssetList)` - Every asset in the subtree, de-duplicated by UUID
+    /// * `Err(ApiError)` - If the path does not resolve, or an API call fails
+    pub async fn list_assets_by_parent_folder_path_recursive(
+        &mut self,
+        tenant_uuid: &Uuid,
+        parent_folder_path: &str,
+    ) -> Result<AssetList, ApiError> {
+        debug!(
+            "Recursively listing assets in a folder by path: {} for tenant: {}",
+            parent_folder_path, tenant_uuid
+        );
+
+        // Resolve first so a bad path still fails with FolderNotFound rather than
+        // silently returning an empty list.
+        let parent_folder_uuid = self
+            .resolve_folder_uuid_by_path(tenant_uuid, parent_folder_path)
+            .await?;
+
+        // Without the hierarchy there is no way to enumerate descendants, so fall back
+        // to the direct-children behaviour rather than failing the whole report.
+        let hierarchy = match crate::folder_cache::FolderCache::get_or_fetch(self, tenant_uuid)
+            .await
+        {
+            Ok(hierarchy) => Some(hierarchy),
+            Err(e) => {
+                warn!(
+                    "Could not load the folder hierarchy ({}); listing only the assets directly in '{}'",
+                    e, parent_folder_path
+                );
+                None
+            }
+        };
+
+        let (subtree_uuids, include_root_level) = match (hierarchy, parent_folder_uuid.as_ref()) {
+            // A resolved folder: that folder plus all of its descendants.
+            (Some(hierarchy), Some(uuid)) => (hierarchy.subtree_uuids(uuid), false),
+            // The tenant root has no UUID of its own; it covers every folder, and
+            // assets can also live at root level with no parent folder at all.
+            (Some(hierarchy), None) => (hierarchy.all_subtree_uuids(), true),
+            (None, Some(uuid)) => (vec![*uuid], false),
+            (None, None) => (Vec::new(), true),
+        };
+
+        let mut assets = AssetList::empty();
+
+        if include_root_level {
+            for asset in self
+                .list_assets_by_parent_folder_uuid(tenant_uuid, None)
+                .await?
+                .get_all_assets()
+            {
+                assets.insert(asset.clone());
+            }
+        }
+
+        for folder_uuid in &subtree_uuids {
+            for asset in self
+                .list_assets_by_parent_folder_uuid(tenant_uuid, Some(folder_uuid))
+                .await?
+                .get_all_assets()
+            {
+                assets.insert(asset.clone());
+            }
+        }
+
+        debug!(
+            "Found {} assets across {} folder(s) under path: {}",
+            assets.len(),
+            subtree_uuids.len(),
+            parent_folder_path
+        );
+
         Ok(assets)
     }
 

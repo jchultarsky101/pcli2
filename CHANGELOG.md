@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-07-30
+
+### Changed
+- **JSON match reports now stream to `stdout` too** - Completes what v1.14.0 started for CSV. `folder geometric-match`, `folder part-match`, and `folder visual-match` built the entire pretty-printed JSON document as one `String` before printing it; on a large report that is a second full copy of the data — pretty-printed JSON is bulkier than the rows it came from — and nothing reached the terminal until the last byte was ready. Serialization now goes straight to a buffered, locked `stdout`. The bytes written are unchanged, trailing newline included. This supersedes the note in the v1.14.0 entry below that JSON would keep buffering: the atomicity trade is real and is harsher here than for CSV, because a truncated JSON document does not parse at all where a truncated CSV still does. A mid-write failure still reports on stderr with a non-zero exit code, which is what separates it from a silently short file. The single-asset `asset match visual` and `asset match text` reports are small and still buffer.
+
 ## [1.14.0] - 2026-07-30
 
 ### Changed

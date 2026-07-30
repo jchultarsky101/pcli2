@@ -62,6 +62,10 @@ async fn count_subfolders(
 /// Assets are keyed by UUID, so a folder path that overlaps another one supplied on the
 /// same command line contributes each asset only once.
 ///
+/// A recursive scan costs one API call per folder in the subtree and runs before any
+/// matching starts, so with `show_progress` it reports what it is doing. Without the
+/// flag it stays silent, keeping the default output unchanged.
+///
 /// # Returns
 /// * `Ok(Some(assets))` - The assets found, guaranteed non-empty
 /// * `Ok(None)` - Nothing was found; remediation advice has already been printed and the
@@ -72,8 +76,18 @@ async fn collect_assets_in_folders(
     tenant_uuid: &Uuid,
     folder_paths: &[String],
     recursive: bool,
+    show_progress: bool,
 ) -> Result<Option<std::collections::HashMap<Uuid, crate::model::Asset>>, CliError> {
     let mut all_assets = std::collections::HashMap::new();
+
+    // Only a recursive scan is slow enough to need reporting; the non-recursive path is
+    // a single call per folder. The spinner hides itself when stderr is not a terminal,
+    // so redirected output stays clean.
+    let scan_progress = if recursive && show_progress {
+        Some(crate::terminal::spinner("Scanning folders..."))
+    } else {
+        None
+    };
 
     for folder_path in folder_paths {
         trace!(
@@ -82,8 +96,21 @@ async fn collect_assets_in_folders(
             recursive
         );
         let assets_response = if recursive {
-            api.list_assets_by_parent_folder_path_recursive(tenant_uuid, folder_path.as_str())
-                .await?
+            let path_label = folder_path.clone();
+            let progress = scan_progress.as_ref();
+            api.list_assets_by_parent_folder_path_recursive(
+                tenant_uuid,
+                folder_path.as_str(),
+                |scanned, total, assets| {
+                    if let Some(progress) = progress {
+                        progress.set_message(format!(
+                            "Scanning {}: {}/{} folders, {} assets found",
+                            path_label, scanned, total, assets
+                        ));
+                    }
+                },
+            )
+            .await?
         } else {
             api.list_assets_by_parent_folder_path(tenant_uuid, folder_path.as_str())
                 .await?
@@ -92,6 +119,16 @@ async fn collect_assets_in_folders(
         for asset in assets_response.get_all_assets() {
             all_assets.insert(asset.uuid(), asset.clone());
         }
+    }
+
+    // Clear the spinner before the match progress bars take over the terminal.
+    if let Some(progress) = scan_progress {
+        progress.finish_and_clear();
+        eprintln!(
+            "Scanned {} folder path(s), found {} asset(s) to match",
+            folder_paths.len(),
+            all_assets.len()
+        );
     }
 
     trace!("Found {} assets across all folders", all_assets.len());
@@ -822,11 +859,18 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
-    let all_assets =
-        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
-            Some(assets) => assets,
-            None => return Ok(()),
-        };
+    let all_assets = match collect_assets_in_folders(
+        &mut api,
+        &tenant.uuid,
+        &folder_paths,
+        recursive,
+        show_progress,
+    )
+    .await?
+    {
+        Some(assets) => assets,
+        None => return Ok(()),
+    };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -1307,11 +1351,18 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
-    let all_assets =
-        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
-            Some(assets) => assets,
-            None => return Ok(()),
-        };
+    let all_assets = match collect_assets_in_folders(
+        &mut api,
+        &tenant.uuid,
+        &folder_paths,
+        recursive,
+        show_progress,
+    )
+    .await?
+    {
+        Some(assets) => assets,
+        None => return Ok(()),
+    };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -1829,11 +1880,18 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
-    let all_assets =
-        match collect_assets_in_folders(&mut api, &tenant.uuid, &folder_paths, recursive).await? {
-            Some(assets) => assets,
-            None => return Ok(()),
-        };
+    let all_assets = match collect_assets_in_folders(
+        &mut api,
+        &tenant.uuid,
+        &folder_paths,
+        recursive,
+        show_progress,
+    )
+    .await?
+    {
+        Some(assets) => assets,
+        None => return Ok(()),
+    };
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {

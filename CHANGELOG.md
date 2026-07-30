@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--progress` now covers the recursive folder scan** - With `--recursive`, folder match reports spend time walking the folder tree (one API call per folder) before any matching starts, which looked like a hang on a deep tree. When `--progress` is passed, that phase now reports live (`Scanning /Creo Files: 46/312 folders, 1174 assets found`) and prints a summary before matching begins (`Scanned 1 folder path(s), found 3182 asset(s) to match`). All of it goes to stderr, so piped `stdout` is unaffected; without `--progress` the scan stays silent.
+
 ## [1.13.0] - 2026-07-30
 
 ### Added

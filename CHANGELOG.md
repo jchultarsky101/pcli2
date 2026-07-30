@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`folder geometric-match --format xls` now refuses a report too tall for a worksheet, instead of failing deep inside the workbook writer** - An Excel worksheet holds 1,048,576 rows; this report spends two of them on its header band, leaving 1,048,574 for data. A real run produced 1,293,068 rows, which cannot be represented. The command now fails immediately after matching with `the report has 1293068 rows, more than the 1048574 an Excel worksheet can hold - use '--format csv' for the complete report`, before building a single row. Truncating to fit was considered and rejected: a workbook silently missing a quarter of its rows looks complete to whoever opens it. Use `--format csv`, which has no such limit.
+
+### Fixed
+- **Report building no longer materializes an intermediate copy of every match** - `folder geometric-match` built a `Vec<GeometricMatchPair>` before building rows, cloning each reference asset — metadata `HashMap` included — once per row, only ever to read a path and a UUID back out of it. On a 1.29M-row report that intermediate took seconds to build and a further nine seconds to *drop*, with the progress display parked at 99% for the whole teardown. Both passes now iterate borrowed data. Output is unchanged.
+- **The progress bar no longer flashes `0/0 (0%)` when a counted phase starts** - The steady-tick thread could redraw in the window between the counter style being applied and the row count being set. Length is now set first.
+
 ## [1.15.0] - 2026-07-30
 
 ### Changed

@@ -74,6 +74,9 @@ pub enum XlsxReportError {
     /// An error occurred while building or saving the Excel workbook.
     #[error("failed to write Excel workbook: {0}")]
     Xlsx(#[from] XlsxError),
+    /// The report has more rows than a single worksheet can hold.
+    #[error("the report has {rows} rows, more than the {max} an Excel worksheet can hold - use '--format csv' for the complete report")]
+    TooManyRows { rows: usize, max: usize },
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +127,13 @@ const MAX_URL_LEN: usize = 2080;
 
 /// Worksheet tab name.
 const SHEET_NAME: &str = "Match Report";
+
+/// Excel's hard limit on rows per worksheet (2^20). Not a guideline: a workbook
+/// claiming more rows than this is not a valid `.xlsx` and Excel will not open it.
+const EXCEL_MAX_ROWS: u32 = 1_048_576;
+
+/// The most data rows a sheet can hold, once the two header rows are subtracted.
+pub const MAX_DATA_ROWS: usize = (EXCEL_MAX_ROWS - DATA_START_ROW) as usize;
 
 /// The comparison state of a single `REF_`/`CAN_` cell pair within a row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,6 +320,30 @@ pub struct ConversionStats {
     pub missing: usize,
 }
 
+/// Rejects a report that is too tall for a single worksheet.
+///
+/// Refuses rather than truncating. A workbook silently missing a quarter of its rows
+/// looks complete to whoever opens it, and a warning on stderr scrolls away - a
+/// report that cannot be represented honestly should not be written at all.
+///
+/// Call this as early as the row count is known. That count is derivable from the
+/// match set before a single row is built, so an oversized report fails in seconds
+/// instead of after minutes of wasted matching and row building.
+/// [`write_match_report`] checks again, so the invariant holds however it is called.
+///
+/// The header-row arithmetic is the easy part to get wrong by one, and getting it
+/// wrong yields a workbook Excel refuses to open, so it is tested directly rather
+/// than by building a million-row fixture.
+pub fn ensure_rows_fit(rows: usize) -> Result<(), XlsxReportError> {
+    if rows > MAX_DATA_ROWS {
+        return Err(XlsxReportError::TooManyRows {
+            rows,
+            max: MAX_DATA_ROWS,
+        });
+    }
+    Ok(())
+}
+
 /// Ensures the output path carries the `.xlsx` extension (case-insensitive).
 ///
 /// Excel refuses to open a workbook whose extension and contents disagree, so a
@@ -359,6 +393,10 @@ pub fn write_match_report(
         ));
         report.sort_by_numeric_desc(column);
     }
+
+    // Backstop: callers are expected to have checked this before doing the work, but
+    // the invariant belongs here too - nothing below can represent an oversized sheet.
+    ensure_rows_fit(report.rows.len())?;
 
     write_workbook(&report, output, progress)
 }
@@ -765,6 +803,35 @@ mod tests {
             result,
             Err(XlsxReportError::MissingRequiredColumns(_))
         ));
+    }
+
+    #[test]
+    fn row_limit_accounts_for_the_two_header_rows() {
+        // A worksheet holds 2^20 rows total, and this report spends two of them on
+        // the group/label header band - so the data budget is two short of Excel's
+        // raw maximum. Off-by-one here produces a workbook Excel refuses to open.
+        assert_eq!(MAX_DATA_ROWS, 1_048_574);
+        assert_eq!(MAX_DATA_ROWS as u32 + DATA_START_ROW, EXCEL_MAX_ROWS);
+
+        assert!(ensure_rows_fit(0).is_ok());
+        assert!(ensure_rows_fit(MAX_DATA_ROWS - 1).is_ok());
+        assert!(
+            ensure_rows_fit(MAX_DATA_ROWS).is_ok(),
+            "an exactly-full sheet fits"
+        );
+        assert!(matches!(
+            ensure_rows_fit(MAX_DATA_ROWS + 1),
+            Err(XlsxReportError::TooManyRows { .. })
+        ));
+
+        // The run that prompted this: 1,293,068 rows from the etrage /Creo Files tree.
+        match ensure_rows_fit(1_293_068) {
+            Err(XlsxReportError::TooManyRows { rows, max }) => {
+                assert_eq!(rows, 1_293_068);
+                assert_eq!(max, MAX_DATA_ROWS);
+            }
+            other => panic!("expected TooManyRows, got {:?}", other),
+        }
     }
 
     #[test]

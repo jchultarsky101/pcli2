@@ -861,35 +861,42 @@ fn build_geometric_match_table(
     with_metadata: bool,
     progress: &ReportProgress,
 ) -> (Vec<String>, Vec<Vec<String>>) {
-    // Flatten every (reference, candidate) match into a single row model. Each pair
-    // clones its reference asset, metadata included, so this is not a cheap pass.
-    progress.phase(format!(
-        "Flattening {} matches...",
-        HumanCount(all_matches.len() as u64)
-    ));
-    let flattened: Vec<crate::model::GeometricMatchPair> = all_matches
-        .iter()
-        .flat_map(|response| {
-            response.matches.iter().map(move |m| {
-                crate::model::GeometricMatchPair::from_reference_and_match(
-                    response.reference_asset.clone(),
-                    m.clone(),
-                )
-            })
+    // Every (reference, candidate) pair, borrowed rather than materialized.
+    //
+    // This used to collect a `Vec<GeometricMatchPair>` first, which cloned the whole
+    // reference asset - metadata `HashMap` included - once per row, only ever to read
+    // a path and a UUID back out of it. On a 1.3M-row report that intermediate cost
+    // seconds to build and a further nine seconds to *drop* at the end of this
+    // function, with the progress display parked at 99% for all of it. Both passes
+    // below iterate the borrowed data instead, so nothing is duplicated and there is
+    // nothing to tear down.
+    //
+    // `GeometricMatchPair::from_reference_and_match` is a plain field mapping, so
+    // reading the fields directly here produces byte-identical rows.
+    let pairs = || {
+        all_matches.iter().flat_map(|response| {
+            response
+                .matches
+                .iter()
+                .map(move |m| (&response.reference_asset, m))
         })
-        .collect();
+    };
+    let total_rows: usize = all_matches
+        .iter()
+        .map(|response| response.matches.len())
+        .sum();
 
     // Collect the sorted, unique metadata keys present across all pairs.
     let mut metadata_keys: Vec<String> = Vec::new();
     if with_metadata {
-        progress.start_rows("Collecting metadata columns", flattened.len());
+        progress.start_rows("Collecting metadata columns", total_rows);
         let mut keys = std::collections::HashSet::new();
-        for (index, pair) in flattened.iter().enumerate() {
+        for (index, (reference_asset, match_result)) in pairs().enumerate() {
             progress.set_row(index);
-            for key in pair.reference_asset.metadata.keys() {
+            for key in reference_asset.metadata.keys() {
                 keys.insert(key.clone());
             }
-            for key in pair.candidate_asset.metadata.keys() {
+            for key in match_result.asset.metadata.keys() {
                 keys.insert(key.clone());
             }
         }
@@ -913,29 +920,28 @@ fn build_geometric_match_table(
     headers.push(COMPARISON_URL_HEADER.to_string());
 
     // Rows, in the same column order as the headers (COMPARISON_URL last).
-    progress.start_rows("Building rows", flattened.len());
-    let mut rows = Vec::with_capacity(flattened.len());
-    for (index, pair) in flattened.iter().enumerate() {
+    progress.start_rows("Building rows", total_rows);
+    let mut rows = Vec::with_capacity(total_rows);
+    for (index, (reference_asset, match_result)) in pairs().enumerate() {
         progress.set_row(index);
         let mut values = vec![
-            pair.reference_asset.path.clone(),
-            pair.candidate_asset.path.clone(),
-            format!("{}", pair.match_percentage),
-            pair.reference_asset.uuid.to_string(),
-            pair.candidate_asset.uuid.to_string(),
+            reference_asset.path.clone(),
+            match_result.asset.path.clone(),
+            format!("{}", match_result.match_percentage),
+            reference_asset.uuid.to_string(),
+            match_result.asset.uuid.to_string(),
         ];
         if with_metadata {
             for key in &metadata_keys {
-                let ref_value = pair
-                    .reference_asset
+                let ref_value = reference_asset
                     .metadata
                     .get(key)
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default();
                 values.push(ref_value);
-                let candidate_value = pair
-                    .candidate_asset
+                let candidate_value = match_result
+                    .asset
                     .metadata
                     .get(key)
                     .and_then(|v| v.as_str())
@@ -945,7 +951,7 @@ fn build_geometric_match_table(
             }
         }
         // COMPARISON_URL last, matching the header order above.
-        values.push(pair.comparison_url.clone().unwrap_or_default());
+        values.push(match_result.comparison_url.clone().unwrap_or_default());
         rows.push(values);
     }
 
@@ -1346,6 +1352,17 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // The workbook is built from the same table as the CSV output, so the two
     // formats are always column-for-column consistent.
     if is_xls {
+        // Refuse an oversized workbook before building anything. The row count is just
+        // the number of (reference, candidate) pairs, which is known the moment
+        // matching finishes - so a report too tall for a worksheet fails here in
+        // milliseconds rather than after minutes of row building and cell formatting.
+        crate::xlsx_report::ensure_rows_fit(
+            all_matches
+                .iter()
+                .map(|response| response.matches.len())
+                .sum(),
+        )?;
+
         let (headers, rows) =
             build_geometric_match_table(&all_matches, with_metadata, &report_progress);
         let row_count = rows.len();
@@ -2667,4 +2684,135 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn asset(path: &str, uuid: &str, metadata: &[(&str, &str)]) -> crate::model::AssetResponse {
+        crate::model::AssetResponse {
+            uuid: Uuid::parse_str(uuid).expect("valid uuid"),
+            tenant_id: Uuid::nil(),
+            path: path.to_string(),
+            folder_id: None,
+            asset_type: "asset".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            state: "active".to_string(),
+            is_assembly: false,
+            metadata: metadata
+                .iter()
+                .map(|(k, v)| (k.to_string(), serde_json::Value::String(v.to_string())))
+                .collect::<HashMap<_, _>>(),
+            parent_folder_id: None,
+            owner_id: None,
+        }
+    }
+
+    fn geometric_match(
+        candidate: crate::model::AssetResponse,
+        percentage: f64,
+        url: Option<&str>,
+    ) -> crate::model::GeometricMatch {
+        crate::model::GeometricMatch {
+            asset: candidate,
+            match_percentage: percentage,
+            transformation: None,
+            comparison_url: url.map(|u| u.to_string()),
+        }
+    }
+
+    const REF_UUID: &str = "9ebd8801-388a-4fb8-a4fd-dd77d91e7cac";
+    const CAN_A_UUID: &str = "02c37ef8-caad-4a16-a992-6abbdda852f9";
+    const CAN_B_UUID: &str = "f16e93ca-bc0b-41c1-a98f-d1eeef01e4c1";
+
+    /// One response carrying two matches, to prove rows are produced per *match*
+    /// rather than per response.
+    fn sample() -> Vec<crate::model::EnhancedGeometricSearchResponse> {
+        vec![crate::model::EnhancedGeometricSearchResponse {
+            reference_asset: asset("/a/ref.prt", REF_UUID, &[("material", "steel")]),
+            matches: vec![
+                geometric_match(
+                    asset("/b/one.prt", CAN_A_UUID, &[("material", "alu")]),
+                    100.0,
+                    Some("https://example.com/compare?a=1"),
+                ),
+                geometric_match(
+                    asset("/c/two.prt", CAN_B_UUID, &[("finish", "anodized")]),
+                    81.5,
+                    None,
+                ),
+            ],
+        }]
+    }
+
+    #[test]
+    fn table_without_metadata_has_base_columns_and_url_last() {
+        let (headers, rows) =
+            build_geometric_match_table(&sample(), false, &ReportProgress::disabled());
+
+        assert_eq!(headers.last().map(String::as_str), Some("COMPARISON_URL"));
+        assert!(!headers.iter().any(|h| h.starts_with("REF_")));
+
+        assert_eq!(rows.len(), 2, "one row per match, not per response");
+        assert_eq!(
+            rows[0],
+            vec![
+                "/a/ref.prt".to_string(),
+                "/b/one.prt".to_string(),
+                "100".to_string(),
+                REF_UUID.to_string(),
+                CAN_A_UUID.to_string(),
+                "https://example.com/compare?a=1".to_string(),
+            ]
+        );
+        // A missing comparison URL becomes an empty cell, not a dropped column.
+        assert_eq!(rows[1].len(), headers.len());
+        assert_eq!(rows[1][2], "81.5");
+        assert_eq!(rows[1].last().map(String::as_str), Some(""));
+    }
+
+    #[test]
+    fn table_with_metadata_pairs_the_sorted_key_union() {
+        let (headers, rows) =
+            build_geometric_match_table(&sample(), true, &ReportProgress::disabled());
+
+        // Keys are the sorted union across both sides of every pair: finish, material.
+        let metadata_headers: Vec<&str> = headers
+            .iter()
+            .filter(|h| h.starts_with("REF_") || h.starts_with("CAN_"))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            metadata_headers,
+            vec!["REF_FINISH", "CAN_FINISH", "REF_MATERIAL", "CAN_MATERIAL"]
+        );
+        assert_eq!(headers.last().map(String::as_str), Some("COMPARISON_URL"));
+
+        // Row 0: reference has material=steel and no finish; candidate has
+        // material=alu. Absent values are empty strings, keeping columns aligned.
+        let finish_ref = headers.iter().position(|h| h == "REF_FINISH").unwrap();
+        let material_ref = headers.iter().position(|h| h == "REF_MATERIAL").unwrap();
+        let material_can = headers.iter().position(|h| h == "CAN_MATERIAL").unwrap();
+        assert_eq!(rows[0][finish_ref], "");
+        assert_eq!(rows[0][material_ref], "steel");
+        assert_eq!(rows[0][material_can], "alu");
+
+        for row in &rows {
+            assert_eq!(
+                row.len(),
+                headers.len(),
+                "every row matches the header width"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_input_produces_headers_but_no_rows() {
+        let (headers, rows) = build_geometric_match_table(&[], false, &ReportProgress::disabled());
+        assert!(!headers.is_empty());
+        assert!(rows.is_empty());
+    }
 }

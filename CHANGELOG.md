@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Notes
+- **Correction to the v1.18.3 entry below.** That fix was attributed to a field report of `--recursive` "not working". The report turned out to have a different cause — an old `pcli2` earlier on the user's `PATH`, in a shell where `--recursive` did not yet exist — so the silent-fallback defect it describes was *not* what that user hit. The defect is real and the fix stands: a recursive scan really could degrade to listing only a folder's direct children, with the explanatory warning painted over by the `--progress` spinner. But it was found by reasoning backwards from the symptom rather than by reproducing it, and there is no evidence it has ever triggered in the field. Worth knowing before treating a low recursive count as that bug: check `pcli2 --version` in the shell actually being used first.
+
 ## [1.18.3] - 2026-07-31
 
 ### Fixed

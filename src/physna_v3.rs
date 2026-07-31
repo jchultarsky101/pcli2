@@ -14,7 +14,7 @@ use reqwest;
 use serde_json;
 use serde_urlencoded;
 use std::path::Path;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, trace};
 use uuid::Uuid;
 
 /// Error emitted by the Physna V3 Api
@@ -77,6 +77,15 @@ pub enum ApiError {
     /// Not found error with a descriptive message
     #[error("Not found error: {0}")]
     NotFoundError(String),
+
+    /// The folder hierarchy needed to enumerate subfolders could not be obtained, so a
+    /// recursive listing cannot be performed.
+    #[error(
+        "could not load the folder hierarchy needed by --recursive: {0}. \
+         Without it only the assets directly in the folder can be listed, which is not \
+         what was asked for. Try 'pcli2 cache clear' and run the command again."
+    )]
+    FolderHierarchyUnavailable(String),
 
     #[error(
         "Attempting to delete folder that is not empty. If you are sure, use the --force flag"
@@ -2075,29 +2084,35 @@ impl PhysnaApiClient {
             .resolve_folder_uuid_by_path(tenant_uuid, parent_folder_path)
             .await?;
 
-        // Without the hierarchy there is no way to enumerate descendants, so fall back
-        // to the direct-children behaviour rather than failing the whole report.
-        let hierarchy = match crate::folder_cache::FolderCache::get_or_fetch(self, tenant_uuid)
+        // Without the hierarchy there is no way to enumerate descendants. This used to
+        // fall back to listing only the folder's direct children, which is a silent
+        // lie: the caller asked for a recursive scan and got a non-recursive one, with
+        // the explanatory warning drawn over by the scan spinner on the very next
+        // redraw. A folder holding one asset and five hundred subfolders reported one
+        // asset and looked like it had worked. Fail instead.
+        let hierarchy = crate::folder_cache::FolderCache::get_or_fetch(self, tenant_uuid)
             .await
-        {
-            Ok(hierarchy) => Some(hierarchy),
-            Err(e) => {
-                warn!(
-                    "Could not load the folder hierarchy ({}); listing only the assets directly in '{}'",
-                    e, parent_folder_path
-                );
-                None
-            }
-        };
+            .map_err(|e| ApiError::FolderHierarchyUnavailable(e.to_string()))?;
 
-        let (subtree_uuids, include_root_level) = match (hierarchy, parent_folder_uuid.as_ref()) {
+        let (subtree_uuids, include_root_level) = match parent_folder_uuid.as_ref() {
             // A resolved folder: that folder plus all of its descendants.
-            (Some(hierarchy), Some(uuid)) => (hierarchy.subtree_uuids(uuid), false),
+            Some(uuid) => {
+                let subtree = hierarchy.subtree_uuids(uuid);
+                // The path resolved against the API but the folder is absent from the
+                // cached hierarchy, so its descendants cannot be enumerated - a stale
+                // cache, most often a folder created since it was written. Same
+                // reasoning as above: better an error than a quietly partial report.
+                if subtree.is_empty() {
+                    return Err(ApiError::FolderHierarchyUnavailable(format!(
+                        "'{}' is not present in the cached folder hierarchy",
+                        parent_folder_path
+                    )));
+                }
+                (subtree, false)
+            }
             // The tenant root has no UUID of its own; it covers every folder, and
             // assets can also live at root level with no parent folder at all.
-            (Some(hierarchy), None) => (hierarchy.all_subtree_uuids(), true),
-            (None, Some(uuid)) => (vec![*uuid], false),
-            (None, None) => (Vec::new(), true),
+            None => (hierarchy.all_subtree_uuids(), true),
         };
 
         let mut assets = AssetList::empty();

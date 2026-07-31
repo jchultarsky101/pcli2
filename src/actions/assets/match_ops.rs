@@ -347,19 +347,30 @@ async fn collect_assets_in_folders(
         let assets_response = if recursive {
             let path_label = folder_path.clone();
             let progress = scan_progress.as_ref();
-            api.list_assets_by_parent_folder_path_recursive(
-                tenant_uuid,
-                folder_path.as_str(),
-                |scanned, total, assets| {
-                    if let Some(progress) = progress {
-                        progress.set_message(format!(
-                            "Scanning {}: {}/{} folders, {} assets found",
-                            path_label, scanned, total, assets
-                        ));
-                    }
-                },
-            )
-            .await?
+            let result = api
+                .list_assets_by_parent_folder_path_recursive(
+                    tenant_uuid,
+                    folder_path.as_str(),
+                    |scanned, total, assets| {
+                        if let Some(progress) = progress {
+                            progress.set_message(format!(
+                                "Scanning {}: {}/{} folders, {} assets found",
+                                path_label, scanned, total, assets
+                            ));
+                        }
+                    },
+                )
+                .await;
+
+            // Clear the spinner before any error reaches the terminal. It redraws
+            // every 100ms, so a message written underneath it is wiped on the next
+            // tick - which is exactly how the old silent fallback stayed invisible.
+            if result.is_err() {
+                if let Some(progress) = scan_progress.as_ref() {
+                    progress.finish_and_clear();
+                }
+            }
+            result?
         } else {
             api.list_assets_by_parent_folder_path(tenant_uuid, folder_path.as_str())
                 .await?

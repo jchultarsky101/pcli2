@@ -22,6 +22,45 @@ use indicatif::{HumanCount, MultiProgress, ProgressBar, ProgressStyle};
 use tracing::trace;
 use uuid::Uuid;
 
+/// Record one symmetric (reference, candidate) pair into a deduplicating map.
+///
+/// `(A,B)` and `(B,A)` are the same pair and share a key, so a pair searched from both
+/// ends is stored once. Which of the two records survives must not depend on which
+/// concurrent search finished first, or two identical runs produce different reports -
+/// so when both directions are seen, the one whose reference sorts first wins.
+///
+/// A record is only ever stored as it was actually searched. The transformation matrix
+/// and the comparison URL describe one direction, so rewriting a record to make it
+/// canonical would quietly corrupt both; a pair searched in only one direction keeps
+/// whichever direction that was.
+///
+/// The stored flag is that orientation, kept alongside the record so this decision
+/// needs no knowledge of the record's shape.
+fn record_unique_pair<T>(
+    deduped: &mut std::collections::BTreeMap<(Uuid, Uuid), (bool, T)>,
+    reference_uuid: Uuid,
+    candidate_uuid: Uuid,
+    record: T,
+) {
+    let is_canonical = reference_uuid < candidate_uuid;
+    let key = if is_canonical {
+        (reference_uuid, candidate_uuid)
+    } else {
+        (candidate_uuid, reference_uuid)
+    };
+
+    match deduped.entry(key) {
+        std::collections::btree_map::Entry::Vacant(slot) => {
+            slot.insert((is_canonical, record));
+        }
+        std::collections::btree_map::Entry::Occupied(mut slot) => {
+            if is_canonical && !slot.get().0 {
+                slot.insert((is_canonical, record));
+            }
+        }
+    }
+}
+
 /// Why a per-asset search contributed no matches to a folder match report.
 ///
 /// The distinction matters for the exit status. A large tenant always contains some
@@ -1263,11 +1302,13 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // by every remaining asset.
     let abort = std::sync::Arc::new(SearchAbort::default());
 
-    // Prepare for concurrent processing
-    let mut all_matches = Vec::new();
-
-    // Use a set to track unique pairs to avoid duplicates (reference UUID, candidate UUID)
-    let mut seen_pairs = std::collections::HashSet::new();
+    // Prepare for concurrent processing.
+    //
+    // Symmetric pairs are deduplicated into a BTreeMap keyed on the *unordered* pair,
+    // so neither the surviving row nor the output order depends on which concurrent
+    // search happened to finish first. A HashSet plus a Vec made both depend on it:
+    // two identical runs produced byte-different reports.
+    let mut deduped = std::collections::BTreeMap::new();
 
     // Create tasks for concurrent processing
     // The matches an asset contributed, plus why it contributed none if it failed -
@@ -1510,23 +1551,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             Ok(Ok((asset_matches, failure))) => {
                 outcomes.record(failure);
                 for enhanced_match in asset_matches {
-                    // Apply duplicate filtering to each match
+                    // Apply duplicate filtering to each match. (A,B) and (B,A) are the
+                    // same pair, so they share a key.
                     for match_result in &enhanced_match.matches {
-                        // Create a unique pair identifier to avoid duplicates
-                        // We want to avoid having both (A,B) and (B,A) in results
-                        let (ref_uuid, cand_uuid) =
-                            if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
-                                (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
-                            } else {
-                                (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
-                            };
-
-                        let pair_key = (ref_uuid, cand_uuid);
-
-                        if !seen_pairs.contains(&pair_key) {
-                            seen_pairs.insert(pair_key);
-                            all_matches.push(enhanced_match.clone());
-                        }
+                        record_unique_pair(
+                            &mut deduped,
+                            enhanced_match.reference_asset.uuid,
+                            match_result.asset.uuid,
+                            enhanced_match.clone(),
+                        );
                     }
                 }
             }
@@ -1556,6 +1589,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             overall_pb.inc(1);
         }
     }
+
+    // BTreeMap iteration is ordered by the unordered pair key, so row order is a
+    // property of the data rather than of this run's scheduling. Two runs over
+    // unchanged data now produce identical output.
+    let all_matches: Vec<_> = deduped.into_values().map(|(_, record)| record).collect();
 
     if let Some((_, ref overall_pb)) = multi_progress {
         overall_pb.finish_with_message(format!(
@@ -1793,11 +1831,13 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     // by every remaining asset.
     let abort = std::sync::Arc::new(SearchAbort::default());
 
-    // Prepare for concurrent processing
-    let mut all_matches = Vec::new();
-
-    // Use a set to track unique pairs to avoid duplicates (reference UUID, candidate UUID)
-    let mut seen_pairs = std::collections::HashSet::new();
+    // Prepare for concurrent processing.
+    //
+    // Symmetric pairs are deduplicated into a BTreeMap keyed on the *unordered* pair,
+    // so neither the surviving row nor the output order depends on which concurrent
+    // search happened to finish first. A HashSet plus a Vec made both depend on it:
+    // two identical runs produced byte-different reports.
+    let mut deduped = std::collections::BTreeMap::new();
 
     // Create tasks for concurrent processing
     // The matches an asset contributed, plus why it contributed none if it failed -
@@ -2042,23 +2082,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
             Ok(Ok((asset_matches, failure))) => {
                 outcomes.record(failure);
                 for enhanced_match in asset_matches {
-                    // Apply duplicate filtering to each match
+                    // Apply duplicate filtering to each match. (A,B) and (B,A) are the
+                    // same pair, so they share a key.
                     for match_result in &enhanced_match.matches {
-                        // Create a unique pair identifier to avoid duplicates
-                        // We want to avoid having both (A,B) and (B,A) in results
-                        let (ref_uuid, cand_uuid) =
-                            if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
-                                (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
-                            } else {
-                                (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
-                            };
-
-                        let pair_key = (ref_uuid, cand_uuid);
-
-                        if !seen_pairs.contains(&pair_key) {
-                            seen_pairs.insert(pair_key);
-                            all_matches.push(enhanced_match.clone());
-                        }
+                        record_unique_pair(
+                            &mut deduped,
+                            enhanced_match.reference_asset.uuid,
+                            match_result.asset.uuid,
+                            enhanced_match.clone(),
+                        );
                     }
                 }
             }
@@ -2088,6 +2120,11 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
             overall_pb.inc(1);
         }
     }
+
+    // BTreeMap iteration is ordered by the unordered pair key, so row order is a
+    // property of the data rather than of this run's scheduling. Two runs over
+    // unchanged data now produce identical output.
+    let all_matches: Vec<_> = deduped.into_values().map(|(_, record)| record).collect();
 
     if let Some((_, ref overall_pb)) = multi_progress {
         overall_pb.finish_with_message(format!(
@@ -2340,11 +2377,13 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     // by every remaining asset.
     let abort = std::sync::Arc::new(SearchAbort::default());
 
-    // Prepare for concurrent processing
-    let mut all_matches = Vec::new();
-
-    // Use a set to track unique pairs to avoid duplicates (reference UUID, candidate UUID)
-    let mut seen_pairs = std::collections::HashSet::new();
+    // Prepare for concurrent processing.
+    //
+    // Symmetric pairs are deduplicated into a BTreeMap keyed on the *unordered* pair,
+    // so neither the surviving row nor the output order depends on which concurrent
+    // search happened to finish first. A HashSet plus a Vec made both depend on it:
+    // two identical runs produced byte-different reports.
+    let mut deduped = std::collections::BTreeMap::new();
 
     // Create tasks for concurrent processing
     // The matches an asset contributed, plus why it contributed none if it failed -
@@ -2585,23 +2624,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
             Ok(Ok((asset_matches, failure))) => {
                 outcomes.record(failure);
                 for enhanced_match in asset_matches {
-                    // Apply duplicate filtering to each match
+                    // Apply duplicate filtering to each match. (A,B) and (B,A) are the
+                    // same pair, so they share a key.
                     for match_result in &enhanced_match.matches {
-                        // Create a unique pair identifier to avoid duplicates
-                        // We want to avoid having both (A,B) and (B,A) in results
-                        let (ref_uuid, cand_uuid) =
-                            if enhanced_match.reference_asset.uuid < match_result.asset.uuid {
-                                (enhanced_match.reference_asset.uuid, match_result.asset.uuid)
-                            } else {
-                                (match_result.asset.uuid, enhanced_match.reference_asset.uuid)
-                            };
-
-                        let pair_key = (ref_uuid, cand_uuid);
-
-                        if !seen_pairs.contains(&pair_key) {
-                            seen_pairs.insert(pair_key);
-                            all_matches.push(enhanced_match.clone());
-                        }
+                        record_unique_pair(
+                            &mut deduped,
+                            enhanced_match.reference_asset.uuid,
+                            match_result.asset.uuid,
+                            enhanced_match.clone(),
+                        );
                     }
                 }
             }
@@ -2631,6 +2662,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
             overall_pb.inc(1);
         }
     }
+
+    // BTreeMap iteration is ordered by the unordered pair key, so row order is a
+    // property of the data rather than of this run's scheduling. Two runs over
+    // unchanged data now produce identical output.
+    let all_matches: Vec<_> = deduped.into_values().map(|(_, record)| record).collect();
 
     if let Some((_, ref overall_pb)) = multi_progress {
         overall_pb.finish_with_message(format!(
@@ -3061,6 +3097,72 @@ mod tests {
             });
         }
         o
+    }
+
+    /// Two UUIDs with a known order, so "canonical" is unambiguous in the tests.
+    fn uuids() -> (Uuid, Uuid) {
+        let low = Uuid::parse_str("00000000-0000-0000-0000-00000000000a").unwrap();
+        let high = Uuid::parse_str("ffffffff-0000-0000-0000-00000000000f").unwrap();
+        assert!(low < high);
+        (low, high)
+    }
+
+    fn dedup(pairs: &[(Uuid, Uuid, &'static str)]) -> Vec<&'static str> {
+        let mut map = std::collections::BTreeMap::new();
+        for (reference, candidate, record) in pairs {
+            record_unique_pair(&mut map, *reference, *candidate, *record);
+        }
+        map.into_values().map(|(_, record)| record).collect()
+    }
+
+    #[test]
+    fn a_pair_is_kept_once_whichever_end_it_was_searched_from() {
+        let (low, high) = uuids();
+        assert_eq!(dedup(&[(low, high, "low->high")]).len(), 1);
+        assert_eq!(dedup(&[(high, low, "high->low")]).len(), 1);
+        assert_eq!(
+            dedup(&[(low, high, "low->high"), (high, low, "high->low")]).len(),
+            1,
+            "(A,B) and (B,A) are the same pair"
+        );
+    }
+
+    #[test]
+    fn the_surviving_orientation_does_not_depend_on_arrival_order() {
+        // The bug: whichever direction finished first won, so two identical runs
+        // disagreed about which asset was the reference.
+        let (low, high) = uuids();
+        let forward_first = dedup(&[(low, high, "low->high"), (high, low, "high->low")]);
+        let reverse_first = dedup(&[(high, low, "high->low"), (low, high, "low->high")]);
+        assert_eq!(forward_first, reverse_first);
+        assert_eq!(forward_first, vec!["low->high"], "reference sorts first");
+    }
+
+    #[test]
+    fn a_one_directional_pair_keeps_the_direction_it_was_searched_in() {
+        // Only one end gets searched when the other asset is outside the folder set or
+        // its own search failed. Dropping the pair, or flipping it to look canonical,
+        // would lose or corrupt it - the transformation and comparison URL are
+        // directional.
+        let (low, high) = uuids();
+        assert_eq!(dedup(&[(high, low, "high->low")]), vec!["high->low"]);
+    }
+
+    #[test]
+    fn output_order_is_independent_of_arrival_order() {
+        // Row order came from task completion order, so two runs produced the same
+        // rows in different sequences.
+        let a = Uuid::parse_str("00000000-0000-0000-0000-00000000000a").unwrap();
+        let b = Uuid::parse_str("00000000-0000-0000-0000-00000000000b").unwrap();
+        let c = Uuid::parse_str("00000000-0000-0000-0000-00000000000c").unwrap();
+
+        let one = dedup(&[(a, b, "ab"), (a, c, "ac"), (b, c, "bc")]);
+        let another = dedup(&[(b, c, "bc"), (a, b, "ab"), (a, c, "ac")]);
+        let reversed = dedup(&[(a, c, "ac"), (b, c, "bc"), (a, b, "ab")]);
+
+        assert_eq!(one, vec!["ab", "ac", "bc"]);
+        assert_eq!(one, another);
+        assert_eq!(one, reversed);
     }
 
     #[test]

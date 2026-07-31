@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A batch that fails because the account lacks the Author role now says so** - Physna has no per-asset permissions: an account is an Author, who may write any asset, or a Viewer, who may write none. A Viewer running `asset metadata batch` therefore fails on every write, but the run reported an authentication failure and told the user to re-authenticate — a session that was working perfectly. `pcli2` now distinguishes *authenticated but not permitted* from *credentials not working*: a `403` that survives a token renewal is reported as a role problem, with guidance to ask a tenant administrator for the Author role, and stops the run immediately rather than repeating the same failure for every remaining asset. A `401` that survives renewal still means the credentials themselves are the problem and still asks the user to log in again.
+
 ## [1.18.1] - 2026-07-31
 
 ### Fixed

@@ -137,26 +137,62 @@ impl ApiError {
         }
     }
 
-    /// Whether the *retry* in a `RetryFailed` message was itself rejected as
-    /// unauthorized, ignoring the original status that triggered the retry.
-    fn retry_status_is_unauthorized(message: &str) -> bool {
+    /// The status the *retry* came back with, lowercased, excluding the response body.
+    ///
+    /// `None` when the message does not have the expected shape, which callers should
+    /// read conservatively - anything reaching `RetryFailed` got there through the
+    /// 401/403 path to begin with.
+    fn retry_status(message: &str) -> Option<String> {
         const RETRY_MARKER: &str = "retry failed with status:";
         let lowered = message.to_lowercase();
-        let Some(after_retry) = lowered.split_once(RETRY_MARKER).map(|(_, rest)| rest) else {
-            // An unrecognized shape: fall back to treating it as authentication-related,
-            // which is the conservative reading for a message that got here through the
-            // 401/403 path in the first place.
-            return true;
-        };
-        // Only the status itself, not the response body - a body can quote anything.
-        let status = after_retry
-            .split(" and body:")
-            .next()
-            .unwrap_or(after_retry);
-        status.contains("401")
-            || status.contains("403")
-            || status.contains("unauthorized")
-            || status.contains("forbidden")
+        let after_retry = lowered.split_once(RETRY_MARKER).map(|(_, rest)| rest)?;
+        // Only the status itself - a response body can quote anything.
+        Some(
+            after_retry
+                .split(" and body:")
+                .next()
+                .unwrap_or(after_retry)
+                .to_string(),
+        )
+    }
+
+    /// Whether the retry was itself rejected as unauthorized or forbidden.
+    fn retry_status_is_unauthorized(message: &str) -> bool {
+        match Self::retry_status(message) {
+            Some(status) => {
+                status.contains("401")
+                    || status.contains("403")
+                    || status.contains("unauthorized")
+                    || status.contains("forbidden")
+            }
+            None => true,
+        }
+    }
+
+    /// True when the request was authenticated but not *permitted*.
+    ///
+    /// Physna has no per-asset permissions: an account is an Author, who may write any
+    /// asset, or a Viewer, who may write none. So a 403 that survives a token renewal
+    /// says something about the account rather than the asset, and every subsequent
+    /// write will fail identically - which makes it worth stopping on, and worth
+    /// reporting as a role problem rather than a credential one.
+    ///
+    /// Deliberately excludes a retry that came back 401. That is the token being
+    /// rejected outright, which is [`Self::is_credential_failure`] territory and calls
+    /// for logging in again rather than for a conversation about roles.
+    pub fn is_authorization_failure(&self) -> bool {
+        match self {
+            ApiError::RetryFailed(msg) => match Self::retry_status(msg) {
+                Some(status) => {
+                    (status.contains("403") || status.contains("forbidden"))
+                        && !status.contains("401")
+                        && !status.contains("unauthorized")
+                }
+                // An unrecognized shape says nothing specific about authorization.
+                None => false,
+            },
+            _ => false,
+        }
     }
 }
 
@@ -227,6 +263,60 @@ mod credential_failure_tests {
         // If the message shape ever changes, fall back to the conservative reading -
         // it reached `RetryFailed` through the 401/403 path to begin with.
         assert!(ApiError::RetryFailed("something else entirely".into()).is_authentication_failure());
+    }
+
+    #[test]
+    fn a_persistent_403_is_an_authorization_failure_not_a_credential_one() {
+        // Physna has no per-asset permissions, so a 403 that survives a renewal is
+        // about the account: a Viewer trying to write. It will fail identically for
+        // every remaining asset, and "re-authenticate" is useless advice.
+        let forbidden = ApiError::RetryFailed(
+            "Original error: 403 Forbidden, Retry failed with status: 403 Forbidden and body: {}"
+                .into(),
+        );
+        assert!(forbidden.is_authorization_failure());
+        assert!(
+            !forbidden.is_credential_failure(),
+            "the credentials worked - the account is not allowed"
+        );
+        assert!(
+            forbidden.is_authentication_failure(),
+            "still auth-adjacent for message shaping"
+        );
+    }
+
+    #[test]
+    fn a_persistent_401_is_a_credential_problem_not_an_authorization_one() {
+        // The token was rejected outright even after renewal. That calls for logging
+        // in again, not for a conversation about roles.
+        let unauthorized = ApiError::RetryFailed(
+            "Original error: 401 Unauthorized, Retry failed with status: 401 Unauthorized and body: {}"
+                .into(),
+        );
+        assert!(!unauthorized.is_authorization_failure());
+        assert!(unauthorized.is_authentication_failure());
+    }
+
+    #[test]
+    fn a_retry_that_left_the_403_behind_is_not_an_authorization_failure() {
+        // The 403 was a stale token; the renewal fixed it and the retry reached the
+        // server, which refused for an unrelated reason. Nothing to do with roles.
+        let not_indexed = ApiError::RetryFailed(
+            "Original error: 403 Forbidden, Retry failed with status: 409 Conflict \
+             and body: {\"message\":\"Asset not indexed yet\"}"
+                .into(),
+        );
+        assert!(!not_indexed.is_authorization_failure());
+        assert!(!not_indexed.is_credential_failure());
+        assert!(!not_indexed.is_authentication_failure());
+    }
+
+    #[test]
+    fn a_renewal_failure_is_not_an_authorization_failure() {
+        // Never route a dead credential to "ask for the Author role".
+        assert!(!ApiError::AuthError("renewal failed".into()).is_authorization_failure());
+        assert!(!ApiError::InvalidToken.is_authorization_failure());
+        assert!(!ApiError::MissingCredentials.is_authorization_failure());
     }
 
     #[test]

@@ -435,6 +435,10 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     let mut failure_count = 0;
     let mut skipped_missing = 0;
     let mut auth_failure_occurred = false;
+    // Tracked separately from a credential failure: the run stops for both, but
+    // "re-authenticate" is useless advice when the session is fine and the account
+    // simply may not write.
+    let mut authorization_failure_occurred = false;
 
     // Progress bar drawn on stderr. Unlike a hand-rolled "\r"-prefixed line, it
     // redraws cleanly instead of leaving stale characters behind when the next
@@ -617,6 +621,28 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 .delete_asset_metadata(&tenant.uuid.to_string(), &asset.uuid().to_string(), keys)
                 .await
             {
+                // Authenticated, but not permitted. Physna has no per-asset
+                // permissions - an account may write every asset or none - so this
+                // will fail identically for everything left in the batch. Stopping
+                // beats reporting the same thing N times, and the useful advice is
+                // about the account's role, not about logging in again.
+                if e.is_authorization_failure() {
+                    authorization_failure_occurred = true;
+                    report(
+                        format!(
+                            "Not permitted to modify assets in this tenant (while deleting metadata for '{}'): {}",
+                            asset_display, e
+                        ),
+                        &[
+                            "Writing metadata requires the Author role; a Viewer account can only read",
+                            "Ask a tenant administrator to grant your account the Author role",
+                            "Or verify you are targeting the intended tenant with --tenant",
+                        ],
+                    );
+                    failure_count += 1;
+                    break;
+                }
+
                 if e.is_credential_failure() {
                     auth_failure_occurred = true;
                     report(
@@ -676,6 +702,28 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 )
                 .await
             {
+                // Authenticated, but not permitted. Physna has no per-asset
+                // permissions - an account may write every asset or none - so this
+                // will fail identically for everything left in the batch. Stopping
+                // beats reporting the same thing N times, and the useful advice is
+                // about the account's role, not about logging in again.
+                if e.is_authorization_failure() {
+                    authorization_failure_occurred = true;
+                    report(
+                        format!(
+                            "Not permitted to modify assets in this tenant (while updating metadata for '{}'): {}",
+                            asset_display, e
+                        ),
+                        &[
+                            "Writing metadata requires the Author role; a Viewer account can only read",
+                            "Ask a tenant administrator to grant your account the Author role",
+                            "Or verify you are targeting the intended tenant with --tenant",
+                        ],
+                    );
+                    failure_count += 1;
+                    break;
+                }
+
                 if e.is_credential_failure() {
                     auth_failure_occurred = true;
                     report(
@@ -769,6 +817,12 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         eprintln!("  2. You are targeting the correct tenant");
         eprintln!("  3. The assets have not been deleted, and paths match (e.g., leading slash)");
         eprintln!("  List existing paths with 'pcli2 asset list --folder-path /' to compare.");
+    }
+
+    if authorization_failure_occurred {
+        return Err(CliError::SecurityError(
+            "Batch operation stopped: this account is not permitted to modify assets in this tenant. Writing metadata requires the Author role.".to_string(),
+        ));
     }
 
     if auth_failure_occurred {

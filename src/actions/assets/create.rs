@@ -439,6 +439,9 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     // "re-authenticate" is useless advice when the session is fine and the account
     // simply may not write.
     let mut authorization_failure_occurred = false;
+    // Under --continue-on-error the account-level explanation is given once; the
+    // per-asset lines after it stay terse.
+    let mut authorization_notice_shown = false;
 
     // Progress bar drawn on stderr. Unlike a hand-rolled "\r"-prefixed line, it
     // redraws cleanly instead of leaving stale characters behind when the next
@@ -627,6 +630,25 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 // beats reporting the same thing N times, and the useful advice is
                 // about the account's role, not about logging in again.
                 if e.is_authorization_failure() {
+                    failure_count += 1;
+
+                    // --continue-on-error means what it says, so it wins here too.
+                    // Every remaining write will fail identically - there are no
+                    // per-asset permissions - so explain that once and then keep the
+                    // per-asset lines terse, the same shape as any other skip.
+                    if continue_on_error {
+                        if !authorization_notice_shown {
+                            authorization_notice_shown = true;
+                            warn(
+                                "Not permitted to modify assets in this tenant — writing metadata requires the Author role. \
+                                 Continuing as requested; every remaining write will fail the same way."
+                                    .to_string(),
+                            );
+                        }
+                        warn(format!("Skipped '{}' — not permitted", asset_display));
+                        continue;
+                    }
+
                     authorization_failure_occurred = true;
                     report(
                         format!(
@@ -637,9 +659,9 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             "Writing metadata requires the Author role; a Viewer account can only read",
                             "Ask a tenant administrator to grant your account the Author role",
                             "Or verify you are targeting the intended tenant with --tenant",
+                            "Or re-run with --continue-on-error to attempt every asset anyway",
                         ],
                     );
-                    failure_count += 1;
                     break;
                 }
 
@@ -708,6 +730,25 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 // beats reporting the same thing N times, and the useful advice is
                 // about the account's role, not about logging in again.
                 if e.is_authorization_failure() {
+                    failure_count += 1;
+
+                    // --continue-on-error means what it says, so it wins here too.
+                    // Every remaining write will fail identically - there are no
+                    // per-asset permissions - so explain that once and then keep the
+                    // per-asset lines terse, the same shape as any other skip.
+                    if continue_on_error {
+                        if !authorization_notice_shown {
+                            authorization_notice_shown = true;
+                            warn(
+                                "Not permitted to modify assets in this tenant — writing metadata requires the Author role. \
+                                 Continuing as requested; every remaining write will fail the same way."
+                                    .to_string(),
+                            );
+                        }
+                        warn(format!("Skipped '{}' — not permitted", asset_display));
+                        continue;
+                    }
+
                     authorization_failure_occurred = true;
                     report(
                         format!(
@@ -718,9 +759,9 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             "Writing metadata requires the Author role; a Viewer account can only read",
                             "Ask a tenant administrator to grant your account the Author role",
                             "Or verify you are targeting the intended tenant with --tenant",
+                            "Or re-run with --continue-on-error to attempt every asset anyway",
                         ],
                     );
-                    failure_count += 1;
                     break;
                 }
 

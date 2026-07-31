@@ -696,6 +696,17 @@ mod tests {
     }
 
     #[test]
+    fn an_unknown_folder_has_an_empty_subtree() {
+        // The signal a recursive scan uses to detect a stale cache: the path resolved
+        // against the API, but the folder is absent from the cached hierarchy, so its
+        // descendants cannot be enumerated. Returning empty here must be treated as an
+        // error by the caller rather than as "this folder has no assets" - a folder
+        // holding 22,378 assets across 511 subfolders once reported 1.
+        let hierarchy = FolderHierarchy::default();
+        assert!(hierarchy.subtree_uuids(&Uuid::new_v4()).is_empty());
+    }
+
+    #[test]
     fn subtree_uuids_includes_the_folder_and_every_descendant() {
         // Regression: folder match reports listed only a folder's direct assets, so a
         // container folder such as "Creo Files" - which holds nothing but subfolders -

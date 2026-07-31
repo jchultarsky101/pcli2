@@ -35,6 +35,12 @@ pub enum CliActionError {
     #[error("ERROR: Unsupported output format: {0}")]
     UnsupportedOutputFormat(String),
 
+    /// Too many per-asset searches failed for the report to be worth presenting as a
+    /// result. Reported as an error rather than a warning so scripts see a non-zero
+    /// exit instead of a silently partial report.
+    #[error("{failed} of {attempted} asset search(es) failed; the report would be incomplete")]
+    IncompleteReport { attempted: usize, failed: usize },
+
     #[error("{0}")]
     FormattingError(#[from] crate::format::FormattingError),
 

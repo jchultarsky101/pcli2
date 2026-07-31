@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-07-31
+
 ### Fixed
 - **Token renewal is now shared between concurrent tasks** ([#86](https://github.com/jchultarsky101/pcli2/issues/86)) - The API client is cloned once per task by the concurrent commands, and the access token was a plain field, so a token renewed inside one task was invisible to every other task — each of which still held the original and renewed again for itself. On a folder tree of ~22,400 assets, one expiry produced up to ~22,000 separate token requests where one would do, each an opportunity to fail. The token is now shared by a client and all of its clones, and concurrent renewals are collapsed: the first task to notice renews, and the rest pick up its result instead of queueing to repeat it. Tokens are also renewed shortly before they expire rather than after a request has already been rejected, which avoids the failed-request-then-retry round trip entirely; that check is best-effort and can only avoid work, never fail a request that would otherwise have succeeded.
 

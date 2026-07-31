@@ -36,6 +36,9 @@ enum SearchFailure {
     /// Anything else: authentication, network, 5xx, exhausted retries. The run did
     /// not do what it was asked to do.
     Operational,
+    /// The search was never attempted, because an earlier failure made it certain
+    /// that every remaining one would fail the same way. See [`SearchAbort`].
+    Aborted,
 }
 
 impl SearchFailure {
@@ -54,12 +57,58 @@ impl SearchFailure {
     }
 }
 
+/// Whether a failure guarantees that every remaining search will fail identically.
+///
+/// The API client has already tried to re-authenticate by the time an auth error
+/// surfaces here, so this is the refresh itself having failed - no later request can
+/// succeed. Issuing another twenty thousand of them only delays the user finding out
+/// and puts pointless load on the API.
+///
+/// Deliberately narrow. A network blip or a 5xx on one asset says nothing about the
+/// next one, and aborting a long run over a transient failure would be worse than
+/// letting it finish with a reported gap.
+fn is_terminal_failure(error: &crate::physna_v3::ApiError) -> bool {
+    use crate::physna_v3::ApiError;
+    matches!(
+        error,
+        ApiError::AuthError(_) | ApiError::InvalidToken | ApiError::MissingCredentials
+    )
+}
+
+/// Shared stop signal for a folder match run.
+///
+/// Every per-asset task is spawned up front and gated by a semaphore, so there is no
+/// dispatch loop to break out of. Instead each task checks this before doing any
+/// work: once one task hits a terminal failure, the rest return immediately without
+/// touching the network.
+///
+/// Also carries the "already reported" latch, so the reason is printed once rather
+/// than once per remaining asset - 21,068 copies of the same line is not diagnostics,
+/// it is noise that buries the failures worth reading.
+#[derive(Debug, Default)]
+struct SearchAbort {
+    stopped: std::sync::atomic::AtomicBool,
+}
+
+impl SearchAbort {
+    fn is_stopped(&self) -> bool {
+        self.stopped.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Signal that the run should stop. Returns true for the first caller only, which
+    /// is the one that should explain why.
+    fn stop(&self) -> bool {
+        !self.stopped.swap(true, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
 /// Running tally of per-asset search outcomes across a folder match run.
 #[derive(Debug, Default, Clone, Copy)]
 struct SearchOutcomes {
     attempted: usize,
     not_searchable: usize,
     operational: usize,
+    aborted: usize,
 }
 
 /// The share of operational failures above which a run is treated as failed rather
@@ -80,23 +129,31 @@ impl SearchOutcomes {
         match failure {
             Some(SearchFailure::NotSearchable) => self.not_searchable += 1,
             Some(SearchFailure::Operational) => self.operational += 1,
+            Some(SearchFailure::Aborted) => self.aborted += 1,
             None => {}
         }
     }
 
     fn failed(&self) -> usize {
-        self.not_searchable + self.operational
+        self.not_searchable + self.operational + self.aborted
     }
 
     fn succeeded(&self) -> usize {
         self.attempted.saturating_sub(self.failed())
     }
 
-    /// Whether the operational failures are severe enough that the report should not
-    /// be presented as a successful result.
+    /// Searches the run should have completed but did not, for reasons about the run
+    /// rather than the data. An aborted search counts here: it was skipped precisely
+    /// because the run had already broken.
+    fn incomplete(&self) -> usize {
+        self.operational + self.aborted
+    }
+
+    /// Whether the shortfall is severe enough that the report should not be presented
+    /// as a successful result.
     fn is_materially_incomplete(&self) -> bool {
         self.attempted > 0
-            && (self.operational as f64 / self.attempted as f64)
+            && (self.incomplete() as f64 / self.attempted as f64)
                 > OPERATIONAL_FAILURE_EXIT_THRESHOLD
     }
 
@@ -109,6 +166,9 @@ impl SearchOutcomes {
         let mut reasons = Vec::new();
         if self.operational > 0 {
             reasons.push(format!("{} failed", HumanCount(self.operational as u64)));
+        }
+        if self.aborted > 0 {
+            reasons.push(format!("{} not attempted", HumanCount(self.aborted as u64)));
         }
         if self.not_searchable > 0 {
             reasons.push(format!(
@@ -1199,6 +1259,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     // Use a semaphore to limit concurrent operations
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent));
+    // Shared stop signal, so one terminal failure does not have to be rediscovered
+    // by every remaining asset.
+    let abort = std::sync::Arc::new(SearchAbort::default());
 
     // Prepare for concurrent processing
     let mut all_matches = Vec::new();
@@ -1227,9 +1290,16 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         let folder_paths_clone = folder_paths.clone();
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
+        let abort = abort.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
+
+            // An earlier task hit something that makes every remaining search
+            // pointless. Return without touching the network.
+            if abort.is_stopped() {
+                return Ok((Vec::new(), Some(SearchFailure::Aborted)));
+            }
 
             // Create individual progress bar for this task if multi-progress is enabled
             let individual_pb = if let Some((ref mp, _)) = multi_progress_clone {
@@ -1394,11 +1464,24 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
                 Err(e) => {
                     let failure = SearchFailure::classify(&e);
-                    error_utils::report_warning(&format!(
-                        "🔍 Failed to perform geometric search for asset {}: {}",
-                        asset_clone.name(),
-                        e
-                    ));
+                    // A terminal failure - the credential refresh itself having
+                    // failed - means every remaining search would fail identically.
+                    // Stop the run, and explain once rather than once per asset.
+                    if is_terminal_failure(&e) && abort.stop() {
+                        error_utils::report_error_with_remediation(
+                            &format!("Stopping: {}. Remaining assets were not searched.", e),
+                            &[
+                                "Log in again with 'pcli2 auth login'",
+                                "Then re-run this command",
+                            ],
+                        );
+                    } else if !abort.is_stopped() {
+                        error_utils::report_warning(&format!(
+                            "🔍 Failed to perform geometric search for asset {}: {}",
+                            asset_clone.name(),
+                            e
+                        ));
+                    }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
                     }
@@ -1706,6 +1789,9 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
     // Use a semaphore to limit concurrent operations
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent));
+    // Shared stop signal, so one terminal failure does not have to be rediscovered
+    // by every remaining asset.
+    let abort = std::sync::Arc::new(SearchAbort::default());
 
     // Prepare for concurrent processing
     let mut all_matches = Vec::new();
@@ -1734,9 +1820,16 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         let folder_paths_clone = folder_paths.clone();
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
+        let abort = abort.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
+
+            // An earlier task hit something that makes every remaining search
+            // pointless. Return without touching the network.
+            if abort.is_stopped() {
+                return Ok((Vec::new(), Some(SearchFailure::Aborted)));
+            }
 
             // Create individual progress bar for this task if multi-progress is enabled
             let individual_pb = if let Some((ref mp, _)) = multi_progress_clone {
@@ -1903,11 +1996,24 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 }
                 Err(e) => {
                     let failure = SearchFailure::classify(&e);
-                    error_utils::report_warning(&format!(
-                        "🔍 Failed to perform part search for asset {}: {}",
-                        asset_clone.name(),
-                        e
-                    ));
+                    // A terminal failure - the credential refresh itself having
+                    // failed - means every remaining search would fail identically.
+                    // Stop the run, and explain once rather than once per asset.
+                    if is_terminal_failure(&e) && abort.stop() {
+                        error_utils::report_error_with_remediation(
+                            &format!("Stopping: {}. Remaining assets were not searched.", e),
+                            &[
+                                "Log in again with 'pcli2 auth login'",
+                                "Then re-run this command",
+                            ],
+                        );
+                    } else if !abort.is_stopped() {
+                        error_utils::report_warning(&format!(
+                            "🔍 Failed to perform part search for asset {}: {}",
+                            asset_clone.name(),
+                            e
+                        ));
+                    }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
                     }
@@ -2230,6 +2336,9 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
     // Use a semaphore to limit concurrent operations
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent));
+    // Shared stop signal, so one terminal failure does not have to be rediscovered
+    // by every remaining asset.
+    let abort = std::sync::Arc::new(SearchAbort::default());
 
     // Prepare for concurrent processing
     let mut all_matches = Vec::new();
@@ -2258,9 +2367,16 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         let folder_paths_clone = folder_paths.clone();
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
+        let abort = abort.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
+
+            // An earlier task hit something that makes every remaining search
+            // pointless. Return without touching the network.
+            if abort.is_stopped() {
+                return Ok((Vec::new(), Some(SearchFailure::Aborted)));
+            }
 
             // Create individual progress bar for this task if multi-progress is enabled
             let individual_pb = if let Some((ref mp, _)) = multi_progress_clone {
@@ -2423,11 +2539,24 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 }
                 Err(e) => {
                     let failure = SearchFailure::classify(&e);
-                    error_utils::report_warning(&format!(
-                        "🔍 Failed to perform visual search for asset {}: {}",
-                        asset_clone.name(),
-                        e
-                    ));
+                    // A terminal failure - the credential refresh itself having
+                    // failed - means every remaining search would fail identically.
+                    // Stop the run, and explain once rather than once per asset.
+                    if is_terminal_failure(&e) && abort.stop() {
+                        error_utils::report_error_with_remediation(
+                            &format!("Stopping: {}. Remaining assets were not searched.", e),
+                            &[
+                                "Log in again with 'pcli2 auth login'",
+                                "Then re-run this command",
+                            ],
+                        );
+                    } else if !abort.is_stopped() {
+                        error_utils::report_warning(&format!(
+                            "🔍 Failed to perform visual search for asset {}: {}",
+                            asset_clone.name(),
+                            e
+                        ));
+                    }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
                     }
@@ -2910,17 +3039,77 @@ mod tests {
     }
 
     fn outcomes(attempted: usize, not_searchable: usize, operational: usize) -> SearchOutcomes {
+        outcomes_with_aborted(attempted, not_searchable, operational, 0)
+    }
+
+    fn outcomes_with_aborted(
+        attempted: usize,
+        not_searchable: usize,
+        operational: usize,
+        aborted: usize,
+    ) -> SearchOutcomes {
         let mut o = SearchOutcomes::default();
         for i in 0..attempted {
             o.record(if i < operational {
                 Some(SearchFailure::Operational)
-            } else if i < operational + not_searchable {
+            } else if i < operational + aborted {
+                Some(SearchFailure::Aborted)
+            } else if i < operational + aborted + not_searchable {
                 Some(SearchFailure::NotSearchable)
             } else {
                 None
             });
         }
         o
+    }
+
+    #[test]
+    fn only_credential_failures_stop_the_run() {
+        use crate::physna_v3::ApiError;
+
+        // The refresh itself has already failed by the time these surface, so every
+        // remaining search is certain to fail the same way.
+        assert!(is_terminal_failure(&ApiError::AuthError("expired".into())));
+        assert!(is_terminal_failure(&ApiError::InvalidToken));
+        assert!(is_terminal_failure(&ApiError::MissingCredentials));
+
+        // A blip on one asset says nothing about the next. Aborting a long run over a
+        // transient failure would be worse than finishing with a reported gap.
+        assert!(!is_terminal_failure(&ApiError::ConflictError(
+            "not indexed".into()
+        )));
+        assert!(!is_terminal_failure(&ApiError::RetryFailed("503".into())));
+        assert!(!is_terminal_failure(&ApiError::NotFoundError(
+            "gone".into()
+        )));
+    }
+
+    #[test]
+    fn only_the_first_task_to_stop_reports() {
+        // 21,068 copies of the same message is not diagnostics, it is noise that
+        // buries the failures worth reading.
+        let abort = SearchAbort::default();
+        assert!(!abort.is_stopped());
+        assert!(abort.stop(), "first caller explains why");
+        assert!(!abort.stop(), "everyone after stays quiet");
+        assert!(!abort.stop());
+        assert!(abort.is_stopped());
+    }
+
+    #[test]
+    fn aborted_searches_count_as_incomplete() {
+        // The auth-expiry run, as it would now unfold: one asset actually fails, the
+        // remaining ~21k are skipped rather than issued as doomed API calls. The run
+        // must still be reported as incomplete and still exit non-zero.
+        let o = outcomes_with_aborted(22_378, 51, 1, 21_067);
+        assert_eq!(o.incomplete(), 21_068);
+        assert!(o.is_materially_incomplete());
+        assert!(finish_search_outcomes(&o).is_err());
+
+        let summary = o.summary().expect("failures are always reported");
+        assert!(summary.contains("1 failed"), "{}", summary);
+        assert!(summary.contains("21,067 not attempted"), "{}", summary);
+        assert!(summary.contains("51 not searchable"), "{}", summary);
     }
 
     #[test]

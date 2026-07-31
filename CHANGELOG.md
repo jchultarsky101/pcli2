@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.3] - 2026-07-31
+
+### Fixed
+- **`--recursive` no longer degrades silently into a non-recursive scan** - When the folder hierarchy could not be loaded, a recursive folder match fell back to listing only the assets sitting directly in the folder. The warning that was supposed to explain it went to stderr underneath the `--progress` spinner, which redraws every 100ms and painted straight over it — so the run looked like a success and simply reported far too few assets. Reported from the field as "--recursive is not working": a folder holding 22,378 assets across 511 subfolders reported **1**, the count of assets directly inside it. A recursive scan that cannot enumerate subfolders now fails with an explanation and a suggestion to run `pcli2 cache clear`, rather than quietly answering a different question. The same applies when the folder resolves against the API but is missing from the cached hierarchy, which previously produced a silent empty result. Scan errors also clear the spinner before printing, so the message survives.
+- **`--continue-on-error` now takes precedence over the permission stop** - A `403` that survives a token renewal stops a metadata batch, since without per-asset permissions every remaining write would fail the same way. `--continue-on-error` means what it says, so it now wins: the account-level explanation is given once and the run continues, with the usual terse per-asset skip lines.
+
 ## [1.18.2] - 2026-07-31
 
 ### Fixed

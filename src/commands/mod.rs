@@ -157,3 +157,115 @@ pub fn create_full_command() -> Command {
         .subcommand(man::man_command())
         .subcommand(cache::cache_command())
 }
+
+#[cfg(test)]
+mod recursive_flag_tests {
+    use super::*;
+
+    /// Parse an argument vector exactly as the binary would.
+    fn parse(args: &[&str]) -> Result<ArgMatches, clap::Error> {
+        create_full_command().try_get_matches_from(args)
+    }
+
+    #[test]
+    fn recursive_is_recognized_when_it_follows_the_folder_path() {
+        // `--folder-path` takes one-or-more values, so the question is whether a flag
+        // written immediately after it gets swallowed as another path. Reported from
+        // the field as "--recursive is not recognized".
+        let matches = parse(&[
+            "pcli2",
+            "folder",
+            "geometric-match",
+            "--threshold",
+            "100.00",
+            "--metadata",
+            "--pretty",
+            "--concurrent",
+            "10",
+            "--progress",
+            "--folder-path",
+            "/Creo Files",
+            "--recursive",
+        ])
+        .expect("the documented invocation must parse");
+
+        let sub = matches
+            .subcommand_matches("folder")
+            .and_then(|m| m.subcommand_matches("geometric-match"))
+            .expect("geometric-match");
+
+        let paths: Vec<&String> = sub
+            .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
+            .expect("folder-path")
+            .collect();
+        assert_eq!(
+            paths,
+            vec!["/Creo Files"],
+            "the flag must not become a path"
+        );
+        assert!(
+            sub.get_flag(crate::commands::params::PARAMETER_RECURSIVE),
+            "--recursive must be set"
+        );
+    }
+
+    #[test]
+    fn recursive_is_recognized_before_the_folder_path_too() {
+        let matches = parse(&[
+            "pcli2",
+            "folder",
+            "geometric-match",
+            "--recursive",
+            "--folder-path",
+            "/Creo Files",
+        ])
+        .expect("must parse");
+        let sub = matches
+            .subcommand_matches("folder")
+            .and_then(|m| m.subcommand_matches("geometric-match"))
+            .unwrap();
+        assert!(sub.get_flag(crate::commands::params::PARAMETER_RECURSIVE));
+    }
+
+    #[test]
+    fn the_short_form_works_too() {
+        let matches = parse(&[
+            "pcli2",
+            "folder",
+            "geometric-match",
+            "--folder-path",
+            "/Creo Files",
+            "-R",
+        ])
+        .expect("must parse");
+        let sub = matches
+            .subcommand_matches("folder")
+            .and_then(|m| m.subcommand_matches("geometric-match"))
+            .unwrap();
+        assert!(sub.get_flag(crate::commands::params::PARAMETER_RECURSIVE));
+    }
+
+    #[test]
+    fn part_and_visual_match_accept_it_as_well() {
+        for command in ["part-match", "visual-match"] {
+            let matches = parse(&[
+                "pcli2",
+                "folder",
+                command,
+                "--folder-path",
+                "/Creo Files",
+                "--recursive",
+            ])
+            .unwrap_or_else(|e| panic!("{} must accept --recursive: {}", command, e));
+            let sub = matches
+                .subcommand_matches("folder")
+                .and_then(|m| m.subcommand_matches(command))
+                .unwrap();
+            assert!(
+                sub.get_flag(crate::commands::params::PARAMETER_RECURSIVE),
+                "{}",
+                command
+            );
+        }
+    }
+}

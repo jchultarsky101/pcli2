@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A single permission-denied asset no longer aborts an entire metadata batch** ([#93](https://github.com/jchultarsky101/pcli2/issues/93)) - `asset metadata batch` stopped the whole run when any one asset returned a `403`, reporting it as an authentication failure and telling the user to re-authenticate a session that was never broken — so following the advice changed nothing and the next attempt failed identically. A `403` on one asset triggers a token renewal and a retry; when the retry fails for the same per-asset reason, the resulting error carries the text `403 Forbidden`, which the authentication check matched on. The decision to abandon a run now uses a narrower test that only fires when the credential renewal itself failed, so a per-asset permission denial (or a data-state conflict behind a `403`) is treated as a per-asset failure: counted, reported with permission-oriented guidance, and skipped under `--continue-on-error`. Asset lookups that fail for a reason other than the asset being absent are also no longer reported as "asset not found".
+
 ## [1.18.0] - 2026-07-31
 
 ### Fixed

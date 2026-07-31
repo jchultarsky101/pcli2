@@ -100,6 +100,28 @@ impl ApiError {
     /// True when the error indicates an authentication/authorization failure,
     /// including a 401/403 that persisted through the automatic token-refresh
     /// retry (which surfaces as `RetryFailed` rather than `AuthError`).
+    /// True when the credentials themselves are unusable, so no later request can
+    /// succeed.
+    ///
+    /// Narrower than [`Self::is_authentication_failure`] on purpose, and the two are
+    /// not interchangeable:
+    ///
+    /// - Use *this* to decide whether to abandon an operation. These three are raised
+    ///   when the token *renewal* failed, which is about the session rather than any
+    ///   one request.
+    /// - Use `is_authentication_failure` to decide whether an error message should
+    ///   mention authentication. It also matches a `RetryFailed` whose text contains a
+    ///   401/403, which is a useful hint but a poor basis for giving up: a retried
+    ///   request can fail 403 because the caller genuinely lacks permission for that
+    ///   one asset, or 409 because that one asset is not indexed. Neither says
+    ///   anything about the next asset.
+    pub fn is_credential_failure(&self) -> bool {
+        matches!(
+            self,
+            ApiError::AuthError(_) | ApiError::InvalidToken | ApiError::MissingCredentials
+        )
+    }
+
     pub fn is_authentication_failure(&self) -> bool {
         match self {
             ApiError::AuthError(_) | ApiError::InvalidToken | ApiError::MissingCredentials => true,
@@ -112,6 +134,58 @@ impl ApiError {
             }
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod credential_failure_tests {
+    use super::*;
+
+    #[test]
+    fn only_renewal_failures_count_as_credential_failures() {
+        // These are raised when the token renewal itself failed, so nothing later can
+        // succeed - the only safe basis for abandoning an operation.
+        assert!(ApiError::AuthError("renewal failed".into()).is_credential_failure());
+        assert!(ApiError::InvalidToken.is_credential_failure());
+        assert!(ApiError::MissingCredentials.is_credential_failure());
+    }
+
+    #[test]
+    fn a_per_asset_403_is_not_a_credential_failure() {
+        // The bug this exists for: one asset the caller lacks permission for produced
+        // a RetryFailed carrying "403 Forbidden", which the looser predicate matched -
+        // abandoning the whole batch and telling the user to re-authenticate a session
+        // that was working.
+        let per_asset_403 = ApiError::RetryFailed(
+            "Original error: 403 Forbidden, Retry failed with status: 403 Forbidden".into(),
+        );
+        assert!(
+            !per_asset_403.is_credential_failure(),
+            "one forbidden asset must not abandon the run"
+        );
+        assert!(
+            per_asset_403.is_authentication_failure(),
+            "but it is still worth mentioning auth in the message"
+        );
+    }
+
+    #[test]
+    fn a_data_state_conflict_behind_a_403_is_not_a_credential_failure() {
+        // Observed on a live tenant: a 403 triggers a renewal, the retry succeeds in
+        // reaching the server and comes back 409 because that asset is not indexed.
+        let observed = ApiError::RetryFailed(
+            "Original error: 403 Forbidden, Retry failed with status: 409 Conflict \
+             and body: {\"message\":\"Asset not indexed yet\"}"
+                .into(),
+        );
+        assert!(!observed.is_credential_failure());
+    }
+
+    #[test]
+    fn ordinary_errors_are_neither() {
+        let conflict = ApiError::ConflictError("Asset not indexed yet".into());
+        assert!(!conflict.is_credential_failure());
+        assert!(!conflict.is_authentication_failure());
     }
 }
 

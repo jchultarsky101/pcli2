@@ -125,15 +125,38 @@ impl ApiError {
     pub fn is_authentication_failure(&self) -> bool {
         match self {
             ApiError::AuthError(_) | ApiError::InvalidToken | ApiError::MissingCredentials => true,
-            ApiError::RetryFailed(msg) => {
-                let msg = msg.to_lowercase();
-                msg.contains("401")
-                    || msg.contains("403")
-                    || msg.contains("unauthorized")
-                    || msg.contains("forbidden")
-            }
+            // A `RetryFailed` is only ever produced inside the 401/403 branch of the
+            // request path, and its text always embeds that original status - so
+            // searching the whole message for "401"/"403" matched *every* one of them
+            // unconditionally. What actually matters is how the retry fared: the token
+            // was renewed in between, so a retry that is *still* unauthorized means the
+            // credentials are the problem, while a retry that failed some other way
+            // (409 not indexed, a type conflict, a 5xx) says nothing about them.
+            ApiError::RetryFailed(msg) => Self::retry_status_is_unauthorized(msg),
             _ => false,
         }
+    }
+
+    /// Whether the *retry* in a `RetryFailed` message was itself rejected as
+    /// unauthorized, ignoring the original status that triggered the retry.
+    fn retry_status_is_unauthorized(message: &str) -> bool {
+        const RETRY_MARKER: &str = "retry failed with status:";
+        let lowered = message.to_lowercase();
+        let Some(after_retry) = lowered.split_once(RETRY_MARKER).map(|(_, rest)| rest) else {
+            // An unrecognized shape: fall back to treating it as authentication-related,
+            // which is the conservative reading for a message that got here through the
+            // 401/403 path in the first place.
+            return true;
+        };
+        // Only the status itself, not the response body - a body can quote anything.
+        let status = after_retry
+            .split(" and body:")
+            .next()
+            .unwrap_or(after_retry);
+        status.contains("401")
+            || status.contains("403")
+            || status.contains("unauthorized")
+            || status.contains("forbidden")
     }
 }
 
@@ -148,37 +171,62 @@ mod credential_failure_tests {
         assert!(ApiError::AuthError("renewal failed".into()).is_credential_failure());
         assert!(ApiError::InvalidToken.is_credential_failure());
         assert!(ApiError::MissingCredentials.is_credential_failure());
+
+        // A retry outcome never is: the renewal demonstrably worked to get that far.
+        assert!(!ApiError::RetryFailed("anything".into()).is_credential_failure());
+        assert!(!ApiError::ConflictError("Asset not indexed yet".into()).is_credential_failure());
     }
 
     #[test]
-    fn a_per_asset_403_is_not_a_credential_failure() {
-        // The bug this exists for: one asset the caller lacks permission for produced
-        // a RetryFailed carrying "403 Forbidden", which the looser predicate matched -
-        // abandoning the whole batch and telling the user to re-authenticate a session
-        // that was working.
-        let per_asset_403 = ApiError::RetryFailed(
-            "Original error: 403 Forbidden, Retry failed with status: 403 Forbidden".into(),
-        );
-        assert!(
-            !per_asset_403.is_credential_failure(),
-            "one forbidden asset must not abandon the run"
-        );
-        assert!(
-            per_asset_403.is_authentication_failure(),
-            "but it is still worth mentioning auth in the message"
-        );
-    }
-
-    #[test]
-    fn a_data_state_conflict_behind_a_403_is_not_a_credential_failure() {
-        // Observed on a live tenant: a 403 triggers a renewal, the retry succeeds in
-        // reaching the server and comes back 409 because that asset is not indexed.
+    fn a_retry_that_failed_for_a_non_auth_reason_is_not_an_auth_failure() {
+        // The bug: `RetryFailed` is only ever built inside the 401/403 branch, and its
+        // text always embeds that original status - so searching the whole message
+        // matched every one of them unconditionally. Observed on a live tenant: a
+        // stale-token 403 triggers a renewal, and the retry then fails 409 because that
+        // asset is not indexed. Nothing to do with credentials.
         let observed = ApiError::RetryFailed(
             "Original error: 403 Forbidden, Retry failed with status: 409 Conflict \
              and body: {\"message\":\"Asset not indexed yet\"}"
                 .into(),
         );
+        assert!(!observed.is_authentication_failure());
         assert!(!observed.is_credential_failure());
+    }
+
+    #[test]
+    fn a_retry_that_is_still_unauthorized_is_an_auth_failure() {
+        // Renewal succeeded but the fresh token was rejected anyway. This is the case
+        // the predicate exists for, and the one a narrow `matches!` on the renewal
+        // variants would miss.
+        for message in [
+            "Original error: 401 Unauthorized, Retry failed with status: 401 Unauthorized and body: {}",
+            "Original error: 403 Forbidden, Retry failed with status: 403 Forbidden and body: {}",
+        ] {
+            assert!(
+                ApiError::RetryFailed(message.into()).is_authentication_failure(),
+                "{}",
+                message
+            );
+        }
+    }
+
+    #[test]
+    fn the_response_body_does_not_decide_it() {
+        // Only the retry's status counts. A body is free to quote "403" or the word
+        // "forbidden" in prose without that meaning the request was unauthorized.
+        let noisy_body = ApiError::RetryFailed(
+            "Original error: 403 Forbidden, Retry failed with status: 409 Conflict \
+             and body: {\"message\":\"forbidden characters in name; see error 403 docs\"}"
+                .into(),
+        );
+        assert!(!noisy_body.is_authentication_failure());
+    }
+
+    #[test]
+    fn an_unrecognized_retry_message_is_treated_as_auth_related() {
+        // If the message shape ever changes, fall back to the conservative reading -
+        // it reached `RetryFailed` through the 401/403 path to begin with.
+        assert!(ApiError::RetryFailed("something else entirely".into()).is_authentication_failure());
     }
 
     #[test]

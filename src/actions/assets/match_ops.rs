@@ -96,36 +96,35 @@ impl SearchFailure {
     }
 }
 
-/// Whether a failure guarantees that every remaining search will fail identically.
+/// How many authentication failures in a row end the run.
 ///
-/// The API client has already tried to re-authenticate by the time an auth error
-/// surfaces here, so this is the refresh itself having failed - no later request can
-/// succeed. Issuing another twenty thousand of them only delays the user finding out
-/// and puts pointless load on the API.
+/// Not one. The API client renews the token automatically on a 401 and retries, which
+/// is what lets a long run survive its credentials expiring halfway through - and
+/// `refresh_token` reports *every* cause of a failed renewal as the same error, so a
+/// rejected credential is indistinguishable from a 5xx or a rate limit at the auth
+/// endpoint. Stopping on the first one would abandon a 25-minute run over a hiccup
+/// the very next request would have recovered from.
 ///
-/// Deliberately narrow. A network blip or a 5xx on one asset says nothing about the
-/// next one, and aborting a long run over a transient failure would be worse than
-/// letting it finish with a reported gap.
-fn is_terminal_failure(error: &crate::physna_v3::ApiError) -> bool {
-    use crate::physna_v3::ApiError;
-    matches!(
-        error,
-        ApiError::AuthError(_) | ApiError::InvalidToken | ApiError::MissingCredentials
-    )
-}
+/// Not unbounded either: a genuinely dead credential fails every asset, and issuing
+/// twenty thousand doomed requests only delays the user finding out.
+///
+/// Three consecutive, with any success resetting the count. A transient failure is
+/// absorbed because successes keep interleaving; a systemic one has no successes to
+/// reset it and trips almost immediately.
+const CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP: usize = 3;
 
 /// Shared stop signal for a folder match run.
 ///
 /// Every per-asset task is spawned up front and gated by a semaphore, so there is no
 /// dispatch loop to break out of. Instead each task checks this before doing any
-/// work: once one task hits a terminal failure, the rest return immediately without
-/// touching the network.
+/// work: once the run has given up, the rest return without touching the network.
 ///
 /// Also carries the "already reported" latch, so the reason is printed once rather
 /// than once per remaining asset - 21,068 copies of the same line is not diagnostics,
 /// it is noise that buries the failures worth reading.
 #[derive(Debug, Default)]
 struct SearchAbort {
+    consecutive_auth_failures: std::sync::atomic::AtomicUsize,
     stopped: std::sync::atomic::AtomicBool,
 }
 
@@ -134,9 +133,25 @@ impl SearchAbort {
         self.stopped.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Signal that the run should stop. Returns true for the first caller only, which
-    /// is the one that should explain why.
-    fn stop(&self) -> bool {
+    /// Note that a search succeeded, so renewal is evidently working and any earlier
+    /// failures were transient.
+    fn record_success(&self) {
+        self.consecutive_auth_failures
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Note an authentication failure.
+    ///
+    /// Returns true only for the caller whose failure crosses the threshold, which is
+    /// the one that should explain why the run is stopping.
+    fn record_auth_failure(&self) -> bool {
+        let consecutive = self
+            .consecutive_auth_failures
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        if consecutive < CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP {
+            return false;
+        }
         !self.stopped.swap(true, std::sync::atomic::Ordering::SeqCst)
     }
 }
@@ -1501,16 +1516,24 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                         pb.set_message(format!("Found {} matches", asset_matches.len()));
                     }
 
+                    // Renewal is evidently working; forget any earlier blip.
+                    abort.record_success();
                     Ok((asset_matches, None))
                 }
                 Err(e) => {
                     let failure = SearchFailure::classify(&e);
-                    // A terminal failure - the credential refresh itself having
-                    // failed - means every remaining search would fail identically.
-                    // Stop the run, and explain once rather than once per asset.
-                    if is_terminal_failure(&e) && abort.stop() {
+                    // Authentication failures are counted rather than acted on
+                    // immediately: the client renews the token and retries by itself,
+                    // and one failed renewal may be nothing more than a blip at the
+                    // auth endpoint. Only an unbroken run of them means the credentials
+                    // are genuinely gone - then the run stops, and explains once.
+                    let stopping = e.is_authentication_failure() && abort.record_auth_failure();
+                    if stopping {
                         error_utils::report_error_with_remediation(
-                            &format!("Stopping: {}. Remaining assets were not searched.", e),
+                            &format!(
+                                "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
+                                CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
+                            ),
                             &[
                                 "Log in again with 'pcli2 auth login'",
                                 "Then re-run this command",
@@ -2032,16 +2055,24 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                         pb.set_message(format!("Found {} matches", asset_matches.len()));
                     }
 
+                    // Renewal is evidently working; forget any earlier blip.
+                    abort.record_success();
                     Ok((asset_matches, None))
                 }
                 Err(e) => {
                     let failure = SearchFailure::classify(&e);
-                    // A terminal failure - the credential refresh itself having
-                    // failed - means every remaining search would fail identically.
-                    // Stop the run, and explain once rather than once per asset.
-                    if is_terminal_failure(&e) && abort.stop() {
+                    // Authentication failures are counted rather than acted on
+                    // immediately: the client renews the token and retries by itself,
+                    // and one failed renewal may be nothing more than a blip at the
+                    // auth endpoint. Only an unbroken run of them means the credentials
+                    // are genuinely gone - then the run stops, and explains once.
+                    let stopping = e.is_authentication_failure() && abort.record_auth_failure();
+                    if stopping {
                         error_utils::report_error_with_remediation(
-                            &format!("Stopping: {}. Remaining assets were not searched.", e),
+                            &format!(
+                                "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
+                                CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
+                            ),
                             &[
                                 "Log in again with 'pcli2 auth login'",
                                 "Then re-run this command",
@@ -2574,16 +2605,24 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                         pb.set_message(format!("Found {} matches", asset_matches.len()));
                     }
 
+                    // Renewal is evidently working; forget any earlier blip.
+                    abort.record_success();
                     Ok((asset_matches, None))
                 }
                 Err(e) => {
                     let failure = SearchFailure::classify(&e);
-                    // A terminal failure - the credential refresh itself having
-                    // failed - means every remaining search would fail identically.
-                    // Stop the run, and explain once rather than once per asset.
-                    if is_terminal_failure(&e) && abort.stop() {
+                    // Authentication failures are counted rather than acted on
+                    // immediately: the client renews the token and retries by itself,
+                    // and one failed renewal may be nothing more than a blip at the
+                    // auth endpoint. Only an unbroken run of them means the credentials
+                    // are genuinely gone - then the run stops, and explains once.
+                    let stopping = e.is_authentication_failure() && abort.record_auth_failure();
+                    if stopping {
                         error_utils::report_error_with_remediation(
-                            &format!("Stopping: {}. Remaining assets were not searched.", e),
+                            &format!(
+                                "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
+                                CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
+                            ),
                             &[
                                 "Log in again with 'pcli2 auth login'",
                                 "Then re-run this command",
@@ -3166,36 +3205,82 @@ mod tests {
     }
 
     #[test]
-    fn only_credential_failures_stop_the_run() {
-        use crate::physna_v3::ApiError;
-
-        // The refresh itself has already failed by the time these surface, so every
-        // remaining search is certain to fail the same way.
-        assert!(is_terminal_failure(&ApiError::AuthError("expired".into())));
-        assert!(is_terminal_failure(&ApiError::InvalidToken));
-        assert!(is_terminal_failure(&ApiError::MissingCredentials));
-
-        // A blip on one asset says nothing about the next. Aborting a long run over a
-        // transient failure would be worse than finishing with a reported gap.
-        assert!(!is_terminal_failure(&ApiError::ConflictError(
-            "not indexed".into()
-        )));
-        assert!(!is_terminal_failure(&ApiError::RetryFailed("503".into())));
-        assert!(!is_terminal_failure(&ApiError::NotFoundError(
-            "gone".into()
-        )));
+    fn a_single_auth_failure_does_not_stop_the_run() {
+        // The whole point of the client's renew-and-retry is that a long run survives
+        // its token expiring halfway through. `refresh_token` reports every cause of a
+        // failed renewal identically, so a rejected credential looks exactly like a
+        // 5xx or a rate limit at the auth endpoint - stopping on the first would
+        // abandon a 25-minute run over a hiccup the next request would have survived.
+        let abort = SearchAbort::default();
+        assert!(!abort.record_auth_failure());
+        assert!(!abort.is_stopped());
     }
 
     #[test]
-    fn only_the_first_task_to_stop_reports() {
+    fn a_success_forgets_earlier_failures() {
+        // Scattered blips must never accumulate into a stop. Renewal demonstrably
+        // working is the evidence that the earlier failures were transient.
+        let abort = SearchAbort::default();
+        for _ in 0..20 {
+            assert!(!abort.record_auth_failure());
+            assert!(!abort.record_auth_failure());
+            abort.record_success();
+        }
+        assert!(
+            !abort.is_stopped(),
+            "40 blips, none consecutive, keep going"
+        );
+    }
+
+    #[test]
+    fn an_unbroken_run_of_auth_failures_stops_the_run() {
+        // A genuinely dead credential fails every asset, and there is no success to
+        // reset the count. Trips at the threshold rather than after 21,068 of them.
+        let abort = SearchAbort::default();
+        for _ in 1..CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP {
+            assert!(!abort.record_auth_failure());
+        }
+        assert!(
+            abort.record_auth_failure(),
+            "the failure crossing the threshold explains why"
+        );
+        assert!(abort.is_stopped());
+    }
+
+    #[test]
+    fn only_one_task_reports_the_stop() {
         // 21,068 copies of the same message is not diagnostics, it is noise that
         // buries the failures worth reading.
         let abort = SearchAbort::default();
-        assert!(!abort.is_stopped());
-        assert!(abort.stop(), "first caller explains why");
-        assert!(!abort.stop(), "everyone after stays quiet");
-        assert!(!abort.stop());
-        assert!(abort.is_stopped());
+        let mut announced = 0;
+        for _ in 0..50 {
+            if abort.record_auth_failure() {
+                announced += 1;
+            }
+        }
+        assert_eq!(announced, 1, "exactly one caller explains why");
+    }
+
+    #[test]
+    fn the_classifier_covers_renewal_failure_and_post_renewal_rejection() {
+        use crate::physna_v3::ApiError;
+
+        // Renewal itself failed.
+        assert!(ApiError::AuthError("expired".into()).is_authentication_failure());
+        assert!(ApiError::InvalidToken.is_authentication_failure());
+        assert!(ApiError::MissingCredentials.is_authentication_failure());
+
+        // Renewal succeeded but the fresh token was still rejected. Counting only the
+        // variants above would miss this and grind through every remaining asset.
+        assert!(ApiError::RetryFailed(
+            "Original error: 401 Unauthorized, Retry failed with status: 401".into()
+        )
+        .is_authentication_failure());
+
+        // Not authentication: an unsearchable asset says nothing about credentials.
+        assert!(
+            !ApiError::ConflictError("Asset not indexed yet".into()).is_authentication_failure()
+        );
     }
 
     #[test]

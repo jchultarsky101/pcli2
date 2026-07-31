@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Folder match commands no longer report success when most of their searches failed** ([#77](https://github.com/jchultarsky101/pcli2/issues/77)) - A failed per-asset search contributed nothing and was otherwise indistinguishable from an asset that genuinely had no matches, so nothing counted failures and nothing could report them. A run that lost 21,119 of 22,378 searches to an expired token still exited `0` and printed a normal completion summary, handing over a report missing 94% of its rows. Failures are now counted and reported whenever any occur (`Searched 1,259 of 22,378 asset(s): 21,068 failed, 51 not searchable`), and the command exits non-zero when operational failures exceed 10% of the assets. Failures are classified: an asset that cannot be searched in its current state (not indexed, no 3D data, indexing failed - reported by the API as a `409`) is a property of the tenant and never fails the run, while authentication, network, and 5xx failures do. The check runs immediately after matching, so an incomplete run stops before spending minutes building a report that should not be trusted. Applies to `folder geometric-match`, `folder part-match`, and `folder visual-match`.
+
 ## [1.16.0] - 2026-07-30
 
 ### Changed

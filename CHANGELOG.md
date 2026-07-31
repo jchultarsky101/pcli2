@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.1] - 2026-07-31
+
+### Fixed
+- **A transient authentication blip no longer aborts an entire metadata batch** ([#93](https://github.com/jchultarsky101/pcli2/issues/93)) - `asset metadata batch` stopped the whole run and told the user to re-authenticate a session that was working, so following the advice changed nothing and the next attempt failed identically. A 401/403 causes the client to renew the token and retry; the resulting error text always embeds the original 401/403, and the authentication check searched the whole message — so it matched *every* retried failure unconditionally, whatever the retry actually returned. A stale-token 403 whose retry then failed for an unrelated reason (the asset not being indexed, a metadata type conflict, a 5xx) was reported as an authentication problem. The check now inspects the retry's own status rather than the original or the response body, and the decision to abandon a run uses a narrower test that fires only when the credential renewal itself failed. Everything else is treated as a per-asset failure: counted, reported with relevant guidance, and skipped under `--continue-on-error`. This also affects the concurrent folder match commands, where the same check feeds the consecutive-failure counter — three assets in a row failing this way would have tripped a spurious stop. Asset lookups that fail for a reason other than the asset being absent are also no longer reported as "asset not found".
+
 ## [1.18.0] - 2026-07-31
 
 ### Fixed

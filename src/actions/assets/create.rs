@@ -503,7 +503,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                         asset
                     }
                     Err(e) => {
-                        if e.is_authentication_failure() {
+                        if e.is_credential_failure() {
                             auth_failure_occurred = true;
                             report(
                                 format!("Authentication failed while looking up asset '{}': {}", asset_display, e),
@@ -519,12 +519,30 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
 
                         failure_count += 1;
 
+                        // A lookup can fail for reasons other than the asset being
+                        // absent - most often a permission denial on an asset the
+                        // caller can see listed but not read. Calling that "not found"
+                        // sends the user hunting for a path problem that is not there.
+                        let missing = matches!(
+                            e,
+                            ApiError::NotFoundError(_)
+                                | ApiError::PathNotFound(_)
+                                | ApiError::InvalidAssetPath(_)
+                        );
+
                         // In continue-on-error mode a missing asset is expected and
                         // common, so emit a single concise line here and defer the
                         // detailed guidance to one summary at the end of the run.
                         if continue_on_error {
-                            skipped_missing += 1;
-                            warn(format!("Skipped '{}' — asset not found", asset_display));
+                            if missing {
+                                skipped_missing += 1;
+                                warn(format!("Skipped '{}' — asset not found", asset_display));
+                            } else {
+                                warn(format!(
+                                    "Skipped '{}' — lookup failed: {}",
+                                    asset_display, e
+                                ));
+                            }
                             continue;
                         }
 
@@ -544,10 +562,21 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                                 "Or re-run with --continue-on-error to skip unresolved paths",
                             ],
                         };
-                        report(
-                            format!("Asset not found: '{}'", asset_display),
-                            remediation_steps,
-                        );
+                        if missing {
+                            report(
+                                format!("Asset not found: '{}'", asset_display),
+                                remediation_steps,
+                            );
+                        } else {
+                            report(
+                                format!("Could not look up asset '{}': {}", asset_display, e),
+                                &[
+                                    "Check that you have permission to access this asset",
+                                    "Verify you're using the correct tenant for this asset",
+                                    "Or re-run with --continue-on-error to skip assets that cannot be read",
+                                ],
+                            );
+                        }
 
                         if let Some(pb) = progress_bar.as_ref() {
                             pb.finish_and_clear();
@@ -588,7 +617,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 .delete_asset_metadata(&tenant.uuid.to_string(), &asset.uuid().to_string(), keys)
                 .await
             {
-                if e.is_authentication_failure() {
+                if e.is_credential_failure() {
                     auth_failure_occurred = true;
                     report(
                         format!(
@@ -647,7 +676,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 )
                 .await
             {
-                if e.is_authentication_failure() {
+                if e.is_credential_failure() {
                     auth_failure_occurred = true;
                     report(
                         format!(

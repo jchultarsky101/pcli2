@@ -115,10 +115,68 @@ impl ApiError {
     }
 }
 
+#[cfg(test)]
+mod shared_token_tests {
+    use super::*;
+
+    #[test]
+    fn a_clone_sees_a_token_stored_by_the_original() {
+        // The bug this replaces: the concurrent commands clone the client once per
+        // task, and a renewal inside one task updated only that task's copy - so every
+        // task still holding the expired token renewed again for itself.
+        let client = PhysnaApiClient::default();
+        let clone = client.clone();
+        assert!(!clone.has_token());
+
+        client.store_token("renewed".to_string());
+        assert_eq!(
+            clone.current_token().as_deref(),
+            Some("renewed"),
+            "a renewal must be visible to clones made before it"
+        );
+    }
+
+    #[test]
+    fn a_token_stored_by_a_clone_is_seen_by_its_siblings() {
+        // Renewal happens inside a task, on a clone - so the direction that actually
+        // matters is clone-to-everyone-else, not original-to-clone.
+        let client = PhysnaApiClient::default();
+        let first = client.clone();
+        let second = client.clone();
+
+        first.store_token("renewed-by-a-task".to_string());
+        assert_eq!(second.current_token().as_deref(), Some("renewed-by-a-task"));
+        assert_eq!(client.current_token().as_deref(), Some("renewed-by-a-task"));
+    }
+
+    #[test]
+    fn variant_clients_share_the_same_token() {
+        // The upload/download builders construct a new client with different timeouts.
+        // They must not fork the token, or a renewal during an upload would be lost.
+        let client = PhysnaApiClient::default();
+        let variant = client.for_upload_operations();
+        client.store_token("shared".to_string());
+        assert_eq!(variant.current_token().as_deref(), Some("shared"));
+    }
+
+    #[test]
+    fn with_access_token_publishes_to_the_shared_slot() {
+        let client = PhysnaApiClient::default().with_access_token("initial".to_string());
+        assert_eq!(client.current_token().as_deref(), Some("initial"));
+        assert!(client.has_token());
+    }
+}
+
 pub trait TryDefault: Sized {
     type Error;
     fn try_default() -> Result<Self, Self::Error>;
 }
+
+/// The access token, shared by a client and all of its clones.
+///
+/// A `std::sync` lock rather than a `tokio` one because it is only ever held for a
+/// clone or a store, never across an await.
+type SharedToken = std::sync::Arc<std::sync::RwLock<Option<String>>>;
 
 /// Physna V3 API client
 ///
@@ -147,14 +205,23 @@ pub trait TryDefault: Sized {
 ///     Ok(())
 /// }
 /// ```
-
 #[derive(Clone)]
 pub struct PhysnaApiClient {
     /// Base URL for the Physna V3 API (e.g., "https://app-api.physna.com/v3")
     base_url: String,
 
-    /// Current access token for API authentication
-    access_token: Option<String>,
+    /// Current access token for API authentication.
+    ///
+    /// Shared by every clone of this client. The concurrent commands clone it once per
+    /// task, and a token renewed inside one task has to be visible to the rest: with a
+    /// per-clone copy, every task that started before the renewal kept the stale token
+    /// and renewed again for itself, so one expiry produced tens of thousands of
+    /// redundant token requests.
+    access_token: SharedToken,
+
+    /// Serializes renewals, so a burst of tasks all meeting the same expired token
+    /// performs one renewal between them rather than one each.
+    renewal: std::sync::Arc<tokio::sync::Mutex<()>>,
 
     /// Client credentials (client_id, client_secret) for token refresh
     client_credentials: Option<(String, String)>, // (client_id, client_secret)
@@ -238,7 +305,8 @@ impl PhysnaApiClient {
 
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
-            access_token: None,
+            access_token: SharedToken::default(),
+            renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             client_credentials: None,
             auth_url: "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
                 .to_string(),
@@ -261,7 +329,8 @@ impl PhysnaApiClient {
 
         Self {
             base_url: configuration.get_api_base_url(),
-            access_token: None,
+            access_token: SharedToken::default(),
+            renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             client_credentials: None,
             auth_url: configuration.get_auth_base_url(),
             http_client,
@@ -279,7 +348,8 @@ impl PhysnaApiClient {
 
         Self {
             base_url: configuration.get_api_base_url(),
-            access_token: None,
+            access_token: SharedToken::default(),
+            renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             client_credentials: None,
             auth_url: configuration.get_auth_base_url(),
             http_client,
@@ -298,7 +368,8 @@ impl PhysnaApiClient {
     pub fn new_with_shared_http_client(http_client: HttpClient, base_url: String) -> Self {
         Self {
             base_url,
-            access_token: None,
+            access_token: SharedToken::default(),
+            renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             client_credentials: None,
             auth_url: "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
                 .to_string(), // Default auth URL
@@ -326,8 +397,8 @@ impl PhysnaApiClient {
     ///
     /// # Returns
     /// The updated `PhysnaApiClient` instance with the access token set
-    pub fn with_access_token(mut self, token: String) -> Self {
-        self.access_token = Some(token);
+    pub fn with_access_token(self, token: String) -> Self {
+        self.store_token(token);
         self
     }
 
@@ -361,6 +432,17 @@ impl PhysnaApiClient {
             "Attempting to automatically refresh the access token using the cached credentials..."
         );
 
+        // Whatever we were holding when we decided a renewal was needed. If it has
+        // changed by the time we get the lock, someone else renewed while we waited and
+        // there is nothing left to do - without this, a burst of tasks all meeting the
+        // same expired token would queue up and re-authenticate one after another.
+        let stale_token = self.current_token();
+        let _renewing = self.renewal.lock().await;
+        if self.current_token() != stale_token {
+            debug!("Another task renewed the access token while we waited; using theirs");
+            return Ok(());
+        }
+
         if let Some((client_id, client_secret)) = &self.client_credentials {
             debug!("Attempting automatic re-authentication with cached client credentials");
 
@@ -376,7 +458,7 @@ impl PhysnaApiClient {
                 Ok(new_token) => {
                     debug!("Successfully obtained new access token automatically");
                     // Update the stored access token
-                    self.access_token = Some(new_token.clone());
+                    self.store_token(new_token.clone());
 
                     // Save the new token to the keyring immediately to ensure subsequent commands use the fresh token
                     if let Err(e) = self.save_current_token_to_keyring(&self.environment_name) {
@@ -402,6 +484,29 @@ impl PhysnaApiClient {
         }
     }
 
+    /// The access token as it stands right now.
+    ///
+    /// Returns a clone rather than a guard: the lock must never be held across an
+    /// await, and every caller wants an owned value for a header anyway.
+    fn current_token(&self) -> Option<String> {
+        self.access_token
+            .read()
+            .ok()
+            .and_then(|token| token.clone())
+    }
+
+    /// Whether a token is currently held.
+    fn has_token(&self) -> bool {
+        self.current_token().is_some()
+    }
+
+    /// Publish a renewed token to this client and every clone sharing it.
+    fn store_token(&self, token: String) {
+        if let Ok(mut slot) = self.access_token.write() {
+            *slot = Some(token);
+        }
+    }
+
     /// Get the current access token from the client
     ///
     /// This method allows external code to retrieve the current access token,
@@ -410,7 +515,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Option<String>` - The current access token if available, None otherwise
     pub fn get_access_token(&self) -> Option<String> {
-        self.access_token.clone()
+        self.current_token()
     }
 
     /// Decode the expiration time from a JWT access token
@@ -476,11 +581,10 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - If there's no token or it cannot be decoded
     pub fn is_token_expiring_soon(&self, threshold_seconds: u64) -> Result<bool, ApiError> {
         let token = self
-            .access_token
-            .as_ref()
+            .current_token()
             .ok_or_else(|| ApiError::AuthError("No access token available".to_string()))?;
 
-        let exp_timestamp = Self::decode_token_expiration(token)?;
+        let exp_timestamp = Self::decode_token_expiration(&token)?;
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| ApiError::AuthError(format!("Failed to get current time: {}", e)))?
@@ -499,11 +603,10 @@ impl PhysnaApiClient {
     /// * `Err(ApiError)` - If there's no token or it cannot be decoded
     pub fn get_token_time_remaining(&self) -> Result<i64, ApiError> {
         let token = self
-            .access_token
-            .as_ref()
+            .current_token()
             .ok_or_else(|| ApiError::AuthError("No access token available".to_string()))?;
 
-        let exp_timestamp = Self::decode_token_expiration(token)?;
+        let exp_timestamp = Self::decode_token_expiration(&token)?;
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| ApiError::AuthError(format!("Failed to get current time: {}", e)))?
@@ -539,6 +642,43 @@ impl PhysnaApiClient {
         }
     }
 
+    /// Seconds of remaining validity below which a token is renewed before use rather
+    /// than after a request has already been rejected.
+    ///
+    /// Comfortably longer than any single request, so a token that passes this check
+    /// will still be valid when the response comes back.
+    const PROACTIVE_RENEWAL_THRESHOLD_SECONDS: u64 = 60;
+
+    /// Renew the access token before it expires, rather than waiting for a 401.
+    ///
+    /// Deliberately best-effort: a failure here is swallowed, because the 401 path
+    /// still handles renewal and the current token may well work regardless. This can
+    /// only avoid work, never cause a request to fail that would otherwise have
+    /// succeeded.
+    ///
+    /// Combined with the shared token and the renewal lock, a burst of concurrent
+    /// tasks meeting the same soon-to-expire token performs one renewal between them
+    /// instead of each taking its own 401-and-retry round trip.
+    async fn renew_token_if_expiring(&mut self) {
+        if !self.has_token() {
+            return;
+        }
+        match self.is_token_expiring_soon(Self::PROACTIVE_RENEWAL_THRESHOLD_SECONDS) {
+            Ok(true) => {
+                if let Err(e) = self.refresh_token().await {
+                    debug!(
+                        "Proactive token renewal failed ({}); continuing with the current token",
+                        e
+                    );
+                }
+            }
+            Ok(false) => {}
+            Err(e) => {
+                debug!("Could not determine token expiry ({}); continuing", e);
+            }
+        }
+    }
+
     /// Generic method to build and execute HTTP requests with automatic token refresh on 401/403 errors
     ///
     /// This method provides a unified interface for making HTTP requests to the Physna V3 API.
@@ -563,11 +703,13 @@ impl PhysnaApiClient {
         T: serde::de::DeserializeOwned,
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
+        self.renew_token_if_expiring().await;
+
         // Build the request using the original builder
         let mut request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
         // Add access token header if available for authentication
-        if let Some(token) = &self.access_token {
+        if let Some(token) = self.current_token() {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
@@ -595,7 +737,7 @@ impl PhysnaApiClient {
             let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
             // Add the refreshed access token to the retry request
-            if let Some(token) = &self.access_token {
+            if let Some(token) = self.current_token() {
                 retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
             }
 
@@ -684,7 +826,7 @@ impl PhysnaApiClient {
                 }
 
                 // If we have no access token, this is definitely an authentication issue
-                if self.access_token.is_none() {
+                if !self.has_token() {
                     debug!("404 error with no access token - treating as authentication error");
                     return Err(ApiError::AuthError(
                         "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
@@ -713,7 +855,7 @@ impl PhysnaApiClient {
 
                         let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
-                        if let Some(token) = &self.access_token {
+                        if let Some(token) = self.current_token() {
                             retry_request =
                                 retry_request.header("Authorization", format!("Bearer {}", token));
                         }
@@ -839,11 +981,8 @@ impl PhysnaApiClient {
     /// Generic method to build and execute DELETE requests with automatic token refresh
     async fn delete(&mut self, url: &str) -> Result<(), ApiError> {
         // Use the HttpClient's delete method which includes the user agent
-        match self
-            .http_client
-            .delete(url, self.access_token.as_deref())
-            .await
-        {
+        let token = self.current_token();
+        match self.http_client.delete(url, token.as_deref()).await {
             Ok(()) => Ok(()),
             Err(ApiError::HttpError(reqwest_err)) => {
                 // Check if the error is due to authentication
@@ -868,11 +1007,8 @@ impl PhysnaApiClient {
 
                     // Retry the request with the new token
                     debug!("Retrying DELETE request with refreshed token");
-                    match self
-                        .http_client
-                        .delete(url, self.access_token.as_deref())
-                        .await
-                    {
+                    let token = self.current_token();
+                    match self.http_client.delete(url, token.as_deref()).await {
                         Ok(()) => Ok(()),
                         Err(retry_err) => Err(ApiError::RetryFailed(format!(
                             "Original error: {}, Retry failed with error: {}",
@@ -2333,11 +2469,13 @@ impl PhysnaApiClient {
     where
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
+        self.renew_token_if_expiring().await;
+
         // Build the request using the original builder
         let mut request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
         // Add access token header if available for authentication
-        if let Some(token) = &self.access_token {
+        if let Some(token) = self.current_token() {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
@@ -2363,7 +2501,7 @@ impl PhysnaApiClient {
             let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
 
             // Add the refreshed access token to the retry request
-            if let Some(token) = &self.access_token {
+            if let Some(token) = self.current_token() {
                 retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
             }
 
@@ -2411,7 +2549,7 @@ impl PhysnaApiClient {
             if status == reqwest::StatusCode::NOT_FOUND {
                 // Handle 404 errors that might be due to authentication issues
                 debug!("Received 404 error, checking if it's an authentication issue");
-                if self.access_token.is_none() {
+                if !self.has_token() {
                     debug!("404 error with no access token - treating as authentication error");
                     return Err(ApiError::AuthError(
                         "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
@@ -2596,7 +2734,7 @@ impl PhysnaApiClient {
         let mut request = self.http_client.client.post(&url).multipart(form);
 
         // Add access token if available
-        if let Some(token) = &self.access_token {
+        if let Some(token) = self.current_token() {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
@@ -2650,7 +2788,7 @@ impl PhysnaApiClient {
             debug!("Retrying asset creation request with refreshed token");
             let mut retry_request = self.http_client.client.post(&url).multipart(retry_form);
 
-            if let Some(token) = &self.access_token {
+            if let Some(token) = self.current_token() {
                 retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
             }
 
@@ -3474,7 +3612,7 @@ impl PhysnaApiClient {
         // Share the HTTP client across all concurrent uploads to leverage connection pooling
         let shared_http_client = self.http_client.clone();
         let base_url = self.base_url.clone();
-        let access_token = self.access_token.clone();
+        let access_token = self.current_token();
         let client_credentials = self.client_credentials.clone();
         // The per-file clients must inherit the parent's auth endpoint and
         // environment: constructing them with defaults would refresh tokens
@@ -4382,11 +4520,9 @@ impl PhysnaApiClient {
                 "Authorization",
                 format!(
                     "Bearer {}",
-                    self.access_token
-                        .as_ref()
-                        .ok_or_else(|| ApiError::AuthError(
-                            "No access token available for download".to_string()
-                        ))?
+                    self.current_token().ok_or_else(|| ApiError::AuthError(
+                        "No access token available for download".to_string()
+                    ))?
                 ),
             )
             .send()
@@ -4492,12 +4628,9 @@ impl PhysnaApiClient {
                         "Authorization",
                         format!(
                             "Bearer {}",
-                            self.access_token
-                                .as_ref()
-                                .ok_or_else(|| ApiError::AuthError(
-                                    "No access token available for download after refresh"
-                                        .to_string()
-                                ))?
+                            self.current_token().ok_or_else(|| ApiError::AuthError(
+                                "No access token available for download after refresh".to_string()
+                            ))?
                         ),
                     )
                     .send()
@@ -4601,7 +4734,7 @@ impl PhysnaApiClient {
                 match status {
                     reqwest::StatusCode::UNAUTHORIZED => {
                         // Check if we have an access token - if not, this is a general auth error
-                        if self.access_token.is_none() {
+                        if !self.has_token() {
                             Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
                         } else {
                             Err(ApiError::AuthError(
@@ -4612,7 +4745,7 @@ impl PhysnaApiClient {
                     }
                     reqwest::StatusCode::FORBIDDEN => {
                         // Check if we have an access token - if not, this is a general auth error
-                        if self.access_token.is_none() {
+                        if !self.has_token() {
                             Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
                         } else {
                             Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()))
@@ -4678,11 +4811,9 @@ impl PhysnaApiClient {
                 "Authorization",
                 format!(
                     "Bearer {}",
-                    self.access_token
-                        .as_ref()
-                        .ok_or_else(|| ApiError::AuthError(
-                            "No access token available for download".to_string()
-                        ))?
+                    self.current_token().ok_or_else(|| ApiError::AuthError(
+                        "No access token available for download".to_string()
+                    ))?
                 ),
             )
             .send()
@@ -4729,7 +4860,7 @@ impl PhysnaApiClient {
                         debug!("Failed to save refreshed token to keyring: {}", e);
                     }
 
-                    let token = self.access_token.as_ref().ok_or_else(|| {
+                    let token = self.current_token().ok_or_else(|| {
                         ApiError::AuthError(format!(
                             "Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.",
                             asset_display
@@ -4809,11 +4940,9 @@ impl PhysnaApiClient {
                 "Authorization",
                 format!(
                     "Bearer {}",
-                    self.access_token
-                        .as_ref()
-                        .ok_or_else(|| ApiError::AuthError(
-                            "No access token available for thumbnail download".to_string()
-                        ))?
+                    self.current_token().ok_or_else(|| ApiError::AuthError(
+                        "No access token available for thumbnail download".to_string()
+                    ))?
                 ),
             )
             .send()
@@ -4853,7 +4982,7 @@ impl PhysnaApiClient {
             match status {
                 reqwest::StatusCode::UNAUTHORIZED => {
                     // Check if we have an access token - if not, this is a general auth error
-                    if self.access_token.is_none() {
+                    if !self.has_token() {
                         Err(ApiError::AuthError("Authentication required for asset thumbnail: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
                     } else {
                         Err(ApiError::AuthError("Unauthorized access for asset thumbnail: Access token may have expired or is invalid.".to_string()))
@@ -4892,6 +5021,7 @@ impl PhysnaApiClient {
         Self {
             base_url: self.base_url.clone(),
             access_token: self.access_token.clone(),
+            renewal: self.renewal.clone(),
             client_credentials: self.client_credentials.clone(),
             auth_url: self.auth_url.clone(),
             http_client: http_client_with_upload_timeout,
@@ -4915,6 +5045,7 @@ impl PhysnaApiClient {
         Self {
             base_url: self.base_url.clone(),
             access_token: self.access_token.clone(),
+            renewal: self.renewal.clone(),
             client_credentials: self.client_credentials.clone(),
             auth_url: self.auth_url.clone(),
             http_client: http_client_with_download_timeout,
@@ -4938,6 +5069,7 @@ impl PhysnaApiClient {
         Self {
             base_url: self.base_url.clone(),
             access_token: self.access_token.clone(),
+            renewal: self.renewal.clone(),
             client_credentials: self.client_credentials.clone(),
             auth_url: self.auth_url.clone(),
             http_client: http_client_with_search_timeout,
@@ -5343,7 +5475,7 @@ impl PhysnaApiClient {
     /// * `Ok(())` - Token successfully saved to keyring
     /// * `Err(ApiError)` - Failed to save token to keyring
     pub fn save_current_token_to_keyring(&self, environment_name: &str) -> Result<(), ApiError> {
-        if let Some(token) = &self.access_token {
+        if let Some(token) = self.current_token() {
             let mut keyring = crate::keyring::Keyring::default();
             keyring
                 .put(environment_name, "access-token".to_string(), token.clone())

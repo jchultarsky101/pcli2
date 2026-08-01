@@ -1,13 +1,17 @@
 name: Rust
 
-# `develop` is included alongside `main` because GitFlow makes it the branch
-# feature work actually lands on: a feature PR targets `develop`, and `main`
-# only sees an already-merged release PR. Filtering to `main` alone meant the
-# fmt/clippy/test jobs first ran on a change long after it was merged, so the
-# feature PR itself was gated by nothing but the cargo-dist `plan` check.
+# `develop` is a `pull_request` target but deliberately not a `push` one.
+# GitFlow makes it the branch feature work actually lands on - a feature PR
+# targets `develop`, and `main` only sees an already-merged release PR - so
+# gating those PRs is what stops a change reaching `main` unverified.
+#
+# It is left off `push` because `develop` would then match both triggers, and
+# every commit produced two identical Rust runs. Branch protection on `main`
+# waits for each check name it sees, so a release PR blocked on a duplicate
+# 3-OS matrix that told it nothing the first had not (observed on #107).
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main", "develop" ]
 

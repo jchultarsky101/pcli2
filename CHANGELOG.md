@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-08-01
+
 ### Changed
 - **The new-version hint now also follows a failed command, `--version`, and a rejected argument** - It previously appeared only after a *successful* run, which is when it matters least. The motivating case is the opposite one: a user on a build predating the flag they are passing sees `unexpected argument`, concludes the feature is broken, and has nothing pointing at their own install. That is not hypothetical — it is the `--recursive` report described in the note below, which cost a support round trip and a release spent chasing a defect that user never hit. Argument parsing no longer lets clap exit on pcli2's behalf, so a usage error or a `--version` check can still be told the binary is out of date, and a failed command prints the hint after the error so it is the last thing read. `--help` is excluded: its output is long enough that a trailing line would scroll past unread. Every existing restraint still applies — terminal sessions only, at most one check per 24 hours, never in CI, and `PCLI2_NO_UPDATE_CHECK` still disables it entirely.
 

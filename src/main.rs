@@ -108,8 +108,20 @@ async fn main() {
         banner::print_banner();
     }
 
-    // Parse the command line; clap exits directly on --help/--version/usage errors
-    let matches = pcli2::commands::create_cli_commands();
+    // Parse without letting clap exit on our behalf, so a rejected argument or a
+    // --version check can still be told that this binary is out of date. A user on a
+    // build that predates the flag they are passing sees only "unexpected argument",
+    // concludes the feature is broken, and has no reason to suspect their own install.
+    let matches = match pcli2::commands::try_create_cli_commands() {
+        Ok(matches) => matches,
+        Err(e) => {
+            let _ = e.print();
+            if pcli2::commands::should_hint_after_parse_error(&e) {
+                pcli2::update_check::maybe_print_update_hint().await;
+            }
+            process::exit(e.exit_code());
+        }
+    };
 
     // Initialize the logging subsystem
     // Log level can be set via --verbose/--quiet flags or the
@@ -132,6 +144,18 @@ async fn main() {
         }
         Err(e) => {
             error_utils::report_detailed_error(&e, None); // Remove generic context
+
+            // Also hint on failure, and after the error so it is the last thing read.
+            // A command that just failed is when being several versions behind matters
+            // most: a user running a build that predates the flag they are passing sees
+            // only "unexpected argument", concludes the feature is broken, and has no
+            // reason to suspect their own install. That is not hypothetical - it cost a
+            // user a support round trip and cost us a release chasing a bug they never
+            // had.
+            if !machine_output_command {
+                pcli2::update_check::maybe_print_update_hint().await;
+            }
+
             let main_error = MainError::CliError(e);
             process::exit(main_error.exit_code());
         }

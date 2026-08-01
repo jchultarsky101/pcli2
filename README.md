@@ -402,9 +402,11 @@ with no ANSI escape codes.
 
 ### 🔔 Update Notifications
 
-After a successful command, PCLI2 prints a one-line hint on stderr when a
-newer release is available (checked at most once per day, terminal sessions
-only, never in CI). Opt out with:
+PCLI2 prints a one-line hint on stderr when a newer release is available
+(checked at most once per day, terminal sessions only, never in CI). The hint
+follows a command whether it succeeded or failed, and also follows
+`--version` and a rejected argument — the cases where a stale install is the
+likeliest explanation for what you just saw. Opt out with:
 
 ```bash
 export PCLI2_NO_UPDATE_CHECK=1

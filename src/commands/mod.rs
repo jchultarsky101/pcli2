@@ -90,6 +90,30 @@ pub fn create_cli_commands() -> ArgMatches {
     create_full_command().get_matches()
 }
 
+/// Parse the command line, handing back clap's error instead of exiting.
+///
+/// [`create_cli_commands`] uses `get_matches`, which prints and exits inside clap. That
+/// leaves no opportunity to say anything afterwards - including that the binary being
+/// run is several versions old, which is exactly the thing worth knowing when an
+/// argument was rejected or `--version` was asked for.
+pub fn try_create_cli_commands() -> Result<ArgMatches, clap::Error> {
+    create_full_command().try_get_matches()
+}
+
+/// Whether an update hint is worth appending to this parse outcome.
+///
+/// Yes for `--version`, which is what someone checks when they suspect their install,
+/// and yes for a rejected argument, where "unexpected argument" on an old build reads
+/// as a broken feature rather than a stale binary. No for help output, which is long
+/// enough that a trailing line would be lost anyway.
+pub fn should_hint_after_parse_error(error: &clap::Error) -> bool {
+    !matches!(
+        error.kind(),
+        clap::error::ErrorKind::DisplayHelp
+            | clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+    )
+}
+
 /// Create the full CLI command structure without parsing arguments.
 ///
 /// This function creates the complete command structure for use with completion generation.
@@ -156,6 +180,59 @@ pub fn create_full_command() -> Command {
         .subcommand(completions::completions_command())
         .subcommand(man::man_command())
         .subcommand(cache::cache_command())
+}
+
+#[cfg(test)]
+mod update_hint_gating_tests {
+    use super::*;
+    use clap::error::ErrorKind;
+
+    fn parse_err(args: &[&str]) -> clap::Error {
+        try_create_cli_commands_from(args).expect_err("expected a parse error")
+    }
+
+    fn try_create_cli_commands_from(args: &[&str]) -> Result<ArgMatches, clap::Error> {
+        create_full_command().try_get_matches_from(args)
+    }
+
+    #[test]
+    fn a_rejected_argument_gets_the_hint() {
+        // The case that cost a support round trip: a user on a build predating the flag
+        // sees "unexpected argument" and concludes the feature is broken, with nothing
+        // pointing at their own install.
+        let e = parse_err(&[
+            "pcli2",
+            "folder",
+            "geometric-match",
+            "--folder-path",
+            "/x",
+            "-recursive",
+        ]);
+        assert_eq!(e.kind(), ErrorKind::UnknownArgument);
+        assert!(should_hint_after_parse_error(&e));
+    }
+
+    #[test]
+    fn version_gets_the_hint() {
+        // The single most valuable place for it: --version is what someone checks when
+        // they suspect their install is wrong.
+        let e = parse_err(&["pcli2", "--version"]);
+        assert_eq!(e.kind(), ErrorKind::DisplayVersion);
+        assert!(should_hint_after_parse_error(&e));
+    }
+
+    #[test]
+    fn help_does_not_get_the_hint() {
+        // Help is long; a trailing line would scroll past unread.
+        let e = parse_err(&["pcli2", "--help"]);
+        assert!(!should_hint_after_parse_error(&e));
+    }
+
+    #[test]
+    fn a_missing_required_argument_gets_the_hint() {
+        let e = parse_err(&["pcli2", "folder", "geometric-match"]);
+        assert!(should_hint_after_parse_error(&e));
+    }
 }
 
 #[cfg(test)]

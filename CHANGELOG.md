@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-09-04
+
 ### Fixed
 - **The new-version check no longer delays exit** - It ran after the command finished and could hold the prompt for up to three seconds on a stale cache. It now starts before the command and is only *reported* at exit; a lookup still in flight is abandoned rather than waited for.
 - **Match percentages are formatted the same way in every CSV** - Single-asset match CSV printed `100.0` where the folder report and the `--metadata` CSV printed `100`.

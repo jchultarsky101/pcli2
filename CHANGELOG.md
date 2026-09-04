@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-09-04
+
+### Fixed
+- **`asset create --override` no longer deletes the existing asset before checking the local file** - The existing asset was deleted first and the local file was only validated by the upload that followed, so a mistyped filename (or an unsupported extension, a 413, a dropped connection) destroyed the customer's asset and its metadata with no way back. The local file is now checked before anything destructive happens, and if the re-upload still fails after the delete, the deleted asset's UUID and any metadata captured for `--restore-metadata` are printed so they can be recovered by hand.
+- **`folder list --folder-uuid` now lists that folder** - The argument was accepted by the parser and never read, so the command silently listed the tenant root instead.
+- **The banner no longer corrupts command output** - It was printed to stdout whenever *any* argument equalled `help`, `-h` or `--help`, including values: `env list --name help` or `asset text-match --text help` emitted ASCII art ahead of their JSON. The banner is now shown only above genuine help output, as decided by the argument parser.
+- **`--threshold` is validated as a percentage** - Values outside 0-100 are rejected at parse time on every matching command (`--threshold 500` used to go straight to the API; `--threshold -5` failed with a misleading "unexpected argument"). A value below 1, almost always `0.85` typed for 85%, is still accepted but produces a warning saying what it actually asks for.
+- **`--concurrent` is validated on every command, so `--concurrent 0` no longer hangs** - `asset create-batch` sized its semaphore from the flag with no range check, and zero permits made every upload wait forever with no output. The folder match commands only rejected an out-of-range value after resolving the tenant. All concurrent commands now share one parser that accepts 1-10.
+- **The install page links to the right repository** - `docs/src/installation.md` pointed the installer script, the release page, the clone URL and the issues link at `github.com/physna/pcli2`, which is not this project.
+
+### Changed
+- **CI is green again on the current stable toolchain** - clippy 1.98 flags every `Result<_, CliError>` as `result_large_err` because the CSV writer error embedded in the error enums was several hundred bytes wide. That variant is now boxed in both `FormattingError` and `CliActionError`; nothing user-visible changes.
+- **Dependency lockfile refreshed** - Clears the `h2` advisory (RUSTSEC-2026-0258, reachable through reqwest in the shipped binary) and the `rand` and `event-listener` unsoundness advisories reported by `cargo audit`.
+
 ## [1.19.0] - 2026-08-01
 
 ### Changed

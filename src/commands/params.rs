@@ -108,6 +108,7 @@ pub const PARAMETER_REFRESH: &str = "refresh";
 pub const PARAMETER_RELOAD: &str = "reload";
 pub const PARAMETER_RECURSIVE: &str = "recursive";
 pub const PARAMETER_CONCURRENT: &str = "concurrent";
+pub const PARAMETER_THRESHOLD: &str = "threshold";
 pub const PARAMETER_PROGRESS: &str = "progress";
 pub const PARAMETER_LIMIT: &str = "limit";
 pub const PARAMETER_FOLDER_PATHS: &str = "folder-paths";
@@ -532,6 +533,67 @@ pub fn delete_if_empty_parameter() -> Arg {
             "Delete a metadata field from the asset when the input file contains \
             an empty value for it (by default empty values are skipped)",
         )
+}
+
+/// Parse a similarity or size threshold, which the API expresses as a percentage.
+///
+/// Rejecting values outside 0-100 at parse time matters more than it looks: the
+/// natural slip of typing `0.85` for 85% used to be sent as-is and, meaning 0.85%,
+/// matched nearly every asset in the tenant - the largest possible report and the
+/// heaviest possible load on the server.
+fn parse_threshold(s: &str) -> Result<f64, String> {
+    let value: f64 = s
+        .trim()
+        .parse()
+        .map_err(|_| format!("'{}' is not a number", s))?;
+    if !value.is_finite() || !(0.0..=100.0).contains(&value) {
+        return Err(format!(
+            "threshold must be a percentage between 0 and 100, got {} (for 85% write 85, not 0.85)",
+            s
+        ));
+    }
+    Ok(value)
+}
+
+/// Create the `--threshold` parameter shared by every matching command.
+pub fn threshold_parameter(help: &'static str) -> Arg {
+    Arg::new(PARAMETER_THRESHOLD)
+        .short('s')
+        .long(PARAMETER_THRESHOLD)
+        .num_args(1)
+        .required(false)
+        .default_value("80.0")
+        .allow_negative_numbers(true)
+        .value_parser(parse_threshold)
+        .help(help)
+}
+
+/// Create the `--concurrent` parameter shared by every concurrent command.
+///
+/// The value sizes a semaphore, so it is checked here: zero permits made
+/// `asset create-batch` wait forever, and the folder match commands only
+/// noticed an out-of-range value after resolving the tenant.
+pub fn concurrent_parameter(default: &'static str, help: &'static str) -> Arg {
+    Arg::new(PARAMETER_CONCURRENT)
+        .long(PARAMETER_CONCURRENT)
+        .num_args(1)
+        .required(false)
+        .default_value(default)
+        .value_parser(|s: &str| -> Result<usize, String> {
+            let value: usize = s
+                .trim()
+                .parse()
+                .map_err(|_| format!("'{}' is not a whole number", s))?;
+            if (1..=10).contains(&value) {
+                Ok(value)
+            } else {
+                Err(format!(
+                    "concurrency must be between 1 and 10, got {}",
+                    value
+                ))
+            }
+        })
+        .help(help)
 }
 
 /// Create the delay parameter.

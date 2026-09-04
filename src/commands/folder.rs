@@ -56,7 +56,7 @@ pub fn folder_command() -> Command {
                         .num_args(1)
                         .required(false)
                         .value_parser(clap::value_parser!(uuid::Uuid))
-                        .help("Resource's folder UUID")
+                        .help("Folder UUID")
                 )
                 .arg(folder_path_parameter().required(false))
                 .arg(crate::commands::params::reload_parameter())
@@ -206,6 +206,9 @@ pub fn folder_command() -> Command {
             Command::new(COMMAND_MATCH)
                 .visible_alias("geometric-search") // Add alias for geometric-search
                 .about("Find geometrically similar assets for all assets in one or more folders")
+                .after_help(
+                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
+                )
                 .arg(tenant_parameter())
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
@@ -232,7 +235,7 @@ pub fn folder_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_XLS]))
                 .arg(output_file_parameter().help(
-                    "Output file path (required for --format xls; default: match_report.xlsx)",
+                    "Output file path, used with --format xls (default: match_report.xlsx)",
                 ))
                 .arg(
                     crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
@@ -249,6 +252,9 @@ pub fn folder_command() -> Command {
             Command::new(COMMAND_PART_MATCH)
                 .visible_alias("part-search") // Add alias for part-search
                 .about("Find part matches for all assets in one or more folders")
+                .after_help(
+                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
+                )
                 .arg(tenant_parameter())
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
@@ -289,6 +295,9 @@ pub fn folder_command() -> Command {
             Command::new(COMMAND_VISUAL_MATCH)
                 .visible_alias("visual-search") // Add alias for visual-search
                 .about("Find visually similar assets for all assets in one or more folders")
+                .after_help(
+                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
+                )
                 .arg(tenant_parameter())
                 .arg(limit_parameter())
                 .arg(

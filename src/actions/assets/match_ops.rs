@@ -2481,6 +2481,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 .await
             {
                 Ok(search_results) => {
+                    if search_results.matches.len() >= limit {
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_warning(&format!(
+                                "Visual search for asset {} returned the --limit of {} matches; further matches were not fetched",
+                                asset_clone.name(),
+                                limit
+                            ))
+                        });
+                    }
                     // Update progress bar to show processing matches
                     if let Some(ref pb) = individual_pb {
                         pb.set_message(format!(

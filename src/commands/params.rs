@@ -272,7 +272,7 @@ pub fn folder_uuid_parameter() -> Arg {
         .num_args(1)
         .required(true)
         .value_parser(clap::value_parser!(Uuid))
-        .help("Resource's folder UUID")
+        .help("Folder UUID")
 }
 
 /// Create the path parameter.

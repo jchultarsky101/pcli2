@@ -330,8 +330,11 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         None
     };
 
-    api.create_folder(&tenant.uuid, name.as_str(), parent_folder_uuid)
+    let created = api
+        .create_folder(&tenant.uuid, name.as_str(), parent_folder_uuid)
         .await?;
+    // The UUID is what a script needs next; it used to be discarded.
+    println!("{}", created.folder.uuid);
 
     // Drop the cached folder hierarchy so the new folder resolves without
     // relying on the cache-miss refresh heuristic.

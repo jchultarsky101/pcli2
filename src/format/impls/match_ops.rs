@@ -483,7 +483,7 @@ impl OutputFormatter for GeometricMatchPair {
                     wtr.serialize((
                         &self.reference_asset.path,
                         &self.candidate_asset.path,
-                        &self.match_percentage,
+                        &format!("{}", self.match_percentage),
                         &self.reference_asset.uuid.to_string(),
                         &self.candidate_asset.uuid.to_string(),
                         &self.comparison_url.clone().unwrap_or_default(),
@@ -645,7 +645,7 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                         wtr.serialize((
                             &self.reference_asset.path,
                             &match_result.path(),
-                            &match_result.score(),
+                            &format!("{}", match_result.score()),
                             &self.reference_asset.uuid.to_string(),
                             &match_result.asset_uuid().to_string(),
                             &match_result.comparison_url.clone().unwrap_or_default(),
@@ -776,7 +776,7 @@ impl EnhancedGeometricSearchResponse {
                         wtr.serialize((
                             &self.reference_asset.path,
                             &match_result.path(),
-                            &match_result.score(),
+                            &format!("{}", match_result.score()),
                             &self.reference_asset.uuid.to_string(),
                             &match_result.asset_uuid().to_string(),
                             &match_result.comparison_url.clone().unwrap_or_default(),

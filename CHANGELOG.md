@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-09-04
+
+### Fixed
+- **The new-version check no longer delays exit** - It ran after the command finished and could hold the prompt for up to three seconds on a stale cache. It now starts before the command and is only *reported* at exit; a lookup still in flight is abandoned rather than waited for.
+- **Match percentages are formatted the same way in every CSV** - Single-asset match CSV printed `100.0` where the folder report and the `--metadata` CSV printed `100`.
+- **`folder visual-match` says when an asset hit `--limit`** - The per-asset cap (default 100) truncated silently in folder mode; text match already warned.
+- **`folder create` prints the new folder's UUID** - It printed nothing, so a script had to resolve the path it had just created.
+
+### Changed
+- **Root `--help` (and the man page) list every environment variable** pcli2 reads; the man page previously mentioned only `PCLI2_NO_COLOR`.
+- **Folder match commands document their row order** in `--help`: pair order for CSV and JSON, match percentage for Excel.
+- Help text: "Folder UUID" instead of "Resource's folder UUID"; the `--output` help on `folder geometric-match` no longer contradicts itself.
+
 ## [1.21.0] - 2026-09-04
 
 ### Fixed

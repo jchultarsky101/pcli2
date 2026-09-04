@@ -121,8 +121,16 @@ impl FolderHierarchy {
                 let node = FolderNode::new(folder);
                 hierarchy.nodes.insert(folder_uuid, node);
 
-                // If folder has a parent, add it as child to the parent
-                if let Some(parent_uuid) = &parent_uuid {
+                // If folder has a parent, add it as child to the parent. A record
+                // whose parent is itself is treated as a root: linking it would put
+                // a one-node cycle into every walk below.
+                if parent_uuid == Some(folder_uuid) {
+                    tracing::warn!(
+                        "Folder {} lists itself as its parent; treating it as a root folder",
+                        folder_uuid
+                    );
+                    hierarchy.root_uuids.push(folder_uuid);
+                } else if let Some(parent_uuid) = &parent_uuid {
                     if let Some(parent_node) = hierarchy.nodes.get_mut(parent_uuid) {
                         parent_node.children.push(folder_uuid);
                     }
@@ -397,9 +405,19 @@ impl FolderHierarchy {
     pub fn get_path_for_folder(&self, folder_uuid: &Uuid) -> Option<String> {
         let mut path_parts = Vec::new();
         let mut current_uuid = folder_uuid;
+        // Parent pointers come from the server; a cycle in them (A's parent is B,
+        // B's parent is A) must end the walk rather than spin it forever.
+        let mut visited = std::collections::HashSet::new();
 
         // Traverse up the hierarchy to build the path
         while let Some(node) = self.nodes.get(current_uuid) {
+            if !visited.insert(*current_uuid) {
+                tracing::warn!(
+                    "Folder {} is part of a parent cycle; its path is truncated at the cycle",
+                    folder_uuid
+                );
+                break;
+            }
             path_parts.push(node.name());
 
             if let Some(parent_uuid) = node.parent_uuid() {
@@ -441,7 +459,8 @@ impl FolderHierarchy {
         let mut filtered_hierarchy = FolderHierarchy::new();
 
         // Add the target folder and all its descendants
-        self.add_subtree_to_hierarchy(&mut filtered_hierarchy, target_node, true);
+        let mut visited = std::collections::HashSet::new();
+        self.add_subtree_to_hierarchy(&mut filtered_hierarchy, target_node, true, &mut visited);
 
         Some(filtered_hierarchy)
     }
@@ -457,7 +476,13 @@ impl FolderHierarchy {
         hierarchy: &mut FolderHierarchy,
         node: &FolderNode,
         is_root: bool,
+        visited: &mut std::collections::HashSet<Uuid>,
     ) {
+        // A child list that loops back on itself would recurse until the stack
+        // overflowed; each folder is copied once.
+        if !visited.insert(*node.uuid()) {
+            return;
+        }
         // Create a new node with adjusted parent relationship
         let mut new_node = node.clone();
 
@@ -478,7 +503,7 @@ impl FolderHierarchy {
         // Recursively add all children
         for child_id in &node.children {
             if let Some(child_node) = self.nodes.get(child_id) {
-                self.add_subtree_to_hierarchy(hierarchy, child_node, false);
+                self.add_subtree_to_hierarchy(hierarchy, child_node, false, visited);
             }
         }
     }
@@ -518,7 +543,8 @@ impl FolderHierarchy {
             });
 
             for (_child_id, child_node) in sorted_children {
-                self.build_tree_node(&mut tree, child_node);
+                let mut visited = std::collections::HashSet::new();
+                self.build_tree_node(&mut tree, child_node, &mut visited);
             }
 
             let tree = tree.build();
@@ -532,7 +558,15 @@ impl FolderHierarchy {
     /// # Arguments
     /// * `tree` - The TreeBuilder to add nodes to
     /// * `node` - The current node to process
-    fn build_tree_node(&self, tree: &mut TreeBuilder, node: &FolderNode) {
+    fn build_tree_node(
+        &self,
+        tree: &mut TreeBuilder,
+        node: &FolderNode,
+        visited: &mut std::collections::HashSet<Uuid>,
+    ) {
+        if !visited.insert(*node.uuid()) {
+            return;
+        }
         tree.begin_child(node.name().to_string());
 
         // Sort children by name
@@ -549,7 +583,7 @@ impl FolderHierarchy {
         });
 
         for (_child_id, child_node) in sorted_children {
-            self.build_tree_node(tree, child_node);
+            self.build_tree_node(tree, child_node, visited);
         }
 
         tree.end_child();
@@ -719,6 +753,38 @@ mod tests {
         }
 
         FolderHierarchy { nodes, root_uuids }
+    }
+
+    #[test]
+    fn a_parent_cycle_does_not_hang_path_building_or_filtering() {
+        // Server data with A's parent = B and B's parent = A. Every walk over the
+        // hierarchy must terminate, and the not-found suggestion path (which builds
+        // the path of every node) must not hang on the one bad record.
+        let mut a = folder("A", None);
+        let mut b = folder("B", None);
+        let (a_uuid, b_uuid) = (a.uuid, b.uuid);
+        a.parent_folder_uuid = Some(b_uuid);
+        b.parent_folder_uuid = Some(a_uuid);
+        let root = folder("Root", None);
+        let root_uuid = root.uuid;
+
+        let hierarchy = hierarchy_of(
+            vec![root, a, b],
+            &[(root_uuid, a_uuid), (a_uuid, b_uuid), (b_uuid, a_uuid)],
+        );
+
+        let path = hierarchy
+            .get_path_for_folder(&a_uuid)
+            .expect("a path is produced");
+        assert!(path.contains("A") && path.contains("B"));
+
+        let filtered = hierarchy
+            .filter_by_path("Root")
+            .expect("the root filters to a subtree");
+        assert_eq!(filtered.nodes.len(), 3, "each folder is copied once");
+
+        assert_eq!(hierarchy.subtree_uuids(&root_uuid).len(), 3);
+        assert!(!crate::path_utils::find_similar_paths(&hierarchy, "Rot").is_empty());
     }
 
     #[test]

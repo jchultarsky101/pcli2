@@ -73,6 +73,9 @@ impl CliError {
             CliError::UnsupportedSubcommand(_) | CliError::MissingRequiredArgument(_) => {
                 PcliExitCode::UsageError
             }
+            CliError::ConfigurationError(
+                crate::configuration::ConfigurationError::EnvironmentNotFound(_),
+            ) => PcliExitCode::NotFound,
             CliError::ConfigurationError(_) => PcliExitCode::ConfigError,
             CliError::FormattingError(_)
             | CliError::JsonError(_)

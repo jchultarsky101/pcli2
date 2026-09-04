@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The active tenant follows the environment** - One tenant selection was shared by every environment, so `env use staging` left production's tenant UUID active and every command failed with "Tenant not found" until `tenant use` was run again. Each environment now remembers its own tenant (older versions still read the top-level value). Folder and metadata caches are keyed by environment too, so a staging tenant cloned from production with the same UUID can no longer be served production's folder tree.
+- **Per-asset failure messages survive `--progress`** - During a folder match the reasons for individual failures, and the "stopping after repeated authentication failures" explanation, were written underneath the redrawing progress display and painted over (the same defect fixed for the scan spinner in 1.18.3). They are now printed with the display lifted.
+- **`env reset`, `env remove` and overwriting with `env add` ask first** - `env reset` wiped every environment with no prompt; `env add` silently replaced an existing one. All three honour the global `--yes`, and refuse rather than assume when no prompt can be shown.
+- **`env add` rejects a URL that is not one** - `--api-url 'not a url'` was saved and surfaced later as an opaque request error.
+- **`env remove --name nope` says the environment does not exist** (exit 67) instead of "missing value for property".
+- **`--format JSON` works** - The value is matched case-insensitively, as `PCLI2_FORMAT` already was.
+- **`asset list --folder-uuid`** - Every other folder command accepted a UUID; this one only took a path.
+- **`user list` shows its `ls` alias in help** like every other list command.
+- **`--verbose` shows pcli2's own debug output** without the HTTP stack's; `RUST_LOG` still opens everything.
+- **Folder trees and lists sort case-insensitively** ("alpha" before "Zeta").
+- **Configuration and formatting errors show the cause as a sentence** rather than a Rust debug dump.
 - **`asset delete` and `folder delete` work again** - The request-path rewrite in this release cycle sent the relative API path as the whole URL for DELETE; caught before release, with a regression test.
 - **`asset metadata create-batch` fetches the field registry once and lists each parent folder once** - Both happened per row: a 5,000-row batch into a 10,000-asset folder was about a quarter of a million requests. A registry fetch that fails is now an error rather than "no fields exist", which used to turn every value into a new text field and report the API's rejection as a type conflict in the user's CSV.
 - **Cache files are written atomically and carry a schema version** - Two pcli2 processes (a script under `xargs -P`) could read a half-written cache and refetch the whole hierarchy; a cache written by another version is now discarded instead of decoded wrongly. A cache timestamp from the future no longer panics a debug build.

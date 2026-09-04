@@ -56,8 +56,22 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
         );
     }
 
+    // A folder given by UUID is turned into its canonical path so the two forms
+    // share one code path.
+    let folder_path_param: Option<String> = match (
+        sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_FOLDER_UUID),
+        sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH),
+    ) {
+        (Some(folder_uuid), _) => Some(
+            crate::actions::utils::canonical_folder_path(&mut api, &tenant.uuid, folder_uuid)
+                .await?,
+        ),
+        (None, Some(path)) => Some(path.clone()),
+        (None, None) => None,
+    };
+
     // If a path is specified, get assets filtered by folder path
-    if let Some(path) = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH) {
+    if let Some(path) = folder_path_param.as_ref() {
         trace!("Listing assets for folder path: {}", path);
 
         let path = normalize_path(path);

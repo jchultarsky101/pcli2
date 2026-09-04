@@ -494,7 +494,12 @@ impl FolderHierarchy {
             .iter()
             .filter_map(|id| self.nodes.get(id).map(|node| (id, node)))
             .collect();
-        sorted_roots.sort_by(|a, b| a.1.name().cmp(b.1.name()));
+        sorted_roots.sort_by(|a, b| {
+            a.1.name()
+                .to_lowercase()
+                .cmp(&b.1.name().to_lowercase())
+                .then_with(|| a.1.name().cmp(b.1.name()))
+        });
 
         for (_root_id, node) in sorted_roots {
             let mut tree = TreeBuilder::new(node.name().to_string());
@@ -505,7 +510,12 @@ impl FolderHierarchy {
                 .iter()
                 .filter_map(|uuid| self.nodes.get(uuid).map(|node| (uuid, node)))
                 .collect();
-            sorted_children.sort_by(|a, b| a.1.name().cmp(b.1.name()));
+            sorted_children.sort_by(|a, b| {
+                a.1.name()
+                    .to_lowercase()
+                    .cmp(&b.1.name().to_lowercase())
+                    .then_with(|| a.1.name().cmp(b.1.name()))
+            });
 
             for (_child_id, child_node) in sorted_children {
                 self.build_tree_node(&mut tree, child_node);
@@ -531,7 +541,12 @@ impl FolderHierarchy {
             .iter()
             .filter_map(|uuid| self.nodes.get(uuid).map(|node| (uuid, node)))
             .collect();
-        sorted_children.sort_by(|a, b| a.1.name().cmp(b.1.name()));
+        sorted_children.sort_by(|a, b| {
+            a.1.name()
+                .to_lowercase()
+                .cmp(&b.1.name().to_lowercase())
+                .then_with(|| a.1.name().cmp(b.1.name()))
+        });
 
         for (_child_id, child_node) in sorted_children {
             self.build_tree_node(tree, child_node);

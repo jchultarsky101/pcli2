@@ -90,6 +90,24 @@ pub async fn execute_environment_command(
             )?;
 
             let api_url = sub_matches.get_one::<String>(PARAMETER_API_URL).cloned();
+            for (flag, value) in [
+                (
+                    "--api-url",
+                    sub_matches.get_one::<String>(PARAMETER_API_URL),
+                ),
+                (
+                    "--ui-url",
+                    sub_matches.get_one::<String>(crate::commands::params::PARAMETER_UI_URL),
+                ),
+                (
+                    "--auth-url",
+                    sub_matches.get_one::<String>(crate::commands::params::PARAMETER_AUTH_URL),
+                ),
+            ] {
+                if let Some(value) = value {
+                    validate_url(flag, value)?;
+                }
+            }
             let ui_url = sub_matches.get_one::<String>(PARAMETER_UI_URL).cloned();
             let auth_url = sub_matches.get_one::<String>(PARAMETER_AUTH_URL).cloned();
 
@@ -99,7 +117,15 @@ pub async fn execute_environment_command(
                 api_base_url: api_url.unwrap_or_else(crate::configuration::default_api_base_url),
                 ui_base_url: ui_url.unwrap_or_else(crate::configuration::default_ui_base_url),
                 auth_base_url: auth_url.unwrap_or_else(crate::configuration::default_auth_base_url),
+                active_tenant_uuid: None,
             };
+
+            if configuration.has_environment(env_name) {
+                confirm_or_abort(
+                    sub_matches,
+                    &format!("Environment '{}' already exists; overwrite it?", env_name),
+                )?;
+            }
 
             configuration.add_environment(env_name.clone(), env_config);
             configuration.save_to_default()?;
@@ -197,6 +223,8 @@ pub async fn execute_environment_command(
             )?;
 
             let mut configuration = crate::configuration::Configuration::load_or_create_default()?;
+
+            confirm_or_abort(sub_matches, &format!("Remove environment '{}'?", env_name))?;
 
             configuration.remove_environment(env_name)?;
             configuration.save_to_default()?;
@@ -364,17 +392,24 @@ pub async fn execute_environment_command(
             }
             Ok(())
         }
-        Some(("reset", _sub_matches)) => {
+        Some(("reset", sub_matches)) => {
             use tracing::trace;
 
             trace!("Executing environment reset command");
 
             let mut configuration = crate::configuration::Configuration::load_or_create_default()?;
 
+            // Destructive and previously unprompted: every environment, and the
+            // credentials stored under them, go at once.
+            confirm_or_abort(
+                sub_matches,
+                "Remove every environment definition and the active selection?",
+            )?;
+
             configuration.reset_environments();
             configuration.save_to_default()?;
 
-            println!("Environment configurations reset successfully");
+            eprintln!("Environment configurations reset");
             Ok(())
         }
         Some(("get", sub_matches)) => {
@@ -567,5 +602,49 @@ pub async fn execute_environment_command(
                 .map(|(name, _)| name.to_string())
                 .unwrap_or_else(|| "unknown".to_string()),
         )),
+    }
+}
+
+/// Ask before a destructive change, unless `--yes` was given. A prompt that
+/// cannot be shown (no terminal) is a refusal, not a silent yes.
+fn confirm_or_abort(
+    sub_matches: &ArgMatches,
+    question: &str,
+) -> Result<(), crate::error::CliError> {
+    if sub_matches.get_flag("yes") {
+        return Ok(());
+    }
+    match inquire::Confirm::new(question).with_default(false).prompt() {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            eprintln!("Cancelled.");
+            Err(crate::error::CliError::AlreadyReported(
+                crate::exit_codes::PcliExitCode::UsageError,
+            ))
+        }
+        Err(e) => Err(crate::error::CliError::ActionError(
+            crate::actions::CliActionError::BusinessLogicError(format!(
+                "confirmation required but no prompt could be shown ({}); pass --yes to proceed without one",
+                e
+            )),
+        )),
+    }
+}
+
+/// A URL flag must parse as an absolute http(s) URL; a bad one used to be saved
+/// and only surface later as an opaque request error.
+fn validate_url(flag: &str, value: &str) -> Result<(), crate::error::CliError> {
+    match reqwest::Url::parse(value) {
+        Ok(url) if url.scheme() == "http" || url.scheme() == "https" => Ok(()),
+        Ok(url) => Err(crate::error::CliError::MissingRequiredArgument(format!(
+            "{} '{}' must use http or https, not '{}'",
+            flag,
+            value,
+            url.scheme()
+        ))),
+        Err(e) => Err(crate::error::CliError::MissingRequiredArgument(format!(
+            "{} '{}' is not a valid URL: {}",
+            flag, value, e
+        ))),
     }
 }

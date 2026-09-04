@@ -23,7 +23,7 @@ pub enum FormattingError {
     #[error("invalid output format {0}")]
     UnsupportedOutputFormat(String),
     /// General error when formatting fails
-    #[error("failed to format output due to: {cause:?}")]
+    #[error("failed to format output due to: {cause}")]
     FormatFailure {
         cause: Box<dyn std::error::Error + Send + Sync>,
     },

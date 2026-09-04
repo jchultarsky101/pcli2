@@ -67,13 +67,19 @@ impl MetadataCache {
         // Check for PCLI2_CACHE_DIR environment variable first
         if let Ok(cache_dir_str) = std::env::var("PCLI2_CACHE_DIR") {
             let mut cache_path = PathBuf::from(cache_dir_str);
-            cache_path.push("metadata_cache.json");
+            cache_path.push(format!(
+                "metadata_cache-{}.json",
+                crate::folder_cache::active_environment_key()
+            ));
             return Ok(cache_path);
         }
 
         let mut path = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
         path.push("pcli2");
-        path.push("metadata_cache.json");
+        path.push(format!(
+            "metadata_cache-{}.json",
+            crate::folder_cache::active_environment_key()
+        ));
         Ok(path)
     }
 

@@ -154,6 +154,7 @@ pub fn format_parameter() -> Arg {
         .num_args(1)
         .required(false)
         .default_value("json")
+        .ignore_case(true)
         .global(true)
         .help("Output data format [env: PCLI2_FORMAT=]")
         .value_parser(OutputFormat::names())

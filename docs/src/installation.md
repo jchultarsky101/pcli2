@@ -39,7 +39,7 @@ cargo --version
 
 PCLI2 provides pre-built binaries for Windows, macOS, and Linux through GitHub Releases:
 
-1. Visit the [Latest Release](https://github.com/physna/pcli2/releases/latest)
+1. Visit the [Latest Release](https://github.com/jchultarsky101/pcli2/releases/latest)
 2. Download the appropriate installer or binary for your platform:
    - **Windows**: `pcli2-x86_64-pc-windows-msvc.msi` (Installer) or `pcli2-x86_64-pc-windows-msvc.zip` (ZIP)
    - **macOS**: `pcli2-installer.sh` (Universal script) or platform-specific archives
@@ -48,7 +48,7 @@ PCLI2 provides pre-built binaries for Windows, macOS, and Linux through GitHub R
 #### Using the Universal Installer Script:
 ```bash
 # Download and run the installer script
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/physna/pcli2/releases/latest/download/pcli2-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
 ```
 
 #### Manual Installation:
@@ -64,7 +64,7 @@ This method gives you the latest development version of PCLI2:
 
 ```bash
 # Clone the repository
-git clone https://github.com/physna/pcli2.git
+git clone https://github.com/jchultarsky101/pcli2.git
 cd pcli2
 
 # Build the project (this may take a few minutes)
@@ -137,5 +137,5 @@ If you encounter issues during installation:
 
 1. Check that all prerequisites are met
 2. Verify your Rust installation is working
-3. Consult the [GitHub Issues](https://github.com/physna/pcli2/issues) page
+3. Consult the [GitHub Issues](https://github.com/jchultarsky101/pcli2/issues) page
 4. Contact the Physna development team for support

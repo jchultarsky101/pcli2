@@ -171,6 +171,14 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let override_flag = sub_matches.get_flag(PARAMETER_OVERRIDE);
     let restore_metadata = sub_matches.get_flag(PARAMETER_RESTORE_METADATA);
 
+    // Check the local file before anything destructive happens. With --override the
+    // existing asset is deleted before the new one is uploaded, and the API layer only
+    // validates the file at upload time - so a mistyped filename used to delete the
+    // remote asset and then fail with "Path not found", with no way to get it back.
+    if !file_path.is_file() {
+        return Err(ApiError::PathNotFound(file_path.to_string_lossy().into_owned()).into());
+    }
+
     let asset = if override_flag {
         let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await.ok();
 
@@ -203,8 +211,32 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 None
             };
 
-            api.delete_asset(&tenant.uuid.to_string(), &existing.uuid().to_string())
+            let deleted_uuid = existing.uuid().to_string();
+            api.delete_asset(&tenant.uuid.to_string(), &deleted_uuid)
                 .await?;
+
+            // From here on a failure leaves the tenant without the asset. Say so
+            // explicitly, and print the metadata that was captured for restoration so
+            // it can be re-applied by hand.
+            let report_loss = |error: &dyn std::fmt::Display| {
+                eprintln!(
+                    "The existing asset {} at '{}' was deleted for --override, but uploading '{}' failed: {}",
+                    deleted_uuid,
+                    asset_path,
+                    file_path.display(),
+                    error
+                );
+                if let Some(metadata) = saved_metadata.as_ref() {
+                    match serde_json::to_string_pretty(metadata) {
+                        Ok(json) => {
+                            eprintln!("Metadata captured from the deleted asset:\n{}", json)
+                        }
+                        Err(_) => {
+                            eprintln!("Metadata captured from the deleted asset: {:?}", metadata)
+                        }
+                    }
+                }
+            };
 
             const MAX_RETRIES: u32 = 5;
             const INITIAL_DELAY_MS: u64 = 500;
@@ -238,17 +270,21 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
                         );
                         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
                     }
-                    Err(e) => return Err(e.into()),
+                    Err(e) => {
+                        report_loss(&e);
+                        return Err(e.into());
+                    }
                 }
             }
 
             match created_asset {
                 Some(asset) => asset,
                 None => {
-                    return Err(ApiError::ConflictError(
+                    let error = ApiError::ConflictError(
                         "Asset conflict persisted after delete during --override. The server may still be processing the deletion.".to_string(),
-                    )
-                    .into())
+                    );
+                    report_loss(&error);
+                    return Err(error.into());
                 }
             }
         } else {

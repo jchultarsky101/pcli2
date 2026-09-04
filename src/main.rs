@@ -102,12 +102,6 @@ fn init_logging(matches: &clap::ArgMatches) {
 /// * `Err(i32)` - If an error occurred, with the appropriate exit code for the error type
 #[tokio::main]
 async fn main() {
-    // Check if help is requested to show banner
-    let args: Vec<String> = env::args().collect();
-    if banner::has_help_flag(&args) {
-        banner::print_banner();
-    }
-
     // Parse without letting clap exit on our behalf, so a rejected argument or a
     // --version check can still be told that this binary is out of date. A user on a
     // build that predates the flag they are passing sees only "unexpected argument",
@@ -115,6 +109,12 @@ async fn main() {
     let matches = match pcli2::commands::try_create_cli_commands() {
         Ok(matches) => matches,
         Err(e) => {
+            // The banner goes above help output only. It used to be printed whenever
+            // any argument equalled "help", which put ASCII art on stdout ahead of the
+            // JSON of `env list --name help` or `asset text-match --text help`.
+            if e.kind() == clap::error::ErrorKind::DisplayHelp {
+                banner::print_banner();
+            }
             let _ = e.print();
             if pcli2::commands::should_hint_after_parse_error(&e) {
                 pcli2::update_check::maybe_print_update_hint().await;

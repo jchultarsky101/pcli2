@@ -452,10 +452,7 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Get threshold parameter
-    let threshold = sub_matches
-        .get_one::<f64>("threshold")
-        .copied()
-        .unwrap_or(80.0);
+    let threshold = crate::actions::utils::threshold_from_args(sub_matches);
 
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
@@ -582,10 +579,7 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Get threshold parameter
-    let threshold = sub_matches
-        .get_one::<f64>("threshold")
-        .copied()
-        .unwrap_or(80.0);
+    let threshold = crate::actions::utils::threshold_from_args(sub_matches);
 
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
@@ -725,10 +719,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         .unwrap_or(100);
 
     // Get size threshold parameter
-    let threshold = sub_matches
-        .get_one::<f64>("threshold")
-        .copied()
-        .unwrap_or(80.0);
+    let threshold = crate::actions::utils::threshold_from_args(sub_matches);
 
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
@@ -924,7 +915,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                 Ok(data) => data,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::CsvIntoInnerError(e),
+                        crate::format::FormattingError::CsvIntoInnerError(Box::new(e)),
                     )));
                 }
             };
@@ -1247,10 +1238,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         .collect();
 
     // Get threshold parameter
-    let threshold = sub_matches
-        .get_one::<f64>("threshold")
-        .copied()
-        .unwrap_or(80.0);
+    let threshold = crate::actions::utils::threshold_from_args(sub_matches);
 
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
@@ -1774,10 +1762,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         .collect();
 
     // Get threshold parameter
-    let threshold = sub_matches
-        .get_one::<f64>("threshold")
-        .copied()
-        .unwrap_or(80.0);
+    let threshold = crate::actions::utils::threshold_from_args(sub_matches);
 
     // Get format parameters
     let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
@@ -2354,10 +2339,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         .unwrap_or(100);
 
     // Get size threshold parameter
-    let threshold = sub_matches
-        .get_one::<f64>("threshold")
-        .copied()
-        .unwrap_or(80.0);
+    let threshold = crate::actions::utils::threshold_from_args(sub_matches);
 
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
@@ -3063,7 +3045,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 Ok(data) => data,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::CsvIntoInnerError(e),
+                        crate::format::FormattingError::CsvIntoInnerError(Box::new(e)),
                     )));
                 }
             };

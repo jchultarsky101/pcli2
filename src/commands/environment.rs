@@ -326,7 +326,7 @@ pub async fn execute_environment_command(
                         Ok(data) => data,
                         Err(e) => {
                             return Err(crate::error::CliError::FormattingError(
-                                FormattingError::CsvIntoInnerError(e),
+                                FormattingError::CsvIntoInnerError(Box::new(e)),
                             ))
                         }
                     };
@@ -506,7 +506,7 @@ pub async fn execute_environment_command(
                             Ok(data) => data,
                             Err(e) => {
                                 return Err(crate::error::CliError::FormattingError(
-                                    FormattingError::CsvIntoInnerError(e),
+                                    FormattingError::CsvIntoInnerError(Box::new(e)),
                                 ))
                             }
                         };

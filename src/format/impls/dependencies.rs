@@ -350,7 +350,7 @@ impl OutputFormatter for AssemblyNode {
                 }
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_) => {
                 // For tree format, use ptree for better formatting
@@ -479,7 +479,7 @@ impl OutputFormatter for AssemblyTree {
                 }
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_) => {
                 // For tree format, use ptree for better formatting

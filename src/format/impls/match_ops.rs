@@ -202,7 +202,7 @@ impl EnhancedPartSearchResponse {
                 }
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }
@@ -491,7 +491,7 @@ impl OutputFormatter for GeometricMatchPair {
                 }
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }
@@ -654,7 +654,7 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                 }
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }
@@ -785,7 +785,7 @@ impl EnhancedGeometricSearchResponse {
                 }
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }

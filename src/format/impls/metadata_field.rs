@@ -76,7 +76,7 @@ impl OutputFormatter for MetadataFieldListResponse {
                 let data = wtr.into_inner().map_err(|e| {
                     FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e))
                 })?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_) => {
                 let mut fields: Vec<&MetadataField> = self.metadata_fields.iter().collect();
@@ -127,7 +127,7 @@ mod tests {
         let expected = "ASSET_PATH,NAME,VALUE,TYPE\n\
                         ,Description,,text\n\
                         ,Supplier Link,,url\n\
-                        ,Unit Price ($),,number\n";
+                        ,Unit Price ($),,number";
         assert_eq!(out, expected);
     }
 

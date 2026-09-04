@@ -364,7 +364,7 @@ pub async fn execute_environment_command(
                             ))
                         }
                     };
-                    let csv_output = match String::from_utf8(data) {
+                    let csv_output = match crate::format::csv_text(data) {
                         Ok(csv_str) => csv_str,
                         Err(e) => {
                             return Err(crate::error::CliError::FormattingError(
@@ -557,7 +557,7 @@ pub async fn execute_environment_command(
                                 ))
                             }
                         };
-                        let csv_output = match String::from_utf8(data) {
+                        let csv_output = match crate::format::csv_text(data) {
                             Ok(csv_str) => csv_str,
                             Err(e) => {
                                 return Err(crate::error::CliError::FormattingError(

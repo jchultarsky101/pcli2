@@ -834,21 +834,23 @@ pub struct AssetResponse {
     #[serde(rename = "folderId", skip_serializing_if = "Option::is_none")]
     pub folder_id: Option<Uuid>,
     /// The type of the asset
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub asset_type: String,
     /// The creation timestamp of the asset
-    #[serde(rename = "createdAt")]
+    #[serde(rename = "createdAt", default)]
     pub created_at: String,
     /// The last update timestamp of the asset
-    #[serde(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", default)]
     pub updated_at: String,
     /// The state of the asset
+    #[serde(default)]
     pub state: String,
     /// Whether the asset is an assembly
-    #[serde(rename = "isAssembly")]
+    #[serde(rename = "isAssembly", default)]
     pub is_assembly: bool,
-    /// Metadata associated with the asset
-    #[serde(rename = "metadata")]
+    /// Metadata associated with the asset. Defaulted so one item without the field
+    /// does not fail a whole page of two hundred.
+    #[serde(rename = "metadata", default)]
     pub metadata: std::collections::HashMap<String, serde_json::Value>,
     /// The ID of the parent folder, if any
     #[serde(rename = "parentFolderId", skip_serializing_if = "Option::is_none")]
@@ -959,10 +961,10 @@ pub struct PageData {
     #[serde(rename = "lastPage")]
     pub last_page: usize,
     /// Start index of items on this page
-    #[serde(rename = "startIndex")]
+    #[serde(rename = "startIndex", default)]
     pub start_index: usize,
     /// End index of items on this page
-    #[serde(rename = "endIndex")]
+    #[serde(rename = "endIndex", default)]
     pub end_index: usize,
 }
 
@@ -1001,18 +1003,26 @@ impl From<HashMap<String, String>> for AssetMetadata {
     }
 }
 
+/// A metadata value as a report cell.
+///
+/// Strings are shown as-is; numbers, booleans, and structures as their JSON text;
+/// `null` as empty. Used for both sides of a match row so a numeric field compares
+/// equal to itself - the reference side used to be stringified while the candidate
+/// side was blanked for anything but a string, which marked every typed field as a
+/// difference.
+pub fn metadata_cell(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
 impl From<HashMap<String, serde_json::Value>> for AssetMetadata {
     fn from(ht: HashMap<String, serde_json::Value>) -> Self {
         let meta: HashMap<String, String> = ht
             .iter()
-            .map(|(k, v)| {
-                let value_string = if let Some(str_val) = v.as_str() {
-                    str_val.to_string()
-                } else {
-                    v.to_string() // fallback to generic string representation for non-string values
-                };
-                (k.to_owned(), value_string)
-            })
+            .map(|(k, v)| (k.to_owned(), metadata_cell(v)))
             .collect();
 
         Self::from(meta)
@@ -2199,7 +2209,16 @@ impl CsvRecordProducer for TextMatch {
             .unwrap_or(&self.asset.path);
 
         // Build the asset URL using the template: {baseUrl}/tenants/{tenantId}/asset/{assetUuid}
-        let asset_url = if let Some(ref comparison_url) = self.comparison_url {
+        let asset_url = if let Some(asset_url) = self
+            .comparison_url
+            .as_ref()
+            .filter(|url| !url.contains("/compare?"))
+        {
+            // Already an asset URL (text match stores one): use it as-is. Splitting
+            // on "/compare?" below found nothing and appended "/asset/<uuid>" to a
+            // URL that already ended that way.
+            asset_url.clone()
+        } else if let Some(ref comparison_url) = self.comparison_url {
             // Extract base URL from the comparison URL and build the asset URL
             let url_parts: Vec<&str> = comparison_url.split("/compare?").collect();
             if let Some(base_url) = url_parts.first() {

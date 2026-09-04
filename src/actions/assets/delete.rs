@@ -121,11 +121,13 @@ pub async fn delete_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Get metadata name parameter from command line
-    let metadata_names = sub_matches
-        .get_many::<String>("field_name")
-        .ok_or(CliError::MissingRequiredArgument("field_name".to_string()))?
-        .map(|s| s.as_str())
-        .collect::<Vec<_>>();
+    let metadata_names = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>("field_name")
+            .ok_or(CliError::MissingRequiredArgument("field_name".to_string()))?
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>(),
+    );
 
     // Resolve asset ID from either UUID parameter or path
     let asset = if let Some(uuid) = asset_uuid_param {

@@ -764,7 +764,17 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let tenant_id = tenant.uuid.to_string();
         let asset_id = asset.uuid().to_string();
         let asset_name = asset.name().to_string();
-        let asset_file_path = dest_dir.join(&relative_path);
+        let asset_file_path = match crate::actions::utils::safe_relative_path(&relative_path) {
+            Some(safe) => dest_dir.join(safe),
+            None => {
+                return Err(CliError::ActionError(
+                    crate::actions::CliActionError::BusinessLogicError(format!(
+                        "refusing to write '{}': the server-provided name would escape the output directory",
+                        relative_path
+                    )),
+                ))
+            }
+        };
         let is_assembly = asset.is_assembly();
         let mut api_task = api.clone();
         let semaphore = semaphore.clone();
@@ -1290,7 +1300,18 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         let tenant_id = tenant.uuid.to_string();
         let asset_id = asset.uuid().to_string();
         let asset_name = asset.name().to_string();
-        let asset_thumbnail_path = dest_dir.join(&relative_path);
+        let asset_thumbnail_path = match crate::actions::utils::safe_relative_path(&relative_path)
+        {
+            Some(safe) => dest_dir.join(safe),
+            None => {
+                return Err(CliError::ActionError(
+                    crate::actions::CliActionError::BusinessLogicError(format!(
+                        "refusing to write '{}': the server-provided name would escape the output directory",
+                        relative_path
+                    )),
+                ))
+            }
+        };
         let mut api_task = api.clone();
         let semaphore = semaphore.clone();
         let progress_bar_clone = progress_bar.clone();
@@ -1671,18 +1692,15 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         return Ok(());
     }
 
-    // Store the original folder path for asset path construction
-    let original_folder_path = if let Some(path) = folder_path_param {
-        path.clone()
-    } else {
-        // If only UUID was provided, we can't determine the path, so we'll use a placeholder
-        // In practice, this case should rarely happen since the upload command typically uses paths
-        String::from("/")
-    };
-
-    // Resolve the folder UUID - first try to get existing folder, then create if needed
+    // Resolve the folder UUID - first try to get existing folder, then create if needed.
+    // The root has no UUID and is represented by the nil UUID.
     let folder_uuid = if let Some(uuid) = folder_uuid_param {
         *uuid
+    } else if folder_path_param
+        .map(|p| crate::model::normalize_path(p) == "/")
+        .unwrap_or(false)
+    {
+        Uuid::nil()
     } else if let Some(path) = folder_path_param {
         // Try to resolve the folder UUID by path
         match resolve_folder_uuid_by_path(&mut api, &tenant, path).await {
@@ -1776,6 +1794,14 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         ));
     };
 
+    // From here on the destination is the folder's canonical path, never the
+    // user's spelling of it (see resolve_upload_destination for why).
+    let original_folder_path = if folder_uuid.is_nil() {
+        "/".to_string()
+    } else {
+        crate::actions::utils::canonical_folder_path(&mut api, &tenant.uuid, &folder_uuid).await?
+    };
+
     // Get the command-line parameters
     let skip_existing = sub_matches.get_flag(crate::commands::params::PARAMETER_SKIP_EXISTING);
     let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
@@ -1846,8 +1872,13 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // and treated a failed listing as "does not exist", so --skip-existing could
     // re-upload on a transient error. Now a failed listing fails the run.
     let existing_names: std::sync::Arc<std::collections::HashSet<String>> = {
+        let parent = if folder_uuid.is_nil() {
+            None
+        } else {
+            Some(&folder_uuid)
+        };
         let listing = api
-            .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&folder_uuid))
+            .list_assets_by_parent_folder_uuid(&tenant.uuid, parent)
             .await?;
         std::sync::Arc::new(
             listing
@@ -1964,13 +1995,9 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
 
             // Construct the asset path using the original folder path and file name
             // Remove leading slash if present to avoid path conflicts
-            let clean_folder_path = original_folder_path_clone
-                .strip_prefix('/')
-                .unwrap_or(&original_folder_path_clone);
-            let asset_path = if clean_folder_path.ends_with('/') {
-                format!("{}{}", clean_folder_path, file_name_str)
-            } else {
-                format!("{}/{}", clean_folder_path, file_name_str)
+            let asset_path = match original_folder_path_clone.trim_matches('/') {
+                "" => file_name_str.clone(),
+                parent => format!("{}/{}", parent, file_name_str),
             };
 
             // Upload the asset to the specified folder using the full path

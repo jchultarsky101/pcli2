@@ -125,6 +125,11 @@ const EXCEL_MAX_COL_WIDTH: f64 = 255.0;
 /// Excel's maximum supported URL length. Longer values are written as text.
 const MAX_URL_LEN: usize = 2080;
 
+/// Excel allows this many hyperlinks per worksheet; one more and the workbook is
+/// "repaired" on open, with every link stripped. Past the cap the comparison
+/// column is written as plain text, which still carries the URL.
+const MAX_HYPERLINKS_PER_SHEET: usize = 65_530;
+
 /// Worksheet tab name.
 const SHEET_NAME: &str = "Match Report";
 
@@ -440,6 +445,7 @@ fn write_workbook(
     let schema = &report.schema;
     let match_col = schema.column_index(MATCH_PERCENTAGE_COLUMN);
     let url_col = schema.column_index(COMPARISON_URL_COLUMN);
+    let mut hyperlinks_written: usize = 0;
     let mut stats = ConversionStats {
         pairs: schema.pair_count(),
         ..Default::default()
@@ -532,8 +538,16 @@ fn write_workbook(
                 let link = value.trim();
                 if (link.starts_with("http://") || link.starts_with("https://"))
                     && link.len() <= MAX_URL_LEN
+                    && hyperlinks_written < MAX_HYPERLINKS_PER_SHEET
                 {
                     worksheet.write_url(excel_row, col as u16, Url::new(link))?;
+                    hyperlinks_written += 1;
+                    if hyperlinks_written == MAX_HYPERLINKS_PER_SHEET {
+                        tracing::warn!(
+                            "Excel allows {} hyperlinks per worksheet; the remaining comparison URLs are written as plain text",
+                            MAX_HYPERLINKS_PER_SHEET
+                        );
+                    }
                 } else {
                     worksheet.write(excel_row, col as u16, value)?;
                 }

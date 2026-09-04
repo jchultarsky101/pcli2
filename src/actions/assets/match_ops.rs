@@ -541,15 +541,15 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
         uuid: asset.uuid(),
         tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
-        folder_id: None, // We don't have folder ID in the Asset struct
-        asset_type: "asset".to_string(), // Default asset type
-        created_at: "".to_string(), // Placeholder for creation time
-        updated_at: "".to_string(), // Placeholder for update time
-        state: "active".to_string(), // Default state
-        is_assembly: false, // Default is not assembly
+        folder_id: None,
+        asset_type: asset.file_type().cloned().unwrap_or_default(),
+        created_at: asset.created_at().cloned().unwrap_or_default(),
+        updated_at: asset.updated_at().cloned().unwrap_or_default(),
+        state: asset.normalized_processing_status(),
+        is_assembly: asset.is_assembly(),
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None,  // No owner ID
+        owner_id: None,         // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
@@ -670,15 +670,15 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
         uuid: asset.uuid(),
         tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
-        folder_id: None, // We don't have folder ID in the Asset struct
-        asset_type: "asset".to_string(), // Default asset type
-        created_at: "".to_string(), // Placeholder for creation time
-        updated_at: "".to_string(), // Placeholder for update time
-        state: "active".to_string(), // Default state
-        is_assembly: false, // Default is not assembly
+        folder_id: None,
+        asset_type: asset.file_type().cloned().unwrap_or_default(),
+        created_at: asset.created_at().cloned().unwrap_or_default(),
+        updated_at: asset.updated_at().cloned().unwrap_or_default(),
+        state: asset.normalized_processing_status(),
+        is_assembly: asset.is_assembly(),
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None,  // No owner ID
+        owner_id: None,         // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
@@ -806,15 +806,15 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         uuid: asset.uuid(),
         tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
-        folder_id: None, // We don't have folder ID in the Asset struct
-        asset_type: "asset".to_string(), // Default asset type
-        created_at: "".to_string(), // Placeholder for creation time
-        updated_at: "".to_string(), // Placeholder for update time
-        state: "active".to_string(), // Default state
-        is_assembly: false, // Default is not assembly
+        folder_id: None,
+        asset_type: asset.file_type().cloned().unwrap_or_default(),
+        created_at: asset.created_at().cloned().unwrap_or_default(),
+        updated_at: asset.updated_at().cloned().unwrap_or_default(),
+        state: asset.normalized_processing_status(),
+        is_assembly: asset.is_assembly(),
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None,  // No owner ID
+        owner_id: None,         // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
@@ -893,8 +893,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                             .reference_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
@@ -903,8 +902,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                             .candidate_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(cand_value);
                     }
@@ -1192,16 +1190,14 @@ fn build_geometric_match_table(
                 let ref_value = reference_asset
                     .metadata
                     .get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(crate::model::metadata_cell)
                     .unwrap_or_default();
                 values.push(ref_value);
                 let candidate_value = match_result
                     .asset
                     .metadata
                     .get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(crate::model::metadata_cell)
                     .unwrap_or_default();
                 values.push(candidate_value);
             }
@@ -1237,13 +1233,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder paths
-    let folder_paths: Vec<String> = sub_matches
-        .get_many::<String>(PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(
-            PARAMETER_FOLDER_PATH.to_string(),
-        ))?
-        .map(|s| s.to_string())
-        .collect();
+    let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>(PARAMETER_FOLDER_PATH)
+            .ok_or(CliError::MissingRequiredArgument(
+                PARAMETER_FOLDER_PATH.to_string(),
+            ))?
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>(),
+    );
 
     // Get threshold parameter
     let threshold = crate::actions::utils::threshold_from_args(sub_matches);
@@ -1490,11 +1488,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                             tenant_id: tenant_uuid,
                             path: asset_clone.path(),
                             folder_id: None,
-                            asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(),      // Placeholder for creation time
-                            updated_at: "".to_string(),      // Placeholder for update time
-                            state: "active".to_string(),     // Default state
-                            is_assembly: false,              // Default is not assembly
+                            asset_type: asset_clone.file_type().cloned().unwrap_or_default(),
+                            created_at: asset_clone.created_at().cloned().unwrap_or_default(),
+                            updated_at: asset_clone.updated_at().cloned().unwrap_or_default(),
+                            state: asset_clone.normalized_processing_status(),
+                            is_assembly: asset_clone.is_assembly(),
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
                             owner_id: None,         // No owner ID
@@ -1755,13 +1753,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder paths
-    let folder_paths: Vec<String> = sub_matches
-        .get_many::<String>(PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(
-            PARAMETER_FOLDER_PATH.to_string(),
-        ))?
-        .cloned()
-        .collect();
+    let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>(PARAMETER_FOLDER_PATH)
+            .ok_or(CliError::MissingRequiredArgument(
+                PARAMETER_FOLDER_PATH.to_string(),
+            ))?
+            .cloned()
+            .collect::<Vec<String>>(),
+    );
 
     // Get threshold parameter
     let threshold = crate::actions::utils::threshold_from_args(sub_matches);
@@ -2020,11 +2020,11 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             tenant_id: tenant_uuid,
                             path: asset_clone.path(),
                             folder_id: None,
-                            asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(),      // Placeholder for creation time
-                            updated_at: "".to_string(),      // Placeholder for update time
-                            state: "active".to_string(),     // Default state
-                            is_assembly: false,              // Default is not assembly
+                            asset_type: asset_clone.file_type().cloned().unwrap_or_default(),
+                            created_at: asset_clone.created_at().cloned().unwrap_or_default(),
+                            updated_at: asset_clone.updated_at().cloned().unwrap_or_default(),
+                            state: asset_clone.normalized_processing_status(),
+                            is_assembly: asset_clone.is_assembly(),
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
                             owner_id: None,         // No owner ID
@@ -2253,8 +2253,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             .reference_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
@@ -2263,8 +2262,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             .candidate_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(cand_value);
                     }
@@ -2314,13 +2312,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder paths
-    let folder_paths: Vec<String> = sub_matches
-        .get_many::<String>(PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(
-            PARAMETER_FOLDER_PATH.to_string(),
-        ))?
-        .cloned()
-        .collect();
+    let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>(PARAMETER_FOLDER_PATH)
+            .ok_or(CliError::MissingRequiredArgument(
+                PARAMETER_FOLDER_PATH.to_string(),
+            ))?
+            .cloned()
+            .collect::<Vec<String>>(),
+    );
 
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
@@ -2561,11 +2561,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             tenant_id: tenant_uuid,
                             path: asset_clone.path(),
                             folder_id: None,
-                            asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(),      // Placeholder for creation time
-                            updated_at: "".to_string(),      // Placeholder for update time
-                            state: "active".to_string(),     // Default state
-                            is_assembly: false,              // Default is not assembly
+                            asset_type: asset_clone.file_type().cloned().unwrap_or_default(),
+                            created_at: asset_clone.created_at().cloned().unwrap_or_default(),
+                            updated_at: asset_clone.updated_at().cloned().unwrap_or_default(),
+                            state: asset_clone.normalized_processing_status(),
+                            is_assembly: asset_clone.is_assembly(),
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
                             owner_id: None,         // No owner ID
@@ -2788,8 +2788,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             .reference_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
@@ -2798,8 +2797,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             .candidate_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(cand_value);
                     }
@@ -3006,8 +3004,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                             .asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         extended_values.push(value);
                     }

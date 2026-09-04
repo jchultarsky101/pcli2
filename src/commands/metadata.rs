@@ -198,13 +198,6 @@ pub fn metadata_command() -> Command {
                     crate::commands::params::threshold_parameter("Similarity threshold (0.00 to 100.00)"),
                 )
                 .arg(
-                    Arg::new("recursive")
-                        .long("recursive")
-                        .action(ArgAction::SetTrue)
-                        .required(false)
-                        .help("Apply inference recursively to all found similar assets"),
-                )
-                .arg(
                     Arg::new("exclusive")
                         .long("exclusive")
                         .action(ArgAction::SetTrue)

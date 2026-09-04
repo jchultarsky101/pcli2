@@ -93,7 +93,7 @@ impl Formattable for User {
                 ))?;
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(crate::format::FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(crate::format::FormattingError::Utf8Error)
             }
             _ => Err(crate::format::FormattingError::UnsupportedOutputFormat(
                 format.to_string(),
@@ -139,7 +139,7 @@ impl Formattable for UserListResponse {
                 }
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(crate::format::FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(crate::format::FormattingError::Utf8Error)
             }
             _ => Err(crate::format::FormattingError::UnsupportedOutputFormat(
                 format.to_string(),

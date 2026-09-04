@@ -43,7 +43,7 @@ impl OutputFormatter for AssetMetadata {
                 let data = wtr.into_inner().map_err(|e| {
                     FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e))
                 })?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }

@@ -722,7 +722,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                             ))
                                         }
                                     };
-                                    let csv_output = match String::from_utf8(data) {
+                                    let csv_output = match pcli2::format::csv_text(data) {
                                         Ok(csv_str) => csv_str,
                                         Err(e) => {
                                             return Err(CliError::FormattingError(

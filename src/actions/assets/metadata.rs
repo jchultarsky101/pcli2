@@ -235,7 +235,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
                     )));
                 }
             };
-            let csv_string = match String::from_utf8(data) {
+            let csv_string = match crate::format::csv_text(data) {
                 Ok(s) => s,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(

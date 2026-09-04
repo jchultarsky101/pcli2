@@ -53,6 +53,16 @@ impl From<csv::IntoInnerError<csv::Writer<Vec<u8>>>> for FormattingError {
     }
 }
 
+/// The bytes a CSV writer produced, as text, without the trailing line break.
+///
+/// The writer terminates its last record with a newline and every command prints
+/// the result with `println!`, which added a second one: `asset list --format csv
+/// | wc -l` reported 117 lines for 116 assets, and a CSV opened in a spreadsheet
+/// gained an empty last row.
+pub fn csv_text(data: Vec<u8>) -> Result<String, std::string::FromUtf8Error> {
+    String::from_utf8(data).map(|text| text.trim_end_matches(['\r', '\n']).to_string())
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
 pub struct OutputFormatOptions {
     pub with_metadata: bool,
@@ -227,4 +237,16 @@ pub trait CsvRecordProducer {
 pub trait Formattable {
     #[allow(clippy::result_large_err)]
     fn format(&self, f: &OutputFormat) -> Result<String, FormattingError>;
+}
+
+#[cfg(test)]
+mod csv_text_tests {
+    #[test]
+    fn csv_text_drops_only_the_trailing_line_break() {
+        let text = super::csv_text(b"A,B\n1,2\n".to_vec()).unwrap();
+        assert_eq!(text, "A,B\n1,2");
+        let crlf = super::csv_text(b"A,B\r\n1,2\r\n".to_vec()).unwrap();
+        assert_eq!(crlf, "A,B\r\n1,2");
+        assert_eq!(super::csv_text(b"".to_vec()).unwrap(), "");
+    }
 }

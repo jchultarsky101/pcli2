@@ -92,7 +92,7 @@ pub enum ApiError {
     #[error(
         "could not load the folder hierarchy needed by --recursive: {0}. \
          Without it only the assets directly in the folder can be listed, which is not \
-         what was asked for. Try 'pcli2 cache clear' and run the command again."
+         what was asked for."
     )]
     FolderHierarchyUnavailable(String),
 
@@ -484,6 +484,14 @@ type SharedToken = std::sync::Arc<std::sync::RwLock<Option<String>>>;
 ///     Ok(())
 /// }
 /// ```
+/// What a batch upload managed to do. Failures are returned, not logged: a caller
+/// that only sees the successes cannot tell a complete run from a partial one.
+#[derive(Debug, Default)]
+pub struct BatchUploadOutcome {
+    pub assets: Vec<crate::model::Asset>,
+    pub failures: Vec<(std::path::PathBuf, ApiError)>,
+}
+
 #[derive(Clone)]
 pub struct PhysnaApiClient {
     /// Base URL for the Physna V3 API (e.g., "https://app-api.physna.com/v3")
@@ -1672,16 +1680,18 @@ impl PhysnaApiClient {
             // Use the cached folder hierarchy approach to find the folder by path
             // This properly handles nested paths like "test/sub1" by traversing the hierarchy
             // and avoids rebuilding the hierarchy for each path resolution
-            if let Ok(hierarchy) =
-                crate::folder_cache::FolderCache::get_or_fetch(self, tenant_uuid).await
-            {
-                if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
-                    debug!(
-                        "Found folder at path '{}' using hierarchy: {}",
-                        path_for_hierarchy, folder_node.folder.uuid
-                    );
-                    return Ok(Some(folder_node.folder.uuid));
-                }
+            // A failure to *load* the hierarchy is an error in its own right. It used
+            // to be swallowed here and surface as "folder not found", sending users to
+            // check a path that was correct while the real problem was the network or
+            // an expired session.
+            let hierarchy =
+                crate::folder_cache::FolderCache::get_or_fetch(self, tenant_uuid).await?;
+            if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
+                debug!(
+                    "Found folder at path '{}' using hierarchy: {}",
+                    path_for_hierarchy, folder_node.folder.uuid
+                );
+                return Ok(Some(folder_node.folder.uuid));
             }
 
             // Folder not found in cache - refresh the cache and try again
@@ -1690,8 +1700,7 @@ impl PhysnaApiClient {
                 "Folder not found at path '{}' in cache, refreshing cache...",
                 folder_path
             );
-            if let Ok(hierarchy) =
-                crate::folder_cache::FolderCache::refresh(self, tenant_uuid).await
+            let hierarchy = crate::folder_cache::FolderCache::refresh(self, tenant_uuid).await?;
             {
                 if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
                     debug!(
@@ -3417,7 +3426,7 @@ impl PhysnaApiClient {
         folder_uuid: Option<&Uuid>,
         concurrent: usize,
         show_progress: bool,
-    ) -> Result<Vec<crate::model::Asset>, ApiError> {
+    ) -> Result<BatchUploadOutcome, ApiError> {
         debug!(
             "Creating batch assets in tenant: {}, folder_path: {:?}, folder_id: {:?}",
             &tenant_uuid, folder_path, folder_uuid
@@ -3434,7 +3443,7 @@ impl PhysnaApiClient {
 
         // Handle the case where no files match the glob pattern
         if paths.is_empty() {
-            return Ok(Vec::new());
+            return Ok(BatchUploadOutcome::default());
         }
 
         // Create progress bar if requested
@@ -3449,17 +3458,10 @@ impl PhysnaApiClient {
             None
         };
 
-        // Share the HTTP client across all concurrent uploads to leverage connection pooling
-        let shared_http_client = self.http_client.clone();
-        let base_url = self.base_url.clone();
-        let access_token = self.current_token();
-        let client_credentials = self.client_credentials.clone();
-        // The per-file clients must inherit the parent's auth endpoint and
-        // environment: constructing them with defaults would refresh tokens
-        // against the production Cognito URL and save them under the
-        // "default" environment even when another environment is active.
-        let auth_url = self.auth_url.clone();
-        let environment_name = self.environment_name.clone();
+        // Every task works on a clone of this client. A clone shares the token slot,
+        // the renewal lock and the connection pool, so an expiry mid-batch costs one
+        // renewal between all tasks instead of one per file.
+        let client_template = self.clone();
         let folder_path = folder_path.map(|s| s.to_string());
 
         debug!(
@@ -3502,12 +3504,7 @@ impl PhysnaApiClient {
             .into_iter()
             .map(|path_buf| {
                 let tx = tx.clone();
-                let shared_http_client = shared_http_client.clone();
-                let base_url = base_url.clone();
-                let access_token = access_token.clone();
-                let client_credentials = client_credentials.clone();
-                let auth_url = auth_url.clone();
-                let environment_name = environment_name.clone();
+                let client_template = client_template.clone();
                 let folder_path = folder_path.clone();
                 let folder_uuid = folder_uuid_required;
                 let progress_bar = progress_bar.clone();
@@ -3537,22 +3534,7 @@ impl PhysnaApiClient {
                         }
                     };
 
-                    // Create a new client that shares the HTTP client to leverage connection pooling
-                    let mut base_client =
-                        PhysnaApiClient::new_with_shared_http_client(shared_http_client, base_url);
-                    // Inherit the parent's auth endpoint and environment so
-                    // mid-batch token refreshes hit the right Cognito URL and
-                    // persist under the active environment.
-                    base_client.auth_url = auth_url;
-                    base_client.environment_name = environment_name;
-                    let mut client = base_client.for_upload_operations(); // Use upload-optimized timeout
-
-                    if let Some(token) = access_token {
-                        client = client.with_access_token(token);
-                    }
-                    if let Some((client_id, client_secret)) = client_credentials {
-                        client = client.with_client_credentials(client_id, client_secret);
-                    }
+                    let mut client = client_template;
 
                     // Upload the file
                     let asset_path = format!("{}/{}", folder_path, file_name.to_string_lossy());
@@ -3639,36 +3621,15 @@ impl PhysnaApiClient {
             }
         }
 
-        // If all operations failed, return an error
-        if success_count == 0 && failure_count > 0 {
-            // Return the first error as representative of the failures
-            if let Some((_, error)) = failed_files.first() {
-                // Since ApiError doesn't implement Clone, we'll return a generic error
-                // that indicates batch failure and includes the first error's message
-                return Err(ApiError::ConflictError(format!(
-                    "Batch operation failed: {}",
-                    error
-                )));
-            } else {
-                return Err(ApiError::IoError(std::io::Error::other(
-                    "All batch operations failed but no specific error available",
-                )));
-            }
-        }
-
-        // Log detailed summary of successes and failures
         debug!(
             "Batch upload completed: {} successful, {} failed",
             success_count, failure_count
         );
-        if !failed_files.is_empty() {
-            debug!("Failed files:");
-            for (file_path, error) in &failed_files {
-                debug!("  {}: {}", file_path.display(), error);
-            }
-        }
 
-        Ok(successful_assets)
+        Ok(BatchUploadOutcome {
+            assets: successful_assets,
+            failures: failed_files,
+        })
     }
 
     // Original function that works with path (for backward compatibility)
@@ -4400,6 +4361,77 @@ impl PhysnaApiClient {
             .await
             .map_err(|e| e.about(&format!("asset {}", asset_display)))?;
         Ok(response.bytes_stream())
+    }
+
+    /// Download an asset's file straight to disk.
+    ///
+    /// The body is streamed into `<dest>.part` and renamed into place only once it
+    /// has arrived whole, so an interrupted download never leaves a truncated file
+    /// under the final name. An empty body is an error: a zero-byte model file is
+    /// never what was asked for. Returns the number of bytes written.
+    pub async fn download_asset_to_file(
+        &mut self,
+        tenant_id: &str,
+        asset_id: &str,
+        asset_name_opt: Option<&str>,
+        dest: &std::path::Path,
+    ) -> Result<u64, ApiError> {
+        use futures::StreamExt;
+        use tokio::io::AsyncWriteExt;
+
+        let asset_display = describe_asset(asset_id, asset_name_opt);
+        if let Some(parent) = dest.parent() {
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+        }
+        let part_name = format!(
+            "{}.part",
+            dest.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "download".to_string())
+        );
+        let part_path = dest.with_file_name(part_name);
+
+        let mut stream = self
+            .download_asset_stream(tenant_id, asset_id, asset_name_opt)
+            .await?;
+        let mut file = tokio::fs::File::create(&part_path).await?;
+        let mut written: u64 = 0;
+        let write_result: Result<(), ApiError> = async {
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                file.write_all(&chunk).await?;
+                written += chunk.len() as u64;
+            }
+            file.flush().await?;
+            Ok(())
+        }
+        .await;
+        drop(file);
+
+        if let Err(e) = write_result {
+            let _ = tokio::fs::remove_file(&part_path).await;
+            return Err(e);
+        }
+        if written == 0 {
+            let _ = tokio::fs::remove_file(&part_path).await;
+            return Err(ApiError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "the server returned an empty file for asset {}",
+                    asset_display
+                ),
+            )));
+        }
+        tokio::fs::rename(&part_path, dest).await?;
+        debug!(
+            "Downloaded {} bytes for asset {} to {}",
+            written,
+            asset_display,
+            dest.display()
+        );
+        Ok(written)
     }
 
     /// Download asset thumbnail

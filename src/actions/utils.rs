@@ -5,6 +5,24 @@ use crate::{
 };
 use uuid::Uuid;
 
+/// The tenant's folder hierarchy, from the cache when it already contains `path`.
+///
+/// A cache miss on the path triggers one refresh, so a folder created since the
+/// cache was written is still found; a path that is absent after that is genuinely
+/// absent and the caller gets a hierarchy it can build suggestions from. Loading
+/// failures propagate rather than masquerading as "not found".
+pub async fn hierarchy_containing(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &Uuid,
+    path: &str,
+) -> Result<crate::folder_hierarchy::FolderHierarchy, CliError> {
+    let hierarchy = crate::folder_cache::FolderCache::get_or_fetch(api, tenant_uuid).await?;
+    if path == "/" || hierarchy.get_node_by_path(path).is_some() {
+        return Ok(hierarchy);
+    }
+    Ok(crate::folder_cache::FolderCache::refresh(api, tenant_uuid).await?)
+}
+
 /// Read the `--threshold` percentage from the parsed arguments.
 ///
 /// The parser already limits the value to 0-100. A value below 1 is still legal

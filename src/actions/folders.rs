@@ -18,7 +18,6 @@ use crate::{
     },
     configuration::Configuration,
     error::CliError,
-    folder_hierarchy::FolderHierarchy,
     format::{OutputFormat, OutputFormatter},
     model::{normalize_path, Folder, Tenant},
     param_utils::{get_format_parameter_value, get_tenant},
@@ -37,8 +36,10 @@ pub async fn resolve_folder_uuid_by_path(
     match api.get_folder_uuid_by_path(&tenant.uuid, path).await {
         Ok(Some(folder_uuid)) => Ok(folder_uuid),
         Ok(None) => {
-            // Folder not found - try to provide helpful suggestions
-            let hierarchy = FolderHierarchy::build_from_api(api, &tenant.uuid).await?;
+            // Folder not found - try to provide helpful suggestions. The lookup that
+            // just missed refreshed the cache, so this is the current hierarchy.
+            let hierarchy =
+                crate::folder_cache::FolderCache::get_or_fetch(api, &tenant.uuid).await?;
             let suggestions = find_similar_paths(&hierarchy, path);
 
             let suggestion_message = if suggestions.is_empty() {
@@ -80,19 +81,16 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .get_one::<String>(PARAMETER_FOLDER_PATH)
         .map(|path| normalize_path(path.clone()));
 
-    // Check if reload flag is set to clear the cache
+    // The listing comes from the shared folder cache, which every other command
+    // resolves paths against; --reload refreshes it. (It used to bypass the cache
+    // both ways: a full fetch on every call that was then thrown away.)
     let reload_cache = sub_matches.get_flag(crate::commands::params::PARAMETER_RELOAD);
-    if reload_cache {
-        trace!("Reload flag set, clearing folder cache...");
-        crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(
-            |e| {
-                tracing::debug!("Failed to invalidate folder cache: {}", e);
-            },
-        );
-    }
-
-    // It is not efficient, but the only option is to read the full directory hieratchy from the API
-    let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+    let hierarchy = if reload_cache {
+        trace!("Reload flag set, refreshing folder cache...");
+        crate::folder_cache::FolderCache::refresh(&mut api, &tenant.uuid).await?
+    } else {
+        crate::folder_cache::FolderCache::get_or_fetch(&mut api, &tenant.uuid).await?
+    };
 
     // The folder can be given by path or by UUID; the listing code works on paths, so a
     // UUID is resolved against the hierarchy just fetched. (The UUID used to be accepted
@@ -685,15 +683,12 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             .list_all_subfolders(&tenant.uuid, Some(&current_folder_uuid))
             .await?;
         for folder in subfolders_response.folders() {
-            // Get the full folder details to get the name
-            let folder_detail = api.get_folder(&tenant.uuid, folder.uuid()).await?;
-            let folder_detail: crate::model::Folder = folder_detail;
-
-            // Get the folder path by appending the folder name to the current path
+            // The listing already carries the name; fetching each folder again cost
+            // one request per subfolder before the first byte was downloaded.
             let folder_path = if current_folder_path.ends_with('/') {
-                format!("{}{}", current_folder_path, folder_detail.name())
+                format!("{}{}", current_folder_path, folder.name())
             } else {
-                format!("{}/{}", current_folder_path, folder_detail.name())
+                format!("{}/{}", current_folder_path, folder.name())
             };
 
             // Add to queue to process this subfolder
@@ -702,17 +697,10 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     }
 
     if all_assets_with_paths.is_empty() {
-        crate::error_utils::report_error_with_remediation(
-            &format!(
-                "No assets found in folder with UUID: {} or its subfolders",
-                folder_uuid
-            ),
-            &[
-                "Verify the folder UUID or path is correct",
-                "Check that the folder or its subfolders contain assets",
-                "Ensure you have permissions to access the folder",
-            ],
-        );
+        crate::error_utils::report_warning(&format!(
+            "No finished assets found in folder {} or its subfolders; nothing to download",
+            folder_uuid
+        ));
         return Ok(());
     }
 
@@ -778,6 +766,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let asset_name = asset.name().to_string();
         let asset_file_path = dest_dir.join(&relative_path);
         let is_assembly = asset.is_assembly();
+        let mut api_task = api.clone();
         let semaphore = semaphore.clone();
         let progress_bar_clone = progress_bar.clone();
         let multi_progress_clone = multi_progress.clone();
@@ -833,78 +822,18 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 sleep(delay_duration).await;
             }
 
-            // Create a new API client for this task
-            let mut api_task = match PhysnaApiClient::try_default() {
-                Ok(client) => client,
-                Err(e) => {
-                    // Always return error through Ok path so it can be collected
-                    return Ok(Err((asset_name, physna_path, e, continue_on_error_clone)));
-                }
-            };
+            // Streamed to disk through a temporary file (see download_asset_to_file);
+            // the client handles renewal and transient retries itself.
+            let downloaded = api_task
+                .download_asset_to_file(&tenant_id, &asset_id, Some(&asset_name), &asset_file_path)
+                .await;
 
-            // Download the asset file with retry logic (similar to asset download)
-            let file_content =
-                download_asset_with_retry(&mut api_task, &tenant_id, &asset_id, &asset_name).await;
-
-            match file_content {
-                Ok(file_content) => {
+            match downloaded {
+                Ok(_bytes) => {
                     // Update individual progress bar
                     if let Some(ref ipb) = individual_pb {
                         ipb.set_message(format!("Downloaded: {}", asset_name));
                         ipb.finish_and_clear(); // Clear the spinner for this individual download
-                    }
-
-                    // Create parent directories if they don't exist
-                    if let Some(parent) = asset_file_path.parent() {
-                        if let Err(e) = std::fs::create_dir_all(parent) {
-                            if continue_on_error_clone {
-                                return Ok(Err((
-                                    asset_name,
-                                    physna_path,
-                                    ApiError::IoError(e),
-                                    true,
-                                )));
-                            } else {
-                                return Err(CliError::ActionError(
-                                    crate::actions::CliActionError::IoError(e),
-                                ));
-                            }
-                        }
-                    }
-
-                    let file_result = File::create(&asset_file_path);
-                    match file_result {
-                        Ok(mut file) => match file.write_all(&file_content) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                if continue_on_error_clone {
-                                    return Ok(Err((
-                                        asset_name,
-                                        physna_path,
-                                        ApiError::IoError(e),
-                                        true,
-                                    )));
-                                } else {
-                                    return Err(CliError::ActionError(
-                                        crate::actions::CliActionError::IoError(e),
-                                    ));
-                                }
-                            }
-                        },
-                        Err(e) => {
-                            if continue_on_error_clone {
-                                return Ok(Err((
-                                    asset_name,
-                                    physna_path,
-                                    ApiError::IoError(e),
-                                    true,
-                                )));
-                            } else {
-                                return Err(CliError::ActionError(
-                                    crate::actions::CliActionError::IoError(e),
-                                ));
-                            }
-                        }
                     }
 
                     // If the asset is an assembly, extract the ZIP file contents and delete the original ZIP
@@ -974,8 +903,18 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Track how many assets were skipped because they already existed
     let mut skipped_count = 0;
+    let mut not_attempted = 0;
 
-    // Wait for all tasks to complete - always process all tasks to get accurate counts
+    // Without --continue-on-error the first failure stops the run: every task
+    // still queued is aborted rather than left to fail (or succeed) on its own.
+    // Aborting a task that has already finished is a no-op.
+    let abort_handles: Vec<_> = tasks.iter().map(|t| t.abort_handle()).collect();
+    let stop_remaining = || {
+        for handle in &abort_handles {
+            handle.abort();
+        }
+    };
+
     for task in tasks {
         match task.await {
             Ok(task_result) => {
@@ -999,6 +938,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                             // Track the first error if we're not continuing on error
                             if !continue_on_error && first_error.is_none() {
                                 first_error = Some(CliError::PhysnaExtendedApiError(error));
+                                stop_remaining();
                             }
                         }
                     },
@@ -1011,9 +951,13 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                         // Track the first error if we're not continuing on error
                         if !continue_on_error && first_error.is_none() {
                             first_error = Some(cli_error);
+                            stop_remaining();
                         }
                     }
                 }
+            }
+            Err(join_error) if join_error.is_cancelled() => {
+                not_attempted += 1;
             }
             Err(join_error) => {
                 error_count += 1;
@@ -1025,6 +969,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                             join_error.to_string(),
                         )),
                     ));
+                    stop_remaining();
                 }
             }
         }
@@ -1043,6 +988,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         success_count,
         skipped_count,
         error_count,
+        not_attempted,
         total_assets,
         &dest_dir,
     );
@@ -1057,14 +1003,20 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         }
     }
 
-    // If we encountered errors and are not continuing on error, return an error
-    // Don't print a generic error message - the detailed list above shows what happened
-    if !continue_on_error && error_count > 0 {
+    // A run with failures exits non-zero whether or not it was allowed to continue;
+    // --continue-on-error only decides whether the remaining assets were attempted.
+    if let Some(error) = first_error {
+        if !continue_on_error {
+            return Err(error);
+        }
+    }
+    if error_count > 0 {
         return Err(CliError::ActionError(
-            crate::actions::CliActionError::IoError(std::io::Error::other(format!(
-                "Download completed with {} error(s). See detailed list above.",
-                error_count
-            ))),
+            crate::actions::CliActionError::PartialFailure {
+                failed: error_count,
+                total: total_assets,
+                what: "download(s)".to_string(),
+            },
         ));
     }
 
@@ -1076,25 +1028,29 @@ fn print_download_summary(
     success_count: usize,
     skipped_count: usize,
     error_count: usize,
+    not_attempted: usize,
     total_assets: usize,
     dest_dir: &std::path::PathBuf,
 ) {
-    println!("\n📊 Download Statistics Report");
-    println!("===========================");
-    println!("✅ Successfully downloaded: {}", success_count);
-    println!("⏭️  Skipped (already existed): {}", skipped_count);
-    if error_count > 0 {
-        println!("❌ Failed downloads: {}", error_count);
-    } else {
-        println!("❌ Failed downloads: 0");
+    // Status goes to stderr: stdout is for data.
+    eprintln!("\n📊 Download Statistics Report");
+    eprintln!("===========================");
+    eprintln!("✅ Successfully downloaded: {}", success_count);
+    eprintln!("⏭️  Skipped (already existed): {}", skipped_count);
+    eprintln!("❌ Failed downloads: {}", error_count);
+    if not_attempted > 0 {
+        eprintln!(
+            "⏹️  Not attempted (stopped after the first failure): {}",
+            not_attempted
+        );
     }
-    println!("📁 Total assets processed: {}", total_assets);
-    if error_count > 0 {
-        println!("⏳ Operation completed with errors!");
+    eprintln!("📁 Total assets processed: {}", total_assets);
+    if error_count > 0 || not_attempted > 0 {
+        eprintln!("⏳ Operation completed with errors!");
     } else {
-        println!("⏳ Operation completed successfully!");
+        eprintln!("⏳ Operation completed successfully!");
     }
-    println!(
+    eprintln!(
         "\n📁 Files downloaded to destination directory: {:?}",
         dest_dir
     );
@@ -1250,14 +1206,11 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             .list_all_subfolders(&tenant.uuid, Some(&current_folder_uuid))
             .await?;
         for folder in subfolders_response.folders() {
-            // Get the full folder details to get the name
-            let folder_detail = api.get_folder(&tenant.uuid, folder.uuid()).await?;
-
-            // Get the folder path by appending the folder name to the current path
+            // The listing already carries the name (see download_folder).
             let folder_path = if current_folder_path.ends_with('/') {
-                format!("{}{}", current_folder_path, folder_detail.name())
+                format!("{}{}", current_folder_path, folder.name())
             } else {
-                format!("{}/{}", current_folder_path, folder_detail.name())
+                format!("{}/{}", current_folder_path, folder.name())
             };
 
             // Add to queue to process this subfolder
@@ -1338,6 +1291,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         let asset_id = asset.uuid().to_string();
         let asset_name = asset.name().to_string();
         let asset_thumbnail_path = dest_dir.join(&relative_path);
+        let mut api_task = api.clone();
         let semaphore = semaphore.clone();
         let progress_bar_clone = progress_bar.clone();
         let multi_progress_clone = multi_progress.clone();
@@ -1372,19 +1326,6 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             if delay_param > 0 {
                 sleep(delay_duration).await;
             }
-
-            // Create a new API client for this task
-            let mut api_task = match PhysnaApiClient::try_default() {
-                Ok(client) => client.for_download_operations(), // Use download-optimized client
-                Err(e) => {
-                    if continue_on_error_clone {
-                        return Ok(Err((asset_name, physna_path, e, true)));
-                    // true indicates it's a recoverable error
-                    } else {
-                        return Err(CliError::PhysnaExtendedApiError(e));
-                    }
-                }
-            };
 
             // Download the asset thumbnail with retry logic
             let thumbnail_content = download_asset_thumbnail_with_retry(
@@ -1461,7 +1402,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                         pb.inc(1);
                     }
 
-                    Ok(Ok(asset_name))
+                    Ok(Ok(ThumbnailOutcome::Downloaded))
                 }
                 Err(ApiError::NotFoundError(msg)) if msg.contains("Asset thumbnail not found") => {
                     // Update individual progress bar for skipped asset
@@ -1479,12 +1420,13 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                         msg
                     );
 
-                    // Treat this as a successful operation (the "success" is that we handled the missing thumbnail gracefully)
                     if let Some(ref pb) = progress_bar_clone {
                         pb.inc(1);
                     }
 
-                    Ok(Ok(asset_name)) // Return success to continue processing other assets
+                    // Not a success: nothing was written. Reported separately so the
+                    // summary does not claim a thumbnail that does not exist.
+                    Ok(Ok(ThumbnailOutcome::NoThumbnail))
                 }
                 Err(e) => {
                     // Update individual progress bar for error
@@ -1520,13 +1462,17 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         tasks.push(task);
     }
 
+    let mut missing_count = 0;
     // Wait for all tasks to complete
     for task in tasks {
         match task.await {
             Ok(task_result) => match task_result {
                 Ok(asset_result) => match asset_result {
-                    Ok(_asset_name) => {
+                    Ok(ThumbnailOutcome::Downloaded) => {
                         success_count += 1;
+                    }
+                    Ok(ThumbnailOutcome::NoThumbnail) => {
+                        missing_count += 1;
                     }
                     Err((asset_name, physna_path, error, is_recoverable)) => {
                         if is_recoverable {
@@ -1571,22 +1517,40 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
     }
 
     // Report summary with nice statistics
-    println!("\n📊 Thumbnail Download Statistics Report");
-    println!("=====================================");
-    println!("✅ Successfully downloaded: {}", success_count);
+    eprintln!("\n📊 Thumbnail Download Statistics Report");
+    eprintln!("=====================================");
+    eprintln!("✅ Successfully downloaded: {}", success_count);
+    eprintln!("⏭️  No thumbnail available: {}", missing_count);
+    eprintln!("❌ Failed downloads: {}", error_count);
+    eprintln!("📁 Total assets processed: {}", total_assets);
     if error_count > 0 {
-        println!("❌ Failed downloads: {}", error_count);
+        eprintln!("⏳ Operation completed with errors!");
     } else {
-        println!("❌ Failed downloads: 0");
+        eprintln!("⏳ Operation completed successfully!");
     }
-    println!("📁 Total assets processed: {}", total_assets);
-    println!("⏳ Operation completed successfully!");
-    println!(
+    eprintln!(
         "\n📁 Thumbnails downloaded to destination directory: {:?}",
         dest_dir
     );
 
+    if error_count > 0 {
+        return Err(CliError::ActionError(
+            crate::actions::CliActionError::PartialFailure {
+                failed: error_count,
+                total: total_assets,
+                what: "thumbnail download(s)".to_string(),
+            },
+        ));
+    }
+
     Ok(())
+}
+
+/// What one thumbnail task achieved.
+enum ThumbnailOutcome {
+    Downloaded,
+    /// The asset has no thumbnail; nothing was written.
+    NoThumbnail,
 }
 
 /// Download an asset thumbnail.
@@ -1877,6 +1841,23 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // Create a delay duration if delay is specified
     let delay_duration = std::time::Duration::from_secs(delay_param as u64);
 
+    // Names already in the destination folder, fetched once. Each task used to
+    // list the whole folder for itself - N files times every page of the listing -
+    // and treated a failed listing as "does not exist", so --skip-existing could
+    // re-upload on a transient error. Now a failed listing fails the run.
+    let existing_names: std::sync::Arc<std::collections::HashSet<String>> = {
+        let listing = api
+            .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&folder_uuid))
+            .await?;
+        std::sync::Arc::new(
+            listing
+                .get_all_assets()
+                .iter()
+                .map(|asset| asset.name().to_string())
+                .collect(),
+        )
+    };
+
     // Upload each file in the directory
     let mut tasks = Vec::new();
 
@@ -1902,7 +1883,8 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             .to_string(); // Clone to move into async closure
 
         let tenant_clone = tenant.clone();
-        let _api_clone = api.clone(); // Clone the API client (currently unused but may be needed for future API calls)
+        let mut api_task = api.clone();
+        let existing_names = existing_names.clone();
         let semaphore = semaphore.clone();
         let progress_bar_clone = progress_bar.clone();
         let multi_progress_clone = multi_progress.clone();
@@ -1941,28 +1923,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 tokio::time::sleep(delay_duration_clone).await;
             }
 
-            // Create a new API client for this task
-            let mut api_task = match crate::physna_v3::PhysnaApiClient::try_default() {
-                Ok(client) => client,
-                Err(e) => {
-                    return Err(CliError::PhysnaExtendedApiError(e));
-                }
-            };
-
-            // Check if an asset with the same name already exists in the folder
-            let assets_response = api_task
-                .list_assets_by_parent_folder_uuid(&tenant_clone.uuid, Some(&folder_uuid_clone))
-                .await;
-            let asset_exists = match assets_response {
-                Ok(response) => {
-                    let asset_list: crate::model::AssetList = response;
-                    asset_list
-                        .get_all_assets()
-                        .iter()
-                        .any(|asset| asset.name() == file_name_str)
-                }
-                Err(_) => false, // If we can't check, assume it doesn't exist to allow upload
-            };
+            let asset_exists = existing_names.contains(&file_name_str);
 
             if asset_exists {
                 if skip_existing_clone {
@@ -1972,7 +1933,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                         ipb.finish_and_clear(); // Clear the spinner for this individual upload
                     }
 
-                    println!("Skipping existing asset: {}", file_name_str);
+                    eprintln!("Skipping existing asset: {}", file_name_str);
                     // Update overall progress bar if present
                     if let Some(ref pb) = progress_bar_clone {
                         pb.inc(1);
@@ -2087,7 +2048,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                                     // Only print individual success messages if progress is not shown
                                     // Otherwise, the progress bar already shows the status
                                     if !show_progress {
-                                        println!("Successfully uploaded: {}", asset_name);
+                                        eprintln!("Successfully uploaded: {}", asset_name);
                                     }
                                 }
                             }
@@ -2132,24 +2093,34 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // Calculate total assets processed
     let total_assets = total_entries_count;
 
-    // Print detailed statistics report
-    println!("\n📊 Upload Statistics Report");
-    println!("===========================");
-    println!("✅ Successfully uploaded: {}", success_count);
-    println!("⏭️  Skipped (already existed): {}", skipped_count);
-    if error_count > 0 {
-        println!("❌ Failed uploads: {}", error_count);
-    } else {
-        println!("❌ Failed uploads: 0");
-    }
-    println!("📁 Total assets processed: {}", total_assets);
-    println!("⏳ Operation completed successfully!");
-    println!("\n📁 Source directory: {:?}", local_dir_path);
-    println!("📁 Destination folder: {}", original_folder_path);
-
-    // Finish progress bar if present
+    // Finish progress bar before the summary so it does not paint over it
     if let Some(pb) = progress_bar {
-        pb.finish_with_message("All assets uploaded!");
+        pb.finish_and_clear();
+    }
+
+    // Print detailed statistics report (stderr: stdout is for data)
+    eprintln!("\n📊 Upload Statistics Report");
+    eprintln!("===========================");
+    eprintln!("✅ Successfully uploaded: {}", success_count);
+    eprintln!("⏭️  Skipped (already existed): {}", skipped_count);
+    eprintln!("❌ Failed uploads: {}", error_count);
+    eprintln!("📁 Total assets processed: {}", total_assets);
+    if error_count > 0 {
+        eprintln!("⏳ Operation completed with errors!");
+    } else {
+        eprintln!("⏳ Operation completed successfully!");
+    }
+    eprintln!("\n📁 Source directory: {:?}", local_dir_path);
+    eprintln!("📁 Destination folder: {}", original_folder_path);
+
+    if error_count > 0 {
+        return Err(CliError::ActionError(
+            crate::actions::CliActionError::PartialFailure {
+                failed: error_count,
+                total: total_assets,
+                what: "upload(s)".to_string(),
+            },
+        ));
     }
 
     Ok(())
@@ -2193,53 +2164,4 @@ fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Er
     std::fs::remove_file(zip_path)?;
 
     Ok(())
-}
-async fn download_asset_with_retry(
-    api: &mut crate::physna_v3::PhysnaApiClient,
-    tenant_id: &str,
-    asset_id: &str,
-    asset_name: &str,
-) -> Result<Vec<u8>, crate::physna_v3::ApiError> {
-    use rand::Rng;
-
-    // First attempt
-    match api
-        .download_asset(tenant_id, asset_id, Some(asset_name))
-        .await
-    {
-        Ok(content) => Ok(content),
-        Err(e) => {
-            // If the first attempt fails, wait for a random delay between 5-10 seconds and retry once
-            // Don't log the first error to avoid confusing users if the retry succeeds
-            tracing::debug!(
-                "Asset download failed for '{}' (ID: {}) (attempt 1), retrying after delay: {}",
-                asset_name,
-                asset_id,
-                e
-            );
-
-            // Generate random delay between 5 and 10 seconds
-            // Use thread_rng in a blocking way to avoid Send issues
-            let delay_seconds = tokio::task::spawn_blocking(|| {
-                let mut rng = rand::thread_rng();
-                rng.gen_range(5..=10)
-            })
-            .await
-            .unwrap_or(5); // Default to 5 seconds if spawning fails
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
-
-            // Second and final attempt
-            match api
-                .download_asset(tenant_id, asset_id, Some(asset_name))
-                .await
-            {
-                Ok(content) => Ok(content),
-                Err(final_e) => {
-                    // Don't log here - errors will be collected and printed at the end
-                    Err(final_e)
-                }
-            }
-        }
-    }
 }

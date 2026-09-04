@@ -146,14 +146,18 @@ impl FolderCache {
     pub async fn get_or_fetch(
         client: &mut PhysnaApiClient,
         tenant_uuid: &Uuid,
-    ) -> Result<FolderHierarchy, Box<dyn std::error::Error>> {
+    ) -> Result<FolderHierarchy, crate::physna_v3::ApiError> {
         // Try to load from cache first
         if let Some(cached) = Self::load(tenant_uuid) {
             return Ok(cached);
         }
 
-        // If not in cache, fetch from API
-        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid).await?;
+        // If not in cache, fetch from API. Only an API failure can fail this: a
+        // cache that cannot be read is a miss, and one that cannot be written is
+        // logged and ignored.
+        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid)
+            .await
+            .map_err(|crate::folder_hierarchy::FolderHierarchyError::ApiError(e)| e)?;
 
         // Save to cache
         if let Err(e) = Self::save(tenant_uuid, &hierarchy) {
@@ -178,8 +182,10 @@ impl FolderCache {
     pub async fn refresh(
         client: &mut PhysnaApiClient,
         tenant_uuid: &Uuid,
-    ) -> Result<FolderHierarchy, Box<dyn std::error::Error>> {
-        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid).await?;
+    ) -> Result<FolderHierarchy, crate::physna_v3::ApiError> {
+        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid)
+            .await
+            .map_err(|crate::folder_hierarchy::FolderHierarchyError::ApiError(e)| e)?;
 
         // Save to cache
         if let Err(e) = Self::save(tenant_uuid, &hierarchy) {

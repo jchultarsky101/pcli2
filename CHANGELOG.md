@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.1] - 2026-09-04
+
 ### Fixed
 - **A cycle in the server's folder data can no longer hang pcli2** - Every walk over the folder hierarchy (path building, `folder list --format tree`, subtree filtering) now remembers where it has been, so a folder whose parent chain loops back on itself (or lists itself as its parent) ends the walk with a warning instead of looping forever or overflowing the stack. The "did you mean" suggestions build the path of every folder, so one bad record used to hang every not-found message.
 

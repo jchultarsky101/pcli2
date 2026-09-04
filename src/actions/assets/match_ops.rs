@@ -165,6 +165,23 @@ fn under_progress<F: FnOnce()>(progress: Option<&indicatif::MultiProgress>, f: F
     }
 }
 
+/// The UUIDs of the folders named on the command line, for the server-side
+/// `folderIds` search filter. The tenant root has no UUID and means "no filter".
+async fn resolve_exclusive_folder_ids(
+    api: &mut PhysnaApiClient,
+    tenant: &crate::model::Tenant,
+    folder_paths: &[String],
+) -> Result<Vec<Uuid>, CliError> {
+    let mut ids = Vec::with_capacity(folder_paths.len());
+    for path in folder_paths {
+        if crate::model::normalize_path(path) == "/" {
+            return Ok(Vec::new());
+        }
+        ids.push(crate::actions::folders::resolve_folder_uuid_by_path(api, tenant, path).await?);
+    }
+    Ok(ids)
+}
+
 /// Running tally of per-asset search outcomes across a folder match run.
 #[derive(Debug, Default, Clone, Copy)]
 struct SearchOutcomes {
@@ -491,7 +508,7 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     // Perform geometric search
     let mut search_results = ctx
         .api()
-        .geometric_search(&tenant_uuid, &asset.uuid(), threshold)
+        .geometric_search(&tenant_uuid, &asset.uuid(), threshold, &[])
         .await?;
 
     // Load configuration to get the UI base URL
@@ -618,7 +635,7 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
     // Perform part search
     let mut search_results = ctx
         .api()
-        .part_search(&tenant_uuid, &asset.uuid(), threshold)
+        .part_search(&tenant_uuid, &asset.uuid(), threshold, &[])
         .await?;
 
     // Load configuration to get the UI base URL
@@ -758,7 +775,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     // Perform visual search
     let mut search_results = ctx
         .api()
-        .visual_search(&tenant_uuid, &asset.uuid(), limit, threshold)
+        .visual_search(&tenant_uuid, &asset.uuid(), limit, threshold, &[])
         .await?;
 
     // Load configuration to get the UI base URL
@@ -1295,6 +1312,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
+    // With --exclusive the server pre-filters to these folders and their subfolders,
+    // so tenant-wide result pages are no longer downloaded only to be discarded.
+    // The client-side path check on each match still decides the exact set.
+    let exclusive_folder_ids: Vec<Uuid> = if exclusive {
+        resolve_exclusive_folder_ids(&mut api, &tenant, &folder_paths).await?
+    } else {
+        Vec::new()
+    };
+
     let all_assets = match collect_assets_in_folders(
         &mut api,
         &tenant.uuid,
@@ -1362,6 +1388,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
         let ui_base_url_for_task = ui_base_url.clone();
+        let exclusive_folder_ids = exclusive_folder_ids.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -1394,7 +1421,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             }
 
             let result = match api_clone
-                .geometric_search(&tenant_uuid, &asset_uuid, threshold)
+                .geometric_search(&tenant_uuid, &asset_uuid, threshold, &exclusive_folder_ids)
                 .await
             {
                 Ok(search_results) => {
@@ -1829,6 +1856,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
+    // With --exclusive the server pre-filters to these folders and their subfolders,
+    // so tenant-wide result pages are no longer downloaded only to be discarded.
+    // The client-side path check on each match still decides the exact set.
+    let exclusive_folder_ids: Vec<Uuid> = if exclusive {
+        resolve_exclusive_folder_ids(&mut api, &tenant, &folder_paths).await?
+    } else {
+        Vec::new()
+    };
+
     let all_assets = match collect_assets_in_folders(
         &mut api,
         &tenant.uuid,
@@ -1896,6 +1932,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
         let ui_base_url_for_task = ui_base_url.clone();
+        let exclusive_folder_ids = exclusive_folder_ids.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -1928,7 +1965,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
             }
 
             let result = match api_clone
-                .part_search(&tenant_uuid, &asset_uuid, threshold)
+                .part_search(&tenant_uuid, &asset_uuid, threshold, &exclusive_folder_ids)
                 .await
             {
                 Ok(search_results) => {
@@ -2378,6 +2415,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
     // Collect all assets from the specified folders, descending into subfolders only
     // when --recursive was requested
+    // With --exclusive the server pre-filters to these folders and their subfolders,
+    // so tenant-wide result pages are no longer downloaded only to be discarded.
+    // The client-side path check on each match still decides the exact set.
+    let exclusive_folder_ids: Vec<Uuid> = if exclusive {
+        resolve_exclusive_folder_ids(&mut api, &tenant, &folder_paths).await?
+    } else {
+        Vec::new()
+    };
+
     let all_assets = match collect_assets_in_folders(
         &mut api,
         &tenant.uuid,
@@ -2445,6 +2491,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
         let ui_base_url_for_task = ui_base_url.clone();
+        let exclusive_folder_ids = exclusive_folder_ids.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -2477,7 +2524,13 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
             }
 
             let result = match api_clone
-                .visual_search(&tenant_uuid, &asset_uuid, limit, threshold)
+                .visual_search(
+                    &tenant_uuid,
+                    &asset_uuid,
+                    limit,
+                    threshold,
+                    &exclusive_folder_ids,
+                )
                 .await
             {
                 Ok(search_results) => {

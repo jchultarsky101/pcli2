@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Listings use the API's maximum page size** - Folders, folder contents, assets, metadata fields, dependencies and users were fetched 200 at a time (searches 100) although the API accepts 1000 per page; a 10,000-folder tenant is now 10 requests instead of 50, and a folder of 20,000 assets 20 instead of 100. Search pages are 500.
+- **`--exclusive` is filtered by the server** - Folder matches with `--exclusive` sent every search tenant-wide and discarded the out-of-scope rows client-side, which on a small folder in a large tenant meant downloading pages of results only to throw them away. The resolved folder UUIDs are now passed as the search's `folderIds` filter (which the API applies to the folders and their subfolders); the client-side check still decides the exact set, so output is unchanged.
+- **`folder delete --force` help says what it does** - The server deletes a folder recursively; `--force` skips pcli2's own "not empty" refusal.
+
 ## [1.22.1] - 2026-09-04
 
 ### Fixed

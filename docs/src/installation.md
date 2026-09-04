@@ -71,7 +71,7 @@ day, in terminal sessions only). Set `PCLI2_NO_UPDATE_CHECK=1` to turn it off.
 
 ## Building from Source
 
-Requires a Rust toolchain (1.85 or newer) and, on Linux, `pkg-config`,
+Requires a Rust toolchain (1.88 or newer) and, on Linux, `pkg-config`,
 `libssl-dev` and `cmake`.
 
 ```bash

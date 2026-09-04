@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dead dependencies** - `bincode`, `exitcode`, `url`, `mime`, `tokio-util` and `async-recursion` (recursion now uses `Box::pin`, stable since Rust 1.77); `tempfile` moves to the test dependencies and `tokio-test` is dropped. Two integration test files that compiled to no tests (one was a single line of escaped text; the other asserted nothing) are removed and the test README describes what actually exists. The committed mdBook output under `docs/book/` and the stale top-level `docs/*.md` copies are removed; the published site builds from `docs/src/`. The site no longer advertises `cargo install pcli2`.
 
 ### Changed
-- **CI runs `cargo audit` and a minimum-supported-Rust check (1.85)**; `rust-version` is declared in `Cargo.toml`. `Cargo.lock` is no longer listed in `.gitignore` (it was tracked all along).
+- **CI runs `cargo audit` and a minimum-supported-Rust check (1.88, set by transitive dependencies)**; `rust-version` is declared in `Cargo.toml`. `Cargo.lock` is no longer listed in `.gitignore` (it was tracked all along).
 
 - **`asset metadata inference --recursive`** - The flag was accepted and never read; the documented multi-level propagation did not exist.
 

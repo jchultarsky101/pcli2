@@ -83,7 +83,7 @@ const REPORT_ROW_INTERVAL: usize = 25_000;
 /// Always true for the first row, so a loop shorter than one interval still shows
 /// that the phase started rather than leaving the previous phase's message up.
 fn should_report_row(index: usize) -> bool {
-    index % REPORT_ROW_INTERVAL == 0
+    index.is_multiple_of(REPORT_ROW_INTERVAL)
 }
 
 /// Progress reporting for the phases of a long operation that run after the network

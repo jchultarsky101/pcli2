@@ -56,12 +56,13 @@ jobs:
       run: cargo audit
 
   # The oldest toolchain the crate promises to build with (rust-version in Cargo.toml).
+  # 1.88 is set by the icu_* crates that idna pulls in through reqwest.
   msrv:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
-    - name: Install Rust 1.85
-      uses: dtolnay/rust-toolchain@1.85
+    - name: Install Rust 1.88
+      uses: dtolnay/rust-toolchain@1.88
     - name: Install dependencies
       run: |
         sudo apt-get update

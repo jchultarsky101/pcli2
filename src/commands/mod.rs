@@ -42,7 +42,18 @@ const EXAMPLES_COLORED: &str = color_print::cstr!(
   <green>pcli2 folder ls          # List folders</green>
   <green>pcli2 asset ls           # List assets</green>
   <green>pcli2 auth in            # Login</green>
-  <green>pcli2 env list           # List environments</green>"
+  <green>pcli2 env list           # List environments</green>
+
+<bold>Environment variables:</bold>
+  PCLI2_CONFIG_DIR         Directory holding config.yml and the credentials file
+  PCLI2_CACHE_DIR          Directory for cache files
+  PCLI2_FORMAT             Default --format when the flag is not given
+  PCLI2_HEADERS            Default --headers (1/0, yes/no)
+  PCLI2_LOG_LEVEL          error, warn (default), info, debug, trace (RUST_LOG wins when set)
+  PCLI2_TIMEOUT            Total request timeout in seconds (default 1800)
+  PCLI2_MAX_RETRIES        Retries for transient failures (default 2, 0 disables)
+  PCLI2_NO_COLOR, NO_COLOR Disable colored output
+  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)"
 );
 
 /// Usage examples appended to the top-level help output, without ANSI colors.
@@ -66,7 +77,18 @@ const EXAMPLES_PLAIN: &str = "Examples:
   pcli2 folder ls          # List folders
   pcli2 asset ls           # List assets
   pcli2 auth in            # Login
-  pcli2 env list           # List environments";
+  pcli2 env list           # List environments
+
+Environment variables:
+  PCLI2_CONFIG_DIR         Directory holding config.yml and the credentials file
+  PCLI2_CACHE_DIR          Directory for cache files
+  PCLI2_FORMAT             Default --format when the flag is not given
+  PCLI2_HEADERS            Default --headers (1/0, yes/no)
+  PCLI2_LOG_LEVEL          error, warn (default), info, debug, trace (RUST_LOG wins when set)
+  PCLI2_TIMEOUT            Total request timeout in seconds (default 1800)
+  PCLI2_MAX_RETRIES        Retries for transient failures (default 2, 0 disables)
+  PCLI2_NO_COLOR, NO_COLOR Disable colored output
+  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)";
 
 /// Select the examples text for the top-level help based on terminal capabilities.
 fn examples_after_help() -> &'static str {

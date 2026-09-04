@@ -1,6 +1,7 @@
 //! New-version notification.
 //!
-//! After a successful command, pcli2 may print a one-line hint on stderr
+//! pcli2 may print a one-line hint on stderr after a command (the check is
+//! started before the command runs and overlaps with it)
 //! when a newer release is available on GitHub. The check is designed to
 //! never get in the user's way:
 //!
@@ -46,17 +47,43 @@ struct GitHubRelease {
 /// and otherwise ignored: this is a convenience, not a feature the user
 /// should ever see fail.
 pub async fn maybe_print_update_hint() {
+    finish_update_check(start_update_check()).await;
+}
+
+/// A check in flight, started with [`start_update_check`].
+pub type UpdateCheck = Option<tokio::task::JoinHandle<Option<String>>>;
+
+/// How long the exit path waits for an in-flight check before giving up on
+/// printing a hint this run. The cache answers instantly; only a stale cache
+/// costs a network round trip, and that must never hold up the prompt.
+const EXIT_GRACE: Duration = Duration::from_millis(300);
+
+/// Kick off the check so it overlaps with the command instead of running after
+/// it. Returns `None` when the hint is disabled for this session.
+pub fn start_update_check() -> UpdateCheck {
     use std::io::IsTerminal;
 
     if std::env::var_os("PCLI2_NO_UPDATE_CHECK").is_some_and(|v| !v.is_empty())
         || std::env::var_os("CI").is_some_and(|v| !v.is_empty())
         || !std::io::stderr().is_terminal()
     {
-        return;
+        return None;
     }
+    Some(tokio::spawn(latest_version()))
+}
 
+/// Print the hint if the check started by [`start_update_check`] has finished
+/// and found a newer release. A check still in flight is abandoned.
+pub async fn finish_update_check(check: UpdateCheck) {
+    let Some(handle) = check else {
+        return;
+    };
+    let latest = match tokio::time::timeout(EXIT_GRACE, handle).await {
+        Ok(Ok(latest)) => latest,
+        _ => None,
+    };
     let current = env!("CARGO_PKG_VERSION");
-    if let Some(latest) = latest_version().await {
+    if let Some(latest) = latest {
         if is_newer(&latest, current) {
             eprintln!(
                 "\n💡 A new version of pcli2 is available: v{} → v{} (https://github.com/jchultarsky101/pcli2/releases/latest)",

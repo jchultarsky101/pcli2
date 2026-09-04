@@ -5,6 +5,29 @@ use crate::{
 };
 use uuid::Uuid;
 
+/// Read the `--threshold` percentage from the parsed arguments.
+///
+/// The parser already limits the value to 0-100. A value below 1 is still legal
+/// (visual match uses 0 to disable size filtering), but it is far more often the
+/// slip of writing `0.85` for 85%, which asks the server for nearly every asset in
+/// the tenant - so say so, once, before the run starts.
+pub fn threshold_from_args(sub_matches: &clap::ArgMatches) -> f64 {
+    let threshold = sub_matches
+        .get_one::<f64>(crate::commands::params::PARAMETER_THRESHOLD)
+        .copied()
+        .unwrap_or(80.0);
+    if threshold > 0.0 && threshold < 1.0 {
+        crate::error_utils::report_warning(&format!(
+            "--threshold {} means {}%, which matches almost everything; for {}% write --threshold {}",
+            threshold,
+            threshold,
+            (threshold * 100.0).round(),
+            (threshold * 100.0).round()
+        ));
+    }
+    threshold
+}
+
 /// Resolve an asset by either UUID or path parameter.
 ///
 /// This function provides a standardized way to resolve an asset from command-line arguments

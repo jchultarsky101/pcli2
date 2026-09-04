@@ -21,7 +21,7 @@ pub enum CliActionError {
     CsvError(#[from] csv::Error),
 
     #[error("{0}")]
-    CsvIntoError(#[from] csv::IntoInnerError<csv::Writer<Vec<u8>>>),
+    CsvIntoError(#[source] Box<csv::IntoInnerError<csv::Writer<Vec<u8>>>>),
 
     #[error("{0}")]
     UtfError(#[from] std::string::FromUtf8Error),
@@ -58,4 +58,12 @@ pub enum CliActionError {
 
     #[error("{0}")]
     BusinessLogicError(String),
+}
+
+// See `FormattingError::CsvIntoInnerError`: the writer error is boxed so the
+// error enum stays small enough for clippy's `result_large_err`.
+impl From<csv::IntoInnerError<csv::Writer<Vec<u8>>>> for CliActionError {
+    fn from(e: csv::IntoInnerError<csv::Writer<Vec<u8>>>) -> Self {
+        CliActionError::CsvIntoError(Box::new(e))
+    }
 }

@@ -41,7 +41,16 @@ pub enum FormattingError {
     JsonSerializationError(#[from] serde_json::Error),
 
     #[error("CSV writer into inner error: {0}")]
-    CsvIntoInnerError(#[from] csv::IntoInnerError<csv::Writer<Vec<u8>>>),
+    CsvIntoInnerError(#[source] Box<csv::IntoInnerError<csv::Writer<Vec<u8>>>>),
+}
+
+// The CSV writer error embeds the whole `csv::Writer` (buffer and state), which
+// made every `Result<_, FormattingError>` several hundred bytes wide and tripped
+// clippy's `result_large_err`. Boxing it keeps the `?` conversion working.
+impl From<csv::IntoInnerError<csv::Writer<Vec<u8>>>> for FormattingError {
+    fn from(e: csv::IntoInnerError<csv::Writer<Vec<u8>>>) -> Self {
+        FormattingError::CsvIntoInnerError(Box::new(e))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]

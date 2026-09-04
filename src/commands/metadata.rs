@@ -195,14 +195,7 @@ pub fn metadata_command() -> Command {
                         .help("Metadata field name(s) to copy (can be specified multiple times or comma-separated)")
                 )
                 .arg(
-                    Arg::new("threshold")
-                        .short('s')
-                        .long("threshold")
-                        .num_args(1)
-                        .required(false)
-                        .default_value("80.0")
-                        .help("Similarity threshold (0.00 to 100.00)")
-                        .value_parser(clap::value_parser!(f64)),
+                    crate::commands::params::threshold_parameter("Similarity threshold (0.00 to 100.00)"),
                 )
                 .arg(
                     Arg::new("recursive")

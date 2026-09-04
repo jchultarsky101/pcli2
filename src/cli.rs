@@ -723,7 +723,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                         Ok(data) => data,
                                         Err(e) => {
                                             return Err(CliError::FormattingError(
-                                                FormattingError::CsvIntoInnerError(e),
+                                                FormattingError::CsvIntoInnerError(Box::new(e)),
                                             ))
                                         }
                                     };

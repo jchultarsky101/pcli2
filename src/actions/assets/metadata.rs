@@ -46,10 +46,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
         .collect();
 
     // Get threshold parameter
-    let threshold = sub_matches
-        .get_one::<f64>("threshold")
-        .copied()
-        .unwrap_or(80.0);
+    let threshold = crate::actions::utils::threshold_from_args(sub_matches);
 
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
@@ -232,7 +229,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
                 Ok(data) => data,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(
-                        crate::format::FormattingError::CsvIntoInnerError(e),
+                        crate::format::FormattingError::CsvIntoInnerError(Box::new(e)),
                     )));
                 }
             };

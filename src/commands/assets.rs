@@ -15,8 +15,8 @@ use crate::commands::params::{
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES,
     COMMAND_DEPENDENCY_DIFF, COMMAND_DOWNLOAD, COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_LIST,
     COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_TEXT_MATCH,
-    COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE,
-    PARAMETER_CONCURRENT, PARAMETER_FILE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
+    COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_FILE,
+    PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
 
@@ -69,13 +69,7 @@ pub fn asset_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
                 .arg(
-                    Arg::new(PARAMETER_CONCURRENT)
-                        .long(PARAMETER_CONCURRENT)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("5")
-                        .help("Maximum number of concurrent uploads")
-                        .value_parser(clap::value_parser!(usize)),
+                    crate::commands::params::concurrent_parameter("5", "Maximum number of concurrent uploads"),
                 )
                 .arg(
                     Arg::new(PARAMETER_PROGRESS)
@@ -175,14 +169,7 @@ pub fn asset_command() -> Command {
             .arg(uuid_parameter())
             .arg(path_parameter())
             .arg(
-                Arg::new("threshold")
-                    .short('s')
-                    .long("threshold")
-                    .num_args(1)
-                    .required(false)
-                    .default_value("80.0")
-                    .help("Similarity threshold (0.00 to 100.00)")
-                    .value_parser(clap::value_parser!(f64)),
+                crate::commands::params::threshold_parameter("Similarity threshold (0.00 to 100.00)"),
             )
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
@@ -198,14 +185,7 @@ pub fn asset_command() -> Command {
             .arg(uuid_parameter())
             .arg(path_parameter())
             .arg(
-                Arg::new("threshold")
-                    .short('s')
-                    .long("threshold")
-                    .num_args(1)
-                    .required(false)
-                    .default_value("80.0")
-                    .help("Similarity threshold (0.00 to 100.00)")
-                    .value_parser(clap::value_parser!(f64)),
+                crate::commands::params::threshold_parameter("Similarity threshold (0.00 to 100.00)"),
             )
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
@@ -222,14 +202,7 @@ pub fn asset_command() -> Command {
             .arg(path_parameter())
             .arg(limit_parameter())
             .arg(
-                Arg::new("threshold")
-                    .short('s')
-                    .long("threshold")
-                    .num_args(1)
-                    .required(false)
-                    .default_value("80.0")
-                    .help("Size threshold (0.00 to 100.00): filters matches by geometric size relative to the reference asset; higher is stricter, 0 disables size filtering")
-                    .value_parser(clap::value_parser!(f64)),
+                crate::commands::params::threshold_parameter("Size threshold (0.00 to 100.00): filters matches by geometric size relative to the reference asset; higher is stricter, 0 disables size filtering"),
             )
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())

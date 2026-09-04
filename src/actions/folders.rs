@@ -75,14 +75,10 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let configuration = Configuration::load_default()?;
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-    let path = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
-    let path = if let Some(path) = path {
-        normalize_path(path.clone())
-    } else {
-        // If no path is provided, default to root path
-        "/".to_string()
-    };
-    trace!("Path requested: \"{}\"", &path);
+    let folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID).copied();
+    let path_param = sub_matches
+        .get_one::<String>(PARAMETER_FOLDER_PATH)
+        .map(|path| normalize_path(path.clone()));
 
     // Check if reload flag is set to clear the cache
     let reload_cache = sub_matches.get_flag(crate::commands::params::PARAMETER_RELOAD);
@@ -97,6 +93,19 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // It is not efficient, but the only option is to read the full directory hieratchy from the API
     let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+
+    // The folder can be given by path or by UUID; the listing code works on paths, so a
+    // UUID is resolved against the hierarchy just fetched. (The UUID used to be accepted
+    // by the parser and never read, which listed the root instead.)
+    let path = match (path_param, folder_uuid_param) {
+        (Some(path), _) => path,
+        (None, Some(folder_uuid)) => hierarchy
+            .get_path_for_folder(&folder_uuid)
+            .map(|p| normalize_path(format!("/{}", p)))
+            .ok_or_else(|| CliError::FolderNotFound(folder_uuid.to_string(), String::new()))?,
+        (None, None) => "/".to_string(),
+    };
+    trace!("Path requested: \"{}\"", &path);
 
     // If tree format is requested, display the hierarchical tree structure
     match format {

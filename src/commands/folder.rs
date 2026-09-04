@@ -144,20 +144,7 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during download"),
                 )
                 .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_CONCURRENT)
-                        .long(crate::commands::params::PARAMETER_CONCURRENT)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("1")
-                        .help("Maximum number of concurrent downloads (range: 1-10)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if !(1..=10).contains(&val) {
-                                Err("Value must be between 1 and 10".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
+                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent downloads (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
@@ -231,14 +218,7 @@ pub fn folder_command() -> Command {
                 )
                 .arg(crate::commands::params::recursive_parameter())
                 .arg(
-                    clap::Arg::new("threshold")
-                        .short('s')
-                        .long("threshold")
-                        .num_args(1)
-                        .required(false)
-                        .default_value("80.0")
-                        .help("Similarity threshold (0.00 to 100.00)")
-                        .value_parser(clap::value_parser!(f64)),
+                    crate::commands::params::threshold_parameter("Similarity threshold (0.00 to 100.00)"),
                 )
                 .arg(
                     clap::Arg::new("exclusive")
@@ -255,13 +235,7 @@ pub fn folder_command() -> Command {
                     "Output file path (required for --format xls; default: match_report.xlsx)",
                 ))
                 .arg(
-                    clap::Arg::new("concurrent")
-                        .long("concurrent")
-                        .num_args(1)
-                        .required(false)
-                        .default_value("1")
-                        .help("Maximum number of concurrent operations (range: 1-10)")
-                        .value_parser(clap::value_parser!(usize)),
+                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new("progress")
@@ -287,14 +261,7 @@ pub fn folder_command() -> Command {
                 )
                 .arg(crate::commands::params::recursive_parameter())
                 .arg(
-                    clap::Arg::new("threshold")
-                        .short('s')
-                        .long("threshold")
-                        .num_args(1)
-                        .required(false)
-                        .default_value("80.0")
-                        .help("Similarity threshold (0.00 to 100.00)")
-                        .value_parser(clap::value_parser!(f64)),
+                    crate::commands::params::threshold_parameter("Similarity threshold (0.00 to 100.00)"),
                 )
                 .arg(
                     clap::Arg::new("exclusive")
@@ -308,13 +275,7 @@ pub fn folder_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
                 .arg(
-                    clap::Arg::new("concurrent")
-                        .long("concurrent")
-                        .num_args(1)
-                        .required(false)
-                        .default_value("1")
-                        .help("Maximum number of concurrent operations (range: 1-10)")
-                        .value_parser(clap::value_parser!(usize)),
+                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new("progress")
@@ -331,14 +292,7 @@ pub fn folder_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(limit_parameter())
                 .arg(
-                    clap::Arg::new("threshold")
-                        .short('s')
-                        .long("threshold")
-                        .num_args(1)
-                        .required(false)
-                        .default_value("80.0")
-                        .help("Size threshold (0.00 to 100.00): filters matches by geometric size relative to the reference asset; higher is stricter, 0 disables size filtering")
-                        .value_parser(clap::value_parser!(f64)),
+                    crate::commands::params::threshold_parameter("Size threshold (0.00 to 100.00): filters matches by geometric size relative to the reference asset; higher is stricter, 0 disables size filtering"),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_FOLDER_PATH)
@@ -362,13 +316,7 @@ pub fn folder_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
                 .arg(
-                    clap::Arg::new("concurrent")
-                        .long("concurrent")
-                        .num_args(1)
-                        .required(false)
-                        .default_value("1")
-                        .help("Maximum number of concurrent operations (range: 1-10)")
-                        .value_parser(clap::value_parser!(usize)),
+                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new("progress")
@@ -408,20 +356,7 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during upload"),
                 )
                 .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_CONCURRENT)
-                        .long(crate::commands::params::PARAMETER_CONCURRENT)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("1")
-                        .help("Maximum number of concurrent uploads (range: 1-10)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if !(1..=10).contains(&val) {
-                                Err("Value must be between 1 and 10".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
+                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent uploads (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
@@ -471,20 +406,7 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during download"),
                 )
                 .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_CONCURRENT)
-                        .long(crate::commands::params::PARAMETER_CONCURRENT)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("1")
-                        .help("Maximum number of concurrent downloads (range: 1-10)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if !(1..=10).contains(&val) {
-                                Err("Value must be between 1 and 10".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
+                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent downloads (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)

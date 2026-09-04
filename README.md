@@ -33,7 +33,7 @@ pcli2 env list           # List environments
 
 **Skip confirmation prompts in scripts:**
 ```bash
-pcli2 asset delete --path /Root/Models/part.stl --yes
+pcli2 asset delete --path /Home/Models/part.stl --yes
 ```
 
 **Validate your setup:**
@@ -63,7 +63,7 @@ pcli2 config validate --verbose
 - **Text Matching** - Find assets using text search
 - **Metadata Operations** - Manage custom properties efficiently
 - **Bulk Operations** - Process multiple assets with batch commands
-- **Secure Authentication** - OAuth2 with system keyring integration
+- **Authentication** - OAuth2 client-credentials login; the token is renewed automatically before it expires
 - **Confirmation Prompts** - Safety for destructive operations with `--yes` flag for scripting
 - **Configuration Validation** - `config validate` command to verify setup before operations
 - **Flexible Output Formats** - JSON, CSV, and tree views
@@ -195,10 +195,12 @@ pcli2 auth get
 pcli2 auth expiration
 ```
 
-Credentials are securely stored using your system's keyring:
-- **macOS**: Keychain Services
-- **Windows**: Credential Manager  
-- **Linux**: Secret Service API
+Credentials (the client ID, client secret and the current access token) are
+stored in `dev_credentials.json` inside the configuration directory shown by
+`pcli2 config get path`. The file is created with owner-only permissions
+(`0600`) on macOS and Linux; on Windows it inherits the directory's ACLs.
+Treat it like any other secret file: do not commit it, and run `pcli2 auth
+logout` on a shared machine when you are done.
 
 ## 🛠️ Basic Usage
 
@@ -226,16 +228,16 @@ Manage your folder structure:
 pcli2 folder list --format tree
 
 # Create a new folder
-pcli2 folder create --name "New Folder" --parent-folder-path "/Root/Parent"
+pcli2 folder create --name "New Folder" --parent-folder-path "/Home/Parent"
 
 # Download all assets from a folder
-pcli2 folder download --folder-path "/Root/MyFolder" --output "backup" --resume
+pcli2 folder download --folder-path "/Home/MyFolder" --output "backup" --resume
 
 # Upload all assets from a local directory to a Physna folder
-pcli2 folder upload --local-path "./local_models" --folder-path "/Root/MyFolder" --skip-existing
+pcli2 folder upload --local-path "./local_models" --folder-path "/Home/MyFolder" --skip-existing
 
 # Download thumbnails for all assets in a folder
-pcli2 folder thumbnail --folder-path "/Root/MyFolder" --output "thumbnails" --progress
+pcli2 folder thumbnail --folder-path "/Home/MyFolder" --output "thumbnails" --progress
 ```
 
 ### 📦 Asset Management
@@ -244,33 +246,33 @@ Upload, download, and manage assets:
 
 ```bash
 # Upload a single asset
-pcli2 asset create --file path/to/model.stl --folder-path "/Root/Models/"
+pcli2 asset create --file path/to/model.stl --folder-path "/Home/Models/"
 
 # Replace an existing asset (delete + re-upload)
-pcli2 asset create --file path/to/model.stl --folder-path "/Root/Models/" --override
+pcli2 asset create --file path/to/model.stl --folder-path "/Home/Models/" --override
 
 # Replace an existing asset and preserve its metadata
-pcli2 asset create --file path/to/model.stl --folder-path "/Root/Models/" --override --restore-metadata
+pcli2 asset create --file path/to/model.stl --folder-path "/Home/Models/" --override --restore-metadata
 
 # List assets in a folder
-pcli2 asset list --path "/Root/Models/" --format json
+pcli2 asset list --folder-path "/Home/Models/" --format json
 
 # Recursively list assets in subfolders
-pcli2 asset list --path "/Root/Models/" --recursive --format csv --headers
+pcli2 asset list --folder-path "/Home/Models/" --recursive --format csv --headers
 
 # Download an asset
-pcli2 asset download --path "/Root/Models/model.stl"
+pcli2 asset download --path "/Home/Models/model.stl"
 
 # View asset details
-pcli2 asset get --path "/Root/Models/model.stl" --metadata
+pcli2 asset get --path "/Home/Models/model.stl" --metadata
 
 # Reprocess an asset to refresh its analysis
-pcli2 asset reprocess --path "/Root/Models/model.stl"
+pcli2 asset reprocess --path "/Home/Models/model.stl"
 # or
 pcli2 asset reprocess --uuid 550e8400-e29b-41d4-a716-446655440000
 
 # Download asset thumbnail
-pcli2 asset thumbnail --path "/Root/Models/model.stl"
+pcli2 asset thumbnail --path "/Home/Models/model.stl"
 # or
 pcli2 asset thumbnail --uuid 550e8400-e29b-41d4-a716-446655440000
 # Specify custom output file
@@ -283,20 +285,20 @@ Find similar 3D geometries:
 
 ```bash
 # Find similar assets to a reference model
-pcli2 asset geometric-match --path "/Root/Models/reference.stl" --threshold 85.0
+pcli2 asset geometric-match --path "/Home/Models/reference.stl" --threshold 85.0
 
 # Bulk matching across folders
-pcli2 folder geometric-match --folder-path "/Root/SearchFolder/" --threshold 90.0 --progress
+pcli2 folder geometric-match --folder-path "/Home/SearchFolder/" --threshold 90.0 --progress
 
 # Exclusive matching - only show matches where both assets belong to the specified paths
-pcli2 folder geometric-match --folder-path "/Root/SearchFolder/" --threshold 90.0 --exclusive
+pcli2 folder geometric-match --folder-path "/Home/SearchFolder/" --threshold 90.0 --exclusive
 
 # Color-highlighted Excel report (frozen headers, grouped metadata pairs, diff colors, match heat-map)
-pcli2 folder geometric-match --folder-path "/Root/SearchFolder/" --threshold 90.0 --format xls --output report.xlsx
+pcli2 folder geometric-match --folder-path "/Home/SearchFolder/" --threshold 90.0 --format xls --output report.xlsx
 
 # Compare two specific assets and get their pairwise match scores
 # (each asset can be given by --*-path or --*-uuid; alias: asset match-scores)
-pcli2 asset similarity --reference-path "/Root/Models/block1.stl" --candidate-path "/Root/Models/block2.stl"
+pcli2 asset similarity --reference-path "/Home/Models/block1.stl" --candidate-path "/Home/Models/block2.stl"
 ```
 
 #### Exclusive Matching
@@ -313,10 +315,10 @@ Manage custom properties:
 
 ```bash
 # Add metadata to an asset
-pcli2 asset metadata create --path "/Root/Models/part.stl" --name "Material" --value "Steel"
+pcli2 asset metadata create --path "/Home/Models/part.stl" --name "Material" --value "Steel"
 
 # Get all metadata for an asset
-pcli2 asset metadata get --path "/Root/Models/part.stl"
+pcli2 asset metadata get --path "/Home/Models/part.stl"
 
 # Bulk metadata update from CSV (classic vertical or Physna UI horizontal
 # layout, auto-detected from the header row)
@@ -331,19 +333,19 @@ Optimize operations for large datasets:
 
 ```bash
 # Concurrent downloads (faster for many files)
-pcli2 folder download --folder-path "/Root/LargeFolder/" --concurrent 5 --progress
+pcli2 folder download --folder-path "/Home/LargeFolder/" --concurrent 5 --progress
 
 # Add delays to prevent rate limiting
-pcli2 folder download --folder-path "/Root/Folder/" --delay 2
+pcli2 folder download --folder-path "/Home/Folder/" --delay 2
 
 # Continue on errors
-pcli2 folder download --folder-path "/Root/Folder/" --continue-on-error
+pcli2 folder download --folder-path "/Home/Folder/" --continue-on-error
 
 # Continue past unresolvable asset paths in a metadata batch
 pcli2 asset metadata create-batch --csv-file "metadata.csv" --continue-on-error
 
 # Download thumbnails for all assets in a folder
-pcli2 folder thumbnail --folder-path "/Root/Folder/" --progress --concurrent 3
+pcli2 folder thumbnail --folder-path "/Home/Folder/" --progress --concurrent 3
 ```
 
 ### 🔄 Resume Interrupted Downloads
@@ -352,7 +354,7 @@ Skip existing files to resume large downloads:
 
 ```bash
 # Resume a partially completed download
-pcli2 folder download --folder-path "/Root/LargeFolder/" --resume --progress
+pcli2 folder download --folder-path "/Home/LargeFolder/" --resume --progress
 ```
 
 ### 🧪 Dry Run Mode
@@ -361,12 +363,12 @@ Preview destructive or bulk operations without changing anything on the server:
 
 ```bash
 # See what a delete would remove
-pcli2 folder delete --folder-path "/Root/Old Projects/" --force --dry-run
-pcli2 asset delete --path "/Root/Models/part.stl" --dry-run
+pcli2 folder delete --folder-path "/Home/Old Projects/" --force --dry-run
+pcli2 asset delete --path "/Home/Models/part.stl" --dry-run
 
 # See exactly which files a batch upload would send, and where
-pcli2 asset create-batch --files "data/*.stl" --folder-path "/Root/Models/" --dry-run
-pcli2 folder upload --local-path ./models --folder-path "/Root/Models/" --dry-run
+pcli2 asset create-batch --files "data/*.stl" --folder-path "/Home/Models/" --dry-run
+pcli2 folder upload --local-path ./models --folder-path "/Home/Models/" --dry-run
 ```
 
 ### 🔁 Automatic Retries
@@ -378,7 +380,7 @@ default is 2 retries; override it with the `PCLI2_MAX_RETRIES` environment
 variable (0 disables retries):
 
 ```bash
-PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Root/Models/" --output ./downloads
+PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Home/Models/" --output ./downloads
 ```
 
 The request timeout defaults to 30 minutes because very large model files
@@ -386,7 +388,7 @@ legitimately take that long to transfer. If you work with small files and
 prefer fast failures, lower it with `PCLI2_TIMEOUT` (seconds):
 
 ```bash
-PCLI2_TIMEOUT=120 pcli2 asset list --folder-path "/Root/Models/"
+PCLI2_TIMEOUT=120 pcli2 asset list --folder-path "/Home/Models/"
 ```
 
 ### 🎨 Color Control
@@ -450,7 +452,7 @@ pcli2 asset list --format json
 pcli2 asset list --format csv --headers
 
 # Recursively list assets in subfolders
-pcli2 asset list --folder-path "/Root/Models/" --recursive --format csv --headers
+pcli2 asset list --folder-path "/Home/Models/" --recursive --format csv --headers
 
 # Tree for visual hierarchy
 pcli2 folder list --format tree
@@ -472,10 +474,10 @@ pcli2 asset list --format csv | wc -l
 
 # Advanced filtering with NuShell (nushell)
 # Filter assets by metadata values like weight in specific range
-pcli2 asset list --folder-path "/Root/MyFolder" --metadata --format json | nu -c 'from json | where ((metadata | get-or-null Weight) | default 0) >= 5.0 and ((metadata | get-or-null Weight) | default 0) <= 50.0 | select name path metadata.Material metadata.Weight'
+pcli2 asset list --folder-path "/Home/MyFolder" --metadata --format json | nu -c 'from json | where ((metadata | get-or-null Weight) | default 0) >= 5.0 and ((metadata | get-or-null Weight) | default 0) <= 50.0 | select name path metadata.Material metadata.Weight'
 
 # Group assets by material type using NuShell
-pcli2 asset list --folder-path "/Root/Inventory" --metadata --format json | nu -c 'from json | where metadata.Material != null | group-by metadata.Material | each {|it| {material: ($it | get 0).metadata.Material, count: ($it | length), avg_weight: ($it | get metadata.Weight | compact | math avg)}}'
+pcli2 asset list --folder-path "/Home/Inventory" --metadata --format json | nu -c 'from json | where metadata.Material != null | group-by metadata.Material | each {|it| {material: ($it | get 0).metadata.Material, count: ($it | length), avg_weight: ($it | get metadata.Weight | compact | math avg)}}'
 ```
 
 ### 🤖 CI/CD Integration
@@ -500,7 +502,7 @@ jobs:
         run: |
           pcli2 tenant use --name my-tenant
           pcli2 asset create-batch --files "build/*.stl" \
-            --folder-path "/Root/CI Builds/" --quiet --format json
+            --folder-path "/Home/CI Builds/" --quiet --format json
 ```
 
 ### ⚙️ Configuration Management
@@ -509,14 +511,14 @@ Manage multiple environments:
 
 ```bash
 # Add a development environment
-pcli2 config environment add --name "development" \
+pcli2 env add --name "development" \
   --api-url "https://dev-api.physna.com/v3"
 
 # Switch environments
-pcli2 config environment use --name development
+pcli2 env use --name development
 
 # List all environments
-pcli2 config environment list
+pcli2 env list
 ```
 
 #### Environment Command (Alias: `env`)
@@ -548,11 +550,11 @@ Enable debug logging for troubleshooting:
 
 ```bash
 # Quick verbosity control with global flags
-pcli2 --verbose folder download --path /Root/Models/   # debug-level logging
-pcli2 --quiet asset list --folder-path /Root/Models/   # errors only
+pcli2 --verbose folder download --folder-path /Home/Models/   # debug-level logging
+pcli2 --quiet asset list --folder-path /Home/Models/   # errors only
 
 # Fine-grained control with environment variables
-PCLI2_LOG_LEVEL=debug pcli2 folder download --path /Root/Models/
+PCLI2_LOG_LEVEL=debug pcli2 folder download --folder-path /Home/Models/
 RUST_LOG=pcli2=trace pcli2 asset get --uuid xxx
 ```
 
@@ -590,7 +592,6 @@ possible) so scripts can react to specific failure classes:
 | 65 | Data format error |
 | 66 | Cannot open input file |
 | 67 | Resource not found |
-| 68 | Service unavailable |
 | 69 | Temporary failure |
 | 70 | Internal software error |
 | 71 | Operating system error |
@@ -599,8 +600,13 @@ possible) so scripts can react to specific failure classes:
 | 101 | Network communication error |
 | 102 | Remote API error |
 
+A usage error rejected by the argument parser also exits 64. A batch that
+finished with some items failed (`create-batch`, `metadata create-batch`,
+`folder upload`, `folder download`, `folder thumbnail`) and a folder match whose
+report would be incomplete exit 69.
+
 ```bash
-pcli2 asset get --path "/Root/Models/part.stl" --format json
+pcli2 asset get --path "/Home/Models/part.stl" --format json
 case $? in
   0)   echo "found" ;;
   100) pcli2 auth login ;;
@@ -608,6 +614,20 @@ case $? in
   *)   echo "failed" ;;
 esac
 ```
+
+### Environment Variables
+
+| Variable | Effect |
+|----------|--------|
+| `PCLI2_CONFIG_DIR` | Directory holding `config.yml` and the credentials file (default: the platform configuration directory) |
+| `PCLI2_CACHE_DIR` | Directory for the folder, tenant and metadata caches |
+| `PCLI2_FORMAT` | Default `--format` when the flag is not given |
+| `PCLI2_HEADERS` | Default `--headers` when the flag is not given (`1`/`0`, `yes`/`no`) |
+| `PCLI2_LOG_LEVEL` | Log level (`error`, `warn`, `info`, `debug`, `trace`); `RUST_LOG` takes precedence when set |
+| `PCLI2_TIMEOUT` | Total request timeout in seconds (default 1800; connections time out after 15 s and a silent read after 300 s regardless) |
+| `PCLI2_MAX_RETRIES` | Retries for transient failures (default 2; `0` disables) |
+| `PCLI2_NO_COLOR`, `NO_COLOR` | Disable colored output |
+| `PCLI2_NO_UPDATE_CHECK`, `CI` | Disable the new-version hint |
 
 ### Debugging Tips
 
@@ -711,19 +731,19 @@ The `asset list` command lists assets in a folder with various filtering and for
 
 ```bash
 # List assets in a specific folder
-pcli2 asset list --folder-path "/Root/Models/"
+pcli2 asset list --folder-path "/Home/Models/"
 
 # List assets recursively (including all subfolders)
-pcli2 asset list --folder-path "/Root/Models/" --recursive
+pcli2 asset list --folder-path "/Home/Models/" --recursive
 
 # Output in CSV format with headers
-pcli2 asset list --folder-path "/Root/Models/" --format csv --headers
+pcli2 asset list --folder-path "/Home/Models/" --format csv --headers
 
 # Include metadata in JSON output
-pcli2 asset list --folder-path "/Root/Models/" --format json --metadata
+pcli2 asset list --folder-path "/Home/Models/" --format json --metadata
 
 # Force refresh folder cache before listing (useful after folder changes)
-pcli2 asset list --reload --folder-path "/Root/Models/" --format csv
+pcli2 asset list --reload --folder-path "/Home/Models/" --format csv
 ```
 
 #### Asset Inventory and Counts Commands
@@ -817,10 +837,10 @@ The `asset metadata create-batch` command accepts two CSV layouts. The layout is
 
 ```
 ASSET_PATH,NAME,VALUE,TYPE
-/Root/Folder/Model1.stl,Material,Steel,text
-/Root/Folder/Model1.stl,Weight,15.5,number
-/Root/Folder/Model2.ipt,Inventory Qty,42,number
-/Root/Folder/Model2.ipt,Supplier Link,https://example.com/,url
+/Home/Folder/Model1.stl,Material,Steel,text
+/Home/Folder/Model1.stl,Weight,15.5,number
+/Home/Folder/Model2.ipt,Inventory Qty,42,number
+/Home/Folder/Model2.ipt,Supplier Link,https://example.com/,url
 ```
 
 - The first row must contain the headers `ASSET_PATH,NAME,VALUE`, optionally followed by `TYPE`
@@ -833,8 +853,8 @@ ASSET_PATH,NAME,VALUE,TYPE
 
 ```
 path,id,metadata:Material,metadata:Color
-/Root/Folder/Model1.stl,,Steel,Blue
-/Root/Folder/Model2.ipt,123e4567-e89b-12d3-a456-426614174000,Aluminum,Red
+/Home/Folder/Model1.stl,,Steel,Blue
+/Home/Folder/Model2.ipt,123e4567-e89b-12d3-a456-426614174000,Aluminum,Red
 ```
 
 - `path` is the asset path; the optional `id` column holds the asset UUID and takes precedence over the path when present
@@ -877,7 +897,7 @@ pcli2 folder visual-match     # Find visually similar assets for all assets in f
 pcli2 folder thumbnail        # Download thumbnails for all assets in a folder
 ```
 
-**Important Note**: Folder paths are **case-insensitive**. You can use any capitalization when specifying folder paths (e.g., `/Root/Models`, `/root/models`, `/ROOT/MODELS` all refer to the same folder). This matches the behavior of Windows file systems and provides a more user-friendly experience.
+**Important Note**: Folder paths are **case-insensitive**. You can use any capitalization when specifying folder paths (e.g., `/Home/Models`, `/home/models`, `/HOME/MODELS` all refer to the same folder). This matches the behavior of Windows file systems and provides a more user-friendly experience.
 
 #### Folder Resolve Command
 
@@ -885,10 +905,10 @@ The `folder resolve` command resolves a folder path to its UUID, which can be us
 
 ```bash
 # Resolve a folder path to UUID
-pcli2 folder resolve --folder-path "/Root/MyFolder"
+pcli2 folder resolve --folder-path "/Home/MyFolder"
 
 # Force refresh folder cache before resolving (useful if folder was recently recreated)
-pcli2 folder resolve --reload --folder-path "/Root/MyFolder"
+pcli2 folder resolve --reload --folder-path "/Home/MyFolder"
 ```
 
 #### Folder List Command
@@ -900,7 +920,7 @@ The `folder list` command allows you to list folders in your Physna tenant. When
 pcli2 folder list
 
 # List folders in a specific path
-pcli2 folder list --folder-path "/Root/MyFolder"
+pcli2 folder list --folder-path "/Home/MyFolder"
 
 # List folders using folder UUID
 pcli2 folder list --folder-uuid 123e4567-e89b-12d3-a456-426614174000
@@ -964,7 +984,7 @@ Manage PCLI2 configuration settings.
 pcli2 config get           # Get configuration details
 pcli2 config export        # Export configuration to file
 pcli2 config import        # Import configuration from file
-pcli2 config environment   # Manage environment configurations
+pcli2 env   # Manage environment configurations
 ```
 
 #### Environment Configuration Commands
@@ -972,16 +992,16 @@ pcli2 config environment   # Manage environment configurations
 Manage multiple Physna environment configurations.
 
 ```
-pcli2 config environment add --name <name>     # Add a new environment configuration
-pcli2 config environment add -n <name>         # Short form of add with name
-pcli2 config environment use --name <name>     # Switch to an environment
-pcli2 config environment use -n <name>         # Short form of use with name
-pcli2 config environment remove --name <name>  # Remove an environment
-pcli2 config environment remove -n <name>      # Short form of remove with name
-pcli2 config environment list                  # List all environments
-pcli2 config environment reset                 # Reset all environment configurations
-pcli2 config environment get --name <name>     # Get environment details
-pcli2 config environment get -n <name>         # Short form of get with name
+pcli2 env add --name <name>     # Add a new environment configuration
+pcli2 env add -n <name>         # Short form of add with name
+pcli2 env use --name <name>     # Switch to an environment
+pcli2 env use -n <name>         # Short form of use with name
+pcli2 env remove --name <name>  # Remove an environment
+pcli2 env remove -n <name>      # Short form of remove with name
+pcli2 env list                  # List all environments
+pcli2 env reset                 # Reset all environment configurations
+pcli2 env get --name <name>     # Get environment details
+pcli2 env get -n <name>         # Short form of get with name
 ```
 
 ### Other Commands
@@ -1028,7 +1048,7 @@ pcli2 cache clean --yes
 
 ```bash
 # Example: List assets with fresh folder data
-pcli2 asset list --reload --folder-path "/Root/Models/" --format csv
+pcli2 asset list --reload --folder-path "/Home/Models/" --format csv
 ```
 
 #### Shell Completions

@@ -16,7 +16,7 @@ Add or update a single metadata field on an asset:
 
 ```bash
 # Add or update a single metadata field on an asset
-pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
+pcli2 asset metadata create --path "/Home/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
 
 # Add or update a single metadata field on an asset by UUID
 pcli2 asset metadata create --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Weight" --value "15.5" --type "number"
@@ -28,7 +28,7 @@ Get all metadata for an asset:
 
 ```bash
 # Get all metadata for an asset in JSON format (default)
-pcli2 asset metadata get --path "/Root/Folder/Model.stl"
+pcli2 asset metadata get --path "/Home/Folder/Model.stl"
 
 # Get all metadata for an asset in CSV format (suitable for batch operations)
 pcli2 asset metadata get --uuid "123e4567-e89b-12d3-a456-426614174000" --format csv
@@ -40,7 +40,7 @@ Delete specific metadata fields from an asset:
 
 ```bash
 # Delete specific metadata fields from an asset
-pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
+pcli2 asset metadata delete --path "/Home/Folder/Model.stl" --name "Material" --name "Weight"
 
 # Delete metadata fields using comma-separated list
 pcli2 asset metadata delete --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Material,Weight,Description"
@@ -69,16 +69,16 @@ The classic CSV format used by `asset metadata get --format csv` and `asset meta
 
 ```csv
 ASSET_PATH,NAME,VALUE,TYPE
-/Root/Folder/Model1.stl,Material,Steel,text
-/Root/Folder/Model1.stl,Weight,15.5,number
-/Root/Folder/Model2.ipt,Inventory Qty,42,number
-/Root/Folder/Model2.ipt,Supplier Link,https://example.com/,url
-/Root/Folder/Model2.ipt,Exportable,true,boolean
+/Home/Folder/Model1.stl,Material,Steel,text
+/Home/Folder/Model1.stl,Weight,15.5,number
+/Home/Folder/Model2.ipt,Inventory Qty,42,number
+/Home/Folder/Model2.ipt,Supplier Link,https://example.com/,url
+/Home/Folder/Model2.ipt,Exportable,true,boolean
 ```
 
 The CSV format specifications:
 - **Header Row**: Must contain `ASSET_PATH,NAME,VALUE` in that order, optionally followed by `TYPE`
-- **ASSET_PATH**: Path to the asset in Physna (e.g., `/Root/Folder/Model.stl`). A leading `/Home` — the name Physna shows for the root folder — is treated as the root, so `/Home/NX/part.prt`, `/NX/part.prt`, and `NX/part.prt` all refer to the same asset
+- **ASSET_PATH**: Path to the asset in Physna (e.g., `/Home/Folder/Model.stl`). A leading `/Home` — the name Physna shows for the root folder — is treated as the root, so `/Home/NX/part.prt`, `/NX/part.prt`, and `NX/part.prt` all refer to the same asset
 - **NAME**: Name of the metadata field to set
 - **VALUE**: Value to assign to the metadata field. Values are automatically coerced to the field's type (see [Metadata Field Types](#metadata-field-types)). An empty value is skipped by default, or deletes the field from the asset when `--delete-if-empty` is passed
 - **TYPE** *(optional)*: One of `text` (default), `number`, `boolean`, or `url`. This only governs the type used when **registering a new** field; for a field that already exists in Physna, the existing registered type is authoritative and the `TYPE` column is ignored. The column is optional per row — some rows may include it and others may omit it
@@ -100,8 +100,8 @@ Pass `--delete-if-empty` and leave the VALUE column empty to remove a metadata f
 
 ```csv
 ASSET_PATH,NAME,VALUE
-/Root/Folder/Model1.stl,ObsoleteField,
-/Root/Folder/Model1.stl,Material,Steel
+/Home/Folder/Model1.stl,ObsoleteField,
+/Home/Folder/Model1.stl,Material,Steel
 ```
 
 ```bash
@@ -185,10 +185,10 @@ One of the most powerful features of PCLI2 is the ability to export metadata, mo
 1. **Export Metadata**:
    ```bash
    # Export all metadata for an asset to a CSV file
-   pcli2 asset metadata get --path "/Root/Folder/Model.stl" --format csv > model_metadata.csv
+   pcli2 asset metadata get --path "/Home/Folder/Model.stl" --format csv > model_metadata.csv
 
    # Export metadata for multiple assets in a folder
-   pcli2 asset list --path "/Root/Folder/" --metadata --format csv > folder_metadata.csv
+   pcli2 asset list --folder-path "/Home/Folder/" --metadata --format csv > folder_metadata.csv
    ```
 
 2. **Modify Metadata Externally**:
@@ -214,22 +214,22 @@ PCLI2 supports four metadata field types:
 
 1. **Text** (default): String values
    ```bash
-   pcli2 asset metadata create --path "/Root/Model.stl" --name "Description" --value "Sample part description" --type "text"
+   pcli2 asset metadata create --path "/Home/Model.stl" --name "Description" --value "Sample part description" --type "text"
    ```
 
 2. **Number**: Numeric values
    ```bash
-   pcli2 asset metadata create --path "/Root/Model.stl" --name "Weight" --value "15.5" --type "number"
+   pcli2 asset metadata create --path "/Home/Model.stl" --name "Weight" --value "15.5" --type "number"
    ```
 
 3. **Boolean**: True/False values
    ```bash
-   pcli2 asset metadata create --path "/Root/Model.stl" --name "Approved" --value "true" --type "boolean"
+   pcli2 asset metadata create --path "/Home/Model.stl" --name "Approved" --value "true" --type "boolean"
    ```
 
 4. **URL**: Link values (stored as a string)
    ```bash
-   pcli2 asset metadata create --path "/Root/Model.stl" --name "Supplier Link" --value "https://example.com/" --type "url"
+   pcli2 asset metadata create --path "/Home/Model.stl" --name "Supplier Link" --value "https://example.com/" --type "url"
    ```
 
 ### Automatic type coercion
@@ -315,11 +315,11 @@ Metadata operations work seamlessly with other PCLI2 commands:
 
 ```bash
 # Chain with asset operations
-pcli2 asset list --path "/Root/Parts/" --format csv | \
+pcli2 asset list --folder-path "/Home/Parts/" --format csv | \
 pcli2 asset metadata create-batch --csv-file "metadata_updates.csv"
 
 # Export results for auditing
-pcli2 asset metadata get --path "/Root/Parts/Model.stl" --format csv > metadata_export.csv
+pcli2 asset metadata get --path "/Home/Parts/Model.stl" --format csv > metadata_export.csv
 ```
 
 ## Limitations

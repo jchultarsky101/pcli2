@@ -6,7 +6,6 @@ use crate::model::{
     AssetStateCounts, CurrentUserResponse, FolderList, FolderListResponse, SingleAssetResponse,
     SingleFolderResponse,
 };
-use async_recursion::async_recursion;
 use glob::glob;
 use indicatif::{ProgressBar, ProgressStyle};
 use mime_guess;
@@ -3813,7 +3812,6 @@ impl PhysnaApiClient {
         })
     }
 
-    #[async_recursion]
     #[allow(dead_code)]
     async fn populate_asset_dependencies_recursive(
         &mut self,
@@ -3868,7 +3866,7 @@ impl PhysnaApiClient {
 
                 // Recurse on the stored child node if it has dependencies
                 if dependency.has_dependencies {
-                    self.populate_asset_dependencies_recursive(tenant_uuid, child_node)
+                    Box::pin(self.populate_asset_dependencies_recursive(tenant_uuid, child_node))
                         .await?;
                 }
             }
@@ -3883,7 +3881,6 @@ impl PhysnaApiClient {
         Ok(())
     }
 
-    #[async_recursion]
     async fn populate_asset_dependencies_recursive_by_uuid(
         &mut self,
         tenant_uuid: &Uuid,
@@ -3936,11 +3933,11 @@ impl PhysnaApiClient {
 
                 // Recurse on the stored child node if it has dependencies
                 if dependency.has_dependencies {
-                    self.populate_asset_dependencies_recursive_by_uuid(
+                    Box::pin(self.populate_asset_dependencies_recursive_by_uuid(
                         tenant_uuid,
                         child_node,
                         &child_asset.uuid(),
-                    )
+                    ))
                     .await?;
                 }
             }
@@ -3955,7 +3952,6 @@ impl PhysnaApiClient {
         Ok(())
     }
 
-    #[async_recursion]
     async fn populate_asset_dependencies_recursive_by_path(
         &mut self,
         tenant_uuid: &Uuid,
@@ -4008,11 +4004,11 @@ impl PhysnaApiClient {
 
                 // Recurse on the stored child node if it has dependencies
                 if dependency.has_dependencies {
-                    self.populate_asset_dependencies_recursive_by_path(
+                    Box::pin(self.populate_asset_dependencies_recursive_by_path(
                         tenant_uuid,
                         child_node,
                         &dependency.path, // Use the dependency's path for recursion
-                    )
+                    ))
                     .await?;
                 }
             }
@@ -4037,11 +4033,11 @@ impl PhysnaApiClient {
 
         let mut tree = AssemblyTree::new(asset);
         // Use the path-based recursive function to populate dependencies
-        self.populate_asset_dependencies_recursive_by_path(
+        Box::pin(self.populate_asset_dependencies_recursive_by_path(
             tenant_uuid,
             tree.root_mut(),
             asset_path,
-        )
+        ))
         .await?;
         Ok(tree)
     }
@@ -4068,11 +4064,11 @@ impl PhysnaApiClient {
         let asset = self.get_asset_by_uuid(tenant_uuid, asset_uuid).await?;
 
         let mut tree = AssemblyTree::new(asset);
-        self.populate_asset_dependencies_recursive_by_uuid(
+        Box::pin(self.populate_asset_dependencies_recursive_by_uuid(
             tenant_uuid,
             tree.root_mut(),
             asset_uuid,
-        )
+        ))
         .await?;
         Ok(tree)
     }

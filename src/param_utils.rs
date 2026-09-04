@@ -25,16 +25,17 @@ async fn resolve_tenant_by_name(
 ) -> Result<Tenant, CliError> {
     debug!("Resolving tenant by name: {}", tenant_name);
 
-    // First, try to list all tenants to see if we can resolve the identifier
-    let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, false).await?;
-
-    // Look for an exact match by tenant ID first
-    match tenants.iter().find(|t| t.tenant_short_name.eq(tenant_name)) {
-        Some(tenant) => Ok(tenant.try_into()?),
-        None => Err(CliError::TenantNotFound {
-            identifier: tenant_name.to_owned(),
-        }),
+    // The cached list first; on a miss, one fresh fetch, since a tenant granted
+    // since the cache was written is the common reason for a miss.
+    for refresh in [false, true] {
+        let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, refresh).await?;
+        if let Some(tenant) = tenants.iter().find(|t| t.tenant_short_name.eq(tenant_name)) {
+            return Ok(tenant.try_into()?);
+        }
     }
+    Err(CliError::TenantNotFound {
+        identifier: tenant_name.to_owned(),
+    })
 }
 
 pub async fn get_format_parameter_value(sub_matches: &ArgMatches) -> OutputFormat {
@@ -63,16 +64,15 @@ pub async fn resolve_tenant_by_uuid(
 ) -> Result<Tenant, CliError> {
     debug!("Resolving tenant by UID: {}", tenant_uuid);
 
-    // First, try to list all tenants to see if we can resolve the identifier
-    let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, false).await?;
-
-    // Look for an exact match by tenant ID first
-    match tenants.iter().find(|t| t.tenant_uuid.eq(tenant_uuid)) {
-        Some(tenant) => Ok(tenant.try_into()?),
-        None => Err(CliError::TenantNotFound {
-            identifier: tenant_uuid.to_string(),
-        }),
+    for refresh in [false, true] {
+        let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, refresh).await?;
+        if let Some(tenant) = tenants.iter().find(|t| t.tenant_uuid.eq(tenant_uuid)) {
+            return Ok(tenant.try_into()?);
+        }
     }
+    Err(CliError::TenantNotFound {
+        identifier: tenant_uuid.to_string(),
+    })
 }
 
 /// Helper function to get tenant from parameter or configuration with resolution
@@ -83,7 +83,11 @@ pub async fn get_tenant(
 ) -> Result<Tenant, CliError> {
     match sub_matches.get_one::<String>(PARAMETER_TENANT) {
         Some(tenant_name) => {
-            let tenant = resolve_tenant_by_name(client, tenant_name).await?;
+            // The help text promises "ID or alias"; honour both.
+            let tenant = match Uuid::parse_str(tenant_name) {
+                Ok(uuid) => resolve_tenant_by_uuid(client, &uuid).await?,
+                Err(_) => resolve_tenant_by_name(client, tenant_name).await?,
+            };
             Ok(tenant)
         }
         None => {

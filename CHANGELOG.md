@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`--tenant` accepts a tenant UUID, as its help text promised** - Only the short name worked. A tenant missing from the cached list is also looked up once more from the API before it is reported as not found, so a tenant granted since the cache was written is usable without `cache clear`.
+- **`PCLI2_FORMAT` is honoured by `env list`, `env get` and `config get`** - `--format` has a default value, so the branch that consulted the variable was unreachable.
+- **In-app advice no longer refers to a `context` command that does not exist** - "Run 'pcli2 context set tenant'" is now "Run 'pcli2 tenant use'".
 - **Uploads go to the folder that was asked for** - The upload endpoint places a file by the path string it is sent and creates any folder it does not know, and three callers sent it the wrong string: `folder upload --folder-uuid` sent a placeholder `/` (every file landed at the tenant root), `asset create --folder-uuid` fell back to the bare folder name when the hierarchy fetch failed (a nested folder `A/B/C` became a new top-level `C`), and `--folder-path` was sent as typed, so `/Home/Parts` could create a literal `Home` folder and `/parts` a second folder beside `Parts`. The destination is now the folder's canonical path from the hierarchy, whichever way the folder was named.
 - **Uploading to the tenant root works** - `asset create --folder-path /`, `asset create-batch --folder-path /` and `folder upload --folder-path /` failed with "Folder '/' not found" after fetching the whole hierarchy to suggest alternatives. The root has no UUID and needs none.
 - **Typed metadata compares equal to itself in match reports** - A numeric or boolean field was rendered as text on the reference side and blanked on the candidate side, so the Excel diff painted every such field as "missing on one side" and CSV rows showed `42` against an empty cell. Both sides now render values the same way (JSON text for non-strings, empty for null).
@@ -45,7 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unsupported file types are no longer retried five times by `--override`** - The "Invalid path extension" upload rejection was classified as a conflict, which the override path treats as "the previous asset may still be deleting" and retries with backoff. It is now an invalid-parameter error, reported the same way whether or not the first attempt also hit an expired token.
 - **Thumbnail downloads on a Viewer account no longer make three auth-server calls per asset** - The per-asset retry helper renewed the token up to three more times on any 403; the client's own renew-and-retry is enough.
 
+### Documentation
+- The install guide had pointed at the wrong repository and listed a Rust toolchain as a prerequisite for the binary install; it now covers the shell and PowerShell installers, the Homebrew tap, the MSI, `pcli2-update`, and says plainly that the crate is not on crates.io. The README no longer claims credentials are kept in the OS keychain: they live in `dev_credentials.json` under the configuration directory, owner-only on macOS and Linux. `pcli2 config environment ...` became `pcli2 env ...` some releases ago and the README and quick start now say so; `asset geometric-match-folder` is `folder geometric-match`; the `context` command is `tenant use/get/clear`; `--path` on `asset list` and `folder download` is `--folder-path`; examples use `/Home/...`, the name Physna shows for the root, instead of `/Root/...`. Three environment variables (`PCLI2_API_BASE_URL`, `PCLI2_UI_BASE_URL`, `PCLI2_AUTH_BASE_URL`) that the code never read are gone from the docs, and every variable that is read is now listed in one table (README and Cross-Platform Configuration). The exit-code tables drop the code that is never emitted (68) and explain 64 for parser errors and 69 for partial batches. The documented multi-level inference propagation and the `config import` example are removed with the features that did not exist.
+
 ### Removed
+- **Dead dependencies** - `bincode`, `exitcode`, `url`, `mime`, `tokio-util` and `async-recursion` (recursion now uses `Box::pin`, stable since Rust 1.77); `tempfile` moves to the test dependencies and `tokio-test` is dropped. Two integration test files that compiled to no tests (one was a single line of escaped text; the other asserted nothing) are removed and the test README describes what actually exists. The committed mdBook output under `docs/book/` and the stale top-level `docs/*.md` copies are removed; the published site builds from `docs/src/`. The site no longer advertises `cargo install pcli2`.
+
+### Changed
+- **CI runs `cargo audit` and a minimum-supported-Rust check (1.88, set by transitive dependencies)**; `rust-version` is declared in `Cargo.toml`. `Cargo.lock` is no longer listed in `.gitignore` (it was tracked all along).
+
 - **`asset metadata inference --recursive`** - The flag was accepted and never read; the documented multi-level propagation did not exist.
 
 ### Changed

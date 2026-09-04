@@ -212,19 +212,23 @@ pub async fn execute_environment_command(
             trace!("Executing environment list command");
 
             // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
-            let format_str =
-                if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
-                    // User explicitly provided --format argument
-                    format_val.clone()
+            let format_str = if let Some(format_val) =
+                sub_matches.get_one::<String>(PARAMETER_FORMAT).filter(|_| {
+                    // A default value also answers get_one; only a value the user
+                    // typed should beat PCLI2_FORMAT.
+                    sub_matches.value_source(PARAMETER_FORMAT)
+                        == Some(clap::parser::ValueSource::CommandLine)
+                }) {
+                format_val.clone()
+            } else {
+                // Format was not explicitly provided by user, check environment variable first
+                if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
+                    env_format
                 } else {
-                    // Format was not explicitly provided by user, check environment variable first
-                    if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-                        env_format
-                    } else {
-                        // Use default value
-                        "json".to_string()
-                    }
-                };
+                    // Use default value
+                    "json".to_string()
+                }
+            };
 
             let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
             let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
@@ -382,19 +386,23 @@ pub async fn execute_environment_command(
             trace!("Executing environment get command");
 
             // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
-            let format_str =
-                if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
-                    // User explicitly provided --format argument
-                    format_val.clone()
+            let format_str = if let Some(format_val) =
+                sub_matches.get_one::<String>(PARAMETER_FORMAT).filter(|_| {
+                    // A default value also answers get_one; only a value the user
+                    // typed should beat PCLI2_FORMAT.
+                    sub_matches.value_source(PARAMETER_FORMAT)
+                        == Some(clap::parser::ValueSource::CommandLine)
+                }) {
+                format_val.clone()
+            } else {
+                // Format was not explicitly provided by user, check environment variable first
+                if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
+                    env_format
                 } else {
-                    // Format was not explicitly provided by user, check environment variable first
-                    if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-                        env_format
-                    } else {
-                        // Use default value
-                        "json".to_string()
-                    }
-                };
+                    // Use default value
+                    "json".to_string()
+                }
+            };
 
             let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
             let pretty = sub_matches.get_flag(PARAMETER_PRETTY);

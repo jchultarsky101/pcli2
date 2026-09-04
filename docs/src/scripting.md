@@ -23,10 +23,10 @@ automatically:
 
 ```bash
 # Clean JSON, no ANSI escape codes
-pcli2 asset list --folder-path "/Root/Models/" --format json | jq '.[].name'
+pcli2 asset list --folder-path "/Home/Models/" --format json | jq '.[].name'
 
 # CSV with headers for spreadsheets
-pcli2 asset list --folder-path "/Root/Models/" --format csv --headers > assets.csv
+pcli2 asset list --folder-path "/Home/Models/" --format csv --headers > assets.csv
 ```
 
 To disable colors explicitly, use the `--no-color` flag or set the
@@ -42,7 +42,7 @@ Destructive commands ask for confirmation when run interactively. In
 scripts, pass `--yes`:
 
 ```bash
-pcli2 folder delete --folder-path "/Root/Scratch/" --force --yes
+pcli2 folder delete --folder-path "/Home/Scratch/" --force --yes
 pcli2 cache clear --yes
 ```
 
@@ -60,10 +60,10 @@ server. Supported by `asset delete`, `folder delete`, `asset create`,
 
 ```bash
 # List exactly which files a batch upload would send, and where
-pcli2 asset create-batch --files "build/*.stl" --folder-path "/Root/CI Builds/" --dry-run
+pcli2 asset create-batch --files "build/*.stl" --folder-path "/Home/CI Builds/" --dry-run
 
 # Confirm what a forced folder delete would remove
-pcli2 folder delete --folder-path "/Root/Old Projects/" --force --dry-run
+pcli2 folder delete --folder-path "/Home/Old Projects/" --force --dry-run
 ```
 
 ## Exit Codes
@@ -78,7 +78,6 @@ where possible) so scripts can react to specific failure classes:
 | 65 | Data format error |
 | 66 | Cannot open input file |
 | 67 | Resource not found |
-| 68 | Service unavailable |
 | 69 | Temporary failure |
 | 70 | Internal software error |
 | 71 | Operating system error |
@@ -87,8 +86,12 @@ where possible) so scripts can react to specific failure classes:
 | 101 | Network communication error |
 | 102 | Remote API error |
 
+A usage error rejected by the argument parser also exits 64. Batch commands that
+finished with some items failed, and folder matches whose report would be
+incomplete, exit 69.
+
 ```bash
-pcli2 asset get --path "/Root/Models/part.stl" --format json
+pcli2 asset get --path "/Home/Models/part.stl" --format json
 case $? in
   0)   echo "found" ;;
   100) pcli2 auth login ;;
@@ -105,7 +108,7 @@ precedence over the `PCLI2_LOG_LEVEL` and `RUST_LOG` environment
 variables:
 
 ```bash
-pcli2 --quiet asset create-batch --files "build/*.stl" --folder-path "/Root/CI Builds/"
+pcli2 --quiet asset create-batch --files "build/*.stl" --folder-path "/Home/CI Builds/"
 PCLI2_LOG_LEVEL=trace pcli2 folder list
 ```
 
@@ -117,7 +120,7 @@ backoff, honoring the server's `Retry-After` header. The default is 2
 retries; tune it with `PCLI2_MAX_RETRIES` (0 disables retries):
 
 ```bash
-PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Root/Models/" --output ./downloads
+PCLI2_MAX_RETRIES=5 pcli2 folder download --folder-path "/Home/Models/" --output ./downloads
 ```
 
 The request timeout defaults to 30 minutes (large model files take that
@@ -125,7 +128,7 @@ long to transfer). Lower it with `PCLI2_TIMEOUT` (seconds) if you prefer
 fast failures over patience:
 
 ```bash
-PCLI2_TIMEOUT=120 pcli2 asset list --folder-path "/Root/Models/"
+PCLI2_TIMEOUT=120 pcli2 asset list --folder-path "/Home/Models/"
 ```
 
 Note that timeouts abort-and-retry only read requests (GETs); a timed-out
@@ -161,5 +164,5 @@ jobs:
         run: |
           pcli2 tenant use --name my-tenant
           pcli2 asset create-batch --files "build/*.stl" \
-            --folder-path "/Root/CI Builds/" --quiet --format json
+            --folder-path "/Home/CI Builds/" --quiet --format json
 ```

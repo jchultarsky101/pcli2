@@ -9,7 +9,7 @@ use crate::{
 #[derive(Debug, Error)]
 pub enum CliError {
     /// Error when an unsupported or undefined subcommand is encountered
-    #[error("Undefined or unsupported subcommand")]
+    #[error("Undefined or unsupported subcommand: {0}")]
     UnsupportedSubcommand(String),
     /// Error related to configuration loading or management
     #[error("Configuration error: {0}")]
@@ -18,7 +18,7 @@ pub enum CliError {
     #[error("Formatting error: {0}")]
     FormattingError(#[from] crate::format::FormattingError),
     /// Error related to security operations (authentication, keyring access)
-    #[error("Security error")]
+    #[error("{0}")]
     SecurityError(String),
     /// Error when a required command-line argument is missing
     #[error("Missing required argument: {0}")]
@@ -55,29 +55,48 @@ pub enum CliError {
 
     #[error("Excel report error: {0}")]
     XlsxReportError(#[from] crate::xlsx_report::XlsxReportError),
+
+    /// The failure was already reported in full, with remediation steps, by the
+    /// code that detected it. Carries only the exit code; nothing is printed again.
+    #[error("{}", .0.message())]
+    AlreadyReported(PcliExitCode),
 }
 
 impl CliError {
-    /// Get the appropriate exit code for this error
+    /// The exit code that describes this error to a script.
     ///
-    /// Returns the corresponding `PcliExitCode` based on the error type:
-    /// - `UsageError` for unsupported commands or missing arguments
-    /// - `ConfigError` for configuration errors
-    /// - `DataError` for formatting or JSON errors
-    /// - `AuthError` for security-related errors
+    /// Every variant is listed on purpose: a wildcard arm is how every API, network
+    /// and not-found failure came to exit 70 "internal software error" while the
+    /// documentation promised 100/101/102.
     pub fn exit_code(&self) -> PcliExitCode {
         match self {
-            CliError::UnsupportedSubcommand(_) => PcliExitCode::UsageError,
+            CliError::UnsupportedSubcommand(_) | CliError::MissingRequiredArgument(_) => {
+                PcliExitCode::UsageError
+            }
             CliError::ConfigurationError(_) => PcliExitCode::ConfigError,
-            CliError::FormattingError(_) => PcliExitCode::DataError,
+            CliError::FormattingError(_)
+            | CliError::JsonError(_)
+            | CliError::XlsxReportError(_) => PcliExitCode::DataError,
             CliError::SecurityError(_) => PcliExitCode::AuthError,
-            CliError::MissingRequiredArgument(_) => PcliExitCode::UsageError,
-            CliError::JsonError(_) => PcliExitCode::DataError,
-            CliError::TenantNotFound { .. } => PcliExitCode::UsageError,
-            CliError::FolderNotFound { .. } => PcliExitCode::UsageError,
-            CliError::AssetResolutionError(..) => PcliExitCode::UsageError,
-            CliError::XlsxReportError(_) => PcliExitCode::DataError,
-            _ => PcliExitCode::SoftwareError,
+            CliError::TenantNotFound { .. }
+            | CliError::FolderNotFound(..)
+            | CliError::AssetResolutionError(..) => PcliExitCode::NotFound,
+            CliError::FolderRenameFailed(..) => PcliExitCode::ApiError,
+            CliError::PhysnaExtendedApiError(e) => e.exit_code(),
+            CliError::UuidParsingError(_) => PcliExitCode::UsageError,
+            CliError::ActionError(e) => e.exit_code(),
+            CliError::FolderListError(FolderHierarchyError::ApiError(e)) => e.exit_code(),
+            CliError::AlreadyReported(code) => *code,
         }
+    }
+
+    /// True when the error has already been printed with its remediation steps and
+    /// must not be printed again on the way out.
+    pub fn is_already_reported(&self) -> bool {
+        matches!(
+            self,
+            CliError::AlreadyReported(_)
+                | CliError::ActionError(CliActionError::AlreadyReported(_))
+        )
     }
 }

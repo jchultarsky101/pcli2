@@ -115,68 +115,69 @@ pub fn report_warning<E: std::fmt::Display>(warning: &E) {
     tracing::warn!("{}", warning);
 }
 
-/// Create a user-friendly error message from a technical error
+/// Add a hint to an error message when its cause is one the user can act on.
 ///
-/// This function tries to provide user-friendly error messages for common technical errors
+/// The message itself is never replaced. It used to be: anything containing
+/// "401", "404", "connection" and the like was swapped for canned text, so a folder
+/// named `401-series` reported an authentication problem and an environment that did
+/// not exist lost its name. Only the OAuth error codes, which are unambiguous tokens
+/// from the auth server, still get an explanation appended.
 pub fn create_user_friendly_error<E: std::fmt::Display>(error: E) -> String {
     let error_str = error.to_string();
+    match oauth_hint(&error_str) {
+        Some(hint) => format!("{}\n💡 {}", error_str, hint),
+        None => error_str,
+    }
+}
 
-    // Check for common error patterns and provide user-friendly messages
+/// The explanation for an OAuth 2.0 error code embedded in a message, if any.
+fn oauth_hint(error_str: &str) -> Option<&'static str> {
     if error_str.contains("invalid_client") {
-        "Authentication failed: Invalid client credentials. This could be due to:\n  - Incorrect client ID or secret\n  - Expired or revoked client credentials\n  - Disabled service account\n  Please verify your credentials and log in again with 'pcli2 auth login'.".to_string()
+        Some("The auth server rejected the client credentials: the client ID or secret is wrong, expired, revoked, or the service account is disabled. Verify them and log in again with 'pcli2 auth login'.")
     } else if error_str.contains("invalid_grant") {
-        "Authentication failed: Invalid authorization grant. Please log in again with 'pcli2 auth login'.".to_string()
+        Some("The authorization grant was rejected. Log in again with 'pcli2 auth login'.")
     } else if error_str.contains("unauthorized_client") {
-        "Authentication failed: Unauthorized client. Please verify your client credentials and try logging in again with 'pcli2 auth login'.".to_string()
+        Some("This client is not authorized for the requested grant. Verify the client credentials and log in again with 'pcli2 auth login'.")
     } else if error_str.contains("invalid_request") {
-        "Authentication failed: Invalid request. Please verify your credentials and try logging in again with 'pcli2 auth login'.".to_string()
-    } else if error_str.contains("No access token") || error_str.contains("Authentication required")
-    {
-        // Handle authentication errors that indicate missing or invalid tokens
-        error_str
-    } else if error_str.contains("Metadata type mismatch") {
-        // Metadata type mismatch errors already have a good user-friendly message in the ApiError variant
-        error_str
-    } else if error_str.contains("401") || error_str.to_lowercase().contains("unauthorized") {
-        "Authentication failed. Please check your access token and try logging in again with 'pcli2 auth login'.".to_string()
-    } else if error_str.contains("403") || error_str.to_lowercase().contains("forbidden") {
-        "Access forbidden. You don't have permission to perform this operation. This may be due to:\n  - Missing access token (try 'pcli2 auth login')\n  - Expired access token (try 'pcli2 auth login')\n  - Insufficient permissions for this operation".to_string()
-    } else if error_str.to_lowercase().contains("folder")
-        && error_str.to_lowercase().contains("not found")
-    {
-        // Preserve the original Folder NotFound error message which may include suggestions
-        error_str
-    } else if error_str.contains("404") || error_str.to_lowercase().contains("not found") {
-        // Check if this is actually an authentication issue masquerading as a "not found" error
-        if error_str.to_lowercase().contains("authentication")
-            || error_str.to_lowercase().contains("token")
-        {
-            // This is likely an authentication error, not a resource not found error
-            "Authentication required. Please log in with 'pcli2 auth login'.".to_string()
-        } else {
-            "Resource not found. Please check the resource ID or path and try again.".to_string()
-        }
-    } else if error_str.contains("409") || error_str.to_lowercase().contains("conflict") {
-        // For 409 Conflict, provide a generic message
-        // But if the error also contains specific details, include them
-        if error_str.contains("400") || error_str.to_lowercase().contains("bad request") {
-            // This is actually a 400 error that was mislabeled - show the actual message
-            format!("Bad request. {}", error_str)
-        } else {
-            "Operation conflict. The resource may already exist or be in use.".to_string()
-        }
-    } else if error_str.contains("400") || error_str.to_lowercase().contains("bad request") {
-        // For 400 Bad Request, show the actual error message as it usually contains useful details
-        format!("Bad request. {}", error_str)
-    } else if error_str.to_lowercase().contains("timeout") {
-        "Request timeout. The server took too long to respond. Please try again.".to_string()
-    } else if error_str.to_lowercase().contains("connection")
-        || error_str.to_lowercase().contains("network")
-    {
-        "Network error. Please check your internet connection and try again.".to_string()
+        Some("The auth server rejected the request. Verify the credentials and log in again with 'pcli2 auth login'.")
     } else {
-        // Return the original error if no specific user-friendly message applies
-        error_str
+        None
+    }
+}
+
+/// Print a failed command's error the way `main` wants it: the message as-is,
+/// then one hint chosen from what the error *is* rather than from its text.
+pub fn report_cli_error(error: &crate::error::CliError) {
+    eprintln!("❌ Error: {}", create_user_friendly_error(error));
+    if let Some(hint) = hint_for(error) {
+        eprintln!("💡 {}", hint);
+    }
+    tracing::debug!("Technical error details: {:?}", error);
+}
+
+/// A remediation hint for the class of failure, when one applies.
+fn hint_for(error: &crate::error::CliError) -> Option<&'static str> {
+    use crate::exit_codes::PcliExitCode;
+    let text = error.to_string();
+    let forbidden = match error {
+        crate::error::CliError::PhysnaExtendedApiError(e) => e.is_forbidden(),
+        crate::error::CliError::ActionError(crate::actions::CliActionError::ApiError(e)) => {
+            e.is_forbidden()
+        }
+        _ => false,
+    };
+    match error.exit_code() {
+        PcliExitCode::AuthError if !text.contains("auth login") => {
+            Some("Log in again with 'pcli2 auth login'.")
+        }
+        PcliExitCode::NetworkError => Some(
+            "Check your network connection and the API URL of the active environment ('pcli2 env get').",
+        ),
+        PcliExitCode::ApiError if forbidden => Some(
+            "The request was authenticated but not permitted. Your account may lack the Author role for this tenant; ask a tenant administrator.",
+        ),
+        PcliExitCode::TempFail => Some("The failure looks transient; retry the command."),
+        _ => None,
     }
 }
 
@@ -206,17 +207,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_user_friendly_error_auth() {
-        let error_msg = "HTTP Error: 401 Unauthorized";
-        let friendly_msg = create_user_friendly_error(error_msg);
-        assert!(friendly_msg.contains("Authentication failed"));
-    }
+    fn messages_are_kept_verbatim_and_only_oauth_codes_get_a_hint() {
+        // Substrings that used to trigger a rewrite now pass through untouched.
+        for original in [
+            "HTTP Error: 401 Unauthorized",
+            "Folder '/Projects/401-series' not found. Did you mean /Projects/401-Series",
+            "Environment 'nope' not found",
+            "Failed to upload connection-bracket.stl",
+            "HTTP 409 - Asset not indexed yet",
+        ] {
+            assert_eq!(create_user_friendly_error(original), original);
+        }
 
-    #[test]
-    fn test_create_user_friendly_error_not_found() {
-        let error_msg = "Resource not found";
-        let friendly_msg = create_user_friendly_error(error_msg);
-        assert!(friendly_msg.contains("Resource not found"));
+        let with_hint = create_user_friendly_error("Authentication failed: invalid_client");
+        assert!(with_hint.starts_with("Authentication failed: invalid_client"));
+        assert!(with_hint.contains("client ID or secret"));
     }
 
     #[test]
@@ -227,11 +232,24 @@ mod tests {
     }
 
     #[test]
-    fn test_user_friendly_error_messages() {
-        // Test common error patterns
-        assert!(create_user_friendly_error("401 Unauthorized").contains("Authentication failed"));
-        assert!(create_user_friendly_error("404 Not Found").contains("Resource not found"));
-        assert!(create_user_friendly_error("timeout").contains("Request timeout"));
+    fn hints_follow_the_error_class_not_its_text() {
+        use crate::error::CliError;
+        use crate::physna_v3::ApiError;
+
+        let auth = CliError::PhysnaExtendedApiError(ApiError::AuthError("token rejected".into()));
+        assert!(hint_for(&auth).unwrap().contains("auth login"));
+        // A message that already says what to do gets no second copy of it.
+        let already_says_so = CliError::PhysnaExtendedApiError(ApiError::InvalidToken);
+        assert!(hint_for(&already_says_so).is_none());
+
+        let forbidden = CliError::PhysnaExtendedApiError(ApiError::HttpStatus {
+            status: 403,
+            message: "Forbidden".into(),
+        });
+        assert!(hint_for(&forbidden).unwrap().contains("Author role"));
+
+        let not_found = CliError::FolderNotFound("/x".into(), String::new());
+        assert!(hint_for(&not_found).is_none());
     }
 
     #[test]

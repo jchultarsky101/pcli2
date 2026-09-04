@@ -449,7 +449,7 @@ pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         }
         Err(api_error) => {
             // Check if this is a 404 error on a folder deletion, which likely means the folder is not empty
-            if api_error.to_string().contains("404 Not Found") && !force_flag {
+            if matches!(api_error, ApiError::NotFoundError(_)) && !force_flag {
                 // The folder exists (we resolved the UUID successfully) but can't be deleted because it's not empty
                 return Err(CliError::ActionError(crate::actions::CliActionError::BusinessLogicError(
                     "Folder is not empty. Use --force flag to delete the folder and all its contents recursively.".to_string()
@@ -1463,7 +1463,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
 
                     Ok(Ok(asset_name))
                 }
-                Err(ApiError::ConflictError(msg)) if msg.contains("Asset thumbnail not found") => {
+                Err(ApiError::NotFoundError(msg)) if msg.contains("Asset thumbnail not found") => {
                     // Update individual progress bar for skipped asset
                     if let Some(ref ipb) = individual_pb {
                         ipb.set_message(format!("Skipped thumbnail (not found): {}", asset_name));
@@ -1589,79 +1589,30 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
     Ok(())
 }
 
-/// Helper function to download asset thumbnail with retry logic
+/// Download an asset thumbnail.
+///
+/// The client already renews the token and retries once on 401/403, and retries
+/// transient failures, so there is nothing left to loop over here: an error that
+/// comes back is final for this asset. (An earlier version renewed the token up to
+/// three more times per asset, which on a Viewer account meant three auth-server
+/// calls for every thumbnail in a folder.)
 async fn download_asset_thumbnail_with_retry(
     api: &mut PhysnaApiClient,
     tenant_id: &str,
     asset_id: &str,
     asset_name: &str,
 ) -> Result<Vec<u8>, ApiError> {
-    let mut attempts = 0;
-    let max_attempts = 3;
-
-    loop {
-        match api.download_asset_thumbnail(tenant_id, asset_id).await {
-            Ok(content) => return Ok(content),
-            Err(ApiError::ConflictError(msg)) if msg.contains("Asset thumbnail not found") => {
-                // If the thumbnail doesn't exist for this asset, return an error that indicates
-                // this is not retryable, so the caller can skip this asset
-                tracing::debug!(
-                    "Thumbnail not found for asset '{}', skipping: {}",
-                    asset_name,
-                    msg
-                );
-                return Err(ApiError::ConflictError(msg));
-            }
-            Err(ApiError::AuthError(_)) if attempts < max_attempts => {
-                // For auth errors, try to refresh the token and retry
-                tracing::debug!("Auth error for asset thumbnail '{}', attempting to refresh token (attempt {}/{})", asset_name, attempts + 1, max_attempts);
-
-                match api.refresh_token().await {
-                    Ok(_) => {
-                        attempts += 1;
-                        tracing::debug!(
-                            "Token refreshed, retrying thumbnail download for asset '{}'",
-                            asset_name
-                        );
-                        continue; // Retry the download with the refreshed token
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to refresh token for asset thumbnail '{}': {}",
-                            asset_name,
-                            e
-                        );
-                        return Err(ApiError::AuthError(format!(
-                            "Failed to refresh token after {} attempts: {}",
-                            max_attempts, e
-                        )));
-                    }
-                }
-            }
-            Err(e) if attempts < max_attempts => {
-                // For other errors, retry up to max_attempts
-                attempts += 1;
-                tracing::debug!(
-                    "Retrying thumbnail download for asset '{}' (attempt {}/{}) due to error: {}",
-                    asset_name,
-                    attempts,
-                    max_attempts,
-                    e
-                );
-                tokio::time::sleep(Duration::from_millis(500)).await; // Wait 500ms before retry
-                continue;
-            }
-            Err(e) => {
-                // Return the final error after max attempts
-                tracing::error!(
-                    "Failed to download thumbnail for asset '{}' after {} attempts: {}",
-                    asset_name,
-                    max_attempts,
-                    e
-                );
-                return Err(e);
-            }
+    match api.download_asset_thumbnail(tenant_id, asset_id).await {
+        Ok(content) => Ok(content),
+        Err(ApiError::NotFoundError(msg)) if msg.contains("Asset thumbnail not found") => {
+            tracing::debug!(
+                "Thumbnail not found for asset '{}', skipping: {}",
+                asset_name,
+                msg
+            );
+            Err(ApiError::NotFoundError(msg))
         }
+        Err(e) => Err(e),
     }
 }
 

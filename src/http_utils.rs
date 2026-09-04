@@ -1,14 +1,32 @@
-//! HTTP utilities for the Physna CLI client.
+//! HTTP transport for the Physna CLI client.
 //!
-//! This module provides common HTTP request handling utilities to improve
-//! code reuse and consistency across different API clients in the application.
+//! One place owns how a request goes out: the client construction (timeouts, user
+//! agent), and [`HttpClient::send_with_retry`], which retries transient failures
+//! with backoff. Every request the API client makes goes through it, so a 503 or a
+//! `Retry-After` is handled the same way for a search, an upload and a download.
 
 use rand::Rng;
 use reqwest::Client;
-use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, warn};
+
+/// Identifies pcli2 traffic to the API, with the version so support can tell builds apart.
+pub const USER_AGENT: &str = concat!("PCLI2/", env!("CARGO_PKG_VERSION"));
+
+/// How long to wait for a TCP/TLS connection before giving up.
+///
+/// Separate from the total request timeout, which has to allow for multi-gigabyte
+/// uploads: a host that does not answer at all should fail in seconds, not in the
+/// thirty minutes a legitimate transfer is allowed.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How long a connection may sit with no bytes arriving before it is treated as dead.
+///
+/// A slow transfer keeps delivering bytes and never trips this; a server that has
+/// stopped responding mid-request does, well before the total timeout.
+const READ_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Default number of retries for transient failures (after the first attempt).
 ///
@@ -21,12 +39,13 @@ fn default_max_retries() -> u32 {
         .unwrap_or(2)
 }
 
-/// Default request timeout in seconds.
+/// Default total request timeout in seconds.
 ///
 /// The default is intentionally long (30 minutes) because uploads and
 /// downloads of very large model files legitimately take that long. Users
 /// working with small files can lower it with the PCLI2_TIMEOUT environment
-/// variable (seconds).
+/// variable (seconds). A hung connection is caught much earlier by the
+/// connect and read timeouts, which are not affected by this value.
 fn default_timeout() -> u64 {
     std::env::var("PCLI2_TIMEOUT")
         .ok()
@@ -37,7 +56,7 @@ fn default_timeout() -> u64 {
 
 /// HTTP status codes that indicate a transient condition worth retrying:
 /// request timeout, rate limiting, and upstream gateway failures.
-fn is_transient_status(status: reqwest::StatusCode) -> bool {
+pub(crate) fn is_transient_status(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 408 | 429 | 502 | 503 | 504)
 }
 
@@ -45,8 +64,8 @@ fn is_transient_status(status: reqwest::StatusCode) -> bool {
 ///
 /// A connect error means the request never reached the server, so it is
 /// safe to retry regardless of method. A timeout may fire after the server
-/// has started processing the request, so only idempotent requests (GETs)
-/// are retried on timeouts - retrying a timed-out POST could apply the
+/// has started processing the request, so only idempotent requests are
+/// retried on timeouts - retrying a timed-out POST could apply the
 /// operation twice.
 fn is_retryable_network_error(error: &reqwest::Error, idempotent: bool) -> bool {
     error.is_connect() || (idempotent && error.is_timeout())
@@ -54,21 +73,32 @@ fn is_retryable_network_error(error: &reqwest::Error, idempotent: bool) -> bool 
 
 /// Compute the delay before the next retry attempt.
 ///
-/// Honors the server's Retry-After header (seconds form, capped at 60s)
-/// when present; otherwise applies exponential backoff with jitter
-/// starting at 500ms and capped at 10s.
+/// Honors the server's Retry-After header when present, in either the
+/// delay-seconds or the HTTP-date form, capped at 60s; otherwise applies
+/// exponential backoff with jitter starting at 500ms and capped at 10s.
 fn retry_delay(response: Option<&reqwest::Response>, attempt: u32) -> Duration {
-    if let Some(response) = response {
-        if let Some(retry_after) = response.headers().get(reqwest::header::RETRY_AFTER) {
-            if let Ok(seconds) = retry_after.to_str().unwrap_or_default().parse::<u64>() {
-                return Duration::from_secs(seconds.min(60));
-            }
-        }
+    if let Some(retry_after) = response
+        .and_then(|r| r.headers().get(reqwest::header::RETRY_AFTER))
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_retry_after)
+    {
+        return retry_after.min(Duration::from_secs(60));
     }
 
     let base_ms = 500u64.saturating_mul(1u64 << attempt.min(5));
     let jitter_ms = rand::thread_rng().gen_range(0..=250);
     Duration::from_millis(base_ms.min(10_000) + jitter_ms)
+}
+
+/// Parse a `Retry-After` value: a number of seconds, or an HTTP date.
+fn parse_retry_after(value: &str) -> Option<Duration> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let at = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let delta = at.signed_duration_since(chrono::Utc::now());
+    Some(Duration::from_secs(delta.num_seconds().max(0) as u64))
 }
 
 /// Configuration for HTTP requests with common settings
@@ -78,7 +108,7 @@ pub struct HttpRequestConfig {
     pub base_url: String,
     /// Default headers to include with all requests
     pub default_headers: HashMap<String, String>,
-    /// Request timeout in seconds
+    /// Total request timeout in seconds
     pub timeout: u64,
     /// Whether to automatically retry on certain error codes
     pub retry_on_auth_error: bool,
@@ -94,13 +124,10 @@ pub struct HttpRequestConfig {
 
 impl Default for HttpRequestConfig {
     fn default() -> Self {
-        let mut default_headers = HashMap::new();
-        default_headers.insert("User-Agent".to_string(), "PCLI2".to_string());
-
         let timeout = default_timeout();
         Self {
             base_url: "https://app-api.physna.com/v3".to_string(),
-            default_headers,
+            default_headers: HashMap::new(),
             timeout,
             retry_on_auth_error: true,
             upload_timeout: Some(timeout),
@@ -113,24 +140,23 @@ impl Default for HttpRequestConfig {
 
 impl HttpRequestConfig {
     pub fn from_configuration(configuration: &crate::configuration::Configuration) -> Self {
-        let mut default_headers = HashMap::new();
-        default_headers.insert("User-Agent".to_string(), "PCLI2".to_string());
-
-        let timeout = default_timeout();
         Self {
             base_url: configuration.get_api_base_url(),
-            default_headers,
-            timeout,
-            retry_on_auth_error: true,
-            upload_timeout: Some(timeout),
-            download_timeout: Some(timeout),
-            search_timeout: Some(timeout),
-            max_retries: default_max_retries(),
+            ..Self::default()
         }
     }
 }
 
-use std::sync::Arc;
+/// Build the underlying reqwest client with the timeouts and identity every
+/// pcli2 request should carry.
+fn build_client(total_timeout: u64) -> Result<Client, reqwest::Error> {
+    Client::builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
+        .timeout(Duration::from_secs(total_timeout))
+        .build()
+}
 
 /// HTTP client wrapper with common request handling logic
 #[derive(Clone)]
@@ -151,9 +177,7 @@ impl HttpClient {
     pub fn new(
         config: HttpRequestConfig,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(config.timeout))
-            .build()
+        let client = build_client(config.timeout)
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         Ok(Self {
@@ -166,24 +190,15 @@ impl HttpClient {
     pub fn new_with_timeout(
         timeout: u64,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(timeout))
-            .build()
+        let client = build_client(timeout)
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         let config = HttpRequestConfig {
-            base_url: "https://app-api.physna.com/v3".to_string(), // Default base URL
-            default_headers: {
-                let mut headers = std::collections::HashMap::new();
-                headers.insert("User-Agent".to_string(), "PCLI2".to_string());
-                headers
-            },
             timeout,
-            retry_on_auth_error: true,
             upload_timeout: None,
             download_timeout: None,
             search_timeout: None,
-            max_retries: default_max_retries(),
+            ..HttpRequestConfig::default()
         };
 
         Ok(Self {
@@ -192,126 +207,37 @@ impl HttpClient {
         })
     }
 
-    /// Make a GET request to the specified path with automatic error handling
-    pub async fn get<T>(
-        &self,
-        path: &str,
-        auth_token: Option<&str>,
-    ) -> Result<T, crate::physna_v3::ApiError>
-    where
-        T: DeserializeOwned,
-    {
-        self.execute_request(
-            |client_builder| client_builder.get(format!("{}{}", self.config.base_url, path)),
-            auth_token,
-            true,
-        )
-        .await
-    }
-
-    /// Make a POST request to the specified path with JSON body and automatic error handling
-    pub async fn post<T, B>(
-        &self,
-        path: &str,
-        body: &B,
-        auth_token: Option<&str>,
-    ) -> Result<T, crate::physna_v3::ApiError>
-    where
-        T: DeserializeOwned,
-        B: serde::Serialize,
-    {
-        self.execute_request(
-            |client_builder| {
-                client_builder
-                    .post(format!("{}{}", self.config.base_url, path))
-                    .json(body)
-            },
-            auth_token,
-            false,
-        )
-        .await
-    }
-
-    /// Make a PUT request to the specified path with JSON body and automatic error handling
-    pub async fn put<T, B>(
-        &self,
-        path: &str,
-        body: &B,
-        auth_token: Option<&str>,
-    ) -> Result<T, crate::physna_v3::ApiError>
-    where
-        T: DeserializeOwned,
-        B: serde::Serialize,
-    {
-        self.execute_request(
-            |client_builder| {
-                client_builder
-                    .put(format!("{}{}", self.config.base_url, path))
-                    .json(body)
-            },
-            auth_token,
-            false,
-        )
-        .await
-    }
-
-    /// Make a DELETE request to the specified path with automatic error handling
-    pub async fn delete(
-        &self,
-        path: &str,
-        auth_token: Option<&str>,
-    ) -> Result<(), crate::physna_v3::ApiError> {
-        let response = self
-            .send_with_retry(
-                |client| client.delete(format!("{}{}", self.config.base_url, path)),
-                auth_token,
-                false,
-            )
-            .await?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            // error_for_status() only yields Err for 4xx/5xx; a 1xx/3xx
-            // (e.g. an unfollowed redirect) must not panic on unwrap_err.
-            match response.error_for_status() {
-                Err(e) => Err(crate::physna_v3::ApiError::HttpError(e)),
-                Ok(response) => Err(crate::physna_v3::ApiError::ConflictError(format!(
-                    "Unexpected HTTP status: {}",
-                    response.status()
-                ))),
-            }
-        }
-    }
-
     /// Send a request, retrying transient failures with exponential backoff.
+    ///
+    /// `request_builder` is called once per attempt and must produce a fresh
+    /// request each time (a streamed body cannot be replayed). It may fail, for
+    /// example when the file to upload cannot be opened, and that error is
+    /// returned as-is.
     ///
     /// Transient failures are connection errors, network timeouts (idempotent
     /// requests only - see `is_retryable_network_error`), and the
     /// 408/429/502/503/504 status codes. The Retry-After header is honored
-    /// when the server provides one. Non-transient responses (including
-    /// other error statuses) are returned to the caller for handling.
-    async fn send_with_retry<F>(
+    /// when the server provides one. Every other response, including 401/403
+    /// and other error statuses, is returned to the caller for handling.
+    pub(crate) async fn send_with_retry<F>(
         &self,
-        request_builder: F,
+        mut request_builder: F,
         auth_token: Option<&str>,
         idempotent: bool,
     ) -> Result<reqwest::Response, crate::physna_v3::ApiError>
     where
-        F: Fn(&Client) -> reqwest::RequestBuilder,
+        F: FnMut(&Client) -> Result<reqwest::RequestBuilder, crate::physna_v3::ApiError>,
     {
         let max_retries = self.config.max_retries;
         let mut attempt: u32 = 0;
 
         loop {
-            let mut request = request_builder(&self.client);
+            let mut request = request_builder(&self.client)?;
 
-            // Add authorization header if available
             if let Some(token) = auth_token {
                 request = request.header("Authorization", format!("Bearer {}", token));
             }
 
-            // Add default headers
             for (key, value) in &self.config.default_headers {
                 request = request.header(key, value);
             }
@@ -350,67 +276,10 @@ impl HttpClient {
                 continue;
             }
 
+            if attempt > 0 {
+                debug!("Request succeeded after {} retry attempt(s)", attempt);
+            }
             return Ok(response);
-        }
-    }
-
-    /// Execute an HTTP request with common error handling and optional authentication
-    async fn execute_request<F, T>(
-        &self,
-        request_builder: F,
-        auth_token: Option<&str>,
-        idempotent: bool,
-    ) -> Result<T, crate::physna_v3::ApiError>
-    where
-        F: Fn(&Client) -> reqwest::RequestBuilder,
-        T: DeserializeOwned,
-    {
-        let response = self
-            .send_with_retry(request_builder, auth_token, idempotent)
-            .await?;
-
-        // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
-        // We retry on both 401 and 403 as they can both indicate authentication issues
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED
-            || response.status() == reqwest::StatusCode::FORBIDDEN
-        {
-            debug!(
-                "Received authentication error ({}), request should be retried with fresh token",
-                response.status()
-            );
-            Err(crate::physna_v3::ApiError::HttpError(
-                response.error_for_status().unwrap_err(),
-            ))
-        } else if response.status().is_success() {
-            // Try to get the raw response text for debugging
-            let response_text = response
-                .text()
-                .await
-                .map_err(crate::physna_v3::ApiError::HttpError)?;
-            trace!("Raw response text for deserialization: {}", response_text);
-
-            // Try to parse and return the JSON response
-            match serde_json::from_str::<T>(&response_text) {
-                Ok(result) => Ok(result),
-                Err(e) => {
-                    error!(
-                        "Failed to deserialize response: {}. Raw response: {}",
-                        e, response_text
-                    );
-                    Err(crate::physna_v3::ApiError::JsonError(e))
-                }
-            }
-        } else {
-            // For all other errors, return the error status.
-            // error_for_status() only yields Err for 4xx/5xx; a 1xx/3xx
-            // (e.g. an unfollowed redirect) must not panic on unwrap_err.
-            match response.error_for_status() {
-                Err(e) => Err(crate::physna_v3::ApiError::HttpError(e)),
-                Ok(response) => Err(crate::physna_v3::ApiError::ConflictError(format!(
-                    "Unexpected HTTP status: {}",
-                    response.status()
-                ))),
-            }
         }
     }
 }
@@ -428,10 +297,9 @@ mod tests {
     }
 
     #[test]
-    fn test_http_client_config() {
-        let config = HttpRequestConfig::default();
-        assert_eq!(config.timeout, 1800);
-        assert!(config.retry_on_auth_error);
+    fn user_agent_carries_the_version() {
+        assert!(USER_AGENT.starts_with("PCLI2/"));
+        assert!(USER_AGENT.ends_with(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]
@@ -452,9 +320,6 @@ mod tests {
 
     #[test]
     fn test_retry_delay_backoff_bounds() {
-        // Without a Retry-After header, backoff grows exponentially
-        // (500ms base doubling per attempt) plus up to 250ms of jitter,
-        // capped at 10s base.
         let first = retry_delay(None, 0);
         assert!(first >= Duration::from_millis(500));
         assert!(first <= Duration::from_millis(750));
@@ -465,5 +330,117 @@ mod tests {
 
         let capped = retry_delay(None, 30);
         assert!(capped <= Duration::from_millis(10_250));
+    }
+
+    #[test]
+    fn retry_after_accepts_seconds_and_http_dates() {
+        assert_eq!(parse_retry_after("7"), Some(Duration::from_secs(7)));
+        assert_eq!(parse_retry_after(" 3 "), Some(Duration::from_secs(3)));
+        let soon = chrono::Utc::now() + chrono::Duration::seconds(30);
+        let parsed = parse_retry_after(&soon.to_rfc2822()).expect("http date parses");
+        assert!(parsed <= Duration::from_secs(30));
+        assert!(parsed >= Duration::from_secs(28));
+        // A date in the past means "now", never a negative duration.
+        let past = chrono::Utc::now() - chrono::Duration::seconds(30);
+        assert_eq!(parse_retry_after(&past.to_rfc2822()), Some(Duration::ZERO));
+        assert_eq!(parse_retry_after("garbage"), None);
+    }
+
+    #[tokio::test]
+    async fn transient_status_is_retried_then_succeeds() {
+        let mut server = mockito::Server::new_async().await;
+        let flaky = server
+            .mock("GET", "/flaky")
+            .with_status(503)
+            .expect(1)
+            .create_async()
+            .await;
+        let ok = server
+            .mock("GET", "/flaky")
+            .with_status(200)
+            .with_body("fine")
+            .expect(1)
+            .create_async()
+            .await;
+        // mockito serves mocks in registration order for identical matchers,
+        // so the first call sees 503 and the retry sees 200.
+        let client = HttpClient::new(HttpRequestConfig {
+            max_retries: 2,
+            ..HttpRequestConfig::default()
+        })
+        .unwrap();
+        let url = format!("{}/flaky", server.url());
+        let response = client
+            .send_with_retry(|c| Ok(c.get(&url)), None, true)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        flaky.assert_async().await;
+        ok.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn retries_are_exhausted_and_the_last_response_is_returned() {
+        let mut server = mockito::Server::new_async().await;
+        let m = server
+            .mock("GET", "/down")
+            .with_status(503)
+            .expect(3)
+            .create_async()
+            .await;
+        let client = HttpClient::new(HttpRequestConfig {
+            max_retries: 2,
+            ..HttpRequestConfig::default()
+        })
+        .unwrap();
+        let url = format!("{}/down", server.url());
+        let response = client
+            .send_with_retry(|c| Ok(c.get(&url)), None, true)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 503);
+        m.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn non_transient_errors_are_not_retried() {
+        let mut server = mockito::Server::new_async().await;
+        let m = server
+            .mock("GET", "/nope")
+            .with_status(500)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = HttpClient::new(HttpRequestConfig {
+            max_retries: 2,
+            ..HttpRequestConfig::default()
+        })
+        .unwrap();
+        let url = format!("{}/nope", server.url());
+        let response = client
+            .send_with_retry(|c| Ok(c.get(&url)), None, true)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 500);
+        m.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn bearer_token_and_user_agent_are_sent() {
+        let mut server = mockito::Server::new_async().await;
+        let m = server
+            .mock("GET", "/who")
+            .match_header("authorization", "Bearer tok")
+            .match_header("user-agent", USER_AGENT)
+            .with_status(200)
+            .create_async()
+            .await;
+        let client = HttpClient::new(HttpRequestConfig::default()).unwrap();
+        let url = format!("{}/who", server.url());
+        client
+            .send_with_retry(|c| Ok(c.get(&url)), Some("tok"), true)
+            .await
+            .unwrap();
+        m.assert_async().await;
     }
 }

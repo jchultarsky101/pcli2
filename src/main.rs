@@ -24,8 +24,7 @@ use tracing_subscriber::EnvFilter;
 mod banner;
 mod cli;
 use cli::execute_command;
-mod exit_codes;
-use exit_codes::PcliExitCode;
+use pcli2::exit_codes::PcliExitCode;
 
 /// Error types that can occur in the main application
 #[derive(Error, Debug)]
@@ -119,7 +118,13 @@ async fn main() {
             if pcli2::commands::should_hint_after_parse_error(&e) {
                 pcli2::update_check::maybe_print_update_hint().await;
             }
-            process::exit(e.exit_code());
+            // clap exits 2 for usage errors and 0 for help/version. The documented
+            // contract (and sysexits) says usage errors are 64.
+            process::exit(if e.use_stderr() {
+                PcliExitCode::UsageError.code()
+            } else {
+                0
+            });
         }
     };
 
@@ -143,7 +148,9 @@ async fn main() {
             process::exit(0);
         }
         Err(e) => {
-            error_utils::report_detailed_error(&e, None); // Remove generic context
+            if !e.is_already_reported() {
+                error_utils::report_cli_error(&e);
+            }
 
             // Also hint on failure, and after the error so it is the last thing read.
             // A command that just failed is when being several versions behind matters

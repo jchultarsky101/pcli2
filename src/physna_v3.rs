@@ -13,7 +13,7 @@ use reqwest;
 use serde_json;
 use serde_urlencoded;
 use std::path::Path;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, trace, warn};
 use uuid::Uuid;
 
 /// Error emitted by the Physna V3 Api
@@ -614,7 +614,10 @@ impl PhysnaApiClient {
             HttpClient::new(config).expect("Failed to build HTTP client with timeout");
 
         Self {
-            base_url: configuration.get_api_base_url(),
+            base_url: configuration
+                .get_api_base_url()
+                .trim_end_matches('/')
+                .to_string(),
             access_token: SharedToken::default(),
             renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             client_credentials: None,
@@ -633,7 +636,10 @@ impl PhysnaApiClient {
             HttpClient::new(config).expect("Failed to build HTTP client with timeout");
 
         Self {
-            base_url: configuration.get_api_base_url(),
+            base_url: configuration
+                .get_api_base_url()
+                .trim_end_matches('/')
+                .to_string(),
             access_token: SharedToken::default(),
             renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             client_credentials: None,
@@ -672,7 +678,9 @@ impl PhysnaApiClient {
     /// # Returns
     /// The updated `PhysnaApiClient` instance with the new base URL
     pub fn with_base_url(mut self, base_url: String) -> Self {
-        self.base_url = base_url;
+        // Paths are appended with their own leading slash; a configured URL ending
+        // in one produced `https://host/v3//tenants/...`.
+        self.base_url = base_url.trim_end_matches('/').to_string();
         self
     }
 
@@ -1136,7 +1144,14 @@ impl PhysnaApiClient {
 
     /// Generic method to build and execute DELETE requests with automatic token refresh
     async fn delete(&mut self, url: &str) -> Result<(), ApiError> {
-        self.request_with_auth(|client| Ok(client.delete(url)), true)
+        // Callers pass a path relative to the API base (`/tenants/...`); an absolute
+        // URL is used as given.
+        let url = if url.starts_with("http://") || url.starts_with("https://") {
+            url.to_string()
+        } else {
+            format!("{}{}", self.base_url, url)
+        };
+        self.request_with_auth(|client| Ok(client.delete(&url)), true)
             .await
             .map(|_| ())
     }
@@ -1505,6 +1520,17 @@ impl PhysnaApiClient {
             assets.extend(partial_asset_list);
 
             if response.page_data.current_page >= response.page_data.last_page {
+                break;
+            }
+            // A server that echoes a stale page number would otherwise be asked for
+            // the same page forever.
+            if response.page_data.current_page < page {
+                warn!(
+                    "Asset listing returned page {} when page {} was requested; stopping with {} asset(s)",
+                    response.page_data.current_page,
+                    page,
+                    assets.len()
+                );
                 break;
             }
 
@@ -2093,7 +2119,7 @@ impl PhysnaApiClient {
         Ok((subfolders, assets))
     }
 
-    fn get_parent_folder_path<S: AsRef<str>>(asset_path: S) -> Result<String, ApiError> {
+    pub(crate) fn get_parent_folder_path<S: AsRef<str>>(asset_path: S) -> Result<String, ApiError> {
         let asset_path = asset_path.as_ref();
         let path = Path::new(asset_path);
         let parent = path
@@ -2117,7 +2143,7 @@ impl PhysnaApiClient {
         Ok(normalized_parent)
     }
 
-    fn asset_name_from_path(path: &str) -> Option<String> {
+    pub(crate) fn asset_name_from_path(path: &str) -> Option<String> {
         Path::new(path)
             .file_name()
             .and_then(|s| s.to_str())
@@ -2267,31 +2293,50 @@ impl PhysnaApiClient {
         metadata: &std::collections::HashMap<String, serde_json::Value>,
         declared_types: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<(), ApiError> {
-        // Get existing metadata fields for the tenant
-        let existing_fields_response = self.get_metadata_fields(&tenant_uuid.to_string()).await;
+        let mut registry = self.fetch_metadata_field_types(tenant_uuid).await?;
+        self.update_asset_metadata_with_registry(
+            tenant_uuid,
+            asset_uuid,
+            metadata,
+            declared_types,
+            &mut registry,
+        )
+        .await
+    }
 
-        let mut field_type_map: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
+    /// The tenant's registered metadata fields, name to type.
+    ///
+    /// A failure here is returned rather than treated as "no fields": with an empty
+    /// registry every value is inferred as a new text field, the API then rejects
+    /// `"18"` for a number field, and the user is told their CSV has a type
+    /// conflict when the real problem was a request that did not go through.
+    pub async fn fetch_metadata_field_types(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<std::collections::HashMap<String, String>, ApiError> {
+        let fields = self.get_metadata_fields(&tenant_uuid.to_string()).await?;
+        debug!(
+            "Retrieved {} existing metadata fields for tenant",
+            fields.metadata_fields.len()
+        );
+        Ok(fields
+            .metadata_fields
+            .into_iter()
+            .map(|field| (field.name, field.field_type))
+            .collect())
+    }
 
-        if let Ok(fields_response) = existing_fields_response {
-            debug!(
-                "Retrieved {} existing metadata fields for tenant",
-                fields_response.metadata_fields.len()
-            );
-            for field in fields_response.metadata_fields {
-                debug!(
-                    "Found metadata field: '{}' with type: '{}'",
-                    field.name, field.field_type
-                );
-                field_type_map.insert(field.name, field.field_type);
-            }
-        } else {
-            debug!(
-                "Failed to retrieve metadata fields: {:?}",
-                existing_fields_response
-            );
-        }
-
+    /// Like [`Self::update_asset_metadata_with_registration`], with the field
+    /// registry supplied by the caller and kept up to date as fields are
+    /// registered - so a batch fetches the registry once instead of once per row.
+    pub async fn update_asset_metadata_with_registry(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+        metadata: &std::collections::HashMap<String, serde_json::Value>,
+        declared_types: Option<&std::collections::HashMap<String, String>>,
+        field_type_map: &mut std::collections::HashMap<String, String>,
+    ) -> Result<(), ApiError> {
         // Build the outgoing payload, coercing every value to the type the field
         // is (or will be) registered with. The registered type is authoritative:
         // a string "18" is sent as the JSON number 18 for a number-typed field, a
@@ -2352,7 +2397,10 @@ impl PhysnaApiClient {
                     .create_metadata_field(&tenant_uuid.to_string(), key, Some(register_type))
                     .await
                 {
-                    Ok(_) => debug!("Successfully registered new metadata field: {}", key),
+                    Ok(_) => {
+                        debug!("Successfully registered new metadata field: {}", key);
+                        field_type_map.insert(key.clone(), register_type.to_string());
+                    }
                     Err(e) => {
                         debug!("Failed to register metadata field '{}': {}", key, e);
                         // Continue anyway, as the API might allow setting values
@@ -3150,7 +3198,7 @@ impl PhysnaApiClient {
         loop {
             // Check if we've hit the hard limit.
             if page > max_pages_limit {
-                debug!(
+                warn!(
                     "Reached hard page limit of {}, stopping visual search pagination",
                     max_pages_limit
                 );
@@ -3299,7 +3347,7 @@ impl PhysnaApiClient {
 
         loop {
             if page > max_pages_limit {
-                debug!(
+                warn!(
                     "Reached hard page limit of {}, stopping text search pagination",
                     max_pages_limit
                 );
@@ -4651,7 +4699,7 @@ impl PhysnaApiClient {
         loop {
             // Check if we've hit the hard limit
             if page > max_pages_limit {
-                debug!(
+                warn!(
                     "Reached hard page limit of {}, stopping to prevent excessive API calls",
                     max_pages_limit
                 );
@@ -4745,7 +4793,9 @@ impl PhysnaApiClient {
     ) -> Result<crate::actions::users::User, ApiError> {
         let url = format!(
             "{}/tenants/{}/users/{}",
-            self.base_url, tenant_uuid, user_id
+            self.base_url,
+            tenant_uuid,
+            urlencoding::encode(user_id)
         );
 
         debug!(
@@ -5129,20 +5179,41 @@ fn extract_file_extension_from_error(error_msg: &str) -> String {
 /// lists (e.g. "file1.stl,file2.stl"). Comma-separated entries that do
 /// not exist on disk are silently skipped, matching upload behavior.
 pub fn expand_upload_paths(pattern: &str) -> Result<Vec<std::path::PathBuf>, ApiError> {
-    let paths = if pattern.contains(',') {
-        // Comma-separated list of file paths
-        pattern
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(std::path::PathBuf::from)
-            .filter(|path| path.exists())
-            .collect()
+    let paths: Vec<std::path::PathBuf> = if pattern.contains(',') {
+        // Comma-separated list of explicit file paths. A path that does not exist
+        // is an error: it used to be dropped silently, so a typo in one of the
+        // names simply uploaded one file fewer.
+        let mut paths = Vec::new();
+        for entry in pattern.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let path = std::path::PathBuf::from(entry);
+            if !path.is_file() {
+                return Err(ApiError::PathNotFound(entry.to_string()));
+            }
+            paths.push(path);
+        }
+        paths
     } else {
-        // Glob pattern
-        glob(pattern)?
-            .filter_map(|path_result| path_result.ok())
-            .collect()
+        // Glob pattern: files only. Directories that match are skipped and
+        // counted rather than turned into per-file failures.
+        let mut skipped_dirs = 0usize;
+        let mut paths = Vec::new();
+        for path in glob(pattern)?.filter_map(|path_result| path_result.ok()) {
+            if path.is_dir() {
+                skipped_dirs += 1;
+            } else {
+                paths.push(path);
+            }
+        }
+        if skipped_dirs > 0 {
+            warn!(
+                "{} director{} matched '{}' and {} skipped; only files are uploaded",
+                skipped_dirs,
+                if skipped_dirs == 1 { "y" } else { "ies" },
+                pattern,
+                if skipped_dirs == 1 { "was" } else { "were" }
+            );
+        }
+        paths
     };
     Ok(paths)
 }

@@ -575,19 +575,13 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
             let folder: crate::model::Folder = folder;
 
-            let folder_path = folder.path();
-            // Special handling for root folder
-            if folder_path.trim() == "/" {
-                // Use tenant name for root folder
+            // The folder record carries its name; its `path` field is always empty
+            // here, which is why this used to produce a directory called "untitled".
+            let name = folder.name();
+            if name.trim().is_empty() {
                 tenant.name.clone()
             } else {
-                let path_segments: Vec<&str> =
-                    folder_path.split('/').filter(|s| !s.is_empty()).collect();
-                if path_segments.is_empty() {
-                    "untitled".to_string()
-                } else {
-                    path_segments.last().unwrap().to_string()
-                }
+                name
             }
         };
 
@@ -1131,19 +1125,13 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             // If the folder was specified by UUID, get the folder details to determine the name
             let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
 
-            let folder_path = folder.path();
-            // Special handling for root folder
-            if folder_path.trim() == "/" {
-                // Use tenant name for root folder
+            // The folder record carries its name; its `path` field is always empty
+            // here, which is why this used to produce a directory called "untitled".
+            let name = folder.name();
+            if name.trim().is_empty() {
                 tenant.name.clone()
             } else {
-                let path_segments: Vec<&str> =
-                    folder_path.split('/').filter(|s| !s.is_empty()).collect();
-                if path_segments.is_empty() {
-                    "untitled".to_string()
-                } else {
-                    path_segments.last().unwrap().to_string()
-                }
+                name
             }
         };
 
@@ -1984,15 +1972,6 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 folder_uuid_clone
             );
 
-            // Read the file content
-            let file_content = std::fs::read(&file_path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-            // Create a temporary file to pass to the API
-            let temp_file = std::env::temp_dir().join(&file_name_str);
-            std::fs::write(&temp_file, &file_content)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
             // Construct the asset path using the original folder path and file name
             // Remove leading slash if present to avoid path conflicts
             let asset_path = match original_folder_path_clone.trim_matches('/') {
@@ -2004,14 +1983,13 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             let upload_result = api_task
                 .create_asset(
                     &tenant_clone.uuid,
-                    &temp_file,
+                    &file_path,
                     &asset_path,
                     &folder_uuid_clone,
                 )
                 .await;
 
             // Clean up the temporary file
-            let _ = std::fs::remove_file(&temp_file);
 
             match upload_result {
                 Ok(_) => {

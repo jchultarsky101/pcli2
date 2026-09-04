@@ -146,7 +146,16 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     }
 
     let asset = if override_flag {
-        let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await.ok();
+        // Only "absent" means absent. A network or session failure used to be
+        // read as "does not exist", after which the plain upload hit a 409.
+        let existing = match api.get_asset_by_path(&tenant.uuid, &asset_path).await {
+            Ok(asset) => Some(asset),
+            Err(ApiError::PathNotFound(_))
+            | Err(ApiError::NotFoundError(_))
+            | Err(ApiError::FolderNotFound(_))
+            | Err(ApiError::InvalidAssetPath(_)) => None,
+            Err(e) => return Err(e.into()),
+        };
 
         if let Some(existing) = existing {
             debug!(
@@ -434,6 +443,12 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     let mut success_count = 0;
     let mut failure_count = 0;
     let mut skipped_missing = 0;
+    // One listing per distinct parent folder, and one registry fetch, for the
+    // whole run. Both used to happen once per row: a 5,000-row batch into a
+    // 10,000-asset folder was a quarter of a million requests.
+    let mut folder_listings: std::collections::HashMap<String, crate::model::AssetList> =
+        std::collections::HashMap::new();
+    let mut field_registry = api.fetch_metadata_field_types(&tenant.uuid).await?;
     let mut auth_failure_occurred = false;
     // Tracked separately from a credential failure: the run stops for both, but
     // "re-authenticate" is useless advice when the session is fine and the account
@@ -501,7 +516,10 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             None => {
                 let lookup_result = match &entry.asset {
                     BatchAssetRef::Uuid(uuid) => api.get_asset_by_uuid(&tenant.uuid, uuid).await,
-                    BatchAssetRef::Path(path) => api.get_asset_by_path(&tenant.uuid, path).await,
+                    BatchAssetRef::Path(path) => {
+                        asset_by_path_cached(&mut api, &tenant.uuid, path, &mut folder_listings)
+                            .await
+                    }
                 };
                 match lookup_result {
                     Ok(asset) => {
@@ -534,6 +552,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             e,
                             ApiError::NotFoundError(_)
                                 | ApiError::PathNotFound(_)
+                                | ApiError::FolderNotFound(_)
                                 | ApiError::InvalidAssetPath(_)
                         );
 
@@ -716,11 +735,12 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         // Update fields with non-empty values
         if !typed_metadata.is_empty() {
             if let Err(e) = api
-                .update_asset_metadata_with_registration(
+                .update_asset_metadata_with_registry(
                     &tenant.uuid,
                     &asset.uuid(),
                     &typed_metadata,
                     Some(declared_types),
+                    &mut field_registry,
                 )
                 .await
             {
@@ -961,4 +981,26 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
     // No output on success (per requirements)
 
     Ok(())
+}
+
+/// Resolve an asset by path, listing each parent folder at most once per run.
+async fn asset_by_path_cached(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &uuid::Uuid,
+    asset_path: &str,
+    listings: &mut std::collections::HashMap<String, crate::model::AssetList>,
+) -> Result<crate::model::Asset, ApiError> {
+    let parent = PhysnaApiClient::get_parent_folder_path(asset_path)?;
+    if !listings.contains_key(&parent) {
+        let listing = api
+            .list_assets_by_parent_folder_path(tenant_uuid, &parent)
+            .await?;
+        listings.insert(parent.clone(), listing);
+    }
+    let name = PhysnaApiClient::asset_name_from_path(asset_path)
+        .ok_or_else(|| ApiError::InvalidAssetPath(asset_path.to_string()))?;
+    listings[&parent]
+        .find_by_name(&name)
+        .cloned()
+        .ok_or_else(|| ApiError::PathNotFound(asset_path.to_string()))
 }

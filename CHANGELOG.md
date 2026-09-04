@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`asset delete` and `folder delete` work again** - The request-path rewrite in this release cycle sent the relative API path as the whole URL for DELETE; caught before release, with a regression test.
+- **`asset metadata create-batch` fetches the field registry once and lists each parent folder once** - Both happened per row: a 5,000-row batch into a 10,000-asset folder was about a quarter of a million requests. A registry fetch that fails is now an error rather than "no fields exist", which used to turn every value into a new text field and report the API's rejection as a type conflict in the user's CSV.
+- **Cache files are written atomically and carry a schema version** - Two pcli2 processes (a script under `xargs -P`) could read a half-written cache and refetch the whole hierarchy; a cache written by another version is now discarded instead of decoded wrongly. A cache timestamp from the future no longer panics a debug build.
+- **Asset listing stops if the server echoes a stale page number** - The page loop had no guard against being asked for the same page forever.
+- **Listings that hit the safety page cap say so** - The truncation of very large user and asset listings was logged at debug level only.
+- **`--files a,b,c` rejects a path that does not exist** - It was dropped silently, so a typo uploaded one file fewer. Directories matched by a glob are skipped and counted instead of becoming per-file failures.
+- **`asset metadata create --type number` no longer saturates large values** - `1e20` was stored as 9223372036854775807. `--type boolean` with a value that is not a boolean is sent as-is so the API rejects it, instead of silently writing `false`.
+- **`asset metadata get` prints `{}` (or CSV headers) for an asset without metadata** - stdout used to be empty for a successful command, and JSON output was wrapped in an internal `{"meta": ...}` object.
+- **`folder download --folder-uuid` and `folder thumbnail --folder-uuid` no longer write into a directory named `untitled`** - The folder's name is used.
+- **`folder upload` no longer copies every file through the temp directory** - The copy used a non-unique name, so two uploads of files called `part.stl` from different directories could clobber each other mid-upload.
+- **`asset create --override` treats only "absent" as absent** - A network or session failure while checking for the existing asset used to be read as "does not exist".
+- **A batch row whose folder does not exist is counted as missing, not as a permission problem.**
+- **A configured API URL with a trailing slash no longer produces `//tenants` URLs; user IDs are URL-encoded.**
+- **`tenant use` interactive selection no longer panics** on a tenant name containing a colon.
+- **Excel report sorting parses each cell once** instead of once per comparison (tens of millions of parses on a million-row report).
 - **`--tenant` accepts a tenant UUID, as its help text promised** - Only the short name worked. A tenant missing from the cached list is also looked up once more from the API before it is reported as not found, so a tenant granted since the cache was written is usable without `cache clear`.
 - **`PCLI2_FORMAT` is honoured by `env list`, `env get` and `config get`** - `--format` has a default value, so the branch that consulted the variable was unreachable.
 - **In-app advice no longer refers to a `context` command that does not exist** - "Run 'pcli2 context set tenant'" is now "Run 'pcli2 tenant use'".

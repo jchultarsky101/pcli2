@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`asset list --format csv` (and asset, dependency and tenant-status CSV) no longer ends with an empty line** - The 1.23.1 fix missed the formatters that name their buffer differently, which included the one every asset listing uses; `asset list --folder-path X --format csv | wc -l` still over-counted by one. Every CSV and tree formatter now goes through the same trimming, and the two environment commands that printed without a final line break gained one. Checked at the byte level for thirty command and format combinations against a live tenant: each ends in exactly one line break and has no empty lines.
+
 ## [1.23.1] - 2026-09-04
 
 ### Fixed

@@ -229,7 +229,7 @@ impl OutputFormatter for AssetDependencyList {
                     .into_inner()
                     .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
 
-                String::from_utf8(bytes).map_err(|e| FormattingError::FormatFailure {
+                crate::format::csv_text(bytes).map_err(|e| FormattingError::FormatFailure {
                     cause: Box::new(std::io::Error::other(e)),
                 })
             }
@@ -287,7 +287,7 @@ impl OutputFormatter for AssetDependencyList {
                 ptree::write_tree(&tree, &mut output)
                     .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })?;
 
-                String::from_utf8(output)
+                crate::format::csv_text(output)
                     .map_err(|e| FormattingError::FormatFailure { cause: Box::new(e) })
             }
         }
@@ -437,7 +437,7 @@ impl AssemblyNode {
 
         let mut output = Vec::new();
         ptree::write_tree(&tree, &mut output).unwrap();
-        String::from_utf8(output).unwrap()
+        crate::format::csv_text(output).unwrap()
     }
 }
 

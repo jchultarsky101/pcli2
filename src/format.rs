@@ -226,7 +226,7 @@ pub trait CsvRecordProducer {
         match wtr.flush() {
             Ok(_) => {
                 let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
-                let csv = String::from_utf8(bytes).unwrap();
+                let csv = crate::format::csv_text(bytes).unwrap();
                 Ok(csv.clone())
             }
             Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),

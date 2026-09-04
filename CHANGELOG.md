@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-09-04
+
 ### Fixed
 - **The active tenant follows the environment** - One tenant selection was shared by every environment, so `env use staging` left production's tenant UUID active and every command failed with "Tenant not found" until `tenant use` was run again. Each environment now remembers its own tenant (older versions still read the top-level value). Folder and metadata caches are keyed by environment too, so a staging tenant cloned from production with the same UUID can no longer be served production's folder tree.
 - **Per-asset failure messages survive `--progress`** - During a folder match the reasons for individual failures, and the "stopping after repeated authentication failures" explanation, were written underneath the redrawing progress display and painted over (the same defect fixed for the scan spinner in 1.18.3). They are now printed with the display lifted.

@@ -362,7 +362,7 @@ impl OutputFormatter for AssetList {
                     match wtr.flush() {
                         Ok(_) => {
                             let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
-                            let csv = String::from_utf8(bytes).unwrap();
+                            let csv = crate::format::csv_text(bytes).unwrap();
                             Ok(csv.clone())
                         }
                         Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
@@ -385,7 +385,7 @@ impl OutputFormatter for AssetList {
                     match wtr.flush() {
                         Ok(_) => {
                             let bytes = wtr.into_inner().unwrap().into_inner().unwrap();
-                            let csv = String::from_utf8(bytes).unwrap();
+                            let csv = crate::format::csv_text(bytes).unwrap();
                             Ok(csv.clone())
                         }
                         Err(e) => Err(FormattingError::FormatFailure { cause: Box::new(e) }),
@@ -492,7 +492,7 @@ impl OutputFormatter for AssetWithThumbnail {
                 let bytes = data.into_inner().map_err(|e| {
                     FormattingError::CsvWriterError(format!("Failed to get inner buffer: {}", e))
                 })?;
-                String::from_utf8(bytes).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(bytes).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(options) => {
                 // For single asset with thumbnail, tree format is the same as JSON
@@ -583,7 +583,7 @@ impl OutputFormatter for AssetListWithThumbnails {
                 let bytes = data.into_inner().map_err(|e| {
                     FormattingError::CsvWriterError(format!("Failed to get inner buffer: {}", e))
                 })?;
-                String::from_utf8(bytes).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(bytes).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_options) => {
                 // For asset list with thumbnails, tree format is the same as JSON

@@ -372,7 +372,7 @@ pub async fn execute_environment_command(
                             ))
                         }
                     };
-                    print!("{}", csv_output);
+                    println!("{}", csv_output);
                 }
                 OutputFormat::Tree(_) => {
                     // For tree format, show detailed information
@@ -565,7 +565,7 @@ pub async fn execute_environment_command(
                                 ))
                             }
                         };
-                        print!("{}", csv_output);
+                        println!("{}", csv_output);
                     }
                     OutputFormat::Tree(_) => {
                         // For tree format, output as JSON (since tree doesn't make sense for single environment)

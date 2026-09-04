@@ -81,7 +81,7 @@ impl Formattable for ContextInfo {
                     self.active_tenant_display_name.as_deref().unwrap_or(""),
                 ))?;
 
-                let csv_string = String::from_utf8(wtr.into_inner()?)?;
+                let csv_string = crate::format::csv_text(wtr.into_inner()?)?;
                 Ok(csv_string)
             }
             OutputFormat::Tree(_) => {

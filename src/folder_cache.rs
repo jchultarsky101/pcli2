@@ -38,6 +38,15 @@ pub(crate) fn write_atomically(path: &std::path::Path, data: &[u8]) -> std::io::
     fs::rename(&tmp, path)
 }
 
+/// The active environment's name, made safe for a file name.
+pub(crate) fn active_environment_key() -> String {
+    let name = crate::configuration::Configuration::load_default()
+        .ok()
+        .and_then(|c| c.get_active_environment())
+        .unwrap_or_else(|| "default".to_string());
+    name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_")
+}
+
 pub struct FolderCache {
     // Removed unused base field since we're not using BaseCache directly
 }
@@ -60,8 +69,16 @@ impl FolderCache {
     /// # Returns
     /// The full path to the tenant's cache file
     pub fn get_cache_file_path<S: AsRef<str>>(key: S) -> PathBuf {
-        let key: &str = key.as_ref();
-        BaseCache::get_cache_file_path(&Self::get_cache_dir(), key, "json")
+        // Keyed by environment as well as tenant: a staging tenant seeded from
+        // production can carry the same UUID and would otherwise share (and
+        // corrupt) the production hierarchy.
+        let mut path = Self::get_cache_dir();
+        path.push(format!(
+            "{}-{}.json",
+            active_environment_key(),
+            key.as_ref()
+        ));
+        path
     }
 
     /// Load cached folder hierarchy for a tenant

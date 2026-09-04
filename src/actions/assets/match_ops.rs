@@ -156,6 +156,15 @@ impl SearchAbort {
     }
 }
 
+/// Run `f` with the progress display lifted, so what it prints is not painted
+/// over by the next redraw. Without a display it just runs.
+fn under_progress<F: FnOnce()>(progress: Option<&indicatif::MultiProgress>, f: F) {
+    match progress {
+        Some(mp) => mp.suspend(f),
+        None => f(),
+    }
+}
+
 /// Running tally of per-asset search outcomes across a folder match run.
 #[derive(Debug, Default, Clone, Copy)]
 struct SearchOutcomes {
@@ -1524,7 +1533,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     // are genuinely gone - then the run stops, and explains once.
                     let stopping = e.is_authentication_failure() && abort.record_auth_failure();
                     if stopping {
-                        error_utils::report_error_with_remediation(
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_error_with_remediation(
                             &format!(
                                 "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
                                 CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
@@ -1534,12 +1544,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                                 "Then re-run this command",
                             ],
                         );
+                        });
                     } else if !abort.is_stopped() {
-                        error_utils::report_warning(&format!(
-                            "🔍 Failed to perform geometric search for asset {}: {}",
-                            asset_clone.name(),
-                            e
-                        ));
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_warning(&format!(
+                                "🔍 Failed to perform geometric search for asset {}: {}",
+                                asset_clone.name(),
+                                e
+                            ))
+                        });
                     }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
@@ -2056,7 +2069,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     // are genuinely gone - then the run stops, and explains once.
                     let stopping = e.is_authentication_failure() && abort.record_auth_failure();
                     if stopping {
-                        error_utils::report_error_with_remediation(
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_error_with_remediation(
                             &format!(
                                 "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
                                 CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
@@ -2066,12 +2080,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                                 "Then re-run this command",
                             ],
                         );
+                        });
                     } else if !abort.is_stopped() {
-                        error_utils::report_warning(&format!(
-                            "🔍 Failed to perform part search for asset {}: {}",
-                            asset_clone.name(),
-                            e
-                        ));
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_warning(&format!(
+                                "🔍 Failed to perform part search for asset {}: {}",
+                                asset_clone.name(),
+                                e
+                            ))
+                        });
                     }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
@@ -2597,7 +2614,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     // are genuinely gone - then the run stops, and explains once.
                     let stopping = e.is_authentication_failure() && abort.record_auth_failure();
                     if stopping {
-                        error_utils::report_error_with_remediation(
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_error_with_remediation(
                             &format!(
                                 "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
                                 CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
@@ -2607,12 +2625,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                                 "Then re-run this command",
                             ],
                         );
+                        });
                     } else if !abort.is_stopped() {
-                        error_utils::report_warning(&format!(
-                            "🔍 Failed to perform visual search for asset {}: {}",
-                            asset_clone.name(),
-                            e
-                        ));
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_warning(&format!(
+                                "🔍 Failed to perform visual search for asset {}: {}",
+                                asset_clone.name(),
+                                e
+                            ))
+                        });
                     }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");

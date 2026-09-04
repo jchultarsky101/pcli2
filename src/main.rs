@@ -61,9 +61,12 @@ fn init_logging(matches: &clap::ArgMatches) {
     let env_filter = if matches.get_flag("quiet") {
         EnvFilter::new("error")
     } else if matches.get_flag("verbose") {
-        EnvFilter::new("debug")
+        // pcli2's own debug output; the HTTP stack stays at warn so --verbose is
+        // readable. RUST_LOG remains the way to open everything up.
+        EnvFilter::new("pcli2=debug,warn")
     } else {
-        // Check for PCLI2_LOG_LEVEL environment variable first
+        // RUST_LOG, when set and valid, takes precedence (try_from_default_env);
+        // otherwise PCLI2_LOG_LEVEL, then "warn".
         let log_level = env::var("PCLI2_LOG_LEVEL")
             .or_else(|_| env::var("RUST_LOG"))
             .unwrap_or_else(|_| "warn".to_string());

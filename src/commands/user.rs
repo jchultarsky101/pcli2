@@ -18,7 +18,7 @@ pub fn user_command() -> Command {
         .subcommand(
             Command::new("list")
                 .about("List users in the current tenant")
-                .alias("ls")
+                .visible_alias("ls")
                 .arg(format_parameter())
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),

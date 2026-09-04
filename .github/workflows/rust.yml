@@ -45,6 +45,30 @@ jobs:
     - name: Run Clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
 
+  # Known vulnerabilities in the dependency tree. Warnings about unmaintained
+  # crates are reported but do not fail the job; vulnerabilities do.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: taiki-e/install-action@cargo-audit
+    - name: Audit dependencies
+      run: cargo audit
+
+  # The oldest toolchain the crate promises to build with (rust-version in Cargo.toml).
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install Rust 1.85
+      uses: dtolnay/rust-toolchain@1.85
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev cmake
+    - name: Check
+      run: cargo check --all-targets
+
   # Build and test
   build-and-test:
     runs-on: ${{ matrix.os }}

@@ -237,7 +237,7 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
                 error_utils::report_error_with_remediation(
                     &"No tenant selected",
                     &[
-                        "Run 'pcli2 context set tenant' again to select a tenant",
+                        "Run 'pcli2 tenant use' again to select a tenant",
                         "Verify you have access to at least one tenant",
                         "Check your authentication credentials",
                     ],

@@ -885,9 +885,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                         _ => {
                             // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
                             let format_str_owned = if let Some(format_val) =
-                                sub_matches.get_one::<String>(PARAMETER_FORMAT)
-                            {
-                                // User explicitly provided --format argument
+                                sub_matches.get_one::<String>(PARAMETER_FORMAT).filter(|_| {
+                                    // A default value also answers get_one; only a value the user
+                                    // typed should beat PCLI2_FORMAT.
+                                    sub_matches.value_source(PARAMETER_FORMAT)
+                                        == Some(clap::parser::ValueSource::CommandLine)
+                                }) {
                                 format_val.clone()
                             } else {
                                 // Format was not explicitly provided by user, check environment variable first

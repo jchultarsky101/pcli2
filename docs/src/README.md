@@ -1,33 +1,32 @@
 # PCLI2 Documentation
 
-Welcome to the PCLI2 documentation! This guide will help you get started with the Physna Command Line Interface v2.
+PCLI2 is the command-line client for the Physna public API: 3D geometry search,
+asset and folder management, metadata, and batch operations, with output that is
+built for scripts (JSON, CSV, Excel) as much as for people.
 
-## Table of Contents
+## Chapters
 
-- [Installation Guide](installation.md) - How to install and set up PCLI2
-- [Quick Start Guide](quickstart.md) - Getting started with basic commands
-- [Geometric Matching](geometric-matching.md) - Comprehensive guide to finding similar assets
-- [Cross-Platform Configuration](cross_platform.md) - Environment variables for cross-platform support
-- [Documentation Deployment](documentation_deployment.md) - Setting up documentation website with Oranda and GitHub Pages
-
-## Introduction
-
-PCLI2 is a powerful command-line interface for the Physna public API that enables advanced 3D geometry search and analysis. It provides intuitive nested sub-commands, sensible defaults, and configuration management for seamless integration with Physna's advanced features.
+- [Installation Guide](installation.md) - Installers for every platform, updating, building from source
+- [Quick Start Guide](quickstart.md) - Logging in, choosing a tenant, the everyday commands
+- [Geometric Matching](geometric-matching.md) - Finding similar assets, for one asset or a whole folder
+- [Metadata Operations](metadata-operations.md) - Reading, writing and bulk-loading metadata
+- [Metadata Inference](metadata-inference.md) - Propagating metadata to geometrically similar assets
+- [Scripting and Automation](scripting.md) - Machine-friendly output, exit codes, retries, CI
+- [Cross-Platform Configuration](cross_platform.md) - Environment variables and file locations
+- [Documentation Deployment](documentation_deployment.md) - How this site is built
 
 ## Features
 
-- **Intuitive command structure** with nested sub-commands
-- **Configuration management** for persistent settings
-- **Asset operations** (create, list, get, delete, update)
-- **Folder operations** (create, list, get, delete, update)
-- **Tenant management** with multi-tenant support
-- **Authentication** with OAuth2 client credentials flow
-- **Batch operations** for processing multiple assets
-- **Geometric matching** for finding similar assets
-- **Export/Import** functionality for data migration
-- **Context management** for working with multiple tenants
-- **Cross-platform support** with environment variable configuration
+- Nested sub-commands with short aliases (`pcli2 asset ls`, `pcli2 folder rm`)
+- Multiple environments (production, staging) and multiple tenants
+- OAuth2 client-credentials login with automatic token renewal
+- Asset upload, download, listing, deletion, reprocessing and thumbnails
+- Folder tree listing, creation, renaming, moving, bulk upload and download
+- Geometric, part and visual matching, single-asset or folder-wide, with CSV and
+  Excel reports
+- Metadata fields: create, read, delete, bulk-load from CSV, infer from matches
+- Retries with backoff for transient failures, and exit codes that say what
+  went wrong
 
-## Getting Started
-
-To get started with PCLI2, follow the [Installation Guide](installation.md) to set up the tool on your system, then check out the [Quick Start Guide](quickstart.md) to begin using basic commands.
+Start with the [Installation Guide](installation.md), then the
+[Quick Start Guide](quickstart.md).

@@ -108,6 +108,10 @@ async fn main() {
     // --version check can still be told that this binary is out of date. A user on a
     // build that predates the flag they are passing sees only "unexpected argument",
     // concludes the feature is broken, and has no reason to suspect their own install.
+    // Started first so the (cached, usually instant) lookup overlaps with the
+    // command instead of being awaited on the way out.
+    let update_check = pcli2::update_check::start_update_check();
+
     let matches = match pcli2::commands::try_create_cli_commands() {
         Ok(matches) => matches,
         Err(e) => {
@@ -119,7 +123,7 @@ async fn main() {
             }
             let _ = e.print();
             if pcli2::commands::should_hint_after_parse_error(&e) {
-                pcli2::update_check::maybe_print_update_hint().await;
+                pcli2::update_check::finish_update_check(update_check).await;
             }
             // clap exits 2 for usage errors and 0 for help/version. The documented
             // contract (and sysexits) says usage errors are 64.
@@ -145,7 +149,7 @@ async fn main() {
         Ok(()) => {
             // Check for a newer release (cached, terminal sessions only)
             if !machine_output_command {
-                pcli2::update_check::maybe_print_update_hint().await;
+                pcli2::update_check::finish_update_check(update_check).await;
             }
             // Success - exit with code 0
             process::exit(0);
@@ -163,7 +167,7 @@ async fn main() {
             // user a support round trip and cost us a release chasing a bug they never
             // had.
             if !machine_output_command {
-                pcli2::update_check::maybe_print_update_hint().await;
+                pcli2::update_check::finish_update_check(update_check).await;
             }
 
             let main_error = MainError::CliError(e);

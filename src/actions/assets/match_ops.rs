@@ -949,7 +949,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                     )));
                 }
             };
-            let output = match String::from_utf8(data) {
+            let output = match crate::format::csv_text(data) {
                 Ok(s) => s,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(
@@ -3117,7 +3117,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     )));
                 }
             };
-            let output: String = match String::from_utf8(data) {
+            let output: String = match crate::format::csv_text(data) {
                 Ok(s) => s,
                 Err(e) => {
                     return Err(CliError::from(CliActionError::FormattingError(

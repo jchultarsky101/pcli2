@@ -55,7 +55,7 @@ impl CsvRecordProducer for Folder {
         let data = wtr.into_inner().map_err(|e| {
             FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e))
         })?;
-        String::from_utf8(data).map_err(FormattingError::Utf8Error)
+        crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
     }
 }
 
@@ -155,7 +155,7 @@ impl OutputFormatter for FolderList {
                 let data = wtr.into_inner().map_err(|e| {
                     FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e))
                 })?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_) => {
                 // For folder list, tree format is the same as JSON

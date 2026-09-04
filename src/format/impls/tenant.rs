@@ -32,7 +32,7 @@ impl Formattable for Tenant {
                 wtr.serialize((&self.name, &self.uuid.to_string(), &self.description))?;
 
                 let data = wtr.into_inner()?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_) => {
                 // For tree format, include name, UUID, and description
@@ -117,7 +117,7 @@ impl OutputFormatter for TenantList {
                 let data = wtr.into_inner().map_err(|e| {
                     FormattingError::CsvWriterError(format!("Failed to finalize CSV: {}", e))
                 })?;
-                String::from_utf8(data).map_err(FormattingError::Utf8Error)
+                crate::format::csv_text(data).map_err(FormattingError::Utf8Error)
             }
             OutputFormat::Tree(_) => {
                 // For tree format, include name, UUID, and description

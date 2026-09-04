@@ -58,7 +58,7 @@ impl Formattable for AssetHealthReport {
                 ))?;
 
                 let data = wtr.into_inner()?;
-                let csv_string = String::from_utf8(data)?;
+                let csv_string = crate::format::csv_text(data)?;
                 Ok(csv_string)
             }
             OutputFormat::Tree(_) => {

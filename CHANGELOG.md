@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.1] - 2026-09-04
+
+### Fixed
+- **CSV output no longer ends with an empty line** - Every CSV-producing command (asset, folder, tenant, user, metadata, environment and configuration listings, match and dependency reports) terminated its output with two line breaks, so `asset list --format csv | wc -l` reported one row more than there were assets and a spreadsheet opened the file with an empty last row. Verified across every listing command against a live tenant: line counts now equal row counts, and no command prints anything before or after its data.
+
 ## [1.23.0] - 2026-09-04
 
 ### Changed

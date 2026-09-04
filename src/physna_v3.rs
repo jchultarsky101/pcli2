@@ -3537,7 +3537,10 @@ impl PhysnaApiClient {
                     let mut client = client_template;
 
                     // Upload the file
-                    let asset_path = format!("{}/{}", folder_path, file_name.to_string_lossy());
+                    let asset_path = match folder_path.trim_matches('/') {
+                        "" => file_name.to_string_lossy().into_owned(),
+                        parent => format!("/{}/{}", parent, file_name.to_string_lossy()),
+                    };
                     debug!(
                         "Uploading file: {}, as asset_path: {}, folder_uuid: {:?}",
                         path_str, asset_path, folder_uuid

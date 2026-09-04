@@ -217,8 +217,42 @@ fn parse_classic<R: Read>(
     let mut warnings = Vec::new();
     let mut invalid_types: Vec<String> = Vec::new();
 
+    // The layout is positional, so the header has to say what the positions are.
+    // A file with the columns in another order used to be applied with paths and
+    // names swapped; `metadata get --format csv` output (NAME,VALUE) used to be
+    // accepted and silently do nothing.
+    {
+        let headers = csv_reader.headers()?.clone();
+        // The first two columns carry the identity; the third is the value whatever
+        // it is called, and a fourth, if present, the type.
+        let expected = ["ASSET_PATH", "NAME"];
+        let matches = headers.len() >= 3
+            && headers
+                .iter()
+                .take(2)
+                .zip(expected.iter())
+                .all(|(got, want)| got.trim().eq_ignore_ascii_case(want));
+        if !matches {
+            return Err(CliActionError::BusinessLogicError(format!(
+                "unexpected CSV header '{}': expected ASSET_PATH,NAME,VALUE (optionally followed by TYPE), or a 'path'/'id' column with 'metadata:<field>' columns",
+                headers.iter().collect::<Vec<_>>().join(",")
+            )));
+        }
+    }
+
+    let mut short_rows: Vec<u64> = Vec::new();
+    let mut empty_names: Vec<u64> = Vec::new();
     for result in csv_reader.records() {
         let record = result?;
+        let line = record.position().map(|p| p.line()).unwrap_or(0);
+        if record.len() < 3 {
+            short_rows.push(line);
+            continue;
+        }
+        if record[1].trim().is_empty() {
+            empty_names.push(line);
+            continue;
+        }
         if record.len() >= 3 {
             let asset_path = record[0].trim();
             let metadata_name = record[1].trim();
@@ -256,6 +290,29 @@ fn parse_classic<R: Read>(
                 declared_type,
             );
         }
+    }
+
+    if !empty_names.is_empty() {
+        return Err(CliActionError::BusinessLogicError(format!(
+            "{} row(s) have an empty NAME column (lines {}); a metadata field needs a name",
+            empty_names.len(),
+            empty_names
+                .iter()
+                .map(|l| l.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
+    if !short_rows.is_empty() {
+        warnings.push(format!(
+            "{} row(s) with fewer than 3 columns were skipped (lines {})",
+            short_rows.len(),
+            short_rows
+                .iter()
+                .map(|l| l.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
 
     if skipped_empty > 0 {

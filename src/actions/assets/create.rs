@@ -5,7 +5,6 @@
 
 use crate::{
     actions::assets::metadata_batch_csv::{parse_batch_csv, BatchAssetRef, BatchCsvFormat},
-    actions::folders::resolve_folder_uuid_by_path,
     actions::CliActionError,
     commands::params::{
         PARAMETER_CONTINUE_ON_ERROR, PARAMETER_DELETE_IF_EMPTY, PARAMETER_FILE, PARAMETER_FILES,
@@ -15,7 +14,6 @@ use crate::{
     configuration::Configuration,
     error::CliError,
     error_utils,
-    folder_hierarchy::FolderHierarchy,
     format::OutputFormatter,
     metadata::convert_single_metadata_to_json_value,
     model::{Asset, AssetList},
@@ -96,45 +94,14 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let folder_uuid_param = sub_matches.get_one::<uuid::Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        let normalized_path = crate::model::normalize_path(path);
-        if normalized_path == "/" {
-            // Root path - handle specially if needed, but for asset creation we need the actual folder
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        } else {
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        }
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
-
-    // Check if the folder exists and set its path
-    let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let mut folder = folder;
-    if let Some(path) = folder_path_param {
-        folder.set_path(path.to_owned());
-    } else {
-        // When using --folder-uuid, try to build the folder hierarchy to get the full path
-        // This is optional - if it fails, we'll just use the folder name without the full path
-        match FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await {
-            Ok(hierarchy) => {
-                if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
-                    folder.set_path(path);
-                }
-            }
-            Err(_) => {
-                // If we can't build the hierarchy, just use the folder name as the path
-                // This allows the create operation to proceed even if hierarchy fetch fails
-                folder.set_path(folder.name());
-            }
-        }
-    }
+    // The destination as the server knows it (see resolve_upload_destination).
+    let (folder_uuid, folder_path) = crate::actions::utils::resolve_upload_destination(
+        &mut api,
+        &tenant,
+        folder_uuid_param,
+        folder_path_param,
+    )
+    .await?;
 
     let file_path = sub_matches
         .get_one::<PathBuf>(PARAMETER_FILE)
@@ -149,7 +116,6 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .to_string();
 
     // Construct the full asset path by combining folder path with filename
-    let folder_path = folder.path();
     let asset_path = if folder_path.is_empty() || folder_path == "/" {
         file_name.clone()
     } else {
@@ -333,36 +299,13 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     let folder_uuid_param = sub_matches.get_one::<uuid::Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        let normalized_path = crate::model::normalize_path(path);
-        if normalized_path == "/" {
-            // Root path - handle specially if needed, but for asset creation we need the actual folder
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        } else {
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        }
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
-
-    // Check if the folder exists
-    let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let mut folder = folder;
-    if let Some(path) = folder_path_param {
-        folder.set_path(path.to_owned())
-    } else {
-        // When using --folder-uuid, we need to build the folder hierarchy to get the full path
-        let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
-        if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
-            folder.set_path(path);
-        }
-    }
+    let (folder_uuid, folder_path) = crate::actions::utils::resolve_upload_destination(
+        &mut api,
+        &tenant,
+        folder_uuid_param,
+        folder_path_param,
+    )
+    .await?;
 
     // Report and stop without uploading anything when --dry-run is given
     if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
@@ -376,7 +319,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         println!(
             "Dry run: would upload {} file(s) to folder '{}':",
             paths.len(),
-            folder.path()
+            folder_path
         );
         for path in &paths {
             println!("  {}", path.display());
@@ -388,7 +331,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         .create_assets_batch(
             &tenant.uuid,
             &glob_pattern,
-            Some(folder.path().as_str()),
+            Some(folder_path.as_str()),
             Some(&folder_uuid),
             concurrent,
             show_progress,

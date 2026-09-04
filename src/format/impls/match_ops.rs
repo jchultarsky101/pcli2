@@ -172,8 +172,7 @@ impl EnhancedPartSearchResponse {
                                 .reference_asset
                                 .metadata
                                 .get(key)
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .map(crate::model::metadata_cell)
                                 .unwrap_or_default();
                             base_values.push(ref_value);
 
@@ -182,8 +181,7 @@ impl EnhancedPartSearchResponse {
                                 .asset
                                 .metadata
                                 .get(key)
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .map(crate::model::metadata_cell)
                                 .unwrap_or_default();
                             base_values.push(cand_value);
                         }
@@ -466,8 +464,7 @@ impl OutputFormatter for GeometricMatchPair {
                             .reference_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
@@ -476,8 +473,7 @@ impl OutputFormatter for GeometricMatchPair {
                             .candidate_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(cand_value);
                     }
@@ -630,8 +626,7 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                                 .reference_asset
                                 .metadata
                                 .get(key)
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .map(crate::model::metadata_cell)
                                 .unwrap_or_default();
                             base_values.push(ref_value);
 
@@ -640,8 +635,7 @@ impl OutputFormatter for EnhancedGeometricSearchResponse {
                                 .asset
                                 .metadata
                                 .get(key)
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .map(crate::model::metadata_cell)
                                 .unwrap_or_default();
                             base_values.push(cand_value);
                         }
@@ -763,8 +757,7 @@ impl EnhancedGeometricSearchResponse {
                                 .reference_asset
                                 .metadata
                                 .get(key)
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .map(crate::model::metadata_cell)
                                 .unwrap_or_default();
                             base_values.push(ref_value);
 
@@ -773,8 +766,7 @@ impl EnhancedGeometricSearchResponse {
                                 .asset
                                 .metadata
                                 .get(key)
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .map(crate::model::metadata_cell)
                                 .unwrap_or_default();
                             base_values.push(cand_value);
                         }

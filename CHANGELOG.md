@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-09-04
+
 ### Fixed
 - **`asset create --override` no longer deletes the existing asset before checking the local file** - The existing asset was deleted first and the local file was only validated by the upload that followed, so a mistyped filename (or an unsupported extension, a 413, a dropped connection) destroyed the customer's asset and its metadata with no way back. The local file is now checked before anything destructive happens, and if the re-upload still fails after the delete, the deleted asset's UUID and any metadata captured for `--restore-metadata` are printed so they can be recovered by hand.
 - **`folder list --folder-uuid` now lists that folder** - The argument was accepted by the parser and never read, so the command silently listed the tenant root instead.

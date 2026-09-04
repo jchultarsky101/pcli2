@@ -6,7 +6,6 @@ use crate::{
     commands::params::PARAMETER_FOLDER_PATH,
     configuration::Configuration,
     error::CliError,
-    folder_hierarchy::FolderHierarchy,
     format::OutputFormatter,
     model::{normalize_path, AssetList},
     param_utils::{get_format_parameter_value, get_tenant},
@@ -68,7 +67,9 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
             // Recursively list assets in the folder and all subfolders
             // Root path "/" is always valid; only check existence for non-root paths
             if path != "/" {
-                let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+                let hierarchy =
+                    crate::actions::utils::hierarchy_containing(&mut api, &tenant.uuid, &path)
+                        .await?;
 
                 if hierarchy.get_node_by_path(&path).is_none() {
                     // Path not found - check for similar paths
@@ -103,7 +104,8 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
             println!("{}", assets.format(format)?);
         } else {
             // First verify the folder exists by building the hierarchy
-            let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
+            let hierarchy =
+                crate::actions::utils::hierarchy_containing(&mut api, &tenant.uuid, &path).await?;
 
             // Check if the path exists (case-sensitive)
             if hierarchy.get_node_by_path(&path).is_none() {
@@ -161,10 +163,9 @@ async fn list_assets_recursively(
     tenant_id: &Uuid,
     folder_path: &str,
 ) -> Result<AssetList, CliError> {
-    use crate::folder_hierarchy::FolderHierarchy;
-
     // Build the complete folder hierarchy for the tenant
-    let hierarchy = FolderHierarchy::build_from_api(api, tenant_id).await?;
+    let hierarchy =
+        crate::actions::utils::hierarchy_containing(api, tenant_id, folder_path).await?;
 
     // Filter the hierarchy to only include the specified path and its subfolders
     let filtered_hierarchy = hierarchy.filter_by_path(folder_path).ok_or_else(|| {

@@ -206,9 +206,13 @@ impl SearchOutcomes {
     /// Whether the shortfall is severe enough that the report should not be presented
     /// as a successful result.
     fn is_materially_incomplete(&self) -> bool {
-        self.attempted > 0
-            && (self.incomplete() as f64 / self.attempted as f64)
-                > OPERATIONAL_FAILURE_EXIT_THRESHOLD
+        // An abort is a decision that the run is broken, not a scattered blip: a
+        // credential that dies at 92% still leaves 8% of the report missing on
+        // purpose, and that must not exit 0 just because it is under the threshold.
+        self.aborted > 0
+            || (self.attempted > 0
+                && (self.incomplete() as f64 / self.attempted as f64)
+                    > OPERATIONAL_FAILURE_EXIT_THRESHOLD)
     }
 
     /// One-line account of what the run actually managed to search, or `None` when
@@ -1227,6 +1231,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     trace!("Executing geometric match folder command...");
 
     let configuration = Configuration::load_or_create_default()?;
+    // Read once here; it used to be loaded from disk again for every match row.
+    let ui_base_url = configuration.get_ui_base_url();
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
@@ -1348,6 +1354,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
+        let ui_base_url_for_task = ui_base_url.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -1400,18 +1407,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                             continue;
                         }
 
-                        // Load configuration to get the UI base URL
-                        let configuration =
-                            crate::configuration::Configuration::load_or_create_default().map_err(
-                                |e| {
-                                    CliError::ConfigurationError(
-                                crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e),
-                                }
-                            )
-                                },
-                            )?;
-                        let ui_base_url = configuration.get_ui_base_url();
+                        let ui_base_url = ui_base_url_for_task.clone();
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
@@ -1588,6 +1584,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
             }
             Ok(Err(e)) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Error processing asset: {:?}", e),
                     &[
@@ -1598,6 +1595,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 );
             }
             Err(e) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Task failed: {:?}", e),
                     &[
@@ -1751,6 +1749,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     trace!("Executing part match folder command...");
 
     let configuration = Configuration::load_or_create_default()?;
+    // Read once here; it used to be loaded from disk again for every match row.
+    let ui_base_url = configuration.get_ui_base_url();
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
@@ -1882,6 +1882,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
+        let ui_base_url_for_task = ui_base_url.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -1934,18 +1935,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             continue;
                         }
 
-                        // Load configuration to get the UI base URL
-                        let configuration =
-                            crate::configuration::Configuration::load_or_create_default().map_err(
-                                |e| {
-                                    CliError::ConfigurationError(
-                                crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e),
-                                }
-                            )
-                                },
-                            )?;
-                        let ui_base_url = configuration.get_ui_base_url();
+                        let ui_base_url = ui_base_url_for_task.clone();
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
@@ -2124,6 +2114,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 }
             }
             Ok(Err(e)) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Error processing asset: {:?}", e),
                     &[
@@ -2134,6 +2125,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 );
             }
             Err(e) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Task failed: {:?}", e),
                     &[
@@ -2316,6 +2308,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     trace!("Executing visual match folder command...");
 
     let configuration = Configuration::load_or_create_default()?;
+    // Read once here; it used to be loaded from disk again for every match row.
+    let ui_base_url = configuration.get_ui_base_url();
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
@@ -2433,6 +2427,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
+        let ui_base_url_for_task = ui_base_url.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -2485,18 +2480,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             continue;
                         }
 
-                        // Load configuration to get the UI base URL
-                        let configuration =
-                            crate::configuration::Configuration::load_or_create_default().map_err(
-                                |e| {
-                                    CliError::ConfigurationError(
-                                crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e),
-                                }
-                            )
-                                },
-                            )?;
-                        let ui_base_url = configuration.get_ui_base_url();
+                        let ui_base_url = ui_base_url_for_task.clone();
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
@@ -2671,6 +2655,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 }
             }
             Ok(Err(e)) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Error processing asset: {:?}", e),
                     &[
@@ -2681,6 +2666,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 );
             }
             Err(e) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Task failed: {:?}", e),
                     &[

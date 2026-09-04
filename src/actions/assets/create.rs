@@ -384,7 +384,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         return Ok(());
     }
 
-    let assets = api
+    let outcome = api
         .create_assets_batch(
             &tenant.uuid,
             &glob_pattern,
@@ -394,7 +394,28 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
             show_progress,
         )
         .await?;
-    println!("{}", AssetList::from(assets).format(format)?);
+
+    let succeeded = outcome.assets.len();
+    let failed = outcome.failures.len();
+    if succeeded > 0 {
+        println!("{}", AssetList::from(outcome.assets).format(format)?);
+    }
+    // Every failure is named. These used to go to the debug log only, so a run
+    // that lost 40 of 500 files printed the 460 successes and exited 0.
+    for (path, error) in &outcome.failures {
+        eprintln!("❌ Failed to upload '{}': {}", path.display(), error);
+    }
+    if failed > 0 {
+        eprintln!(
+            "Batch upload finished: {} uploaded, {} failed",
+            succeeded, failed
+        );
+        return Err(CliError::ActionError(CliActionError::PartialFailure {
+            failed,
+            total: succeeded + failed,
+            what: "upload(s)".to_string(),
+        }));
+    }
 
     Ok(())
 }
@@ -906,6 +927,16 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         return Err(CliError::SecurityError(
             "Batch operation stopped due to authentication failure. Please re-authenticate and retry.".to_string(),
         ));
+    }
+
+    // --continue-on-error decides whether the run keeps going, not whether the
+    // exit code tells the truth: a batch with failures is still a failed batch.
+    if failure_count > 0 {
+        return Err(CliError::ActionError(CliActionError::PartialFailure {
+            failed: failure_count,
+            total: success_count + failure_count,
+            what: "metadata update(s)".to_string(),
+        }));
     }
 
     Ok(())

@@ -71,14 +71,6 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         path
     };
 
-    // Download the asset file with retry logic
-    let file_content = download_asset_with_retry(
-        ctx.api(),
-        &tenant_uuid.to_string(),
-        &asset.uuid().to_string(),
-    )
-    .await?;
-
     // If the asset is an assembly, the downloaded file is a ZIP file
     // Add .zip extension to avoid conflict with extracted assembly file
     let zip_file_path = if asset.is_assembly() {
@@ -95,8 +87,17 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         output_file_path.clone()
     };
 
-    // Write the file content to the output file
-    std::fs::write(&zip_file_path, file_content).map_err(CliActionError::IoError)?;
+    // Streamed straight to disk through a temporary file, so a multi-gigabyte
+    // assembly is never held in memory and an interrupted transfer never leaves a
+    // truncated file under the final name.
+    ctx.api()
+        .download_asset_to_file(
+            &tenant_uuid.to_string(),
+            &asset.uuid().to_string(),
+            Some(asset.name().as_str()),
+            &zip_file_path,
+        )
+        .await?;
 
     // If the asset is an assembly, extract the ZIP file and cleanup
     if asset.is_assembly() {
@@ -280,14 +281,12 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let assets: Vec<_> = assets_response.get_all_assets().to_vec();
 
     if assets.is_empty() {
-        error_utils::report_error_with_remediation(
-            &format!("No assets found in folder with UUID: {}", folder_uuid),
-            &[
-                "Verify the folder UUID or path is correct",
-                "Check that the folder contains assets",
-                "Ensure you have permissions to access the folder",
-            ],
-        );
+        // Nothing to do is not a failure, and it was confusing to see it printed as
+        // one with a success exit code.
+        error_utils::report_warning(&format!(
+            "No assets found directly in folder {}; nothing to download (subfolders are not included)",
+            folder_uuid
+        ));
         return Ok(());
     }
 
@@ -478,53 +477,4 @@ fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError
         .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
 
     Ok(())
-}
-
-/// Download an asset with retry logic.
-///
-/// This function attempts to download an asset and retries once if the first attempt fails.
-///
-/// # Arguments
-///
-/// * `api` - The Physna API client
-/// * `tenant_id` - The tenant ID
-/// * `asset_id` - The asset ID
-///
-/// # Returns
-///
-/// * `Ok(Vec<u8>)` - The downloaded file content
-/// * `Err(CliError)` - If an error occurred during download
-async fn download_asset_with_retry(
-    api: &mut crate::physna_v3::PhysnaApiClient,
-    tenant_id: &str,
-    asset_id: &str,
-) -> Result<Vec<u8>, CliError> {
-    use rand::Rng;
-
-    // First attempt
-    match api.download_asset(tenant_id, asset_id, None).await {
-        Ok(content) => Ok(content),
-        Err(e) => {
-            // If the first attempt fails, wait for a random delay between 3-5 seconds and retry once
-            tracing::warn!(
-                "Asset download failed (attempt 1), retrying after delay: {}",
-                e
-            );
-
-            // Generate random delay between 3 and 5 seconds
-            let mut rng = rand::thread_rng();
-            let delay_seconds = rng.gen_range(3..=5);
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
-
-            // Second and final attempt
-            match api.download_asset(tenant_id, asset_id, None).await {
-                Ok(content) => Ok(content),
-                Err(final_e) => {
-                    tracing::error!("Asset download failed after retry: {}", final_e);
-                    Err(CliError::PhysnaExtendedApiError(final_e))
-                }
-            }
-        }
-    }
 }

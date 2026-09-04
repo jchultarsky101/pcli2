@@ -5,6 +5,122 @@ use crate::{
 };
 use uuid::Uuid;
 
+/// Where an upload goes: the folder's UUID and its canonical path.
+///
+/// The upload endpoint places a file by the path string it is sent, creating any
+/// folders it does not know, so the path must be the folder's real one. Building
+/// it from the user's own spelling used to create a literal "Home" folder for
+/// `/Home/Parts`, a second `parts` beside `Parts` on a case-sensitive server, and
+/// sent everything to the root when only `--folder-uuid` was given. The root is
+/// legal here: it has no UUID (`Uuid::nil()`) and the path is `/`.
+pub async fn resolve_upload_destination(
+    api: &mut PhysnaApiClient,
+    tenant: &Tenant,
+    folder_uuid: Option<&Uuid>,
+    folder_path: Option<&String>,
+) -> Result<(Uuid, String), CliError> {
+    let uuid = match (folder_uuid, folder_path) {
+        (Some(uuid), _) => *uuid,
+        (None, Some(path)) => {
+            if crate::model::normalize_path(path) == "/" {
+                return Ok((Uuid::nil(), "/".to_string()));
+            }
+            crate::actions::folders::resolve_folder_uuid_by_path(api, tenant, path).await?
+        }
+        (None, None) => {
+            return Err(CliError::MissingRequiredArgument(
+                "Either folder UUID or path must be provided".to_string(),
+            ))
+        }
+    };
+    let path = canonical_folder_path(api, &tenant.uuid, &uuid).await?;
+    Ok((uuid, path))
+}
+
+/// The folder's path as the server knows it, with a leading slash.
+///
+/// Read from the cached hierarchy, refreshed once if the folder is not in it (it
+/// may have just been created). A folder that is still absent is an error rather
+/// than a guess.
+pub async fn canonical_folder_path(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &Uuid,
+    folder_uuid: &Uuid,
+) -> Result<String, CliError> {
+    let hierarchy = crate::folder_cache::FolderCache::get_or_fetch(api, tenant_uuid).await?;
+    if let Some(path) = hierarchy.get_path_for_folder(folder_uuid) {
+        return Ok(format!("/{}", path));
+    }
+    let hierarchy = crate::folder_cache::FolderCache::refresh(api, tenant_uuid).await?;
+    match hierarchy.get_path_for_folder(folder_uuid) {
+        Some(path) => Ok(format!("/{}", path)),
+        None => Err(CliError::FolderNotFound(
+            folder_uuid.to_string(),
+            String::new(),
+        )),
+    }
+}
+
+/// A path relative to a download directory, built from names the server sent.
+///
+/// Every segment must be a plain name: no `..`, no empty segments, no path
+/// separators inside a name. A folder called `..` or an asset called `../../x`
+/// would otherwise write outside the directory the user chose.
+pub fn safe_relative_path(relative: &str) -> Option<std::path::PathBuf> {
+    let mut out = std::path::PathBuf::new();
+    for segment in relative.split('/') {
+        if segment.is_empty() || segment == "." || segment == ".." || segment.contains('\\') {
+            return None;
+        }
+        if std::path::Path::new(segment).components().count() != 1 {
+            return None;
+        }
+        out.push(segment);
+    }
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+/// Expand repeatable list arguments that the help text promises accept
+/// comma-separated values (`--name a,b` as well as `--name a --name b`).
+///
+/// Values are trimmed and empty entries dropped. The promise had been in the help
+/// text of six arguments without any code behind it, so `--name "Material,Weight"`
+/// was sent to the API as one field named `Material,Weight`.
+pub fn split_list_values<I: IntoIterator<Item = String>>(values: I) -> Vec<String> {
+    values
+        .into_iter()
+        .flat_map(|value| {
+            value
+                .split(',')
+                .map(|part| part.trim().to_string())
+                .collect::<Vec<_>>()
+        })
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+/// The tenant's folder hierarchy, from the cache when it already contains `path`.
+///
+/// A cache miss on the path triggers one refresh, so a folder created since the
+/// cache was written is still found; a path that is absent after that is genuinely
+/// absent and the caller gets a hierarchy it can build suggestions from. Loading
+/// failures propagate rather than masquerading as "not found".
+pub async fn hierarchy_containing(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &Uuid,
+    path: &str,
+) -> Result<crate::folder_hierarchy::FolderHierarchy, CliError> {
+    let hierarchy = crate::folder_cache::FolderCache::get_or_fetch(api, tenant_uuid).await?;
+    if path == "/" || hierarchy.get_node_by_path(path).is_some() {
+        return Ok(hierarchy);
+    }
+    Ok(crate::folder_cache::FolderCache::refresh(api, tenant_uuid).await?)
+}
+
 /// Read the `--threshold` percentage from the parsed arguments.
 ///
 /// The parser already limits the value to 0-100. A value below 1 is still legal

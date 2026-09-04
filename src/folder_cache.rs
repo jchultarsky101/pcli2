@@ -14,6 +14,39 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 /// Manages caching of folder hierarchies for Physna tenants
+/// Bumped whenever the serialized shape changes, so a file written by another
+/// version is discarded instead of decoded wrongly or failing with a parse error.
+const FOLDER_CACHE_SCHEMA_VERSION: u32 = 1;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedHierarchy {
+    #[serde(default)]
+    schema_version: u32,
+    hierarchy: FolderHierarchy,
+}
+
+/// Write a cache file through a temporary name and rename it into place, so a
+/// concurrent reader (two pcli2 processes under `xargs -P`) never sees a
+/// half-written file.
+pub(crate) fn write_atomically(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
+    {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(data)?;
+        file.flush()?;
+    }
+    fs::rename(&tmp, path)
+}
+
+/// The active environment's name, made safe for a file name.
+pub(crate) fn active_environment_key() -> String {
+    let name = crate::configuration::Configuration::load_default()
+        .ok()
+        .and_then(|c| c.get_active_environment())
+        .unwrap_or_else(|| "default".to_string());
+    name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_")
+}
+
 pub struct FolderCache {
     // Removed unused base field since we're not using BaseCache directly
 }
@@ -36,8 +69,16 @@ impl FolderCache {
     /// # Returns
     /// The full path to the tenant's cache file
     pub fn get_cache_file_path<S: AsRef<str>>(key: S) -> PathBuf {
-        let key: &str = key.as_ref();
-        BaseCache::get_cache_file_path(&Self::get_cache_dir(), key, "json")
+        // Keyed by environment as well as tenant: a staging tenant seeded from
+        // production can carry the same UUID and would otherwise share (and
+        // corrupt) the production hierarchy.
+        let mut path = Self::get_cache_dir();
+        path.push(format!(
+            "{}-{}.json",
+            active_environment_key(),
+            key.as_ref()
+        ));
+        path
     }
 
     /// Load cached folder hierarchy for a tenant
@@ -69,8 +110,16 @@ impl FolderCache {
             match fs::read(&cache_file) {
                 Ok(data) => {
                     tracing::debug!("Successfully read {} bytes from cache file", data.len());
-                    match serde_json::from_slice::<FolderHierarchy>(&data) {
-                        Ok(hierarchy) => {
+                    match serde_json::from_slice::<CachedHierarchy>(&data) {
+                        Ok(cached) if cached.schema_version != FOLDER_CACHE_SCHEMA_VERSION => {
+                            tracing::debug!(
+                                "Cache file was written by another version (schema {}); ignoring it",
+                                cached.schema_version
+                            );
+                            let _ = fs::remove_file(&cache_file);
+                            None
+                        }
+                        Ok(CachedHierarchy { hierarchy, .. }) => {
                             tracing::debug!(
                                 "Successfully deserialized folder hierarchy from cache"
                             );
@@ -110,7 +159,10 @@ impl FolderCache {
         tenant_uuid: &Uuid,
         hierarchy: &FolderHierarchy,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let serialized = serde_json::to_vec(hierarchy)?;
+        let serialized = serde_json::to_vec(&CachedHierarchy {
+            schema_version: FOLDER_CACHE_SCHEMA_VERSION,
+            hierarchy: hierarchy.clone(),
+        })?;
         tracing::debug!("Serialized folder hierarchy to {} bytes", serialized.len());
 
         // Create cache directory if it doesn't exist
@@ -120,11 +172,7 @@ impl FolderCache {
         let cache_file = Self::get_cache_file_path(tenant_uuid.to_string());
         tracing::debug!("Writing cache file to: {:?}", cache_file);
 
-        // Use buffered writer to ensure all data is written properly
-        let file = std::fs::File::create(&cache_file)?;
-        let mut writer = std::io::BufWriter::new(file);
-        writer.write_all(&serialized)?;
-        writer.flush()?;
+        write_atomically(&cache_file, &serialized)?;
 
         tracing::debug!("Successfully wrote cache file");
 
@@ -146,14 +194,18 @@ impl FolderCache {
     pub async fn get_or_fetch(
         client: &mut PhysnaApiClient,
         tenant_uuid: &Uuid,
-    ) -> Result<FolderHierarchy, Box<dyn std::error::Error>> {
+    ) -> Result<FolderHierarchy, crate::physna_v3::ApiError> {
         // Try to load from cache first
         if let Some(cached) = Self::load(tenant_uuid) {
             return Ok(cached);
         }
 
-        // If not in cache, fetch from API
-        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid).await?;
+        // If not in cache, fetch from API. Only an API failure can fail this: a
+        // cache that cannot be read is a miss, and one that cannot be written is
+        // logged and ignored.
+        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid)
+            .await
+            .map_err(|crate::folder_hierarchy::FolderHierarchyError::ApiError(e)| e)?;
 
         // Save to cache
         if let Err(e) = Self::save(tenant_uuid, &hierarchy) {
@@ -178,8 +230,10 @@ impl FolderCache {
     pub async fn refresh(
         client: &mut PhysnaApiClient,
         tenant_uuid: &Uuid,
-    ) -> Result<FolderHierarchy, Box<dyn std::error::Error>> {
-        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid).await?;
+    ) -> Result<FolderHierarchy, crate::physna_v3::ApiError> {
+        let hierarchy = FolderHierarchy::build_from_api(client, tenant_uuid)
+            .await
+            .map_err(|crate::folder_hierarchy::FolderHierarchyError::ApiError(e)| e)?;
 
         // Save to cache
         if let Err(e) = Self::save(tenant_uuid, &hierarchy) {

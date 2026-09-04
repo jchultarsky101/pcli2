@@ -156,9 +156,12 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
     )
     .await?;
 
-    if let Some(metadata) = asset.metadata() {
-        println!("{}", metadata.format(format)?);
-    }
+    // An asset with no metadata still prints (`{}` for JSON, headers only for
+    // CSV) so a consumer never sees empty stdout for a successful command.
+    let metadata = asset.metadata().cloned().unwrap_or_else(|| {
+        crate::model::AssetMetadata::from(std::collections::HashMap::<String, String>::new())
+    });
+    println!("{}", metadata.format(format)?);
 
     Ok(())
 }
@@ -183,11 +186,13 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
     let format = get_format_parameter_value(sub_matches).await;
 
     // Get folder paths from the command line arguments
-    let folder_paths: Vec<String> = sub_matches
-        .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
-        .unwrap_or_default()
-        .map(|s| s.to_string())
-        .collect();
+    let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
+            .unwrap_or_default()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>(),
+    );
 
     if folder_paths.is_empty() {
         return Err(CliError::MissingRequiredArgument(

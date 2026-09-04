@@ -199,7 +199,9 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
                     "Log in again with 'pcli2 auth login'",
                 ],
             );
-            return Ok(());
+            return Err(CliActionError::AlreadyReported(
+                crate::exit_codes::PcliExitCode::NotFound,
+            ));
         }
 
         // Create options for the select menu
@@ -223,7 +225,7 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
                 let tenant_name = choice
                     .split_once(':')
                     .map(|(before, _)| before.trim())
-                    .unwrap();
+                    .unwrap_or(choice.trim());
                 trace!("User selected tenant: {}", tenant_name);
                 // Find the tenant that matches the selection
                 tenants
@@ -235,7 +237,7 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
                 error_utils::report_error_with_remediation(
                     &"No tenant selected",
                     &[
-                        "Run 'pcli2 context set tenant' again to select a tenant",
+                        "Run 'pcli2 tenant use' again to select a tenant",
                         "Verify you have access to at least one tenant",
                         "Check your authentication credentials",
                     ],
@@ -255,13 +257,20 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
         configuration.save_to_default()?;
     } else {
         error_utils::report_error_with_remediation(
-            &format!("Tenant '{}' not found", name.unwrap()),
+            &format!(
+                "Tenant '{}' not found",
+                name.map(|n| n.to_string())
+                    .unwrap_or_else(|| "(selected)".to_string())
+            ),
             &[
                 "Check the tenant name spelling",
                 "List available tenants with 'pcli2 tenant list'",
                 "Verify you have access to this tenant",
             ],
         ); // Safe to unwrap since we checked above
+        return Err(CliActionError::AlreadyReported(
+            crate::exit_codes::PcliExitCode::NotFound,
+        ));
     }
 
     Ok(())
@@ -481,6 +490,7 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
                 CliActionError::FormattingError(fmt_error)
             }
             crate::error::CliError::ActionError(action_error) => action_error, // Already a CliActionError
+            crate::error::CliError::AlreadyReported(code) => CliActionError::AlreadyReported(code),
             crate::error::CliError::PhysnaExtendedApiError(api_error) => {
                 CliActionError::ApiError(api_error)
             }

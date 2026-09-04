@@ -1,37 +1,37 @@
 ## Cross-Platform Configuration
 
-PCLI2 supports cross-platform environments through environment variables, which is especially useful for WSL users running Windows executables or users who want to customize where configuration and cache files are stored.
-
-### Environment Variables
+PCLI2 reads a small set of environment variables. They are useful for WSL users
+running a Windows executable, for CI jobs, and for anyone who wants configuration
+and cache files somewhere other than the platform defaults.
 
 ```bash
-# Set custom configuration directory (cross-platform support)
+# Where config.yml and the credentials file live
 export PCLI2_CONFIG_DIR="/custom/path/to/config"
 
-# Set custom cache directory (for all cache files)
+# Where the folder, tenant and metadata caches live
 export PCLI2_CACHE_DIR="/custom/path/to/cache"
-
-# Set custom API, UI, and Auth URLs (overrides configuration)
-export PCLI2_API_BASE_URL="https://custom-api.example.com/v3"
-export PCLI2_UI_BASE_URL="https://custom-ui.example.com"
-export PCLI2_AUTH_BASE_URL="https://custom-auth.example.com/oauth2/token"
 
 # Useful for WSL users running Windows executables
 export PCLI2_CONFIG_DIR="/home/$USER/.pcli2"
 export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
 ```
 
-Environment Variable Details:
-- `PCLI2_CONFIG_DIR`: Custom directory for configuration file (`config.yml`). If not set, uses the system's default configuration directory.
-- `PCLI2_CACHE_DIR`: Custom directory for all cache files (asset cache, metadata cache, folder cache). If not set, uses the system's default cache directory.
-- `PCLI2_API_BASE_URL`: Custom API base URL (overrides configuration). If not set, uses the configured or default API URL.
-- `PCLI2_UI_BASE_URL`: Custom UI base URL (overrides configuration). If not set, uses the configured or default UI URL.
-- `PCLI2_AUTH_BASE_URL`: Custom authentication URL (overrides configuration). If not set, uses the configured or default auth URL.
+| Variable | Effect |
+|----------|--------|
+| `PCLI2_CONFIG_DIR` | Directory holding `config.yml` and `dev_credentials.json`. Default: the platform configuration directory (`pcli2 config get path` prints it). |
+| `PCLI2_CACHE_DIR` | Directory for all cache files. Default: the platform cache directory. |
+| `PCLI2_FORMAT` | Default `--format` when the flag is not given on the command line. |
+| `PCLI2_HEADERS` | Default `--headers` when the flag is not given (`1`/`0`, `yes`/`no`). |
+| `PCLI2_LOG_LEVEL` | Log level: `error`, `warn` (default), `info`, `debug`, `trace`. `RUST_LOG` takes precedence when set. |
+| `PCLI2_TIMEOUT` | Total request timeout in seconds (default 1800, to allow very large transfers). Connections time out after 15 seconds and a read after 300 seconds of silence regardless. |
+| `PCLI2_MAX_RETRIES` | Retries for transient failures: connection errors, 408/429/502/503/504 (default 2; `0` disables). |
+| `PCLI2_NO_COLOR`, `NO_COLOR` | Disable colored output. |
+| `PCLI2_NO_UPDATE_CHECK`, `CI` | Disable the once-a-day new-version hint. |
 
-These environment variables allow PCLI2 to work seamlessly across different operating systems and environments, including:
-- Windows (native)
-- macOS (native)
-- Linux (native)
-- Windows Subsystem for Linux (WSL)
-- Docker containers
-- CI/CD environments
+API, UI and authentication URLs are not read from the environment. They belong to
+an environment definition: `pcli2 env add --name staging --api-url ...`, then
+`pcli2 env use --name staging`.
+
+Paths are the same on every platform: `/Home/Parts/Bracket.stl`, where `/Home`
+(the name Physna shows for the root folder) is optional. Folder path matching is
+case-insensitive.

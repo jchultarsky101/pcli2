@@ -6,7 +6,6 @@ use crate::model::{
     AssetStateCounts, CurrentUserResponse, FolderList, FolderListResponse, SingleAssetResponse,
     SingleFolderResponse,
 };
-use async_recursion::async_recursion;
 use glob::glob;
 use indicatif::{ProgressBar, ProgressStyle};
 use mime_guess;
@@ -14,7 +13,7 @@ use reqwest;
 use serde_json;
 use serde_urlencoded;
 use std::path::Path;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, trace, warn};
 use uuid::Uuid;
 
 /// Error emitted by the Physna V3 Api
@@ -51,9 +50,18 @@ pub enum ApiError {
     #[error("Glob pattern path error: {0}")]
     GlobPatternError(#[from] glob::PatternError),
 
-    /// Conflict error (e.g., asset already exists)
+    /// The server refused the request with 409. The search endpoints use it to say an
+    /// asset is not in a searchable state, which callers treat as a property of the
+    /// tenant rather than of the run - so it must never be produced for any other status.
     #[error("Conflict: {0}")]
     ConflictError(String),
+
+    /// The server answered with an error status that has no case of its own: 400, 422,
+    /// 429, 5xx and so on. `message` is what the API said (its JSON `message`/`error`
+    /// field when present, otherwise the body), and `status` is kept so callers can
+    /// decide on the number rather than on the text.
+    #[error("HTTP {status} - {message}")]
+    HttpStatus { status: u16, message: String },
 
     #[error("{0}")]
     KeyringError(#[from] KeyringError),
@@ -83,7 +91,7 @@ pub enum ApiError {
     #[error(
         "could not load the folder hierarchy needed by --recursive: {0}. \
          Without it only the assets directly in the folder can be listed, which is not \
-         what was asked for. Try 'pcli2 cache clear' and run the command again."
+         what was asked for."
     )]
     FolderHierarchyUnavailable(String),
 
@@ -106,6 +114,55 @@ pub enum ApiError {
 }
 
 impl ApiError {
+    /// The HTTP status behind this error, when there is one.
+    pub fn http_status(&self) -> Option<u16> {
+        match self {
+            ApiError::HttpStatus { status, .. } => Some(*status),
+            ApiError::HttpError(e) => e.status().map(|s| s.as_u16()),
+            ApiError::ConflictError(_) => Some(409),
+            ApiError::NotFoundError(_) => Some(404),
+            ApiError::RetryFailed(message) => Self::retry_status(message)
+                .and_then(|status| status.split_whitespace().next()?.parse().ok()),
+            _ => None,
+        }
+    }
+
+    /// True when the request was authenticated and the server still said 403,
+    /// whether on the first try or after the token had been renewed.
+    pub fn is_forbidden(&self) -> bool {
+        self.is_authorization_failure() || self.http_status() == Some(403)
+    }
+
+    /// The exit code that describes this error to a script.
+    pub fn exit_code(&self) -> crate::exit_codes::PcliExitCode {
+        use crate::exit_codes::PcliExitCode;
+        match self {
+            ApiError::AuthError(_)
+            | ApiError::InvalidToken
+            | ApiError::MissingCredentials
+            | ApiError::KeyringError(_) => PcliExitCode::AuthError,
+            ApiError::HttpError(e) if e.is_connect() || e.is_timeout() || e.is_request() => {
+                PcliExitCode::NetworkError
+            }
+            ApiError::HttpError(_)
+            | ApiError::RetryFailed(_)
+            | ApiError::ConflictError(_)
+            | ApiError::HttpStatus { .. }
+            | ApiError::FolderNotEmptyError
+            | ApiError::FolderHierarchyUnavailable(_)
+            | ApiError::MetadataTypeMismatch { .. } => PcliExitCode::ApiError,
+            ApiError::NotFoundError(_)
+            | ApiError::PathNotFound(_)
+            | ApiError::FolderNotFound(_)
+            | ApiError::InvalidAssetPath(_) => PcliExitCode::NotFound,
+            ApiError::JsonError(_) => PcliExitCode::DataError,
+            ApiError::IoError(e) => PcliExitCode::for_io_error(e),
+            ApiError::GlobError(_)
+            | ApiError::GlobPatternError(_)
+            | ApiError::InvalidParameterError(_) => PcliExitCode::UsageError,
+        }
+    }
+
     /// True when the error indicates an authentication/authorization failure,
     /// including a 401/403 that persisted through the automatic token-refresh
     /// retry (which surfaces as `RetryFailed` rather than `AuthError`).
@@ -426,6 +483,14 @@ type SharedToken = std::sync::Arc<std::sync::RwLock<Option<String>>>;
 ///     Ok(())
 /// }
 /// ```
+/// What a batch upload managed to do. Failures are returned, not logged: a caller
+/// that only sees the successes cannot tell a complete run from a partial one.
+#[derive(Debug, Default)]
+pub struct BatchUploadOutcome {
+    pub assets: Vec<crate::model::Asset>,
+    pub failures: Vec<(std::path::PathBuf, ApiError)>,
+}
+
 #[derive(Clone)]
 pub struct PhysnaApiClient {
     /// Base URL for the Physna V3 API (e.g., "https://app-api.physna.com/v3")
@@ -549,7 +614,10 @@ impl PhysnaApiClient {
             HttpClient::new(config).expect("Failed to build HTTP client with timeout");
 
         Self {
-            base_url: configuration.get_api_base_url(),
+            base_url: configuration
+                .get_api_base_url()
+                .trim_end_matches('/')
+                .to_string(),
             access_token: SharedToken::default(),
             renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             client_credentials: None,
@@ -568,7 +636,10 @@ impl PhysnaApiClient {
             HttpClient::new(config).expect("Failed to build HTTP client with timeout");
 
         Self {
-            base_url: configuration.get_api_base_url(),
+            base_url: configuration
+                .get_api_base_url()
+                .trim_end_matches('/')
+                .to_string(),
             access_token: SharedToken::default(),
             renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             client_credentials: None,
@@ -607,7 +678,9 @@ impl PhysnaApiClient {
     /// # Returns
     /// The updated `PhysnaApiClient` instance with the new base URL
     pub fn with_base_url(mut self, base_url: String) -> Self {
-        self.base_url = base_url;
+        // Paths are appended with their own leading slash; a configured URL ending
+        // in one produced `https://host/v3//tenants/...`.
+        self.base_url = base_url.trim_end_matches('/').to_string();
         self
     }
 
@@ -645,6 +718,18 @@ impl PhysnaApiClient {
     /// * `Ok(())` - Token successfully refreshed
     /// * `Err(ApiError::AuthError)` - Failed to refresh token or no credentials available
     pub async fn refresh_token(&mut self) -> Result<(), ApiError> {
+        let current = self.current_token();
+        self.refresh_token_after(current.as_deref()).await
+    }
+
+    /// Renew the access token, unless it has already changed since `used` was sent.
+    ///
+    /// `used` is the token the failed request carried. Comparing against *that*,
+    /// rather than against whatever is current when the renewal is requested, is what
+    /// collapses a burst of concurrent 401s into one renewal: a task whose request
+    /// went out with the old token, and which only reads the shared slot after
+    /// another task has already renewed, sees the new token and stops.
+    pub async fn refresh_token_after(&mut self, used: Option<&str>) -> Result<(), ApiError> {
         // Since the token refresh mechanism is not working reliably with this Cognito setup,
         // we'll automatically attempt to re-authenticate using the cached client credentials.
         // If this automatic re-authentication fails, we'll prompt the user to run 'pcli2 auth login'.
@@ -657,9 +742,8 @@ impl PhysnaApiClient {
         // changed by the time we get the lock, someone else renewed while we waited and
         // there is nothing left to do - without this, a burst of tasks all meeting the
         // same expired token would queue up and re-authenticate one after another.
-        let stale_token = self.current_token();
         let _renewing = self.renewal.lock().await;
-        if self.current_token() != stale_token {
+        if self.current_token().as_deref() != used {
             debug!("Another task renewed the access token while we waited; using theirs");
             return Ok(());
         }
@@ -692,9 +776,13 @@ impl PhysnaApiClient {
                 Err(e) => {
                     // If automatic re-authentication fails, prompt the user to log in manually
                     debug!("Automatic re-authentication failed: {}", e);
-                    Err(ApiError::AuthError(
-                        "Automatic authentication failed. Please log in again with 'pcli2 auth login'.".to_string()
-                    ))
+                    // Keep the cause: a rotated secret, a rate-limited auth endpoint
+                    // and a DNS failure all used to print the same "log in again",
+                    // which is the right advice for only one of them.
+                    Err(ApiError::AuthError(format!(
+                        "Automatic re-authentication failed ({}). Please log in again with 'pcli2 auth login'.",
+                        e
+                    )))
                 }
             }
         } else {
@@ -900,250 +988,104 @@ impl PhysnaApiClient {
         }
     }
 
-    /// Generic method to build and execute HTTP requests with automatic token refresh on 401/403 errors
+    /// Send one authenticated request and hand back its successful response.
     ///
-    /// This method provides a unified interface for making HTTP requests to the Physna V3 API.
-    /// It automatically handles:
-    /// - Adding access tokens to authenticated requests
-    /// - Detecting authentication failures (401/403)
-    /// - Refreshing expired tokens using client credentials
-    /// - Retrying failed requests with refreshed tokens
+    /// This is the single path every API call takes. It renews the token shortly
+    /// before expiry, retries transient failures (connection errors, 408/429/5xx
+    /// gateway statuses, `Retry-After`), and on a 401/403 renews the token once and
+    /// resends. `build` is called for every attempt so a streamed body starts from
+    /// the beginning again.
     ///
-    /// # Type Parameters
-    /// * `T` - The type to deserialize the response into (must implement `DeserializeOwned`)
-    /// * `F` - A closure that builds the HTTP request
-    ///
-    /// # Arguments
-    /// * `request_builder` - A closure that takes a `reqwest::Client` and returns a `RequestBuilder`
-    ///
-    /// # Returns
-    /// * `Ok(T)` - Successfully executed request with parsed response
-    /// * `Err(ApiError)` - HTTP error, JSON parsing error, or authentication failure
-    async fn execute_request<T, F>(&mut self, request_builder: F) -> Result<T, ApiError>
+    /// Any non-2xx outcome is returned classified: 404 as `NotFoundError`, 409 as
+    /// `ConflictError`, a 401/403 that survives renewal as `RetryFailed`, and every
+    /// other status as `HttpStatus`, so callers decide on the status rather than on
+    /// the text of a message.
+    async fn request_with_auth<F>(
+        &mut self,
+        mut build: F,
+        idempotent: bool,
+    ) -> Result<reqwest::Response, ApiError>
     where
-        T: serde::de::DeserializeOwned,
-        F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+        F: FnMut(&reqwest::Client) -> Result<reqwest::RequestBuilder, ApiError>,
     {
+        // With credentials but no token yet, authenticate up front rather than
+        // spending a request to be told 401. Without either, the request still goes
+        // out: the server decides, and a 401 then produces the "log in" advice.
+        if !self.has_token() && self.client_credentials.is_some() {
+            debug!("No access token held; authenticating before the first request");
+            self.refresh_token_after(None).await?;
+        }
         self.renew_token_if_expiring().await;
 
-        // Build the request using the original builder
-        let mut request = request_builder(&self.http_client.client); // Access the underlying reqwest client
+        let used_token = self.current_token();
+        let response = self
+            .http_client
+            .send_with_retry(&mut build, used_token.as_deref(), idempotent)
+            .await?;
+        let first_status = response.status();
 
-        // Add access token header if available for authentication
-        if let Some(token) = self.current_token() {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        // Execute the request using the HttpClient's execute_request method
-        // We need to manually handle the authentication here since we're bypassing HttpClient's built-in auth
-        let response = request.send().await?;
-
-        // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
-        // We retry on both 401 and 403 as they can both indicate authentication issues
-        // A 401 clearly indicates an invalid token
-        // A 403 can also indicate an expired token in some cases
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED
-            || response.status() == reqwest::StatusCode::FORBIDDEN
+        if first_status != reqwest::StatusCode::UNAUTHORIZED
+            && first_status != reqwest::StatusCode::FORBIDDEN
         {
-            debug!(
-                "Received authentication error ({}), attempting token refresh",
-                response.status()
-            );
-
-            // Try to refresh the expired or invalid access token
-            self.refresh_token().await?;
-
-            // Retry the original request with the newly refreshed token
-            debug!("Retrying request with refreshed token");
-            let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
-
-            // Add the refreshed access token to the retry request
-            if let Some(token) = self.current_token() {
-                retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
-            }
-
-            let retry_response = retry_request.send().await?;
-
-            // Check if the retry was successful
-            if retry_response.status().is_success() {
-                // Try to get the raw response text for debugging deserialization issues
-                let response = retry_response.text().await?;
-                trace!("Raw response for deserialization: {}", response);
-                trace!("Deserializing into: {}", std::any::type_name::<T>());
-
-                // Try to parse and return the JSON response
-                match serde_json::from_str::<T>(&response) {
-                    Ok(result) => Ok(result),
-                    Err(e) => {
-                        error!(
-                            "Failed to deserialize response: {}. Raw response: {}",
-                            e, response
-                        );
-                        Err(ApiError::JsonError(e))
-                    }
-                }
-            } else {
-                // Retry failed - provide clear error information
-                let status = retry_response.status();
-                let error_text = retry_response
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "Unknown error".to_string());
-                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}",
-                    response.status(), status, error_text);
-                Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Retry failed with status: {} and body: {}",
-                    response.status(),
-                    status,
-                    error_text
-                )))
-            }
-        } else if response.status().is_success() {
-            // Initial request was successful - try to get the raw response text for debugging
-            let response = response.text().await?;
-            trace!("Raw response for deserialization: {}", response);
-            trace!("Deserializing into: {}", std::any::type_name::<T>());
-
-            // Try to parse and return the JSON response
-            match serde_json::from_str::<T>(&response) {
-                Ok(result) => Ok(result),
-                Err(e) => {
-                    error!(
-                        "Failed to deserialize response: {}. Raw response: {}",
-                        e, response
-                    );
-                    Err(ApiError::JsonError(e))
-                }
-            }
-        } else {
-            // For all other errors, try to extract the error message from the response body
-            let status = response.status();
-            let error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-
-            // Log the HTTP response code and body for debugging
-            debug!(
-                "HTTP request failed with status: {}, body: {}",
-                status, error_body
-            );
-
-            // Special handling for 404 errors that might be due to authentication issues
-            // The API sometimes returns 404 instead of 401/403 when authentication is missing or invalid
-            if status == reqwest::StatusCode::NOT_FOUND {
-                // Check if this is a "no dependencies found" error which is a valid response, not an auth issue
-                // Use the error_body that was already read from the response
-                let error_text = error_body.clone();
-
-                // If the error message indicates no dependencies found, return an appropriate response
-                if error_text.contains("No dependencies found for asset") {
-                    debug!("Asset has no dependencies (404 with 'No dependencies found' message), returning empty response");
-
-                    // For dependency requests, return an empty dependencies response instead of an error
-                    // We need to determine the type T and handle it appropriately
-                    // For now, let's let this bubble up as a specific error that can be handled by the caller
-                    return Err(ApiError::NotFoundError(error_text));
-                }
-
-                // If we have no access token, this is definitely an authentication issue
-                if !self.has_token() {
-                    debug!("404 error with no access token - treating as authentication error");
-                    return Err(ApiError::AuthError(
-                        "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
-                    ));
-                } else {
-                    // Even if we have a token, it might be invalid/expired and the API returns 404 instead of 401/403
-                    // Try to refresh the token and see if that resolves the issue
-                    debug!("Received 404 error, attempting token refresh as it might be an authentication issue");
-                    if let Err(refresh_err) = self.refresh_token().await {
-                        // If token refresh fails, this confirms it's an authentication issue
-                        debug!("Token refresh failed: {}", refresh_err);
-                        return Err(ApiError::AuthError(
-                            "Authentication required: Access token may be invalid or expired. Please log in with 'pcli2 auth login'.".to_string()
-                        ));
-                    } else {
-                        // If refresh succeeds, save the token and retry the request
-                        debug!(
-                            "Token refreshed successfully, saving to keyring and retrying request"
-                        );
-
-                        // Save the refreshed token to the keyring so subsequent requests use the fresh token
-                        if let Err(e) = self.save_current_token_to_keyring_internal() {
-                            debug!("Failed to save refreshed token to keyring: {}", e);
-                            // Continue anyway - the in-memory token is still valid for this session
-                        }
-
-                        let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
-
-                        if let Some(token) = self.current_token() {
-                            retry_request =
-                                retry_request.header("Authorization", format!("Bearer {}", token));
-                        }
-
-                        let retry_response = retry_request.send().await?;
-
-                        if retry_response.status().is_success() {
-                            let response = retry_response.text().await?;
-                            match serde_json::from_str::<T>(&response) {
-                                Ok(result) => return Ok(result),
-                                Err(e) => {
-                                    error!("Failed to deserialize response after token refresh: {}. Raw response: {}", e, response);
-                                    return Err(ApiError::JsonError(e));
-                                }
-                            }
-                        } else {
-                            // Even after refresh, the request failed
-                            let retry_status = retry_response.status();
-                            let retry_error_body = retry_response
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".to_string());
-                            debug!(
-                                "Request still failed after token refresh: {} - {}",
-                                retry_status, retry_error_body
-                            );
-                            // A 404 that persists with a fresh token is a genuine
-                            // not-found, not a conflict; classify it so callers
-                            // can match on it.
-                            if retry_status == reqwest::StatusCode::NOT_FOUND {
-                                return Err(ApiError::NotFoundError(format!(
-                                    "HTTP {} - {}",
-                                    retry_status, retry_error_body
-                                )));
-                            }
-                            return Err(ApiError::ConflictError(format!(
-                                "HTTP {} - {}",
-                                retry_status, retry_error_body
-                            )));
-                        }
-                    }
-                }
-            }
-            // 401/403 cannot reach this branch: they are consumed by the
-            // authentication-retry branch at the top of this function.
-
-            // Try to parse the error as JSON to extract a more descriptive message
-            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
-                if let Some(message) = error_json.get("message").and_then(|m| m.as_str()) {
-                    return Err(ApiError::ConflictError(format!(
-                        "HTTP {} - {}",
-                        status, message
-                    )));
-                } else if let Some(error) = error_json.get("error").and_then(|e| e.as_str()) {
-                    return Err(ApiError::ConflictError(format!(
-                        "HTTP {} - {}",
-                        status, error
-                    )));
-                }
-            }
-
-            // If JSON parsing fails or no message is found, return a generic error with the raw response
-            Err(ApiError::ConflictError(format!(
-                "HTTP {} - {}",
-                status, error_body
-            )))
+            return classify_response(response).await;
         }
+
+        debug!(
+            "Received {}; renewing the access token and retrying once",
+            first_status
+        );
+        self.refresh_token_after(used_token.as_deref()).await?;
+
+        let token = self.current_token();
+        let retry = self
+            .http_client
+            .send_with_retry(&mut build, token.as_deref(), idempotent)
+            .await?;
+        if retry.status().is_success() {
+            return Ok(retry);
+        }
+
+        // The wording of this message is part of the contract with
+        // `is_authentication_failure` / `is_authorization_failure`, which read the
+        // retry's status out of it.
+        let retry_status = retry.status();
+        let body = read_error_body(retry).await;
+        error!(
+            "API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}",
+            first_status, retry_status, body
+        );
+        Err(ApiError::RetryFailed(format!(
+            "Original error: {}, Retry failed with status: {} and body: {}",
+            first_status, retry_status, body
+        )))
+    }
+
+    /// Execute a request and deserialize its JSON body.
+    ///
+    /// `idempotent` says whether a timed-out attempt may be resent; a GET may, a
+    /// POST that creates something may not.
+    async fn execute_request<T, F>(
+        &mut self,
+        request_builder: F,
+        idempotent: bool,
+    ) -> Result<T, ApiError>
+    where
+        T: serde::de::DeserializeOwned,
+        F: FnMut(&reqwest::Client) -> Result<reqwest::RequestBuilder, ApiError>,
+    {
+        let response = self.request_with_auth(request_builder, idempotent).await?;
+        let text = response.text().await?;
+        trace!("Raw response for deserialization: {}", text);
+        trace!("Deserializing into: {}", std::any::type_name::<T>());
+        serde_json::from_str::<T>(&text).map_err(|e| {
+            error!(
+                "Failed to deserialize response into {}: {}. Response starts: {}",
+                std::any::type_name::<T>(),
+                e,
+                excerpt(&text)
+            );
+            ApiError::JsonError(e)
+        })
     }
 
     /// Generic method to build and execute GET requests
@@ -1151,7 +1093,8 @@ impl PhysnaApiClient {
     where
         T: serde::de::DeserializeOwned,
     {
-        self.execute_request(|client| client.get(url)).await
+        self.execute_request(|client| Ok(client.get(url)), true)
+            .await
     }
 
     /// Generic method to build and execute POST requests
@@ -1166,7 +1109,7 @@ impl PhysnaApiClient {
         trace!("POST request to {}: {}", url, body_json);
 
         let result = self
-            .execute_request(|client| client.post(url).json(body))
+            .execute_request(|client| Ok(client.post(url).json(body)), false)
             .await;
 
         // Log the response for debugging
@@ -1184,7 +1127,7 @@ impl PhysnaApiClient {
         T: serde::de::DeserializeOwned,
         B: serde::Serialize,
     {
-        self.execute_request(|client| client.put(url).json(body))
+        self.execute_request(|client| Ok(client.put(url).json(body)), true)
             .await
     }
 
@@ -1195,61 +1138,22 @@ impl PhysnaApiClient {
         T: serde::de::DeserializeOwned,
         B: serde::Serialize,
     {
-        self.execute_request(|client| client.patch(url).json(body))
+        self.execute_request(|client| Ok(client.patch(url).json(body)), false)
             .await
     }
 
     /// Generic method to build and execute DELETE requests with automatic token refresh
     async fn delete(&mut self, url: &str) -> Result<(), ApiError> {
-        // Use the HttpClient's delete method which includes the user agent
-        let token = self.current_token();
-        match self.http_client.delete(url, token.as_deref()).await {
-            Ok(()) => Ok(()),
-            Err(ApiError::HttpError(reqwest_err)) => {
-                // Check if the error is due to authentication
-                if reqwest_err.status() == Some(reqwest::StatusCode::UNAUTHORIZED)
-                    || reqwest_err.status() == Some(reqwest::StatusCode::FORBIDDEN)
-                {
-                    debug!(
-                        "Received authentication error ({}), attempting token refresh",
-                        reqwest_err
-                            .status()
-                            .unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
-                    );
-
-                    // Try to refresh the token
-                    self.refresh_token().await?;
-
-                    // Save the refreshed token to the keyring so subsequent requests use the fresh token
-                    if let Err(e) = self.save_current_token_to_keyring_internal() {
-                        debug!("Failed to save refreshed token to keyring: {}", e);
-                        // Continue anyway - the in-memory token is still valid for this session
-                    }
-
-                    // Retry the request with the new token
-                    debug!("Retrying DELETE request with refreshed token");
-                    let token = self.current_token();
-                    match self.http_client.delete(url, token.as_deref()).await {
-                        Ok(()) => Ok(()),
-                        Err(retry_err) => Err(ApiError::RetryFailed(format!(
-                            "Original error: {}, Retry failed with error: {}",
-                            reqwest_err, retry_err
-                        ))),
-                    }
-                } else if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                    // Check if this is a folder deletion attempt on a non-empty folder
-                    // The API returns 404 for non-empty folders instead of a more appropriate error code
-                    if url.contains("/folders/") {
-                        debug!("Folder deletion failed with 404 - likely due to non-empty folder. Suggest using --force flag.");
-                        return Err(ApiError::HttpError(reqwest_err));
-                    }
-                    Err(ApiError::HttpError(reqwest_err))
-                } else {
-                    Err(ApiError::HttpError(reqwest_err))
-                }
-            }
-            Err(other_err) => Err(other_err),
-        }
+        // Callers pass a path relative to the API base (`/tenants/...`); an absolute
+        // URL is used as given.
+        let url = if url.starts_with("http://") || url.starts_with("https://") {
+            url.to_string()
+        } else {
+            format!("{}{}", self.base_url, url)
+        };
+        self.request_with_auth(|client| Ok(client.delete(&url)), true)
+            .await
+            .map(|_| ())
     }
 
     /// Get the current user's information from the Physna V3 API
@@ -1618,6 +1522,17 @@ impl PhysnaApiClient {
             if response.page_data.current_page >= response.page_data.last_page {
                 break;
             }
+            // A server that echoes a stale page number would otherwise be asked for
+            // the same page forever.
+            if response.page_data.current_page < page {
+                warn!(
+                    "Asset listing returned page {} when page {} was requested; stopping with {} asset(s)",
+                    response.page_data.current_page,
+                    page,
+                    assets.len()
+                );
+                break;
+            }
 
             // Increment the current page
             page = response.page_data.current_page + 1;
@@ -1790,16 +1705,18 @@ impl PhysnaApiClient {
             // Use the cached folder hierarchy approach to find the folder by path
             // This properly handles nested paths like "test/sub1" by traversing the hierarchy
             // and avoids rebuilding the hierarchy for each path resolution
-            if let Ok(hierarchy) =
-                crate::folder_cache::FolderCache::get_or_fetch(self, tenant_uuid).await
-            {
-                if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
-                    debug!(
-                        "Found folder at path '{}' using hierarchy: {}",
-                        path_for_hierarchy, folder_node.folder.uuid
-                    );
-                    return Ok(Some(folder_node.folder.uuid));
-                }
+            // A failure to *load* the hierarchy is an error in its own right. It used
+            // to be swallowed here and surface as "folder not found", sending users to
+            // check a path that was correct while the real problem was the network or
+            // an expired session.
+            let hierarchy =
+                crate::folder_cache::FolderCache::get_or_fetch(self, tenant_uuid).await?;
+            if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
+                debug!(
+                    "Found folder at path '{}' using hierarchy: {}",
+                    path_for_hierarchy, folder_node.folder.uuid
+                );
+                return Ok(Some(folder_node.folder.uuid));
             }
 
             // Folder not found in cache - refresh the cache and try again
@@ -1808,8 +1725,7 @@ impl PhysnaApiClient {
                 "Folder not found at path '{}' in cache, refreshing cache...",
                 folder_path
             );
-            if let Ok(hierarchy) =
-                crate::folder_cache::FolderCache::refresh(self, tenant_uuid).await
+            let hierarchy = crate::folder_cache::FolderCache::refresh(self, tenant_uuid).await?;
             {
                 if let Some(folder_node) = hierarchy.get_folder_by_path(path_for_hierarchy) {
                     debug!(
@@ -2203,7 +2119,7 @@ impl PhysnaApiClient {
         Ok((subfolders, assets))
     }
 
-    fn get_parent_folder_path<S: AsRef<str>>(asset_path: S) -> Result<String, ApiError> {
+    pub(crate) fn get_parent_folder_path<S: AsRef<str>>(asset_path: S) -> Result<String, ApiError> {
         let asset_path = asset_path.as_ref();
         let path = Path::new(asset_path);
         let parent = path
@@ -2227,7 +2143,7 @@ impl PhysnaApiClient {
         Ok(normalized_parent)
     }
 
-    fn asset_name_from_path(path: &str) -> Option<String> {
+    pub(crate) fn asset_name_from_path(path: &str) -> Option<String> {
         Path::new(path)
             .file_name()
             .and_then(|s| s.to_str())
@@ -2377,31 +2293,50 @@ impl PhysnaApiClient {
         metadata: &std::collections::HashMap<String, serde_json::Value>,
         declared_types: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<(), ApiError> {
-        // Get existing metadata fields for the tenant
-        let existing_fields_response = self.get_metadata_fields(&tenant_uuid.to_string()).await;
+        let mut registry = self.fetch_metadata_field_types(tenant_uuid).await?;
+        self.update_asset_metadata_with_registry(
+            tenant_uuid,
+            asset_uuid,
+            metadata,
+            declared_types,
+            &mut registry,
+        )
+        .await
+    }
 
-        let mut field_type_map: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
+    /// The tenant's registered metadata fields, name to type.
+    ///
+    /// A failure here is returned rather than treated as "no fields": with an empty
+    /// registry every value is inferred as a new text field, the API then rejects
+    /// `"18"` for a number field, and the user is told their CSV has a type
+    /// conflict when the real problem was a request that did not go through.
+    pub async fn fetch_metadata_field_types(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<std::collections::HashMap<String, String>, ApiError> {
+        let fields = self.get_metadata_fields(&tenant_uuid.to_string()).await?;
+        debug!(
+            "Retrieved {} existing metadata fields for tenant",
+            fields.metadata_fields.len()
+        );
+        Ok(fields
+            .metadata_fields
+            .into_iter()
+            .map(|field| (field.name, field.field_type))
+            .collect())
+    }
 
-        if let Ok(fields_response) = existing_fields_response {
-            debug!(
-                "Retrieved {} existing metadata fields for tenant",
-                fields_response.metadata_fields.len()
-            );
-            for field in fields_response.metadata_fields {
-                debug!(
-                    "Found metadata field: '{}' with type: '{}'",
-                    field.name, field.field_type
-                );
-                field_type_map.insert(field.name, field.field_type);
-            }
-        } else {
-            debug!(
-                "Failed to retrieve metadata fields: {:?}",
-                existing_fields_response
-            );
-        }
-
+    /// Like [`Self::update_asset_metadata_with_registration`], with the field
+    /// registry supplied by the caller and kept up to date as fields are
+    /// registered - so a batch fetches the registry once instead of once per row.
+    pub async fn update_asset_metadata_with_registry(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+        metadata: &std::collections::HashMap<String, serde_json::Value>,
+        declared_types: Option<&std::collections::HashMap<String, String>>,
+        field_type_map: &mut std::collections::HashMap<String, String>,
+    ) -> Result<(), ApiError> {
         // Build the outgoing payload, coercing every value to the type the field
         // is (or will be) registered with. The registered type is authoritative:
         // a string "18" is sent as the JSON number 18 for a number-typed field, a
@@ -2462,7 +2397,10 @@ impl PhysnaApiClient {
                     .create_metadata_field(&tenant_uuid.to_string(), key, Some(register_type))
                     .await
                 {
-                    Ok(_) => debug!("Successfully registered new metadata field: {}", key),
+                    Ok(_) => {
+                        debug!("Successfully registered new metadata field: {}", key);
+                        field_type_map.insert(key.clone(), register_type.to_string());
+                    }
                     Err(e) => {
                         debug!("Failed to register metadata field '{}': {}", key, e);
                         // Continue anyway, as the API might allow setting values
@@ -2643,7 +2581,7 @@ impl PhysnaApiClient {
     where
         B: serde::Serialize,
     {
-        self.execute_request_no_response(|client| client.post(url).json(body))
+        self.execute_request_no_response(|client| Ok(client.post(url).json(body)), false)
             .await
     }
 
@@ -2651,7 +2589,7 @@ impl PhysnaApiClient {
     where
         B: serde::Serialize,
     {
-        self.execute_request_no_response(|client| client.patch(url).json(body))
+        self.execute_request_no_response(|client| Ok(client.patch(url).json(body)), false)
             .await
     }
 
@@ -2674,137 +2612,22 @@ impl PhysnaApiClient {
     where
         B: serde::Serialize,
     {
-        self.execute_request_no_response(|client| client.delete(url).json(body))
+        self.execute_request_no_response(|client| Ok(client.delete(url).json(body)), true)
             .await
     }
 
-    /// Generic method to execute requests that may return empty responses
-    ///
-    /// This method is similar to execute_request but handles empty responses gracefully.
-    /// It's useful for API endpoints that return 204 No Content or empty bodies on success.
-    ///
-    /// # Type Parameters
-    /// * `F` - A closure that builds the HTTP request
-    ///
-    /// # Arguments
-    /// * `request_builder` - A closure that takes a `reqwest::Client` and returns a `RequestBuilder`
-    ///
-    /// # Returns
-    /// * `Ok(())` - Successfully executed request (empty response is considered success)
-    /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    async fn execute_request_no_response<F>(&mut self, request_builder: F) -> Result<(), ApiError>
+    /// Execute a request whose success response has no body worth reading.
+    async fn execute_request_no_response<F>(
+        &mut self,
+        request_builder: F,
+        idempotent: bool,
+    ) -> Result<(), ApiError>
     where
-        F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+        F: FnMut(&reqwest::Client) -> Result<reqwest::RequestBuilder, ApiError>,
     {
-        self.renew_token_if_expiring().await;
-
-        // Build the request using the original builder
-        let mut request = request_builder(&self.http_client.client); // Access the underlying reqwest client
-
-        // Add access token header if available for authentication
-        if let Some(token) = self.current_token() {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let response = request.send().await?;
-
-        // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
-        // We retry on both 401 and 403 as they can both indicate authentication issues
-        // A 401 clearly indicates an invalid token
-        // A 403 can also indicate an expired token in some cases
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED
-            || response.status() == reqwest::StatusCode::FORBIDDEN
-        {
-            debug!(
-                "Received authentication error ({}), attempting token refresh",
-                response.status()
-            );
-
-            // Try to refresh the expired or invalid access token
-            self.refresh_token().await?;
-
-            // Retry the original request with the newly refreshed token
-            debug!("Retrying request with refreshed token");
-            let mut retry_request = request_builder(&self.http_client.client); // Access the underlying reqwest client
-
-            // Add the refreshed access token to the retry request
-            if let Some(token) = self.current_token() {
-                retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
-            }
-
-            let retry_response = retry_request.send().await?;
-
-            // Check if the retry was successful
-            if retry_response.status().is_success() {
-                // For empty responses, we consider success as a successful update
-                Ok(())
-            } else {
-                // Retry failed - provide clear error information
-                let status = retry_response.status();
-                let error_text = retry_response
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "Unknown error".to_string());
-                error!("API request failed after retry. Original error: {}, Retry failed with status: {} and body: {}",
-                    response.status(), status, error_text);
-                Err(ApiError::RetryFailed(format!(
-                    "Original error: {}, Retry failed with status: {} and body: {}",
-                    response.status(),
-                    status,
-                    error_text
-                )))
-            }
-        } else if response.status().is_success() {
-            // Initial request was successful - for empty responses, we consider this a success
-            Ok(())
-        } else {
-            // For all other errors, try to extract the error message from the response body
-            let status = response.status();
-            let error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-
-            // Log the HTTP response code and body for debugging
-            debug!(
-                "HTTP request failed with status: {}, body: {}",
-                status, error_body
-            );
-
-            // 401/403 cannot reach this point: they are consumed by the
-            // authentication-retry branch at the top of this function.
-            if status == reqwest::StatusCode::NOT_FOUND {
-                // Handle 404 errors that might be due to authentication issues
-                debug!("Received 404 error, checking if it's an authentication issue");
-                if !self.has_token() {
-                    debug!("404 error with no access token - treating as authentication error");
-                    return Err(ApiError::AuthError(
-                        "Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()
-                    ));
-                }
-            }
-
-            // Try to parse the error as JSON to extract a more descriptive message
-            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
-                if let Some(message) = error_json.get("message").and_then(|m| m.as_str()) {
-                    return Err(ApiError::ConflictError(format!(
-                        "HTTP {} - {}",
-                        status, message
-                    )));
-                } else if let Some(error) = error_json.get("error").and_then(|e| e.as_str()) {
-                    return Err(ApiError::ConflictError(format!(
-                        "HTTP {} - {}",
-                        status, error
-                    )));
-                }
-            }
-
-            // If JSON parsing fails or no message is found, return a generic error with the raw response
-            Err(ApiError::ConflictError(format!(
-                "HTTP {} - {}",
-                status, error_body
-            )))
-        }
+        self.request_with_auth(request_builder, idempotent)
+            .await
+            .map(|_| ())
     }
 
     /// Get all metadata fields for a tenant
@@ -2934,194 +2757,40 @@ impl PhysnaApiClient {
             asset_path
         );
 
-        // Open the file for streaming upload
-        let file = tokio::fs::File::open(file_path)
-            .await
-            .map_err(ApiError::IoError)?;
-        let file_part = reqwest::multipart::Part::stream(file)
-            .file_name(file_name.clone())
-            .mime_str(
-                mime_guess::from_path(file_path)
-                    .first_or_octet_stream()
-                    .as_ref(),
-            )
-            .unwrap();
-
-        // Build the multipart form with file part and required parameters
-        // Send the full asset path and let the API handle folder creation
-        let form = reqwest::multipart::Form::new()
-            .part("file", file_part)
-            .text("path", asset_path.clone()) // Full asset path including folder structure
-            .text("metadata", metadata_json.clone())
-            .text("createMissingFolders", "true"); // Enable creating missing folders
+        let mime_type = mime_guess::from_path(file_path)
+            .first_or_octet_stream()
+            .to_string();
+        let build = |client: &reqwest::Client| -> Result<reqwest::RequestBuilder, ApiError> {
+            // Opened afresh for every attempt: a retry after a token renewal or a
+            // transient 5xx has to stream the file from the start again.
+            let file = std::fs::File::open(file_path).map_err(ApiError::IoError)?;
+            let file_part = reqwest::multipart::Part::stream(tokio::fs::File::from_std(file))
+                .file_name(file_name.clone())
+                .mime_str(&mime_type)
+                .map_err(|e| {
+                    ApiError::InvalidParameterError(format!(
+                        "invalid MIME type '{}' for upload: {}",
+                        mime_type, e
+                    ))
+                })?;
+            // Send the full asset path and let the API handle folder creation
+            let form = reqwest::multipart::Form::new()
+                .part("file", file_part)
+                .text("path", asset_path.clone())
+                .text("metadata", metadata_json.clone())
+                .text("createMissingFolders", "true");
+            Ok(client.post(&url).multipart(form))
+        };
 
         debug!("Creating asset with path: {}", asset_path);
 
-        // Build and execute the request with multipart form data using the underlying client to ensure user agent is included
-        let mut request = self.http_client.client.post(&url).multipart(form);
-
-        // Add access token if available
-        if let Some(token) = self.current_token() {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let response = request.send().await?;
-
-        // Check if we need to retry due to authentication issues
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED
-            || response.status() == reqwest::StatusCode::FORBIDDEN
-        {
-            debug!(
-                "Received authentication error ({}), attempting token refresh",
-                response.status()
-            );
-
-            // Try to refresh the token
-            self.refresh_token().await?;
-
-            // Save the refreshed token to the keyring so subsequent requests use the fresh token
-            if let Err(e) = self.save_current_token_to_keyring_internal() {
-                debug!("Failed to save refreshed token to keyring: {}", e);
-                // Continue anyway - the in-memory token is still valid for this session
-            }
-
-            // Create a new form for the retry
-            let retry_file = tokio::fs::File::open(file_path)
-                .await
-                .map_err(ApiError::IoError)?;
-            let retry_file_part = reqwest::multipart::Part::stream(retry_file)
-                .file_name(file_name.clone())
-                .mime_str(
-                    mime_guess::from_path(file_path)
-                        .first_or_octet_stream()
-                        .as_ref(),
-                )
-                .unwrap();
-
-            // Build the retry form IDENTICALLY to the original attempt: the
-            // retry previously sent createMissingFolders="" plus an extra
-            // folderId field, so an upload that merely hit an expired token
-            // could behave differently (e.g. fail to create missing folders)
-            // on the retry.
-            let retry_form = reqwest::multipart::Form::new()
-                .part("file", retry_file_part)
-                .text("path", asset_path.clone()) // Use the full asset path including folder
-                .text("metadata", metadata_json.clone())
-                .text("createMissingFolders", "true"); // Enable creating missing folders
-
-            debug!("Retrying asset creation with path: {}", asset_path);
-
-            // Retry the request with the new token using the underlying client to ensure user agent is included
-            debug!("Retrying asset creation request with refreshed token");
-            let mut retry_request = self.http_client.client.post(&url).multipart(retry_form);
-
-            if let Some(token) = self.current_token() {
-                retry_request = retry_request.header("Authorization", format!("Bearer {}", token));
-            }
-
-            let retry_response = retry_request.send().await?;
-
-            if retry_response.status().is_success() {
-                // Try to get the raw response text for debugging
-                let text: String = retry_response.text().await?;
-                debug!("Raw asset creation retry response: {}", text);
-
-                // Try to parse as SingleAssetResponse
-                match serde_json::from_str::<crate::model::SingleAssetResponse>(&text) {
-                    Ok(result) => Ok(Asset::from(&result.asset)),
-                    Err(_) => {
-                        // Try to parse as AssetResponse directly
-                        match serde_json::from_str::<crate::model::AssetResponse>(&text) {
-                            Ok(asset) => Ok(Asset::from(&asset)),
-                            Err(e) => {
-                                error!("Failed to parse retry response as either SingleAssetResponse or AssetResponse: {}", e);
-                                Err(ApiError::JsonError(e))
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Handle specific HTTP error codes with user-friendly messages
-                let status = retry_response.status();
-                match status {
-                    reqwest::StatusCode::CONFLICT => {
-                        Err(ApiError::ConflictError("Asset already exists. Please use a different filename or delete the existing asset first.".to_string()))
-                    }
-                    reqwest::StatusCode::UNPROCESSABLE_ENTITY => {
-                        Err(ApiError::ConflictError("Invalid request data. Please check your input and try again.".to_string()))
-                    }
-                    reqwest::StatusCode::PAYLOAD_TOO_LARGE => {
-                        Err(ApiError::ConflictError("File is too large. Please check the file size limits and try again.".to_string()))
-                    }
-                    _ => {
-                        // Capture and log the error response body for better debugging
-                        let error_status = retry_response.status();
-                        let error_body = retry_response.text().await.unwrap_or_else(|_| "Unable to read error response body".to_string());
-                        debug!("HTTP {} error response body: {}", error_status, error_body);
-                        Err(ApiError::RetryFailed(format!(
-                            "Original error: {}, Retry failed with status: {}",
-                            response.status(),
-                            error_status
-                        )))
-                    }
-                }
-            }
-        } else if response.status().is_success() {
-            // Try to get the raw response text for debugging
-            let text: String = response.text().await?;
-            debug!("Raw asset creation response: {}", text);
-
-            // Try to parse as SingleAssetResponse
-            match serde_json::from_str::<crate::model::SingleAssetResponse>(&text) {
-                Ok(result) => Ok(Asset::from(&result.asset)),
-                Err(_) => {
-                    // Try to parse as AssetResponse directly
-                    match serde_json::from_str::<crate::model::AssetResponse>(&text) {
-                        Ok(asset) => Ok(Asset::from(&asset)),
-                        Err(e) => {
-                            error!("Failed to parse response as either SingleAssetResponse or AssetResponse: {}", e);
-                            Err(ApiError::JsonError(e))
-                        }
-                    }
-                }
-            }
-        } else {
-            // Handle specific HTTP error codes with user-friendly messages
-            let status = response.status();
-            match status {
-                reqwest::StatusCode::CONFLICT => {
-                    Err(ApiError::ConflictError("Asset already exists. Please use a different filename or delete the existing asset first.".to_string()))
-                }
-                reqwest::StatusCode::UNPROCESSABLE_ENTITY => {
-                    Err(ApiError::ConflictError("Invalid request data. Please check your input and try again.".to_string()))
-                }
-                reqwest::StatusCode::PAYLOAD_TOO_LARGE => {
-                    Err(ApiError::ConflictError("File is too large. Please check the file size limits and try again.".to_string()))
-                }
-                _ => {
-                    // Capture and log the error response body for better debugging
-                    let error_status = response.status();
-                    let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response body".to_string());
-                    debug!("HTTP {} error response body: {}", error_status, error_text);
-
-                    // Check if this is the "Invalid path extension" error which means unsupported file type
-                    if error_text.contains("Invalid path extension:") {
-                        // Extract the file extension from the error message if possible
-                        let file_ext = extract_file_extension_from_error(&error_text);
-                        let user_friendly_msg = if !file_ext.is_empty() {
-                            format!("Unsupported file type: {} is not supported by Physna. Supported file types may include formats like .sldprt, .step, .stl, etc.", file_ext)
-                        } else {
-                            "Unsupported file type: This file format is not supported by Physna. Please use a supported format like .sldprt, .step, .stl, etc.".to_string()
-                        };
-
-                        Err(ApiError::ConflictError(user_friendly_msg))
-                    } else {
-                        // Return the original error for other cases
-                        Err(ApiError::ConflictError(format!("HTTP {} - Response: {}", error_status, error_text)))
-                    }
-                }
-            }
-        }
+        let response = self
+            .request_with_auth(build, false)
+            .await
+            .map_err(map_upload_error)?;
+        let text: String = response.text().await?;
+        debug!("Raw asset creation response: {}", text);
+        parse_created_asset(&text)
     }
 
     /// Perform a geometric search for similar assets with pagination support
@@ -3529,7 +3198,7 @@ impl PhysnaApiClient {
         loop {
             // Check if we've hit the hard limit.
             if page > max_pages_limit {
-                debug!(
+                warn!(
                     "Reached hard page limit of {}, stopping visual search pagination",
                     max_pages_limit
                 );
@@ -3678,7 +3347,7 @@ impl PhysnaApiClient {
 
         loop {
             if page > max_pages_limit {
-                debug!(
+                warn!(
                     "Reached hard page limit of {}, stopping text search pagination",
                     max_pages_limit
                 );
@@ -3804,7 +3473,7 @@ impl PhysnaApiClient {
         folder_uuid: Option<&Uuid>,
         concurrent: usize,
         show_progress: bool,
-    ) -> Result<Vec<crate::model::Asset>, ApiError> {
+    ) -> Result<BatchUploadOutcome, ApiError> {
         debug!(
             "Creating batch assets in tenant: {}, folder_path: {:?}, folder_id: {:?}",
             &tenant_uuid, folder_path, folder_uuid
@@ -3821,7 +3490,7 @@ impl PhysnaApiClient {
 
         // Handle the case where no files match the glob pattern
         if paths.is_empty() {
-            return Ok(Vec::new());
+            return Ok(BatchUploadOutcome::default());
         }
 
         // Create progress bar if requested
@@ -3836,17 +3505,10 @@ impl PhysnaApiClient {
             None
         };
 
-        // Share the HTTP client across all concurrent uploads to leverage connection pooling
-        let shared_http_client = self.http_client.clone();
-        let base_url = self.base_url.clone();
-        let access_token = self.current_token();
-        let client_credentials = self.client_credentials.clone();
-        // The per-file clients must inherit the parent's auth endpoint and
-        // environment: constructing them with defaults would refresh tokens
-        // against the production Cognito URL and save them under the
-        // "default" environment even when another environment is active.
-        let auth_url = self.auth_url.clone();
-        let environment_name = self.environment_name.clone();
+        // Every task works on a clone of this client. A clone shares the token slot,
+        // the renewal lock and the connection pool, so an expiry mid-batch costs one
+        // renewal between all tasks instead of one per file.
+        let client_template = self.clone();
         let folder_path = folder_path.map(|s| s.to_string());
 
         debug!(
@@ -3889,12 +3551,7 @@ impl PhysnaApiClient {
             .into_iter()
             .map(|path_buf| {
                 let tx = tx.clone();
-                let shared_http_client = shared_http_client.clone();
-                let base_url = base_url.clone();
-                let access_token = access_token.clone();
-                let client_credentials = client_credentials.clone();
-                let auth_url = auth_url.clone();
-                let environment_name = environment_name.clone();
+                let client_template = client_template.clone();
                 let folder_path = folder_path.clone();
                 let folder_uuid = folder_uuid_required;
                 let progress_bar = progress_bar.clone();
@@ -3924,25 +3581,13 @@ impl PhysnaApiClient {
                         }
                     };
 
-                    // Create a new client that shares the HTTP client to leverage connection pooling
-                    let mut base_client =
-                        PhysnaApiClient::new_with_shared_http_client(shared_http_client, base_url);
-                    // Inherit the parent's auth endpoint and environment so
-                    // mid-batch token refreshes hit the right Cognito URL and
-                    // persist under the active environment.
-                    base_client.auth_url = auth_url;
-                    base_client.environment_name = environment_name;
-                    let mut client = base_client.for_upload_operations(); // Use upload-optimized timeout
-
-                    if let Some(token) = access_token {
-                        client = client.with_access_token(token);
-                    }
-                    if let Some((client_id, client_secret)) = client_credentials {
-                        client = client.with_client_credentials(client_id, client_secret);
-                    }
+                    let mut client = client_template;
 
                     // Upload the file
-                    let asset_path = format!("{}/{}", folder_path, file_name.to_string_lossy());
+                    let asset_path = match folder_path.trim_matches('/') {
+                        "" => file_name.to_string_lossy().into_owned(),
+                        parent => format!("/{}/{}", parent, file_name.to_string_lossy()),
+                    };
                     debug!(
                         "Uploading file: {}, as asset_path: {}, folder_uuid: {:?}",
                         path_str, asset_path, folder_uuid
@@ -4026,36 +3671,15 @@ impl PhysnaApiClient {
             }
         }
 
-        // If all operations failed, return an error
-        if success_count == 0 && failure_count > 0 {
-            // Return the first error as representative of the failures
-            if let Some((_, error)) = failed_files.first() {
-                // Since ApiError doesn't implement Clone, we'll return a generic error
-                // that indicates batch failure and includes the first error's message
-                return Err(ApiError::ConflictError(format!(
-                    "Batch operation failed: {}",
-                    error
-                )));
-            } else {
-                return Err(ApiError::IoError(std::io::Error::other(
-                    "All batch operations failed but no specific error available",
-                )));
-            }
-        }
-
-        // Log detailed summary of successes and failures
         debug!(
             "Batch upload completed: {} successful, {} failed",
             success_count, failure_count
         );
-        if !failed_files.is_empty() {
-            debug!("Failed files:");
-            for (file_path, error) in &failed_files {
-                debug!("  {}: {}", file_path.display(), error);
-            }
-        }
 
-        Ok(successful_assets)
+        Ok(BatchUploadOutcome {
+            assets: successful_assets,
+            failures: failed_files,
+        })
     }
 
     // Original function that works with path (for backward compatibility)
@@ -4236,7 +3860,6 @@ impl PhysnaApiClient {
         })
     }
 
-    #[async_recursion]
     #[allow(dead_code)]
     async fn populate_asset_dependencies_recursive(
         &mut self,
@@ -4291,7 +3914,7 @@ impl PhysnaApiClient {
 
                 // Recurse on the stored child node if it has dependencies
                 if dependency.has_dependencies {
-                    self.populate_asset_dependencies_recursive(tenant_uuid, child_node)
+                    Box::pin(self.populate_asset_dependencies_recursive(tenant_uuid, child_node))
                         .await?;
                 }
             }
@@ -4306,7 +3929,6 @@ impl PhysnaApiClient {
         Ok(())
     }
 
-    #[async_recursion]
     async fn populate_asset_dependencies_recursive_by_uuid(
         &mut self,
         tenant_uuid: &Uuid,
@@ -4359,11 +3981,11 @@ impl PhysnaApiClient {
 
                 // Recurse on the stored child node if it has dependencies
                 if dependency.has_dependencies {
-                    self.populate_asset_dependencies_recursive_by_uuid(
+                    Box::pin(self.populate_asset_dependencies_recursive_by_uuid(
                         tenant_uuid,
                         child_node,
                         &child_asset.uuid(),
-                    )
+                    ))
                     .await?;
                 }
             }
@@ -4378,7 +4000,6 @@ impl PhysnaApiClient {
         Ok(())
     }
 
-    #[async_recursion]
     async fn populate_asset_dependencies_recursive_by_path(
         &mut self,
         tenant_uuid: &Uuid,
@@ -4431,11 +4052,11 @@ impl PhysnaApiClient {
 
                 // Recurse on the stored child node if it has dependencies
                 if dependency.has_dependencies {
-                    self.populate_asset_dependencies_recursive_by_path(
+                    Box::pin(self.populate_asset_dependencies_recursive_by_path(
                         tenant_uuid,
                         child_node,
                         &dependency.path, // Use the dependency's path for recursion
-                    )
+                    ))
                     .await?;
                 }
             }
@@ -4460,11 +4081,11 @@ impl PhysnaApiClient {
 
         let mut tree = AssemblyTree::new(asset);
         // Use the path-based recursive function to populate dependencies
-        self.populate_asset_dependencies_recursive_by_path(
+        Box::pin(self.populate_asset_dependencies_recursive_by_path(
             tenant_uuid,
             tree.root_mut(),
             asset_path,
-        )
+        ))
         .await?;
         Ok(tree)
     }
@@ -4491,11 +4112,11 @@ impl PhysnaApiClient {
         let asset = self.get_asset_by_uuid(tenant_uuid, asset_uuid).await?;
 
         let mut tree = AssemblyTree::new(asset);
-        self.populate_asset_dependencies_recursive_by_uuid(
+        Box::pin(self.populate_asset_dependencies_recursive_by_uuid(
             tenant_uuid,
             tree.root_mut(),
             asset_uuid,
-        )
+        ))
         .await?;
         Ok(tree)
     }
@@ -4587,9 +4208,7 @@ impl PhysnaApiClient {
                 Err(e) => {
                     // If we get a 404, it might mean there are no assets with that state
                     match &e {
-                        ApiError::HttpError(reqwest_err)
-                            if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) =>
-                        {
+                        ApiError::NotFoundError(_) => {
                             debug!(
                                 "No assets found with state: {} for tenant: {}",
                                 state, tenant_uuid
@@ -4721,12 +4340,7 @@ impl PhysnaApiClient {
         asset_id: &str,
         asset_name_opt: Option<&str>,
     ) -> Result<Vec<u8>, ApiError> {
-        let asset_display = if let Some(name) = asset_name_opt {
-            format!("{} (ID: {})", name, asset_id)
-        } else {
-            asset_id.to_string()
-        };
-
+        let asset_display = describe_asset(asset_id, asset_name_opt);
         debug!(
             "Downloading asset file for tenant_id: {}, asset: {}",
             tenant_id, asset_display
@@ -4738,259 +4352,24 @@ impl PhysnaApiClient {
         );
         debug!("Download asset file request URL: {}", url);
 
-        // First attempt to download the asset
         let response = self
-            .http_client
-            .client
-            .get(&url)
-            .header(
-                "Authorization",
-                format!(
-                    "Bearer {}",
-                    self.current_token().ok_or_else(|| ApiError::AuthError(
-                        "No access token available for download".to_string()
-                    ))?
-                ),
-            )
-            .send()
+            .request_with_auth(|client| Ok(client.get(&url)), true)
             .await
-            .map_err(|e| {
-                debug!("Failed to send download request: {}", e);
-                ApiError::from(e)
-            })?;
+            .map_err(|e| e.about(&format!("asset {}", asset_display)))?;
 
-        // Check if the response was successful
-        if response.status().is_success() {
-            // For successful responses, get the file content as bytes
-            let bytes_result = response.bytes().await;
-            match bytes_result {
-                Ok(bytes) => {
-                    debug!(
-                        "Successfully downloaded {} bytes for asset: {}",
-                        bytes.len(),
-                        asset_display
-                    );
-                    Ok(bytes.to_vec())
-                }
-                Err(e) => {
-                    // Enhanced error logging for debugging
-                    error!(
-                        "Failed to read response bytes for asset: {}: {}",
-                        asset_display, e
-                    );
-
-                    // Provide more context about the error
-                    let error_context = format!(
-                        "Error decoding response body for asset: {}. This may be due to network interruption, server-side error, or response corruption. Error details: {}",
-                        asset_display,
-                        e
-                    );
-
-                    // Log the error context to help with debugging
-                    error!("{}", error_context);
-
-                    // Try to get more information from the response if possible
-                    // For example, if the response is JSON with error details
-                    debug!(
-                        "Detailed error context for asset {}: {:?}",
-                        asset_display, e
-                    );
-
-                    // Return a more descriptive error
-                    Err(ApiError::HttpError(e))
-                }
-            }
-        } else {
-            let status = response.status();
-
-            // For error responses, read the body as text to see if it contains a JSON error message
-            let error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error response".to_string());
-
-            // Enhanced error logging for debugging
-            // Don't log errors here - they will be collected and printed by the caller
-            // to avoid duplicate/corrupted output during multi-threaded operations
-            if error_body.contains("error") || error_body.contains("message") {
-                // This appears to be a JSON error response from the API
-                // error!(
-                //     "Failed to download asset: {} - API returned error: {}",
-                //     asset_display, error_body
-                // );
-                debug!(
-                    "Failed to download asset: {} - API returned error: {}",
-                    asset_display, error_body
-                );
-            } else {
-                // error!(
-                //     "Failed to download asset: {} - Status: {}, Response: {}",
-                //     asset_display, status, error_body
-                // );
-                debug!(
-                    "Failed to download asset: {} - Status: {}, Response: {}",
-                    asset_display, status, error_body
-                );
-            }
-
-            // Check if we should retry due to authentication issues (401 Unauthorized or 403 Forbidden)
-            if status == reqwest::StatusCode::UNAUTHORIZED
-                || status == reqwest::StatusCode::FORBIDDEN
-            {
-                debug!(
-                    "Received authentication error ({}), attempting token refresh",
-                    status
-                );
-
-                // Try to refresh the expired or invalid access token
-                self.refresh_token().await?;
-
-                // Retry the original request with the newly refreshed token
-                debug!("Retrying download request with refreshed token");
-                let retry_response = self
-                    .http_client
-                    .client
-                    .get(&url)
-                    .header(
-                        "Authorization",
-                        format!(
-                            "Bearer {}",
-                            self.current_token().ok_or_else(|| ApiError::AuthError(
-                                "No access token available for download after refresh".to_string()
-                            ))?
-                        ),
-                    )
-                    .send()
-                    .await
-                    .map_err(|e| {
-                        debug!("Failed to send retry download request: {}", e);
-                        ApiError::from(e)
-                    })?;
-
-                // Check if the retry was successful
-                if retry_response.status().is_success() {
-                    // Get the file content as bytes from the retry response
-                    let bytes_result = retry_response.bytes().await;
-                    match bytes_result {
-                        Ok(bytes) => {
-                            debug!(
-                                "Successfully downloaded {} bytes for asset: {} (after retry)",
-                                bytes.len(),
-                                asset_display
-                            );
-                            Ok(bytes.to_vec())
-                        }
-                        Err(e) => {
-                            // Enhanced error logging for debugging
-                            error!(
-                                "Failed to read retry response bytes for asset: {}: {}",
-                                asset_display, e
-                            );
-
-                            // Provide more context about the error
-                            let error_context = format!(
-                                "Error decoding retry response body for asset: {}. This may be due to network interruption, server-side error, or response corruption. Error details: {}",
-                                asset_display,
-                                e
-                            );
-
-                            // Log the error context to help with debugging
-                            error!("{}", error_context);
-
-                            // Try to get more information from the response if possible
-                            // For example, if the response is JSON with error details
-                            debug!(
-                                "Detailed error context for asset {} (retry): {:?}",
-                                asset_display, e
-                            );
-
-                            // Return a more descriptive error
-                            Err(ApiError::HttpError(e))
-                        }
-                    }
-                } else {
-                    let retry_status = retry_response.status();
-
-                    // The retry also failed, read the error response body
-                    let retry_error_body = retry_response
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "Unknown error".to_string());
-                    debug!(
-                        "Retry download request failed with status: {}, body: {}",
-                        retry_status, retry_error_body
-                    );
-
-                    // Enhanced error logging for debugging
-                    if retry_error_body.contains("error") || retry_error_body.contains("message") {
-                        // This appears to be a JSON error response from the API
-                        error!(
-                            "Failed to download asset: {} after retry - API returned error: {}",
-                            asset_display, retry_error_body
-                        );
-                    } else {
-                        error!(
-                            "Failed to download asset: {} after retry - Status: {}, Response: {}",
-                            asset_display, retry_status, retry_error_body
-                        );
-                    }
-
-                    // Create an appropriate error based on the response status
-                    match retry_status {
-                        reqwest::StatusCode::UNAUTHORIZED => {
-                            Err(ApiError::AuthError("Unauthorized access - access token may have expired or is invalid even after refresh".to_string()))
-                        }
-                        reqwest::StatusCode::FORBIDDEN => {
-                            Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()))
-                        }
-                        reqwest::StatusCode::NOT_FOUND => {
-                            Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", retry_error_body)))
-                        }
-                        _ => {
-                            // For other error statuses, we return the error body that we captured earlier
-                            Err(ApiError::ConflictError(format!(
-                                "HTTP {} - {} (after retry)",
-                                retry_status, retry_error_body
-                            )))
-                        }
-                    }
-                }
-            } else {
-                // For non-authentication errors, process as before
-                // Create an appropriate error based on the response status
-                match status {
-                    reqwest::StatusCode::UNAUTHORIZED => {
-                        // Check if we have an access token - if not, this is a general auth error
-                        if !self.has_token() {
-                            Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
-                        } else {
-                            Err(ApiError::AuthError(
-                                "Unauthorized access - access token may have expired or is invalid"
-                                    .to_string(),
-                            ))
-                        }
-                    }
-                    reqwest::StatusCode::FORBIDDEN => {
-                        // Check if we have an access token - if not, this is a general auth error
-                        if !self.has_token() {
-                            Err(ApiError::AuthError("Authentication required: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
-                        } else {
-                            Err(ApiError::AuthError("Access forbidden - you don't have permission to download this asset".to_string()))
-                        }
-                    }
-                    reqwest::StatusCode::NOT_FOUND => {
-                        Err(ApiError::ConflictError(format!("Asset not found - the asset may have been deleted or the path is incorrect. API Response: {}", error_body)))
-                    }
-                    _ => {
-                        // For other error statuses, we return the error body that we captured earlier
-                        Err(ApiError::ConflictError(format!(
-                            "HTTP {} - {}",
-                            status, error_body
-                        )))
-                    }
-                }
-            }
-        }
+        let bytes = response.bytes().await.map_err(|e| {
+            error!(
+                "Failed to read response bytes for asset {}: {}",
+                asset_display, e
+            );
+            ApiError::HttpError(e)
+        })?;
+        debug!(
+            "Successfully downloaded {} bytes for asset: {}",
+            bytes.len(),
+            asset_display
+        );
+        Ok(bytes.to_vec())
     }
 
     /// Download asset file as a stream to avoid loading entire file into memory
@@ -5012,12 +4391,7 @@ impl PhysnaApiClient {
         asset_id: &str,
         asset_name_opt: Option<&str>,
     ) -> Result<impl futures::Stream<Item = Result<bytes::Bytes, reqwest::Error>>, ApiError> {
-        let asset_display = if let Some(name) = asset_name_opt {
-            format!("{} (ID: {})", name, asset_id)
-        } else {
-            asset_id.to_string()
-        };
-
+        let asset_display = describe_asset(asset_id, asset_name_opt);
         debug!(
             "Downloading asset file stream for tenant_id: {}, asset: {}",
             tenant_id, asset_display
@@ -5029,101 +4403,82 @@ impl PhysnaApiClient {
         );
         debug!("Download asset file stream request URL: {}", url);
 
-        // Make the request and get the response
         let response = self
-            .http_client
-            .client
-            .get(&url)
-            .header(
-                "Authorization",
-                format!(
-                    "Bearer {}",
-                    self.current_token().ok_or_else(|| ApiError::AuthError(
-                        "No access token available for download".to_string()
-                    ))?
-                ),
-            )
-            .send()
+            .request_with_auth(|client| Ok(client.get(&url)), true)
             .await
-            .map_err(|e| {
-                debug!("Failed to send download stream request: {}", e);
-                ApiError::from(e)
-            })?;
+            .map_err(|e| e.about(&format!("asset {}", asset_display)))?;
+        Ok(response.bytes_stream())
+    }
 
-        // Check if the request was successful
-        if response.status().is_success() {
-            // Return the response body as a stream
-            Ok(response.bytes_stream())
-        } else {
-            // Handle error case
-            let status = response.status();
-            let error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            debug!(
-                "Download stream request failed for asset: {} with status: {}, body: {}",
-                asset_display, status, error_body
-            );
+    /// Download an asset's file straight to disk.
+    ///
+    /// The body is streamed into `<dest>.part` and renamed into place only once it
+    /// has arrived whole, so an interrupted download never leaves a truncated file
+    /// under the final name. An empty body is an error: a zero-byte model file is
+    /// never what was asked for. Returns the number of bytes written.
+    pub async fn download_asset_to_file(
+        &mut self,
+        tenant_id: &str,
+        asset_id: &str,
+        asset_name_opt: Option<&str>,
+        dest: &std::path::Path,
+    ) -> Result<u64, ApiError> {
+        use futures::StreamExt;
+        use tokio::io::AsyncWriteExt;
 
-            // Create an appropriate error based on the response status
-            match status {
-                reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
-                    // Refresh the token and retry once, consistent with the
-                    // non-streaming download_asset (previously this variant
-                    // failed terminally on an expired token).
-                    debug!(
-                        "Received {} for asset stream, attempting token refresh",
-                        status
-                    );
-                    self.refresh_token().await.map_err(|_| {
-                        ApiError::AuthError(format!(
-                            "Authentication required for asset {}: Access token may have expired or is invalid. Please log in with 'pcli2 auth login'.",
-                            asset_display
-                        ))
-                    })?;
-
-                    if let Err(e) = self.save_current_token_to_keyring_internal() {
-                        debug!("Failed to save refreshed token to keyring: {}", e);
-                    }
-
-                    let token = self.current_token().ok_or_else(|| {
-                        ApiError::AuthError(format!(
-                            "Authentication required for asset {}: No access token available. Please log in with 'pcli2 auth login'.",
-                            asset_display
-                        ))
-                    })?;
-
-                    let retry_response = self
-                        .http_client
-                        .client
-                        .get(&url)
-                        .header("Authorization", format!("Bearer {}", token))
-                        .send()
-                        .await?;
-
-                    if retry_response.status().is_success() {
-                        Ok(retry_response.bytes_stream())
-                    } else {
-                        let retry_status = retry_response.status();
-                        Err(ApiError::AuthError(format!(
-                            "Download failed for asset {} after token refresh (HTTP {}).",
-                            asset_display, retry_status
-                        )))
-                    }
-                }
-                reqwest::StatusCode::NOT_FOUND => {
-                    Err(ApiError::NotFoundError(format!("Asset not found - the asset {} may have been deleted or the path is incorrect. API Response: {}", asset_display, error_body)))
-                }
-                _ => {
-                    // For other error statuses, we return the error body that we captured earlier
-                    Err(ApiError::ConflictError(format!(
-                        "HTTP {} - {} for asset: {}",
-                        status, error_body, asset_display
-                    )))
-                }
+        let asset_display = describe_asset(asset_id, asset_name_opt);
+        if let Some(parent) = dest.parent() {
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent).await?;
             }
         }
+        let part_name = format!(
+            "{}.part",
+            dest.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "download".to_string())
+        );
+        let part_path = dest.with_file_name(part_name);
+
+        let mut stream = self
+            .download_asset_stream(tenant_id, asset_id, asset_name_opt)
+            .await?;
+        let mut file = tokio::fs::File::create(&part_path).await?;
+        let mut written: u64 = 0;
+        let write_result: Result<(), ApiError> = async {
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                file.write_all(&chunk).await?;
+                written += chunk.len() as u64;
+            }
+            file.flush().await?;
+            Ok(())
+        }
+        .await;
+        drop(file);
+
+        if let Err(e) = write_result {
+            let _ = tokio::fs::remove_file(&part_path).await;
+            return Err(e);
+        }
+        if written == 0 {
+            let _ = tokio::fs::remove_file(&part_path).await;
+            return Err(ApiError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "the server returned an empty file for asset {}",
+                    asset_display
+                ),
+            )));
+        }
+        tokio::fs::rename(&part_path, dest).await?;
+        debug!(
+            "Downloaded {} bytes for asset {} to {}",
+            written,
+            asset_display,
+            dest.display()
+        );
+        Ok(written)
     }
 
     /// Download asset thumbnail
@@ -5158,78 +4513,23 @@ impl PhysnaApiClient {
         let url = self.generate_asset_thumbnail_url(tenant_id, asset_id);
         debug!("Download asset thumbnail request URL: {}", url);
 
-        // Make the request to download the thumbnail
         let response = self
-            .http_client
-            .client
-            .get(&url)
-            .header(
-                "Authorization",
-                format!(
-                    "Bearer {}",
-                    self.current_token().ok_or_else(|| ApiError::AuthError(
-                        "No access token available for thumbnail download".to_string()
-                    ))?
-                ),
-            )
-            .send()
+            .request_with_auth(|client| Ok(client.get(&url)), true)
             .await
-            .map_err(|e| {
-                debug!("Failed to send thumbnail download request: {}", e);
-                ApiError::from(e)
+            .map_err(|e| match e {
+                ApiError::NotFoundError(message) => ApiError::NotFoundError(format!(
+                    "Asset thumbnail not found - the asset {} may not have a thumbnail or the asset ID is incorrect. API Response: {}",
+                    asset_id, message
+                )),
+                other => other.about(&format!("thumbnail of asset {}", asset_id)),
             })?;
 
-        // Check if the response was successful
-        if response.status().is_success() {
-            // For successful responses, get the thumbnail content as bytes
-            let bytes_result = response.bytes().await;
-            match bytes_result {
-                Ok(bytes) => {
-                    debug!("Successfully downloaded thumbnail for asset: {}", asset_id);
-                    Ok(bytes.to_vec())
-                }
-                Err(e) => {
-                    debug!("Failed to read thumbnail response bytes: {}", e);
-                    Err(ApiError::from(e))
-                }
-            }
-        } else {
-            // Handle error case
-            let status = response.status();
-            let error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            debug!(
-                "Thumbnail download request failed for asset: {} with status: {}, body: {}",
-                asset_id, status, error_body
-            );
-
-            // Create an appropriate error based on the response status
-            match status {
-                reqwest::StatusCode::UNAUTHORIZED => {
-                    // Check if we have an access token - if not, this is a general auth error
-                    if !self.has_token() {
-                        Err(ApiError::AuthError("Authentication required for asset thumbnail: No access token available. Please log in with 'pcli2 auth login'.".to_string()))
-                    } else {
-                        Err(ApiError::AuthError("Unauthorized access for asset thumbnail: Access token may have expired or is invalid.".to_string()))
-                    }
-                }
-                reqwest::StatusCode::FORBIDDEN => {
-                    Err(ApiError::AuthError("Access forbidden for asset thumbnail: You don't have permission to download this asset's thumbnail.".to_string()))
-                }
-                reqwest::StatusCode::NOT_FOUND => {
-                    Err(ApiError::ConflictError(format!("Asset thumbnail not found - the asset {} may not have a thumbnail or the asset ID is incorrect. API Response: {}", asset_id, error_body)))
-                }
-                _ => {
-                    // For other error statuses, we return the error body that we captured earlier
-                    Err(ApiError::ConflictError(format!(
-                        "HTTP {} - {} for asset thumbnail: {}",
-                        status, error_body, asset_id
-                    )))
-                }
-            }
-        }
+        let bytes = response.bytes().await.map_err(|e| {
+            debug!("Failed to read thumbnail response bytes: {}", e);
+            ApiError::from(e)
+        })?;
+        debug!("Successfully downloaded thumbnail for asset: {}", asset_id);
+        Ok(bytes.to_vec())
     }
 
     /// Create a specialized client for upload operations with appropriate timeout
@@ -5399,7 +4699,7 @@ impl PhysnaApiClient {
         loop {
             // Check if we've hit the hard limit
             if page > max_pages_limit {
-                debug!(
+                warn!(
                     "Reached hard page limit of {}, stopping to prevent excessive API calls",
                     max_pages_limit
                 );
@@ -5493,7 +4793,9 @@ impl PhysnaApiClient {
     ) -> Result<crate::actions::users::User, ApiError> {
         let url = format!(
             "{}/tenants/{}/users/{}",
-            self.base_url, tenant_uuid, user_id
+            self.base_url,
+            tenant_uuid,
+            urlencoding::encode(user_id)
         );
 
         debug!(
@@ -5712,17 +5014,146 @@ impl PhysnaApiClient {
         }
         Ok(())
     }
+}
 
-    /// Save the current access token to the keyring using the stored environment name
-    ///
-    /// This method is a convenience wrapper that uses the environment name stored in the client
-    /// to save the current access token to the keyring.
-    ///
-    /// # Returns
-    /// * `Ok(())` - Token successfully saved to keyring
-    /// * `Err(ApiError)` - Failed to save token to keyring
-    fn save_current_token_to_keyring_internal(&self) -> Result<(), ApiError> {
-        self.save_current_token_to_keyring(&self.environment_name)
+/// Read an error response's body for a message, tolerating an unreadable one.
+async fn read_error_body(response: reqwest::Response) -> String {
+    response
+        .text()
+        .await
+        .unwrap_or_else(|_| "Unknown error".to_string())
+}
+
+/// What the API said, for a message: its JSON `message` or `error` field when the
+/// body is JSON, otherwise the body itself (trimmed, and cut short - an HTML error
+/// page from a gateway can run to kilobytes).
+fn api_message(body: &str) -> String {
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
+        for key in ["message", "error"] {
+            if let Some(text) = json.get(key).and_then(|v| v.as_str()) {
+                return text.to_string();
+            }
+        }
+    }
+    excerpt(body)
+}
+
+/// The first part of a body, for logs and messages.
+fn excerpt(text: &str) -> String {
+    const LIMIT: usize = 600;
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= LIMIT {
+        trimmed.to_string()
+    } else {
+        let cut: String = trimmed.chars().take(LIMIT).collect();
+        format!("{}... ({} bytes)", cut, trimmed.len())
+    }
+}
+
+/// Turn a response into `Ok` for 2xx and a classified `ApiError` otherwise.
+async fn classify_response(response: reqwest::Response) -> Result<reqwest::Response, ApiError> {
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+    let body = read_error_body(response).await;
+    debug!(
+        "HTTP request failed with status: {}, body: {}",
+        status, body
+    );
+    let message = api_message(&body);
+    Err(match status {
+        reqwest::StatusCode::NOT_FOUND => {
+            ApiError::NotFoundError(format!("HTTP {} - {}", status, message))
+        }
+        reqwest::StatusCode::CONFLICT => {
+            ApiError::ConflictError(format!("HTTP {} - {}", status, message))
+        }
+        _ => ApiError::HttpStatus {
+            status: status.as_u16(),
+            message,
+        },
+    })
+}
+
+impl ApiError {
+    /// Attach what the request was about to the message, for errors that carry one.
+    fn about(self, what: &str) -> ApiError {
+        match self {
+            ApiError::HttpStatus { status, message } => ApiError::HttpStatus {
+                status,
+                message: format!("{} ({})", message, what),
+            },
+            ApiError::NotFoundError(message) => {
+                ApiError::NotFoundError(format!("{} ({})", message, what))
+            }
+            ApiError::ConflictError(message) => {
+                ApiError::ConflictError(format!("{} ({})", message, what))
+            }
+            other => other,
+        }
+    }
+}
+
+/// `name (ID: uuid)` when the name is known, else the id.
+fn describe_asset(asset_id: &str, asset_name: Option<&str>) -> String {
+    match asset_name {
+        Some(name) => format!("{} (ID: {})", name, asset_id),
+        None => asset_id.to_string(),
+    }
+}
+
+/// Translate an upload failure into the message a user can act on.
+///
+/// Applied to whichever attempt failed, so a file with an unsupported extension
+/// gets the same explanation whether or not the first try also hit an expired token.
+fn map_upload_error(error: ApiError) -> ApiError {
+    match error {
+        ApiError::ConflictError(_) => ApiError::ConflictError(
+            "Asset already exists. Please use a different filename or delete the existing asset first."
+                .to_string(),
+        ),
+        ApiError::HttpStatus { status: 422, message } => ApiError::HttpStatus {
+            status: 422,
+            message: format!(
+                "Invalid request data. Please check your input and try again. ({})",
+                message
+            ),
+        },
+        ApiError::HttpStatus { status: 413, .. } => ApiError::HttpStatus {
+            status: 413,
+            message: "File is too large. Please check the file size limits and try again."
+                .to_string(),
+        },
+        ApiError::HttpStatus { message, .. } if message.contains("Invalid path extension:") => {
+            let file_ext = extract_file_extension_from_error(&message);
+            ApiError::InvalidParameterError(if file_ext.is_empty() {
+                "Unsupported file type: This file format is not supported by Physna. Please use a supported format like .sldprt, .step, .stl, etc.".to_string()
+            } else {
+                format!(
+                    "Unsupported file type: {} is not supported by Physna. Supported file types may include formats like .sldprt, .step, .stl, etc.",
+                    file_ext
+                )
+            })
+        }
+        other => other,
+    }
+}
+
+/// The upload endpoint answers with either `{ "asset": {...} }` or a bare asset.
+fn parse_created_asset(text: &str) -> Result<Asset, ApiError> {
+    match serde_json::from_str::<crate::model::SingleAssetResponse>(text) {
+        Ok(result) => Ok(Asset::from(&result.asset)),
+        Err(_) => match serde_json::from_str::<crate::model::AssetResponse>(text) {
+            Ok(asset) => Ok(Asset::from(&asset)),
+            Err(e) => {
+                error!(
+                    "Failed to parse response as either SingleAssetResponse or AssetResponse: {}",
+                    e
+                );
+                Err(ApiError::JsonError(e))
+            }
+        },
     }
 }
 
@@ -5748,20 +5179,41 @@ fn extract_file_extension_from_error(error_msg: &str) -> String {
 /// lists (e.g. "file1.stl,file2.stl"). Comma-separated entries that do
 /// not exist on disk are silently skipped, matching upload behavior.
 pub fn expand_upload_paths(pattern: &str) -> Result<Vec<std::path::PathBuf>, ApiError> {
-    let paths = if pattern.contains(',') {
-        // Comma-separated list of file paths
-        pattern
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(std::path::PathBuf::from)
-            .filter(|path| path.exists())
-            .collect()
+    let paths: Vec<std::path::PathBuf> = if pattern.contains(',') {
+        // Comma-separated list of explicit file paths. A path that does not exist
+        // is an error: it used to be dropped silently, so a typo in one of the
+        // names simply uploaded one file fewer.
+        let mut paths = Vec::new();
+        for entry in pattern.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let path = std::path::PathBuf::from(entry);
+            if !path.is_file() {
+                return Err(ApiError::PathNotFound(entry.to_string()));
+            }
+            paths.push(path);
+        }
+        paths
     } else {
-        // Glob pattern
-        glob(pattern)?
-            .filter_map(|path_result| path_result.ok())
-            .collect()
+        // Glob pattern: files only. Directories that match are skipped and
+        // counted rather than turned into per-file failures.
+        let mut skipped_dirs = 0usize;
+        let mut paths = Vec::new();
+        for path in glob(pattern)?.filter_map(|path_result| path_result.ok()) {
+            if path.is_dir() {
+                skipped_dirs += 1;
+            } else {
+                paths.push(path);
+            }
+        }
+        if skipped_dirs > 0 {
+            warn!(
+                "{} director{} matched '{}' and {} skipped; only files are uploaded",
+                skipped_dirs,
+                if skipped_dirs == 1 { "y" } else { "ies" },
+                pattern,
+                if skipped_dirs == 1 { "was" } else { "were" }
+            );
+        }
+        paths
     };
     Ok(paths)
 }

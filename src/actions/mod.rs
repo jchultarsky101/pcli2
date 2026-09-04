@@ -58,6 +58,48 @@ pub enum CliActionError {
 
     #[error("{0}")]
     BusinessLogicError(String),
+
+    /// The failure was already reported in full, with remediation steps, by the
+    /// code that detected it. Carries only the exit code; nothing is printed again.
+    #[error("{}", .0.message())]
+    AlreadyReported(crate::exit_codes::PcliExitCode),
+
+    /// A batch finished, but some of its items failed. The per-item reasons were
+    /// printed as they happened; this is the one line that makes the exit code
+    /// non-zero so a script cannot mistake a partial run for a complete one.
+    #[error("{failed} of {total} {what} failed")]
+    PartialFailure {
+        failed: usize,
+        total: usize,
+        what: String,
+    },
+}
+
+impl CliActionError {
+    /// The exit code that describes this error to a script.
+    pub fn exit_code(&self) -> crate::exit_codes::PcliExitCode {
+        use crate::exit_codes::PcliExitCode;
+        match self {
+            CliActionError::ApiError(e) => e.exit_code(),
+            CliActionError::JsonError(_)
+            | CliActionError::CsvError(_)
+            | CliActionError::CsvIntoError(_)
+            | CliActionError::UtfError(_)
+            | CliActionError::FormattingError(_)
+            | CliActionError::ZipError(_) => PcliExitCode::DataError,
+            CliActionError::UuidPartsinError(_)
+            | CliActionError::UnsupportedOutputFormat(_)
+            | CliActionError::MissingRequiredArgument(_)
+            | CliActionError::BusinessLogicError(_) => PcliExitCode::UsageError,
+            CliActionError::ConfigurationError(_) => PcliExitCode::ConfigError,
+            CliActionError::IncompleteReport { .. } | CliActionError::PartialFailure { .. } => {
+                PcliExitCode::TempFail
+            }
+            CliActionError::TenantNotFound { .. } => PcliExitCode::NotFound,
+            CliActionError::IoError(e) => PcliExitCode::for_io_error(e),
+            CliActionError::AlreadyReported(code) => *code,
+        }
+    }
 }
 
 // See `FormattingError::CsvIntoInnerError`: the writer error is boxed so the

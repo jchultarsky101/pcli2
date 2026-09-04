@@ -156,6 +156,15 @@ impl SearchAbort {
     }
 }
 
+/// Run `f` with the progress display lifted, so what it prints is not painted
+/// over by the next redraw. Without a display it just runs.
+fn under_progress<F: FnOnce()>(progress: Option<&indicatif::MultiProgress>, f: F) {
+    match progress {
+        Some(mp) => mp.suspend(f),
+        None => f(),
+    }
+}
+
 /// Running tally of per-asset search outcomes across a folder match run.
 #[derive(Debug, Default, Clone, Copy)]
 struct SearchOutcomes {
@@ -206,9 +215,13 @@ impl SearchOutcomes {
     /// Whether the shortfall is severe enough that the report should not be presented
     /// as a successful result.
     fn is_materially_incomplete(&self) -> bool {
-        self.attempted > 0
-            && (self.incomplete() as f64 / self.attempted as f64)
-                > OPERATIONAL_FAILURE_EXIT_THRESHOLD
+        // An abort is a decision that the run is broken, not a scattered blip: a
+        // credential that dies at 92% still leaves 8% of the report missing on
+        // purpose, and that must not exit 0 just because it is under the threshold.
+        self.aborted > 0
+            || (self.attempted > 0
+                && (self.incomplete() as f64 / self.attempted as f64)
+                    > OPERATIONAL_FAILURE_EXIT_THRESHOLD)
     }
 
     /// One-line account of what the run actually managed to search, or `None` when
@@ -260,10 +273,12 @@ fn finish_search_outcomes(outcomes: &SearchOutcomes) -> Result<(), CliError> {
                 "Re-run with --verbose to see why the individual searches failed",
             ],
         );
-        return Err(CliError::from(CliActionError::IncompleteReport {
-            attempted: outcomes.attempted,
-            failed: outcomes.operational,
-        }));
+        // Reported above with its remediation steps; main only needs the exit code.
+        // (`IncompleteReport` carried different numbers and was printed a second
+        // time on the way out.)
+        return Err(CliError::AlreadyReported(
+            crate::exit_codes::PcliExitCode::TempFail,
+        ));
     }
 
     error_utils::report_warning(&summary);
@@ -535,15 +550,15 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
         uuid: asset.uuid(),
         tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
-        folder_id: None, // We don't have folder ID in the Asset struct
-        asset_type: "asset".to_string(), // Default asset type
-        created_at: "".to_string(), // Placeholder for creation time
-        updated_at: "".to_string(), // Placeholder for update time
-        state: "active".to_string(), // Default state
-        is_assembly: false, // Default is not assembly
+        folder_id: None,
+        asset_type: asset.file_type().cloned().unwrap_or_default(),
+        created_at: asset.created_at().cloned().unwrap_or_default(),
+        updated_at: asset.updated_at().cloned().unwrap_or_default(),
+        state: asset.normalized_processing_status(),
+        is_assembly: asset.is_assembly(),
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None,  // No owner ID
+        owner_id: None,         // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
@@ -664,15 +679,15 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
         uuid: asset.uuid(),
         tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
-        folder_id: None, // We don't have folder ID in the Asset struct
-        asset_type: "asset".to_string(), // Default asset type
-        created_at: "".to_string(), // Placeholder for creation time
-        updated_at: "".to_string(), // Placeholder for update time
-        state: "active".to_string(), // Default state
-        is_assembly: false, // Default is not assembly
+        folder_id: None,
+        asset_type: asset.file_type().cloned().unwrap_or_default(),
+        created_at: asset.created_at().cloned().unwrap_or_default(),
+        updated_at: asset.updated_at().cloned().unwrap_or_default(),
+        state: asset.normalized_processing_status(),
+        is_assembly: asset.is_assembly(),
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None,  // No owner ID
+        owner_id: None,         // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
@@ -800,15 +815,15 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
         uuid: asset.uuid(),
         tenant_id: tenant_uuid, // Use the tenant UUID
         path: asset.path(),
-        folder_id: None, // We don't have folder ID in the Asset struct
-        asset_type: "asset".to_string(), // Default asset type
-        created_at: "".to_string(), // Placeholder for creation time
-        updated_at: "".to_string(), // Placeholder for update time
-        state: "active".to_string(), // Default state
-        is_assembly: false, // Default is not assembly
+        folder_id: None,
+        asset_type: asset.file_type().cloned().unwrap_or_default(),
+        created_at: asset.created_at().cloned().unwrap_or_default(),
+        updated_at: asset.updated_at().cloned().unwrap_or_default(),
+        state: asset.normalized_processing_status(),
+        is_assembly: asset.is_assembly(),
         metadata: metadata_map, // Include the asset's metadata
         parent_folder_id: None, // No parent folder ID
-        owner_id: None,  // No owner ID
+        owner_id: None,         // No owner ID
     };
 
     // Create enhanced response that includes the reference asset information
@@ -887,8 +902,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                             .reference_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
@@ -897,8 +911,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                             .candidate_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(cand_value);
                     }
@@ -1186,16 +1199,14 @@ fn build_geometric_match_table(
                 let ref_value = reference_asset
                     .metadata
                     .get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(crate::model::metadata_cell)
                     .unwrap_or_default();
                 values.push(ref_value);
                 let candidate_value = match_result
                     .asset
                     .metadata
                     .get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(crate::model::metadata_cell)
                     .unwrap_or_default();
                 values.push(candidate_value);
             }
@@ -1225,17 +1236,21 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     trace!("Executing geometric match folder command...");
 
     let configuration = Configuration::load_or_create_default()?;
+    // Read once here; it used to be loaded from disk again for every match row.
+    let ui_base_url = configuration.get_ui_base_url();
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder paths
-    let folder_paths: Vec<String> = sub_matches
-        .get_many::<String>(PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(
-            PARAMETER_FOLDER_PATH.to_string(),
-        ))?
-        .map(|s| s.to_string())
-        .collect();
+    let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>(PARAMETER_FOLDER_PATH)
+            .ok_or(CliError::MissingRequiredArgument(
+                PARAMETER_FOLDER_PATH.to_string(),
+            ))?
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>(),
+    );
 
     // Get threshold parameter
     let threshold = crate::actions::utils::threshold_from_args(sub_matches);
@@ -1346,6 +1361,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
+        let ui_base_url_for_task = ui_base_url.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -1398,18 +1414,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                             continue;
                         }
 
-                        // Load configuration to get the UI base URL
-                        let configuration =
-                            crate::configuration::Configuration::load_or_create_default().map_err(
-                                |e| {
-                                    CliError::ConfigurationError(
-                                crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e),
-                                }
-                            )
-                                },
-                            )?;
-                        let ui_base_url = configuration.get_ui_base_url();
+                        let ui_base_url = ui_base_url_for_task.clone();
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
@@ -1492,11 +1497,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                             tenant_id: tenant_uuid,
                             path: asset_clone.path(),
                             folder_id: None,
-                            asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(),      // Placeholder for creation time
-                            updated_at: "".to_string(),      // Placeholder for update time
-                            state: "active".to_string(),     // Default state
-                            is_assembly: false,              // Default is not assembly
+                            asset_type: asset_clone.file_type().cloned().unwrap_or_default(),
+                            created_at: asset_clone.created_at().cloned().unwrap_or_default(),
+                            updated_at: asset_clone.updated_at().cloned().unwrap_or_default(),
+                            state: asset_clone.normalized_processing_status(),
+                            is_assembly: asset_clone.is_assembly(),
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
                             owner_id: None,         // No owner ID
@@ -1528,7 +1533,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     // are genuinely gone - then the run stops, and explains once.
                     let stopping = e.is_authentication_failure() && abort.record_auth_failure();
                     if stopping {
-                        error_utils::report_error_with_remediation(
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_error_with_remediation(
                             &format!(
                                 "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
                                 CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
@@ -1538,12 +1544,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                                 "Then re-run this command",
                             ],
                         );
+                        });
                     } else if !abort.is_stopped() {
-                        error_utils::report_warning(&format!(
-                            "🔍 Failed to perform geometric search for asset {}: {}",
-                            asset_clone.name(),
-                            e
-                        ));
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_warning(&format!(
+                                "🔍 Failed to perform geometric search for asset {}: {}",
+                                asset_clone.name(),
+                                e
+                            ))
+                        });
                     }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
@@ -1586,6 +1595,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
             }
             Ok(Err(e)) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Error processing asset: {:?}", e),
                     &[
@@ -1596,6 +1606,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 );
             }
             Err(e) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Task failed: {:?}", e),
                     &[
@@ -1749,17 +1760,21 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     trace!("Executing part match folder command...");
 
     let configuration = Configuration::load_or_create_default()?;
+    // Read once here; it used to be loaded from disk again for every match row.
+    let ui_base_url = configuration.get_ui_base_url();
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder paths
-    let folder_paths: Vec<String> = sub_matches
-        .get_many::<String>(PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(
-            PARAMETER_FOLDER_PATH.to_string(),
-        ))?
-        .cloned()
-        .collect();
+    let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>(PARAMETER_FOLDER_PATH)
+            .ok_or(CliError::MissingRequiredArgument(
+                PARAMETER_FOLDER_PATH.to_string(),
+            ))?
+            .cloned()
+            .collect::<Vec<String>>(),
+    );
 
     // Get threshold parameter
     let threshold = crate::actions::utils::threshold_from_args(sub_matches);
@@ -1880,6 +1895,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
+        let ui_base_url_for_task = ui_base_url.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -1932,18 +1948,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             continue;
                         }
 
-                        // Load configuration to get the UI base URL
-                        let configuration =
-                            crate::configuration::Configuration::load_or_create_default().map_err(
-                                |e| {
-                                    CliError::ConfigurationError(
-                                crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e),
-                                }
-                            )
-                                },
-                            )?;
-                        let ui_base_url = configuration.get_ui_base_url();
+                        let ui_base_url = ui_base_url_for_task.clone();
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
@@ -2028,11 +2033,11 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             tenant_id: tenant_uuid,
                             path: asset_clone.path(),
                             folder_id: None,
-                            asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(),      // Placeholder for creation time
-                            updated_at: "".to_string(),      // Placeholder for update time
-                            state: "active".to_string(),     // Default state
-                            is_assembly: false,              // Default is not assembly
+                            asset_type: asset_clone.file_type().cloned().unwrap_or_default(),
+                            created_at: asset_clone.created_at().cloned().unwrap_or_default(),
+                            updated_at: asset_clone.updated_at().cloned().unwrap_or_default(),
+                            state: asset_clone.normalized_processing_status(),
+                            is_assembly: asset_clone.is_assembly(),
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
                             owner_id: None,         // No owner ID
@@ -2064,7 +2069,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     // are genuinely gone - then the run stops, and explains once.
                     let stopping = e.is_authentication_failure() && abort.record_auth_failure();
                     if stopping {
-                        error_utils::report_error_with_remediation(
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_error_with_remediation(
                             &format!(
                                 "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
                                 CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
@@ -2074,12 +2080,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                                 "Then re-run this command",
                             ],
                         );
+                        });
                     } else if !abort.is_stopped() {
-                        error_utils::report_warning(&format!(
-                            "🔍 Failed to perform part search for asset {}: {}",
-                            asset_clone.name(),
-                            e
-                        ));
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_warning(&format!(
+                                "🔍 Failed to perform part search for asset {}: {}",
+                                asset_clone.name(),
+                                e
+                            ))
+                        });
                     }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
@@ -2122,6 +2131,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 }
             }
             Ok(Err(e)) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Error processing asset: {:?}", e),
                     &[
@@ -2132,6 +2142,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 );
             }
             Err(e) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Task failed: {:?}", e),
                     &[
@@ -2259,8 +2270,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             .reference_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
@@ -2269,8 +2279,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                             .candidate_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(cand_value);
                     }
@@ -2314,17 +2323,21 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     trace!("Executing visual match folder command...");
 
     let configuration = Configuration::load_or_create_default()?;
+    // Read once here; it used to be loaded from disk again for every match row.
+    let ui_base_url = configuration.get_ui_base_url();
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
     // Get folder paths
-    let folder_paths: Vec<String> = sub_matches
-        .get_many::<String>(PARAMETER_FOLDER_PATH)
-        .ok_or(CliError::MissingRequiredArgument(
-            PARAMETER_FOLDER_PATH.to_string(),
-        ))?
-        .cloned()
-        .collect();
+    let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>(PARAMETER_FOLDER_PATH)
+            .ok_or(CliError::MissingRequiredArgument(
+                PARAMETER_FOLDER_PATH.to_string(),
+            ))?
+            .cloned()
+            .collect::<Vec<String>>(),
+    );
 
     // Use FormatParams for consistent format parameter handling
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
@@ -2431,6 +2444,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         let tenant_clone = tenant.clone();
         let multi_progress_clone = multi_progress.clone();
         let abort = abort.clone();
+        let ui_base_url_for_task = ui_base_url.clone();
 
         let task = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -2483,18 +2497,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             continue;
                         }
 
-                        // Load configuration to get the UI base URL
-                        let configuration =
-                            crate::configuration::Configuration::load_or_create_default().map_err(
-                                |e| {
-                                    CliError::ConfigurationError(
-                                crate::configuration::ConfigurationError::FailedToLoadData {
-                                    cause: Box::new(e),
-                                }
-                            )
-                                },
-                            )?;
-                        let ui_base_url = configuration.get_ui_base_url();
+                        let ui_base_url = ui_base_url_for_task.clone();
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
@@ -2575,11 +2578,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             tenant_id: tenant_uuid,
                             path: asset_clone.path(),
                             folder_id: None,
-                            asset_type: "asset".to_string(), // Default asset type
-                            created_at: "".to_string(),      // Placeholder for creation time
-                            updated_at: "".to_string(),      // Placeholder for update time
-                            state: "active".to_string(),     // Default state
-                            is_assembly: false,              // Default is not assembly
+                            asset_type: asset_clone.file_type().cloned().unwrap_or_default(),
+                            created_at: asset_clone.created_at().cloned().unwrap_or_default(),
+                            updated_at: asset_clone.updated_at().cloned().unwrap_or_default(),
+                            state: asset_clone.normalized_processing_status(),
+                            is_assembly: asset_clone.is_assembly(),
                             metadata: metadata_map,
                             parent_folder_id: None, // No parent folder ID
                             owner_id: None,         // No owner ID
@@ -2611,7 +2614,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     // are genuinely gone - then the run stops, and explains once.
                     let stopping = e.is_authentication_failure() && abort.record_auth_failure();
                     if stopping {
-                        error_utils::report_error_with_remediation(
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_error_with_remediation(
                             &format!(
                                 "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
                                 CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
@@ -2621,12 +2625,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                                 "Then re-run this command",
                             ],
                         );
+                        });
                     } else if !abort.is_stopped() {
-                        error_utils::report_warning(&format!(
-                            "🔍 Failed to perform visual search for asset {}: {}",
-                            asset_clone.name(),
-                            e
-                        ));
+                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                            error_utils::report_warning(&format!(
+                                "🔍 Failed to perform visual search for asset {}: {}",
+                                asset_clone.name(),
+                                e
+                            ))
+                        });
                     }
                     if let Some(ref pb) = individual_pb {
                         pb.set_message("Failed");
@@ -2669,6 +2676,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 }
             }
             Ok(Err(e)) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Error processing asset: {:?}", e),
                     &[
@@ -2679,6 +2687,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                 );
             }
             Err(e) => {
+                outcomes.record(Some(SearchFailure::Operational));
                 error_utils::report_error_with_remediation(
                     &format!("Task failed: {:?}", e),
                     &[
@@ -2800,8 +2809,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             .reference_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(ref_value);
 
@@ -2810,8 +2818,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                             .candidate_asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         base_values.push(cand_value);
                     }
@@ -3018,8 +3025,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                             .asset
                             .metadata
                             .get(key)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(crate::model::metadata_cell)
                             .unwrap_or_default();
                         extended_values.push(value);
                     }
@@ -3098,6 +3104,20 @@ mod tests {
         );
         assert_eq!(
             SearchFailure::classify(&ApiError::InvalidToken),
+            SearchFailure::Operational
+        );
+        assert_eq!(
+            SearchFailure::classify(&ApiError::HttpStatus {
+                status: 503,
+                message: "Service Unavailable".to_string()
+            }),
+            SearchFailure::Operational
+        );
+        assert_eq!(
+            SearchFailure::classify(&ApiError::HttpStatus {
+                status: 429,
+                message: "Too Many Requests".to_string()
+            }),
             SearchFailure::Operational
         );
         assert_eq!(

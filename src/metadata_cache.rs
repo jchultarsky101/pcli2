@@ -52,7 +52,7 @@ impl MetadataCache {
                 .as_secs();
 
             // Cache expires after 1 hour (3600 seconds)
-            current_time - updated > 3600
+            current_time.saturating_sub(updated) > 3600
         } else {
             true
         }
@@ -67,13 +67,19 @@ impl MetadataCache {
         // Check for PCLI2_CACHE_DIR environment variable first
         if let Ok(cache_dir_str) = std::env::var("PCLI2_CACHE_DIR") {
             let mut cache_path = PathBuf::from(cache_dir_str);
-            cache_path.push("metadata_cache.json");
+            cache_path.push(format!(
+                "metadata_cache-{}.json",
+                crate::folder_cache::active_environment_key()
+            ));
             return Ok(cache_path);
         }
 
         let mut path = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
         path.push("pcli2");
-        path.push("metadata_cache.json");
+        path.push(format!(
+            "metadata_cache-{}.json",
+            crate::folder_cache::active_environment_key()
+        ));
         Ok(path)
     }
 
@@ -117,7 +123,7 @@ impl MetadataCache {
         };
 
         let data = serde_json::to_string_pretty(&cache_to_save)?;
-        fs::write(path, data)?;
+        crate::folder_cache::write_atomically(&path, data.as_bytes())?;
         debug!("Saved metadata cache to file");
         Ok(())
     }

@@ -41,7 +41,11 @@ impl CsvRecordProducer for Folder {
 
         // Sort records by folder name
         let mut records = self.as_csv_records();
-        records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+        records.sort_by(|a, b| {
+            a[0].to_lowercase()
+                .cmp(&b[0].to_lowercase())
+                .then_with(|| a[0].cmp(&b[0]))
+        }); // Sort by NAME column (index 0), case-insensitively
 
         for record in records {
             wtr.write_record(&record).map_err(|e| {
@@ -115,7 +119,7 @@ impl OutputFormatter for FolderList {
             OutputFormat::Json(options) => {
                 // convert to a simple vector for output, sorted by name
                 let mut folders: Vec<Folder> = self.folders();
-                folders.sort_by_key(|a| a.name());
+                folders.sort_by_key(|a| (a.name().to_lowercase(), a.name()));
                 let json = if options.pretty {
                     serde_json::to_string_pretty(&folders)
                 } else {
@@ -134,7 +138,11 @@ impl OutputFormatter for FolderList {
 
                 // Sort records by folder name
                 let mut records = self.as_csv_records();
-                records.sort_by(|a, b| a[0].cmp(&b[0])); // Sort by NAME column (index 0)
+                records.sort_by(|a, b| {
+                    a[0].to_lowercase()
+                        .cmp(&b[0].to_lowercase())
+                        .then_with(|| a[0].cmp(&b[0]))
+                }); // Sort by NAME column (index 0), case-insensitively
 
                 for record in records {
                     wtr.write_record(&record).map_err(|e| {
@@ -154,7 +162,7 @@ impl OutputFormatter for FolderList {
                 // In practice, tree format should be handled at the command level
                 // where we have access to the full hierarchy
                 let mut folders: Vec<Folder> = self.folders();
-                folders.sort_by_key(|a| a.name());
+                folders.sort_by_key(|a| (a.name().to_lowercase(), a.name()));
                 let json = serde_json::to_string_pretty(&folders);
                 match json {
                     Ok(json) => Ok(json),

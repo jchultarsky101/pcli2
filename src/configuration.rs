@@ -25,6 +25,11 @@ pub struct EnvironmentConfig {
     pub ui_base_url: String,
     #[serde(default = "default_auth_base_url")]
     pub auth_base_url: String,
+    /// The tenant selected while this environment was active. Tenants belong to
+    /// an environment (a staging tenant does not exist in production), so a
+    /// single global selection went stale the moment the environment changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_tenant_uuid: Option<Uuid>,
 }
 
 pub fn default_api_base_url() -> String {
@@ -42,19 +47,22 @@ pub fn default_auth_base_url() -> String {
 #[derive(Debug, thiserror::Error)]
 #[allow(clippy::large_enum_variant)]
 pub enum ConfigurationError {
+    /// The named environment is not defined in the configuration.
+    #[error("Environment '{0}' does not exist (list them with 'pcli2 env list')")]
+    EnvironmentNotFound(String),
     #[error("failed to resolve the configuration directory")]
     FailedToFindConfigurationDirectory,
-    #[error("failed to load configuration data, because of: {cause:?}")]
+    #[error("failed to load configuration data, because of: {cause}")]
     FailedToLoadData {
         cause: Box<dyn std::error::Error + Send + Sync>,
     },
-    #[error("failed to write configuration data to file, because of: {cause:?}")]
+    #[error("failed to write configuration data to file, because of: {cause}")]
     FailedToWriteData {
         cause: Box<dyn std::error::Error + Send + Sync>,
     },
     #[error("missing value for property {name:?}")]
     MissingRequiredPropertyValue { name: String },
-    #[error("{cause:?}")]
+    #[error("{cause}")]
     FormattingError {
         #[from]
         cause: Box<FormattingError>,
@@ -85,7 +93,16 @@ pub struct Configuration {
 
 impl Configuration {
     pub fn active_tenant_uuid(&self) -> Option<&Uuid> {
-        self.active_tenant_uuid.as_ref()
+        self.active_environment
+            .as_ref()
+            .and_then(|env| self.environments.get(env))
+            .and_then(|env| env.active_tenant_uuid.as_ref())
+            .or(self.active_tenant_uuid.as_ref())
+    }
+
+    /// Whether an environment with this name is defined.
+    pub fn has_environment(&self, name: &str) -> bool {
+        self.environments.contains_key(name)
     }
 
     pub fn get_default_configuration_file_path() -> Result<PathBuf, ConfigurationError> {
@@ -232,14 +249,30 @@ impl Configuration {
 
     // Context management methods
     pub fn get_active_tenant_uuid(&self) -> Option<Uuid> {
-        self.active_tenant_uuid
+        self.active_tenant_uuid().copied()
     }
 
+    /// Record the tenant on the active environment (and, for configuration files
+    /// read by older versions, at the top level too).
     pub fn set_active_tenant(&mut self, tenant: &Tenant) {
+        if let Some(env) = self
+            .active_environment
+            .clone()
+            .and_then(|name| self.environments.get_mut(&name))
+        {
+            env.active_tenant_uuid = Some(tenant.uuid);
+        }
         self.active_tenant_uuid = Some(tenant.uuid);
     }
 
     pub fn clear_active_tenant(&mut self) {
+        if let Some(env) = self
+            .active_environment
+            .clone()
+            .and_then(|name| self.environments.get_mut(&name))
+        {
+            env.active_tenant_uuid = None;
+        }
         self.active_tenant_uuid = None;
     }
 
@@ -295,9 +328,9 @@ impl Configuration {
             self.active_environment = Some(env_name.to_string());
             Ok(())
         } else {
-            Err(ConfigurationError::MissingRequiredPropertyValue {
-                name: format!("Environment '{}' does not exist", env_name),
-            })
+            Err(ConfigurationError::EnvironmentNotFound(
+                env_name.to_string(),
+            ))
         }
     }
 
@@ -315,9 +348,7 @@ impl Configuration {
             }
             Ok(())
         } else {
-            Err(ConfigurationError::MissingRequiredPropertyValue {
-                name: format!("Environment '{}' does not exist", name),
-            })
+            Err(ConfigurationError::EnvironmentNotFound(name.to_string()))
         }
     }
 

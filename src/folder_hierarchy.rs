@@ -358,21 +358,32 @@ impl FolderHierarchy {
         // Find folder with matching name among the given folder IDs
         // Use case-insensitive comparison for better cross-platform compatibility
         // (Windows users expect case-insensitive folder matching)
-        for folder_id in folder_ids {
-            if let Some(node) = self.nodes.get(folder_id) {
-                if node.name().eq_ignore_ascii_case(current_part) {
-                    if path_parts.len() == 1 {
-                        // Found the target folder
-                        return Some(node);
-                    } else {
-                        // Continue searching in children
-                        return self.find_folder_by_path_parts(&node.children, &path_parts[1..]);
-                    }
-                }
-            }
+        let candidates: Vec<&FolderNode> = folder_ids
+            .iter()
+            .filter_map(|folder_id| self.nodes.get(folder_id))
+            .filter(|node| node.name().eq_ignore_ascii_case(current_part))
+            .collect();
+        if candidates.len() > 1 {
+            // Siblings that differ only by case (or not at all) are legal on the
+            // server; a path cannot tell them apart. Say so rather than silently
+            // picking whichever the listing returned first.
+            tracing::warn!(
+                "'{}' matches {} sibling folders ({}); using the first. Address the folder by --folder-uuid to be exact.",
+                current_part,
+                candidates.len(),
+                candidates
+                    .iter()
+                    .map(|node| format!("{} ({})", node.name(), node.folder.uuid))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
-
-        None
+        let node = candidates.first()?;
+        if path_parts.len() == 1 {
+            Some(node)
+        } else {
+            self.find_folder_by_path_parts(&node.children, &path_parts[1..])
+        }
     }
 
     /// Get the full path for a folder by its ID
@@ -483,7 +494,12 @@ impl FolderHierarchy {
             .iter()
             .filter_map(|id| self.nodes.get(id).map(|node| (id, node)))
             .collect();
-        sorted_roots.sort_by(|a, b| a.1.name().cmp(b.1.name()));
+        sorted_roots.sort_by(|a, b| {
+            a.1.name()
+                .to_lowercase()
+                .cmp(&b.1.name().to_lowercase())
+                .then_with(|| a.1.name().cmp(b.1.name()))
+        });
 
         for (_root_id, node) in sorted_roots {
             let mut tree = TreeBuilder::new(node.name().to_string());
@@ -494,7 +510,12 @@ impl FolderHierarchy {
                 .iter()
                 .filter_map(|uuid| self.nodes.get(uuid).map(|node| (uuid, node)))
                 .collect();
-            sorted_children.sort_by(|a, b| a.1.name().cmp(b.1.name()));
+            sorted_children.sort_by(|a, b| {
+                a.1.name()
+                    .to_lowercase()
+                    .cmp(&b.1.name().to_lowercase())
+                    .then_with(|| a.1.name().cmp(b.1.name()))
+            });
 
             for (_child_id, child_node) in sorted_children {
                 self.build_tree_node(&mut tree, child_node);
@@ -520,7 +541,12 @@ impl FolderHierarchy {
             .iter()
             .filter_map(|uuid| self.nodes.get(uuid).map(|node| (uuid, node)))
             .collect();
-        sorted_children.sort_by(|a, b| a.1.name().cmp(b.1.name()));
+        sorted_children.sort_by(|a, b| {
+            a.1.name()
+                .to_lowercase()
+                .cmp(&b.1.name().to_lowercase())
+                .then_with(|| a.1.name().cmp(b.1.name()))
+        });
 
         for (_child_id, child_node) in sorted_children {
             self.build_tree_node(tree, child_node);

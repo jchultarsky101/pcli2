@@ -12,12 +12,7 @@
   },
   "components": {
     "artifacts": {
-      "package_managers": {
-        "preferred": {
-          "cargo": "pcli2"
-        }
-      },
-      "cargo_dist": false
+      "cargo_dist": true
     },
     "changelog": true,
     "mdbook": {

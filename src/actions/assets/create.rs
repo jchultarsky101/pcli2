@@ -5,7 +5,6 @@
 
 use crate::{
     actions::assets::metadata_batch_csv::{parse_batch_csv, BatchAssetRef, BatchCsvFormat},
-    actions::folders::resolve_folder_uuid_by_path,
     actions::CliActionError,
     commands::params::{
         PARAMETER_CONTINUE_ON_ERROR, PARAMETER_DELETE_IF_EMPTY, PARAMETER_FILE, PARAMETER_FILES,
@@ -15,7 +14,6 @@ use crate::{
     configuration::Configuration,
     error::CliError,
     error_utils,
-    folder_hierarchy::FolderHierarchy,
     format::OutputFormatter,
     metadata::convert_single_metadata_to_json_value,
     model::{Asset, AssetList},
@@ -96,45 +94,14 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let folder_uuid_param = sub_matches.get_one::<uuid::Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        let normalized_path = crate::model::normalize_path(path);
-        if normalized_path == "/" {
-            // Root path - handle specially if needed, but for asset creation we need the actual folder
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        } else {
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        }
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
-
-    // Check if the folder exists and set its path
-    let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let mut folder = folder;
-    if let Some(path) = folder_path_param {
-        folder.set_path(path.to_owned());
-    } else {
-        // When using --folder-uuid, try to build the folder hierarchy to get the full path
-        // This is optional - if it fails, we'll just use the folder name without the full path
-        match FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await {
-            Ok(hierarchy) => {
-                if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
-                    folder.set_path(path);
-                }
-            }
-            Err(_) => {
-                // If we can't build the hierarchy, just use the folder name as the path
-                // This allows the create operation to proceed even if hierarchy fetch fails
-                folder.set_path(folder.name());
-            }
-        }
-    }
+    // The destination as the server knows it (see resolve_upload_destination).
+    let (folder_uuid, folder_path) = crate::actions::utils::resolve_upload_destination(
+        &mut api,
+        &tenant,
+        folder_uuid_param,
+        folder_path_param,
+    )
+    .await?;
 
     let file_path = sub_matches
         .get_one::<PathBuf>(PARAMETER_FILE)
@@ -149,7 +116,6 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .to_string();
 
     // Construct the full asset path by combining folder path with filename
-    let folder_path = folder.path();
     let asset_path = if folder_path.is_empty() || folder_path == "/" {
         file_name.clone()
     } else {
@@ -180,7 +146,16 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     }
 
     let asset = if override_flag {
-        let existing = api.get_asset_by_path(&tenant.uuid, &asset_path).await.ok();
+        // Only "absent" means absent. A network or session failure used to be
+        // read as "does not exist", after which the plain upload hit a 409.
+        let existing = match api.get_asset_by_path(&tenant.uuid, &asset_path).await {
+            Ok(asset) => Some(asset),
+            Err(ApiError::PathNotFound(_))
+            | Err(ApiError::NotFoundError(_))
+            | Err(ApiError::FolderNotFound(_))
+            | Err(ApiError::InvalidAssetPath(_)) => None,
+            Err(e) => return Err(e.into()),
+        };
 
         if let Some(existing) = existing {
             debug!(
@@ -333,36 +308,13 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     let folder_uuid_param = sub_matches.get_one::<uuid::Uuid>(PARAMETER_FOLDER_UUID);
     let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        let normalized_path = crate::model::normalize_path(path);
-        if normalized_path == "/" {
-            // Root path - handle specially if needed, but for asset creation we need the actual folder
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        } else {
-            resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-        }
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
-
-    // Check if the folder exists
-    let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let mut folder = folder;
-    if let Some(path) = folder_path_param {
-        folder.set_path(path.to_owned())
-    } else {
-        // When using --folder-uuid, we need to build the folder hierarchy to get the full path
-        let hierarchy = FolderHierarchy::build_from_api(&mut api, &tenant.uuid).await?;
-        if let Some(path) = hierarchy.get_path_for_folder(&folder_uuid) {
-            folder.set_path(path);
-        }
-    }
+    let (folder_uuid, folder_path) = crate::actions::utils::resolve_upload_destination(
+        &mut api,
+        &tenant,
+        folder_uuid_param,
+        folder_path_param,
+    )
+    .await?;
 
     // Report and stop without uploading anything when --dry-run is given
     if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
@@ -376,7 +328,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         println!(
             "Dry run: would upload {} file(s) to folder '{}':",
             paths.len(),
-            folder.path()
+            folder_path
         );
         for path in &paths {
             println!("  {}", path.display());
@@ -384,17 +336,38 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         return Ok(());
     }
 
-    let assets = api
+    let outcome = api
         .create_assets_batch(
             &tenant.uuid,
             &glob_pattern,
-            Some(folder.path().as_str()),
+            Some(folder_path.as_str()),
             Some(&folder_uuid),
             concurrent,
             show_progress,
         )
         .await?;
-    println!("{}", AssetList::from(assets).format(format)?);
+
+    let succeeded = outcome.assets.len();
+    let failed = outcome.failures.len();
+    if succeeded > 0 {
+        println!("{}", AssetList::from(outcome.assets).format(format)?);
+    }
+    // Every failure is named. These used to go to the debug log only, so a run
+    // that lost 40 of 500 files printed the 460 successes and exited 0.
+    for (path, error) in &outcome.failures {
+        eprintln!("❌ Failed to upload '{}': {}", path.display(), error);
+    }
+    if failed > 0 {
+        eprintln!(
+            "Batch upload finished: {} uploaded, {} failed",
+            succeeded, failed
+        );
+        return Err(CliError::ActionError(CliActionError::PartialFailure {
+            failed,
+            total: succeeded + failed,
+            what: "upload(s)".to_string(),
+        }));
+    }
 
     Ok(())
 }
@@ -470,6 +443,12 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     let mut success_count = 0;
     let mut failure_count = 0;
     let mut skipped_missing = 0;
+    // One listing per distinct parent folder, and one registry fetch, for the
+    // whole run. Both used to happen once per row: a 5,000-row batch into a
+    // 10,000-asset folder was a quarter of a million requests.
+    let mut folder_listings: std::collections::HashMap<String, crate::model::AssetList> =
+        std::collections::HashMap::new();
+    let mut field_registry = api.fetch_metadata_field_types(&tenant.uuid).await?;
     let mut auth_failure_occurred = false;
     // Tracked separately from a credential failure: the run stops for both, but
     // "re-authenticate" is useless advice when the session is fine and the account
@@ -537,7 +516,10 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             None => {
                 let lookup_result = match &entry.asset {
                     BatchAssetRef::Uuid(uuid) => api.get_asset_by_uuid(&tenant.uuid, uuid).await,
-                    BatchAssetRef::Path(path) => api.get_asset_by_path(&tenant.uuid, path).await,
+                    BatchAssetRef::Path(path) => {
+                        asset_by_path_cached(&mut api, &tenant.uuid, path, &mut folder_listings)
+                            .await
+                    }
                 };
                 match lookup_result {
                     Ok(asset) => {
@@ -570,6 +552,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                             e,
                             ApiError::NotFoundError(_)
                                 | ApiError::PathNotFound(_)
+                                | ApiError::FolderNotFound(_)
                                 | ApiError::InvalidAssetPath(_)
                         );
 
@@ -752,11 +735,12 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         // Update fields with non-empty values
         if !typed_metadata.is_empty() {
             if let Err(e) = api
-                .update_asset_metadata_with_registration(
+                .update_asset_metadata_with_registry(
                     &tenant.uuid,
                     &asset.uuid(),
                     &typed_metadata,
                     Some(declared_types),
+                    &mut field_registry,
                 )
                 .await
             {
@@ -908,6 +892,16 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         ));
     }
 
+    // --continue-on-error decides whether the run keeps going, not whether the
+    // exit code tells the truth: a batch with failures is still a failed batch.
+    if failure_count > 0 {
+        return Err(CliError::ActionError(CliActionError::PartialFailure {
+            failed: failure_count,
+            total: success_count + failure_count,
+            what: "metadata update(s)".to_string(),
+        }));
+    }
+
     Ok(())
 }
 
@@ -987,4 +981,26 @@ pub async fn update_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliEr
     // No output on success (per requirements)
 
     Ok(())
+}
+
+/// Resolve an asset by path, listing each parent folder at most once per run.
+async fn asset_by_path_cached(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &uuid::Uuid,
+    asset_path: &str,
+    listings: &mut std::collections::HashMap<String, crate::model::AssetList>,
+) -> Result<crate::model::Asset, ApiError> {
+    let parent = PhysnaApiClient::get_parent_folder_path(asset_path)?;
+    if !listings.contains_key(&parent) {
+        let listing = api
+            .list_assets_by_parent_folder_path(tenant_uuid, &parent)
+            .await?;
+        listings.insert(parent.clone(), listing);
+    }
+    let name = PhysnaApiClient::asset_name_from_path(asset_path)
+        .ok_or_else(|| ApiError::InvalidAssetPath(asset_path.to_string()))?;
+    listings[&parent]
+        .find_by_name(&name)
+        .cloned()
+        .ok_or_else(|| ApiError::PathNotFound(asset_path.to_string()))
 }

@@ -39,11 +39,13 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
         .ok_or_else(|| CliError::MissingRequiredArgument("path".to_string()))?;
 
     // Get the metadata field names to copy
-    let metadata_names: Vec<String> = sub_matches
-        .get_many::<String>("inference_name")
-        .ok_or_else(|| CliError::MissingRequiredArgument("name".to_string()))?
-        .map(|s| s.to_string())
-        .collect();
+    let metadata_names: Vec<String> = crate::actions::utils::split_list_values(
+        sub_matches
+            .get_many::<String>("inference_name")
+            .ok_or_else(|| CliError::MissingRequiredArgument("name".to_string()))?
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>(),
+    );
 
     // Get threshold parameter
     let threshold = crate::actions::utils::threshold_from_args(sub_matches);

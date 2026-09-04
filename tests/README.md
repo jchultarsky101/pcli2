@@ -1,54 +1,23 @@
-# CLI Help Verification Tests
+# Integration tests
 
-This directory contains comprehensive tests that verify the CLI help output remains consistent and hasn't been accidentally changed. These tests are important for maintaining a stable user interface across all command levels.
+Every file here runs against the built binary or against a `mockito` server; none
+of them contacts Physna. Run them all with `cargo test`, or one file with
+`cargo test --test <name>`.
 
-## Test Files
+| File | What it covers |
+|------|----------------|
+| `cli_help_test.rs` | Help and version output for every level of the command tree, as a guard against accidental interface changes. |
+| `error_tests.rs` | Error types, their messages, and the exit-code contract (64 usage, 65 data, 66 missing input, 67 not found, 69 temporary failure, 78 configuration, 100 authentication, 101 network, 102 API). |
+| `format_model_tests.rs` | JSON, CSV and tree formatting of the data model. |
+| `asset_tests.rs` | Asset model behaviour. |
+| `folder_resolution_test.rs` | Folder path resolution against a mock API: root, existing, and non-existent paths. |
+| `metadata_fields_pagination_test.rs` | Metadata field listing across pages of a mock API. |
+| `download_to_file_test.rs` | Streamed downloads: whole file written through a temporary file, empty body refused, server errors classified. |
 
-### `cli_help_test.rs`
-Contains functional tests that verify:
-- Main CLI help output (`pcli2 --help`)
-- Top-level subcommand help outputs (`pcli2 tenant --help`, `pcli2 asset --help`, etc.)
-- Second-level nested subcommand help outputs (`pcli2 tenant list --help`, `pcli2 asset create --help`, etc.)
-- Deeply nested subcommand help outputs (`pcli2 asset metadata get --help`, `pcli2 config environment add --help`, etc.)
-- Version output (`pcli2 --version`)
+Unit tests live next to the code they test (`#[cfg(test)]` modules), including the
+HTTP retry path in `src/http_utils.rs`, the search-failure classifier in
+`src/actions/assets/match_ops.rs`, and the metadata CSV parser in
+`src/actions/assets/metadata_batch_csv.rs`.
 
-### `cli_help_snapshot_test.rs`
-Contains snapshot-style tests that capture the current help output format and verify it remains consistent over time. These tests help detect unintended changes to the CLI interface across all command levels:
-- Main command help snapshots
-- Top-level subcommand help snapshots
-- Second-level nested subcommand help snapshots
-- Deeply nested subcommand help snapshots
-
-## Comprehensive Coverage
-
-The tests cover all levels of the CLI hierarchy:
-- **Level 1**: Main commands (`tenant`, `folder`, `asset`, `auth`, `context`, `config`)
-- **Level 2**: Direct subcommands (`asset list`, `asset create`, `config get`, etc.)
-- **Level 3**: Deeply nested commands (`asset metadata get`, `context set tenant`, `config environment add`, etc.)
-
-## Purpose
-
-These tests serve to:
-1. Verify that the CLI help output contains expected elements at all levels
-2. Ensure that major command groups remain accessible
-3. Detect accidental changes to the CLI interface across all command depths
-4. Maintain consistency in the user experience
-5. Prevent breaking changes to the command structure
-
-## Running the Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run specific help tests
-cargo test --test cli_help_test
-cargo test --test cli_help_snapshot_test
-
-# Run the manual verification script
-bash test_help_output.sh
-```
-
-## Manual Verification
-
-The `test_help_output.sh` script provides a quick way to manually verify all help outputs at once.
+Tests that need a configuration or cache directory point `PCLI2_CONFIG_DIR` and
+`PCLI2_CACHE_DIR` at a temporary directory so they never touch the real ones.

@@ -41,7 +41,7 @@ impl TenantCache {
                 .unwrap()
                 .as_secs();
             // Cache expires after 1 hour (3600 seconds)
-            now - timestamp > 3600
+            now.saturating_sub(timestamp) > 3600
         } else {
             true // If no timestamp, treat as expired
         }
@@ -118,7 +118,7 @@ impl TenantCache {
         };
 
         let data = serde_json::to_string_pretty(&cache_to_save)?;
-        std::fs::write(path, data)?;
+        crate::folder_cache::write_atomically(&path, data.as_bytes())?;
         debug!("Saved tenant cache to file");
         Ok(())
     }

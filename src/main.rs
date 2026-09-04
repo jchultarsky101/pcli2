@@ -24,8 +24,7 @@ use tracing_subscriber::EnvFilter;
 mod banner;
 mod cli;
 use cli::execute_command;
-mod exit_codes;
-use exit_codes::PcliExitCode;
+use pcli2::exit_codes::PcliExitCode;
 
 /// Error types that can occur in the main application
 #[derive(Error, Debug)]
@@ -62,9 +61,12 @@ fn init_logging(matches: &clap::ArgMatches) {
     let env_filter = if matches.get_flag("quiet") {
         EnvFilter::new("error")
     } else if matches.get_flag("verbose") {
-        EnvFilter::new("debug")
+        // pcli2's own debug output; the HTTP stack stays at warn so --verbose is
+        // readable. RUST_LOG remains the way to open everything up.
+        EnvFilter::new("pcli2=debug,warn")
     } else {
-        // Check for PCLI2_LOG_LEVEL environment variable first
+        // RUST_LOG, when set and valid, takes precedence (try_from_default_env);
+        // otherwise PCLI2_LOG_LEVEL, then "warn".
         let log_level = env::var("PCLI2_LOG_LEVEL")
             .or_else(|_| env::var("RUST_LOG"))
             .unwrap_or_else(|_| "warn".to_string());
@@ -119,7 +121,13 @@ async fn main() {
             if pcli2::commands::should_hint_after_parse_error(&e) {
                 pcli2::update_check::maybe_print_update_hint().await;
             }
-            process::exit(e.exit_code());
+            // clap exits 2 for usage errors and 0 for help/version. The documented
+            // contract (and sysexits) says usage errors are 64.
+            process::exit(if e.use_stderr() {
+                PcliExitCode::UsageError.code()
+            } else {
+                0
+            });
         }
     };
 
@@ -143,7 +151,9 @@ async fn main() {
             process::exit(0);
         }
         Err(e) => {
-            error_utils::report_detailed_error(&e, None); // Remove generic context
+            if !e.is_already_reported() {
+                error_utils::report_cli_error(&e);
+            }
 
             // Also hint on failure, and after the error so it is the last thing read.
             // A command that just failed is when being several versions behind matters

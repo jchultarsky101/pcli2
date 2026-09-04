@@ -9,7 +9,7 @@ This guide will help you get started with PCLI2 quickly by walking through commo
 - [Working with Assets](#working-with-assets)
 - [Geometric Matching](#geometric-matching)
 - [Configuration](#configuration)
-- [Context Management](#context-management)
+- [Choosing a Tenant](#choosing-a-tenant)
 - [Next Steps](#next-steps)
 - [Getting Help](#getting-help)
 
@@ -72,7 +72,7 @@ pcli2 folder list
 pcli2 folder list --format tree
 
 # List assets in a specific folder
-pcli2 asset list --path /Root/MyFolder/
+pcli2 asset list --folder-path /Home/MyFolder/
 ```
 
 ## Working with Assets
@@ -85,20 +85,20 @@ The `asset create` command uploads individual files to your Physna tenant, placi
 
 ```bash
 # Upload a single asset
-pcli2 asset create --file path/to/my/model.stl --folder-path /Root/MyFolder/
+pcli2 asset create --file path/to/my/model.stl --folder-path /Home/MyFolder/
 
 # Replace an existing asset (deletes the old one first)
-pcli2 asset create --file path/to/my/model.stl --folder-path /Root/MyFolder/ --override
+pcli2 asset create --file path/to/my/model.stl --folder-path /Home/MyFolder/ --override
 
 # Replace an existing asset and keep its metadata
-pcli2 asset create --file path/to/my/model.stl --folder-path /Root/MyFolder/ --override --restore-metadata
+pcli2 asset create --file path/to/my/model.stl --folder-path /Home/MyFolder/ --override --restore-metadata
 ```
 
 For bulk operations, `asset create-batch` allows you to upload multiple files at once using glob patterns:
 
 ```bash
 # Upload multiple assets
-pcli2 asset create-batch --files "models/*.stl" --path /Root/BatchUpload/
+pcli2 asset create-batch --files "models/*.stl" --folder-path /Home/BatchUpload/
 ```
 
 ### Viewing and Managing Assets
@@ -107,10 +107,10 @@ Use these commands to inspect and manage your assets:
 
 ```bash
 # View asset details
-pcli2 asset get --path /Root/MyFolder/model.stl
+pcli2 asset get --path /Home/MyFolder/model.stl
 
 # Delete an asset
-pcli2 asset delete --path /Root/MyFolder/model.stl
+pcli2 asset delete --path /Home/MyFolder/model.stl
 ```
 
 ## Geometric Matching
@@ -119,10 +119,10 @@ Geometric matching is a powerful feature that allows you to find assets with sim
 
 ```bash
 # Find matches for a single asset
-pcli2 asset geometric-match --path /Root/Folder/ReferenceModel.stl --threshold 85.0
+pcli2 asset geometric-match --path /Home/Folder/ReferenceModel.stl --threshold 85.0
 
 # Find matches for all assets in a folder (parallel processing)
-pcli2 asset geometric-match-folder --path /Root/SearchFolder/ --threshold 90.0 --format csv --progress
+pcli2 folder geometric-match --folder-path /Home/SearchFolder/ --threshold 90.0 --format csv --progress
 ```
 
 The threshold parameter controls the similarity requirement, where higher values (closer to 100) require closer matches. The progress flag provides visual feedback during long-running operations.
@@ -137,10 +137,10 @@ The `metadata create` command adds or updates a single metadata field on an asse
 
 ```bash
 # Add or update a single metadata field on an asset
-pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
+pcli2 asset metadata create --path "/Home/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
 
 # Add or update multiple metadata fields on an asset
-pcli2 asset metadata create --path "/Root/Folder/Model.stl" --name "Weight" --value "15.5" --type "number"
+pcli2 asset metadata create --path "/Home/Folder/Model.stl" --name "Weight" --value "15.5" --type "number"
 ```
 
 ### Retrieving Metadata
@@ -149,7 +149,7 @@ Use the `metadata get` command to view all metadata associated with an asset:
 
 ```bash
 # Get all metadata for an asset
-pcli2 asset metadata get --path "/Root/Folder/Model.stl"
+pcli2 asset metadata get --path "/Home/Folder/Model.stl"
 ```
 
 ### Deleting Metadata
@@ -158,10 +158,10 @@ The `metadata delete` command removes specific metadata fields from an asset wit
 
 ```bash
 # Delete specific metadata fields from an asset
-pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material" --name "Weight"
+pcli2 asset metadata delete --path "/Home/Folder/Model.stl" --name "Material" --name "Weight"
 
 # Delete metadata fields using comma-separated list
-pcli2 asset metadata delete --path "/Root/Folder/Model.stl" --name "Material,Weight,Description"
+pcli2 asset metadata delete --path "/Home/Folder/Model.stl" --name "Material,Weight,Description"
 ```
 
 ### Metadata Inference
@@ -170,13 +170,12 @@ Metadata inference automatically applies metadata from a reference asset to geom
 
 ```bash
 # Apply specific metadata fields from a reference asset to similar assets
-pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material,Cost" --threshold 85.0
+pcli2 asset metadata inference --path /Home/Folder/ReferenceModel.stl --name "Material,Cost" --threshold 85.0
 
 # Apply metadata recursively to create chains of similar assets
-pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Category" --threshold 90.0 --recursive
 
 # Apply multiple metadata fields with different thresholds
-pcli2 asset metadata inference --path /Root/Folder/ReferenceModel.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
+pcli2 asset metadata inference --path /Home/Folder/ReferenceModel.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
 ```
 
 The metadata operations help you efficiently manage your asset metadata, whether you need to add, update, retrieve, or delete specific metadata fields, or propagate metadata across geometrically similar assets.
@@ -192,8 +191,6 @@ pcli2 config get
 # Export configuration for backup
 pcli2 config export --output my-config.yaml
 
-# Import configuration from a file
-pcli2 config import --file my-config.yaml
 ```
 
 ## Multi-Environment Configuration
@@ -202,34 +199,34 @@ PCLI2 supports multiple environment configurations, allowing you to easily switc
 
 ```bash
 # Add a new environment configuration
-pcli2 config environment add --name "development" \
+pcli2 env add --name "development" \
   --api-url "https://dev-api.physna.com/v3" \
   --ui-url "https://dev.physna.com" \
   --auth-url "https://dev-auth.physna.com/oauth2/token"
 
 # Add a production environment
-pcli2 config environment add --name "production" \
+pcli2 env add --name "production" \
   --api-url "https://app-api.physna.com/v3" \
   --ui-url "https://app.physna.com" \
   --auth-url "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
 
 # List all environments
-pcli2 config environment list
+pcli2 env list
 
 # Switch to an environment (with interactive selection)
-pcli2 config environment use
+pcli2 env use
 
 # Or switch to an environment by name
-pcli2 config environment use --name development
+pcli2 env use --name development
 
 # Get details of the active environment
-pcli2 config environment get
+pcli2 env get
 
 # Get details of a specific environment
-pcli2 config environment get --name production
+pcli2 env get --name production
 
 # Reset all environment configurations
-pcli2 config environment reset
+pcli2 env reset
 ```
 
 Each environment can have its own:
@@ -237,32 +234,32 @@ Each environment can have its own:
 - UI base URL (for comparison viewer links)
 - Authentication URL (for OAuth2 token requests)
 
-## Context Management
+## Choosing a Tenant
 
-Work with multiple tenants efficiently:
+Most commands act on the active tenant. Pick it once; `--tenant` overrides it for
+a single command.
 
 ```bash
-# Set active context (tenant) using either tenant name or ID
-pcli2 context set --tenant "Demo Environment 1"
+# List the tenants your credentials can reach
+pcli2 tenant list
 
-# Or using tenant ID
-pcli2 context set --tenant 123e4567-e89b-12d3-a456-426614174000
+# Make one active, by short name or by UUID
+pcli2 tenant use --name demo
+pcli2 tenant use --name 123e4567-e89b-12d3-a456-426614174000
 
-# View current context
-pcli2 context get
+# Show the active tenant
+pcli2 tenant get
 
-# Clear active context
-pcli2 context clear
+# Clear it
+pcli2 tenant clear
 ```
 
 ## Next Steps
 
-After completing this quick start guide, explore these topics:
-
-1. **[Command Reference](commands/)** - Detailed information about all available commands
-2. **[Batch Operations](batch.md)** - Learn to process multiple assets efficiently
-3. **[Geometric Matching](geometric-matching.md)** - Advanced techniques for finding similar assets
-4. **[Configuration](configuration.md)** - Customize PCLI2 to your workflow
+- [Geometric Matching](geometric-matching.md) for folder-wide match reports
+- [Metadata Operations](metadata-operations.md) for bulk metadata loading from CSV
+- [Scripting and Automation](scripting.md) for exit codes, JSON output and CI use
+- [Cross-Platform Configuration](cross_platform.md) for environment variables
 
 ## Getting Help
 

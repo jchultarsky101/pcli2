@@ -97,6 +97,15 @@ pub fn asset_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(folder_path_parameter())
                 .arg(
+                    Arg::new(crate::commands::params::PARAMETER_FOLDER_UUID)
+                        .long(crate::commands::params::PARAMETER_FOLDER_UUID)
+                        .num_args(1)
+                        .required(false)
+                        .conflicts_with(crate::commands::params::PARAMETER_FOLDER_PATH)
+                        .value_parser(clap::value_parser!(uuid::Uuid))
+                        .help("Folder UUID (alternative to --folder-path)"),
+                )
+                .arg(
                     Arg::new("recursive")
                         .long("recursive")
                         .action(ArgAction::SetTrue)

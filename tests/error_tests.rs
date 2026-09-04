@@ -67,7 +67,7 @@ mod error_tests {
             };
             let error_str = error.to_string();
             assert!(error_str.contains("test-tenant"));
-            assert_eq!(error.exit_code().code(), 64); // UsageError
+            assert_eq!(error.exit_code().code(), 67); // NotFound
         }
 
         #[test]
@@ -75,7 +75,7 @@ mod error_tests {
             let error = CliError::FolderNotFound("/Root/Test".to_string(), String::new());
             let error_str = error.to_string();
             assert!(error_str.contains("/Root/Test"));
-            assert_eq!(error.exit_code().code(), 64); // UsageError
+            assert_eq!(error.exit_code().code(), 67); // NotFound
         }
 
         #[test]
@@ -120,11 +120,60 @@ mod error_tests {
         }
 
         #[test]
-        fn test_exit_code_default() {
-            // Test that unspecified errors return SoftwareError code
-            let error = CliError::FolderNotFound("test".to_string(), String::new());
-            // FolderNotFound returns UsageError (64), not SoftwareError (70)
-            assert_eq!(error.exit_code().code(), 64);
+        fn exit_codes_follow_the_documented_contract() {
+            use pcli2::actions::CliActionError;
+            use pcli2::physna_v3::ApiError;
+
+            // Not found -> 67
+            assert_eq!(
+                CliError::FolderNotFound("test".to_string(), String::new())
+                    .exit_code()
+                    .code(),
+                67
+            );
+            // Authentication -> 100, whether raised directly or inside an action
+            assert_eq!(
+                CliError::PhysnaExtendedApiError(ApiError::InvalidToken)
+                    .exit_code()
+                    .code(),
+                100
+            );
+            assert_eq!(
+                CliError::ActionError(CliActionError::ApiError(ApiError::AuthError("x".into())))
+                    .exit_code()
+                    .code(),
+                100
+            );
+            // Server-side error status -> 102
+            assert_eq!(
+                CliError::PhysnaExtendedApiError(ApiError::HttpStatus {
+                    status: 503,
+                    message: "down".into()
+                })
+                .exit_code()
+                .code(),
+                102
+            );
+            // An incomplete report is a temporary failure -> 69
+            assert_eq!(
+                CliError::ActionError(CliActionError::IncompleteReport {
+                    attempted: 10,
+                    failed: 5
+                })
+                .exit_code()
+                .code(),
+                69
+            );
+            // A missing input file -> 66
+            assert_eq!(
+                CliError::ActionError(CliActionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "gone"
+                )))
+                .exit_code()
+                .code(),
+                66
+            );
         }
     }
 
@@ -201,10 +250,18 @@ mod error_tests {
         use pcli2::error_utils;
 
         #[test]
-        fn test_create_user_friendly_error_auth() {
-            let error_msg = "HTTP Error: 401 Unauthorized";
-            let friendly_msg = error_utils::create_user_friendly_error(error_msg);
-            assert!(friendly_msg.contains("Authentication failed"));
+        fn test_create_user_friendly_error_keeps_status_messages_verbatim() {
+            // A status code in the text is not a reason to rewrite the message: a
+            // folder named "401-series" is not an authentication problem.
+            for msg in [
+                "HTTP Error: 401 Unauthorized",
+                "403 Forbidden",
+                "409 Conflict",
+                "Connection error",
+                "Folder '/Projects/401-series' not found",
+            ] {
+                assert_eq!(error_utils::create_user_friendly_error(msg), msg);
+            }
         }
 
         #[test]
@@ -219,27 +276,6 @@ mod error_tests {
             let error_msg = "Request timeout";
             let friendly_msg = error_utils::create_user_friendly_error(error_msg);
             assert!(friendly_msg.contains("timeout"));
-        }
-
-        #[test]
-        fn test_create_user_friendly_error_network() {
-            let error_msg = "Connection error";
-            let friendly_msg = error_utils::create_user_friendly_error(error_msg);
-            assert!(friendly_msg.contains("Network error"));
-        }
-
-        #[test]
-        fn test_create_user_friendly_error_forbidden() {
-            let error_msg = "403 Forbidden";
-            let friendly_msg = error_utils::create_user_friendly_error(error_msg);
-            assert!(friendly_msg.contains("forbidden") || friendly_msg.contains("permission"));
-        }
-
-        #[test]
-        fn test_create_user_friendly_error_conflict() {
-            let error_msg = "409 Conflict";
-            let friendly_msg = error_utils::create_user_friendly_error(error_msg);
-            assert!(friendly_msg.contains("conflict"));
         }
 
         #[test]
@@ -267,14 +303,17 @@ mod error_tests {
         fn test_create_user_friendly_error_invalid_client() {
             let error_msg = "invalid_client";
             let friendly_msg = error_utils::create_user_friendly_error(error_msg);
-            assert!(friendly_msg.contains("Invalid client credentials"));
+            // The original text stays, the explanation is appended.
+            assert!(friendly_msg.starts_with("invalid_client"));
+            assert!(friendly_msg.contains("client ID or secret"));
         }
 
         #[test]
         fn test_create_user_friendly_error_invalid_grant() {
             let error_msg = "invalid_grant";
             let friendly_msg = error_utils::create_user_friendly_error(error_msg);
-            assert!(friendly_msg.contains("log in again"));
+            assert!(friendly_msg.starts_with("invalid_grant"));
+            assert!(friendly_msg.contains("Log in again"));
         }
 
         #[test]

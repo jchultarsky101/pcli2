@@ -12,6 +12,7 @@ use pcli2::commands::params::COMMAND_EXPIRATION;
 use pcli2::configuration::Configuration;
 use pcli2::error::CliError;
 use pcli2::error_utils;
+use pcli2::exit_codes::PcliExitCode;
 use pcli2::keyring::Keyring;
 use pcli2::{
     actions::{
@@ -571,9 +572,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                 "Try logging in again with 'pcli2 auth login'",
                             ],
                         );
-                        return Err(CliError::SecurityError(String::from(
-                            "Failed to store client credentials",
-                        )));
+                        return Err(CliError::AlreadyReported(PcliExitCode::AuthError));
                     }
 
                     match auth_client.get_access_token().await {
@@ -594,9 +593,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                         "Try logging in again with 'pcli2 auth login'",
                                     ],
                                 );
-                                Err(CliError::SecurityError(String::from(
-                                    "Failed to store access token",
-                                )))
+                                Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                             }
                         }
                         Err(e) => {
@@ -608,7 +605,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                     "Ensure your credentials have not expired",
                                 ],
                             );
-                            Err(CliError::SecurityError(String::from("Login failed")))
+                            Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }
                     }
                 }
@@ -633,9 +630,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                     "Try logging in again with 'pcli2 auth login'",
                                 ],
                             );
-                            Err(CliError::SecurityError(String::from(
-                                "Failed to delete access token",
-                            )))
+                            Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }
                     }
                 }
@@ -752,15 +747,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                     "Verify your credentials are correct"
                                 ]
                             );
-                            Ok(())
+                            Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }
-                        Err(e) => {
-                            error_utils::report_error(&CliError::MissingRequiredArgument(format!(
-                                "Error retrieving access token: {}",
-                                e
-                            )));
-                            Ok(())
-                        }
+                        Err(e) => Err(CliError::SecurityError(format!(
+                            "Error retrieving access token: {}",
+                            e
+                        ))),
                     }
                 }
                 Some((COMMAND_CLEAR_TOKEN, _)) => {
@@ -792,9 +784,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                             "Try logging in again with 'pcli2 auth login'",
                                         ],
                                     );
-                                    Err(CliError::SecurityError(String::from(
-                                        "Failed to delete access token",
-                                    )))
+                                    Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                                 }
                             }
                         }
@@ -811,9 +801,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                     "Try logging in again with 'pcli2 auth login'",
                                 ],
                             );
-                            Err(CliError::SecurityError(String::from(
-                                "Failed to check access token",
-                            )))
+                            Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }
                     }
                 }
@@ -854,9 +842,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                             "Try logging in again with 'pcli2 auth login'",
                                         ],
                                     );
-                                    Err(CliError::SecurityError(String::from(
-                                        "Failed to decode token expiration",
-                                    )))
+                                    Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                                 }
                             }
                         }
@@ -868,15 +854,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                     "Verify your credentials are correct"
                                 ]
                             );
-                            Ok(())
+                            Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }
-                        Err(e) => {
-                            error_utils::report_error(&CliError::MissingRequiredArgument(format!(
-                                "Error retrieving access token: {}",
-                                e
-                            )));
-                            Ok(())
-                        }
+                        Err(e) => Err(CliError::SecurityError(format!(
+                            "Error retrieving access token: {}",
+                            e
+                        ))),
                     }
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
@@ -902,9 +885,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                         _ => {
                             // Get format parameters with precedence: 1) explicit --format, 2) PCLI2_FORMAT env var, 3) default "json"
                             let format_str_owned = if let Some(format_val) =
-                                sub_matches.get_one::<String>(PARAMETER_FORMAT)
-                            {
-                                // User explicitly provided --format argument
+                                sub_matches.get_one::<String>(PARAMETER_FORMAT).filter(|_| {
+                                    // A default value also answers get_one; only a value the user
+                                    // typed should beat PCLI2_FORMAT.
+                                    sub_matches.value_source(PARAMETER_FORMAT)
+                                        == Some(clap::parser::ValueSource::CommandLine)
+                                }) {
                                 format_val.clone()
                             } else {
                                 // Format was not explicitly provided by user, check environment variable first
@@ -956,9 +942,14 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     let path = sub_matches.get_one::<PathBuf>(PARAMETER_FILE).ok_or(
                         CliError::MissingRequiredArgument(PARAMETER_FILE.to_string()),
                     )?;
-                    // Implementation would import configuration
-                    debug!("Importing configuration from: {:?}", path);
-                    Ok(())
+                    // Never implemented: say so instead of exiting 0 having done nothing.
+                    debug!("config import requested for: {:?}", path);
+                    Err(CliError::ActionError(
+                        pcli2::actions::CliActionError::BusinessLogicError(
+                            "'config import' is not implemented. Add environments with 'pcli2 env add', or copy the file over the path shown by 'pcli2 config get path'."
+                                .to_string(),
+                        ),
+                    ))
                 }
                 Some(("validate", sub_matches)) => {
                     trace!("Executing config validate command");
@@ -1100,8 +1091,8 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                         Ok(())
                     } else {
                         println!("✗ Configuration validation failed");
-                        // Return success anyway - validation failures are informational
-                        Ok(())
+                        // The exit code *is* the result of this command.
+                        Err(CliError::AlreadyReported(PcliExitCode::ConfigError))
                     }
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

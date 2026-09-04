@@ -52,6 +52,17 @@ pub enum PcliExitCode {
 }
 
 impl PcliExitCode {
+    /// The code for a local I/O failure: a file that cannot be opened is the
+    /// caller's input problem, anything else is the system's.
+    pub fn for_io_error(error: &std::io::Error) -> Self {
+        match error.kind() {
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => {
+                PcliExitCode::NoInput
+            }
+            _ => PcliExitCode::OSError,
+        }
+    }
+
     /// Convert to numeric exit code
     pub fn code(&self) -> i32 {
         *self as i32

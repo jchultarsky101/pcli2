@@ -172,7 +172,9 @@ pub async fn execute_environment_command(
                                 "Add an environment with 'pcli2 env add' if none exist",
                             ],
                         );
-                        return Ok(());
+                        return Err(crate::error::CliError::AlreadyReported(
+                            crate::exit_codes::PcliExitCode::UsageError,
+                        ));
                     }
                 }
             };
@@ -425,7 +427,9 @@ pub async fn execute_environment_command(
                             "Add an environment with 'pcli2 env add' if none exist",
                         ],
                     );
-                    return Ok(());
+                    return Err(crate::error::CliError::AlreadyReported(
+                        crate::exit_codes::PcliExitCode::ConfigError,
+                    ));
                 }
             };
 
@@ -542,6 +546,9 @@ pub async fn execute_environment_command(
                         "Add the environment with 'pcli2 env add'",
                     ],
                 );
+                return Err(crate::error::CliError::AlreadyReported(
+                    crate::exit_codes::PcliExitCode::NotFound,
+                ));
             }
 
             Ok(())

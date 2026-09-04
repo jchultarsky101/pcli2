@@ -260,10 +260,12 @@ fn finish_search_outcomes(outcomes: &SearchOutcomes) -> Result<(), CliError> {
                 "Re-run with --verbose to see why the individual searches failed",
             ],
         );
-        return Err(CliError::from(CliActionError::IncompleteReport {
-            attempted: outcomes.attempted,
-            failed: outcomes.operational,
-        }));
+        // Reported above with its remediation steps; main only needs the exit code.
+        // (`IncompleteReport` carried different numbers and was printed a second
+        // time on the way out.)
+        return Err(CliError::AlreadyReported(
+            crate::exit_codes::PcliExitCode::TempFail,
+        ));
     }
 
     error_utils::report_warning(&summary);
@@ -3098,6 +3100,20 @@ mod tests {
         );
         assert_eq!(
             SearchFailure::classify(&ApiError::InvalidToken),
+            SearchFailure::Operational
+        );
+        assert_eq!(
+            SearchFailure::classify(&ApiError::HttpStatus {
+                status: 503,
+                message: "Service Unavailable".to_string()
+            }),
+            SearchFailure::Operational
+        );
+        assert_eq!(
+            SearchFailure::classify(&ApiError::HttpStatus {
+                status: 429,
+                message: "Too Many Requests".to_string()
+            }),
             SearchFailure::Operational
         );
         assert_eq!(

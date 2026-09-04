@@ -199,7 +199,9 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
                     "Log in again with 'pcli2 auth login'",
                 ],
             );
-            return Ok(());
+            return Err(CliActionError::AlreadyReported(
+                crate::exit_codes::PcliExitCode::NotFound,
+            ));
         }
 
         // Create options for the select menu
@@ -262,6 +264,9 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
                 "Verify you have access to this tenant",
             ],
         ); // Safe to unwrap since we checked above
+        return Err(CliActionError::AlreadyReported(
+            crate::exit_codes::PcliExitCode::NotFound,
+        ));
     }
 
     Ok(())
@@ -481,6 +486,7 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
                 CliActionError::FormattingError(fmt_error)
             }
             crate::error::CliError::ActionError(action_error) => action_error, // Already a CliActionError
+            crate::error::CliError::AlreadyReported(code) => CliActionError::AlreadyReported(code),
             crate::error::CliError::PhysnaExtendedApiError(api_error) => {
                 CliActionError::ApiError(api_error)
             }

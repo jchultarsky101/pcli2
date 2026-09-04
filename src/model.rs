@@ -970,7 +970,10 @@ pub struct PageData {
 
 // Asset models for Physna V3 API
 
+/// Serialized as the bare map: the `meta` field is an implementation detail
+/// that used to leak into `metadata get --format json` output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct AssetMetadata {
     meta: HashMap<String, String>,
 }

@@ -280,13 +280,29 @@ impl Report {
                 .and_then(|cell| cell.trim().parse::<f64>().ok())
         }
 
-        self.rows
-            .sort_by(|a, b| match (numeric(a, column), numeric(b, column)) {
-                (Some(x), Some(y)) => y.partial_cmp(&x).unwrap_or(Ordering::Equal),
-                (Some(_), None) => Ordering::Less,
-                (None, Some(_)) => Ordering::Greater,
-                (None, None) => Ordering::Equal,
-            });
+        // Parse each cell once (sort_by_cached_key), not once per comparison: on a
+        // million rows that was tens of millions of float parses. Blanks sort last.
+        struct Descending(f64);
+        impl PartialEq for Descending {
+            fn eq(&self, other: &Self) -> bool {
+                self.0.total_cmp(&other.0) == Ordering::Equal
+            }
+        }
+        impl Eq for Descending {}
+        impl PartialOrd for Descending {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for Descending {
+            fn cmp(&self, other: &Self) -> Ordering {
+                other.0.total_cmp(&self.0)
+            }
+        }
+        self.rows.sort_by_cached_key(|row| {
+            let value = numeric(row, column);
+            (value.is_none(), Descending(value.unwrap_or(0.0)))
+        });
     }
 
     /// Classifies the cell at `(row, column)` against its pair partner. Returns

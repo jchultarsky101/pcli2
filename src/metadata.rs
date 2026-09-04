@@ -136,7 +136,9 @@ pub fn convert_single_metadata_to_json_value(
             if let Ok(int_val) = value.parse::<i64>() {
                 serde_json::Value::Number(serde_json::Number::from(int_val))
             } else if let Ok(float_val) = value.parse::<f64>() {
-                if float_val.fract() == 0.0 {
+                // Whole numbers become integers only while they fit one exactly;
+                // `1e20 as i64` used to saturate to i64::MAX.
+                if float_val.fract() == 0.0 && float_val.abs() < 9.0e15 {
                     serde_json::Value::Number(serde_json::Number::from(float_val as i64))
                 } else {
                     serde_json::Number::from_f64(float_val)
@@ -148,15 +150,13 @@ pub fn convert_single_metadata_to_json_value(
             }
         }
         "boolean" => {
-            let bool_val = match value.to_lowercase().as_str() {
-                "true" | "1" | "yes" | "on" => true,
-                "false" | "0" | "no" | "off" => false,
-                _ => {
-                    // Try to parse as boolean string
-                    value.parse::<bool>().unwrap_or(false)
-                }
-            };
-            serde_json::Value::Bool(bool_val)
+            match value.to_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => serde_json::Value::Bool(true),
+                "false" | "0" | "no" | "off" => serde_json::Value::Bool(false),
+                // Not a boolean: send it as-is so the API's type check rejects it
+                // with a message, instead of silently writing `false`.
+                _ => serde_json::Value::String(value.to_string()),
+            }
         }
         _ => {
             // Text (the default) and other string-backed types such as `url`:

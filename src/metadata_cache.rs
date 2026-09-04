@@ -52,7 +52,7 @@ impl MetadataCache {
                 .as_secs();
 
             // Cache expires after 1 hour (3600 seconds)
-            current_time - updated > 3600
+            current_time.saturating_sub(updated) > 3600
         } else {
             true
         }
@@ -117,7 +117,7 @@ impl MetadataCache {
         };
 
         let data = serde_json::to_string_pretty(&cache_to_save)?;
-        fs::write(path, data)?;
+        crate::folder_cache::write_atomically(&path, data.as_bytes())?;
         debug!("Saved metadata cache to file");
         Ok(())
     }

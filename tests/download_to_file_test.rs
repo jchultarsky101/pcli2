@@ -95,3 +95,26 @@ async fn a_server_error_is_classified_and_nothing_is_written() {
     }
     assert!(!dest.exists());
 }
+
+#[tokio::test]
+async fn delete_asset_targets_the_api_base_url() {
+    // Regression: the delete helper once sent the relative path as the whole URL.
+    let mut server = mockito::Server::new_async().await;
+    let tenant = Uuid::new_v4();
+    let asset = Uuid::new_v4();
+    let m = server
+        .mock(
+            "DELETE",
+            format!("/tenants/{}/assets/{}", tenant, asset).as_str(),
+        )
+        .with_status(204)
+        .expect(1)
+        .create_async()
+        .await;
+    let mut client = PhysnaApiClient::new().with_base_url(server.url());
+    client
+        .delete_asset(&tenant.to_string(), &asset.to_string())
+        .await
+        .unwrap();
+    m.assert_async().await;
+}

@@ -156,9 +156,12 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
     )
     .await?;
 
-    if let Some(metadata) = asset.metadata() {
-        println!("{}", metadata.format(format)?);
-    }
+    // An asset with no metadata still prints (`{}` for JSON, headers only for
+    // CSV) so a consumer never sees empty stdout for a successful command.
+    let metadata = asset.metadata().cloned().unwrap_or_else(|| {
+        crate::model::AssetMetadata::from(std::collections::HashMap::<String, String>::new())
+    });
+    println!("{}", metadata.format(format)?);
 
     Ok(())
 }

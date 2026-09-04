@@ -225,7 +225,7 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
                 let tenant_name = choice
                     .split_once(':')
                     .map(|(before, _)| before.trim())
-                    .unwrap();
+                    .unwrap_or(choice.trim());
                 trace!("User selected tenant: {}", tenant_name);
                 // Find the tenant that matches the selection
                 tenants
@@ -257,7 +257,11 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
         configuration.save_to_default()?;
     } else {
         error_utils::report_error_with_remediation(
-            &format!("Tenant '{}' not found", name.unwrap()),
+            &format!(
+                "Tenant '{}' not found",
+                name.map(|n| n.to_string())
+                    .unwrap_or_else(|| "(selected)".to_string())
+            ),
             &[
                 "Check the tenant name spelling",
                 "List available tenants with 'pcli2 tenant list'",

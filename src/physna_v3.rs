@@ -1207,7 +1207,7 @@ impl PhysnaApiClient {
 
         // Handle defaults - always provide values to avoid API defaulting to 20
         let page_val = page.unwrap_or(1).to_string();
-        let per_page_val = per_page.unwrap_or(200).to_string(); // Default to 200 instead of API's default of 20
+        let per_page_val = per_page.unwrap_or(1000).to_string(); // the API maximum; its default is 20
 
         // Build query parameters for pagination with defaults
         let query_params = vec![
@@ -1279,7 +1279,7 @@ impl PhysnaApiClient {
 
         // Handle defaults - always provide values to avoid API defaulting to 20
         let page_val = page.unwrap_or(1).to_string();
-        let per_page_val = per_page.unwrap_or(200).to_string(); // Default to 200 instead of API's default of 20
+        let per_page_val = per_page.unwrap_or(1000).to_string(); // the API maximum; its default is 20
 
         query_params.push(("page", page_val.as_str()));
         query_params.push(("perPage", per_page_val.as_str()));
@@ -1504,7 +1504,7 @@ impl PhysnaApiClient {
         parent_folder_uuid: Option<&Uuid>,
     ) -> Result<AssetList, ApiError> {
         let mut page: usize = 1;
-        let per_page: usize = 200;
+        let per_page: usize = 1000; // the API maximum for this endpoint
         let mut assets: Vec<Asset> = Vec::new();
 
         loop {
@@ -1571,7 +1571,7 @@ impl PhysnaApiClient {
         // Spawn a task to fetch pages and send assets through the channel
         tokio::spawn(async move {
             let mut current_page = 1;
-            let per_page = 200;
+            let per_page = 1000; // the API maximum for this endpoint
 
             loop {
                 match client_clone
@@ -1819,7 +1819,7 @@ impl PhysnaApiClient {
 
         // Handle defaults - always provide values to avoid API defaulting to 20
         let page_str = page.unwrap_or(1).to_string();
-        let per_page_str = per_page.unwrap_or(200).to_string(); // Default to 200 instead of API's default of 20
+        let per_page_str = per_page.unwrap_or(1000).to_string(); // the API maximum; its default is 20
 
         query_params.push(("page", page_str.as_str()));
         query_params.push(("perPage", per_page_str.as_str()));
@@ -1858,7 +1858,7 @@ impl PhysnaApiClient {
 
         let mut all_folders: Vec<crate::model::FolderResponse> = Vec::new();
         let mut page: usize = 1;
-        let per_page: usize = 200;
+        let per_page: usize = 1000; // the API maximum for this endpoint
 
         loop {
             let page_str = page.to_string();
@@ -2648,7 +2648,7 @@ impl PhysnaApiClient {
         tenant_id: &str,
     ) -> Result<crate::model::MetadataFieldListResponse, ApiError> {
         let mut page: usize = 1;
-        let per_page: usize = 200;
+        let per_page: usize = 1000; // the API maximum for this endpoint
         let mut metadata_fields: Vec<crate::model::MetadataField> = Vec::new();
 
         loop {
@@ -2822,7 +2822,7 @@ impl PhysnaApiClient {
     ///     let mut client = PhysnaApiClient::new();
     ///     let tenant_uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
     ///     let asset_uuid = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap();
-    ///     let matches = client.geometric_search(&tenant_uuid, &asset_uuid, 85.0).await?;
+    ///     let matches = client.geometric_search(&tenant_uuid, &asset_uuid, 85.0, &[]).await?;
     ///     for match_result in &matches.matches {
     ///         println!("Found match: {} ({}% similar)", match_result.path(), match_result.score());
     ///     }
@@ -2834,6 +2834,7 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         asset_uuid: &Uuid,
         threshold: f64,
+        folder_ids: &[Uuid],
     ) -> Result<crate::model::GeometricSearchResponse, ApiError> {
         debug!(
             "Starting geometric search for tenant_uuid: {}, asset_uuid: {}, threshold: {}",
@@ -2847,7 +2848,7 @@ impl PhysnaApiClient {
         // Initialize with page 1 and reasonable page size
         let mut all_matches = Vec::new();
         let mut page = 1;
-        let per_page = 100; // Larger page size for efficiency
+        let per_page = 500; // search pages carry full asset records; the API allows up to 1000
 
         // Hard limit to prevent runaway pagination if the server misbehaves,
         // consistent with part_search and visual_search.
@@ -2872,8 +2873,11 @@ impl PhysnaApiClient {
                 "searchQuery": "",
                 "filters": {
                     "folders": [],
+                    // Folder ids restrict the search server-side (subfolders included);
+                    // empty means the whole tenant.
+                    "folderIds": folder_ids,
                     "metadata": {},
-                    "extensions": []  // Empty array as requested
+                    "extensions": []
                 },
                 "minThreshold": threshold  // Use threshold directly as percentage
             });
@@ -2999,7 +3003,7 @@ impl PhysnaApiClient {
     ///     let mut client = PhysnaApiClient::new();
     ///     let tenant_uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")?;
     ///     let asset_uuid = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000")?;
-    ///     let matches = client.part_search(&tenant_uuid, &asset_uuid, 85.0).await?;
+    ///     let matches = client.part_search(&tenant_uuid, &asset_uuid, 85.0, &[]).await?;
     ///     for match_result in &matches.matches {
     ///         println!("Found match: {} (forward: {:.2}%, reverse: {:.2}%)",
     ///             match_result.path(),
@@ -3014,6 +3018,7 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         asset_uuid: &Uuid,
         threshold: f64,
+        folder_ids: &[Uuid],
     ) -> Result<crate::model::PartSearchResponse, ApiError> {
         debug!(
             "Starting part search for tenant_uuid: {}, asset_uuid: {}, threshold: {}",
@@ -3027,7 +3032,7 @@ impl PhysnaApiClient {
         // Initialize with page 1 and reasonable page size
         let mut all_matches = Vec::new();
         let mut page = 1;
-        let per_page = 100; // Larger page size for efficiency
+        let per_page = 500; // search pages carry full asset records; the API allows up to 1000
 
         // Track the maximum last_page value seen to prevent infinite loops
         let mut max_last_page_seen = 0;
@@ -3056,8 +3061,11 @@ impl PhysnaApiClient {
                 "searchQuery": "",
                 "filters": {
                     "folders": [],
+                    // Folder ids restrict the search server-side (subfolders included);
+                    // empty means the whole tenant.
+                    "folderIds": folder_ids,
                     "metadata": {},
-                    "extensions": []  // Empty array as requested
+                    "extensions": []
                 },
                 "minThreshold": threshold  // Use threshold directly as percentage
             });
@@ -3164,7 +3172,7 @@ impl PhysnaApiClient {
     /// # let mut client = PhysnaApiClient::new();
     /// # let tenant_uuid = Uuid::nil();
     /// # let asset_uuid = Uuid::nil();
-    /// let matches = client.visual_search(&tenant_uuid, &asset_uuid, 100, 80.0).await?;
+    /// let matches = client.visual_search(&tenant_uuid, &asset_uuid, 100, 80.0, &[]).await?;
     /// for match_result in &matches.matches {
     ///     println!("Found visually similar asset: {}", match_result.path());
     /// }
@@ -3177,6 +3185,7 @@ impl PhysnaApiClient {
         asset_uuid: &Uuid,
         limit: usize,
         threshold: f64,
+        folder_ids: &[Uuid],
     ) -> Result<crate::model::PartSearchResponse, ApiError> {
         debug!(
             "Starting visual search for tenant_uuid: {}, asset_uuid: {}, limit: {}, threshold: {}",
@@ -3209,7 +3218,7 @@ impl PhysnaApiClient {
             // as query parameters), this endpoint carries everything in the
             // request body, including the asset/tenant identifiers. The
             // optional `filters` object is omitted entirely.
-            let body = serde_json::json!({
+            let mut body = serde_json::json!({
                 "page": page,
                 "perPage": per_page,
                 "searchQuery": "",
@@ -3218,6 +3227,11 @@ impl PhysnaApiClient {
                 "searchTenantId": tenant_uuid,
                 "sizeThreshold": threshold
             });
+            // The visual endpoint takes no filters object by default; only add one
+            // when --exclusive supplies folders to restrict the search to.
+            if !folder_ids.is_empty() {
+                body["filters"] = serde_json::json!({ "folderIds": folder_ids });
+            }
 
             debug!("Sending visual search request to: {}", url);
             // Execute POST request.
@@ -3820,7 +3834,7 @@ impl PhysnaApiClient {
         asset_uuid: &Uuid,
     ) -> Result<AssetDependenciesResponse, ApiError> {
         let mut page: usize = 1;
-        let per_page: usize = 100;
+        let per_page: usize = 1000; // the API maximum for this endpoint
         let mut all_dependencies = Vec::new();
 
         loop {
@@ -3867,7 +3881,7 @@ impl PhysnaApiClient {
         root: &mut AssemblyNode,
     ) -> Result<(), ApiError> {
         let mut page: usize = 1;
-        let per_page: usize = 100;
+        let per_page: usize = 1000; // the API maximum for this endpoint
 
         // Get the asset to determine its UUID for the new API endpoint
         let root_uuid = root.asset().uuid();
@@ -3936,7 +3950,7 @@ impl PhysnaApiClient {
         root_uuid: &Uuid,
     ) -> Result<(), ApiError> {
         let mut page: usize = 1;
-        let per_page: usize = 100;
+        let per_page: usize = 1000; // the API maximum for this endpoint
 
         loop {
             // Use the UUID-based pagination method
@@ -4007,7 +4021,7 @@ impl PhysnaApiClient {
         root_path: &str,
     ) -> Result<(), ApiError> {
         let mut page: usize = 1;
-        let per_page: usize = 100;
+        let per_page: usize = 1000; // the API maximum for this endpoint
 
         loop {
             // Use the path-based pagination method
@@ -4191,7 +4205,7 @@ impl PhysnaApiClient {
 
         // Initialize pagination variables
         let mut page: usize = 1;
-        let per_page: usize = 200; // Reasonable page size for asset listings
+        let per_page: usize = 1000; // the API maximum for this endpoint
         let mut all_assets: Vec<Asset> = Vec::new();
 
         // Loop through all pages to get all assets with the specified state
@@ -4280,7 +4294,7 @@ impl PhysnaApiClient {
         debug!("Listing all assets for tenant_uuid: {}", tenant_uuid);
 
         let mut page: usize = 1;
-        let per_page: usize = 200;
+        let per_page: usize = 1000; // the API maximum for this endpoint
         let mut all_assets: Vec<Asset> = Vec::new();
 
         loop {

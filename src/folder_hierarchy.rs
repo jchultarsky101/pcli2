@@ -95,9 +95,9 @@ impl FolderHierarchy {
     ) -> Result<Self, FolderHierarchyError> {
         let mut hierarchy = Self::new();
 
-        // Fetch all folders using pagination with per_page of 200 for better performance (API max is 1000)
+        // Fetch all folders using the API maximum page size
         let mut page = 1;
-        let per_page = 200;
+        let per_page = 1000;
         loop {
             trace!(
                 "Fetching folder page {} for tenant {} ({} folders so far)",

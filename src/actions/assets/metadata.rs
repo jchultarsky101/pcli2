@@ -102,7 +102,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
 
     // Only perform expensive geometric search if we know we have fields to copy
     let search_results = api
-        .geometric_search(&tenant.uuid, &reference_asset.uuid(), threshold)
+        .geometric_search(&tenant.uuid, &reference_asset.uuid(), threshold, &[])
         .await?;
 
     let mut assets_updated = Vec::new();

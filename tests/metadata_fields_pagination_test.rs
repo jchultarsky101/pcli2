@@ -30,7 +30,7 @@ async fn get_metadata_fields_walks_all_pages() {
         .mock("GET", "/tenants/t1/metadata-fields")
         .match_query(Matcher::AllOf(vec![
             Matcher::UrlEncoded("page".into(), "1".into()),
-            Matcher::UrlEncoded("perPage".into(), "200".into()),
+            Matcher::UrlEncoded("perPage".into(), "1000".into()),
         ]))
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -42,7 +42,7 @@ async fn get_metadata_fields_walks_all_pages() {
         .mock("GET", "/tenants/t1/metadata-fields")
         .match_query(Matcher::AllOf(vec![
             Matcher::UrlEncoded("page".into(), "2".into()),
-            Matcher::UrlEncoded("perPage".into(), "200".into()),
+            Matcher::UrlEncoded("perPage".into(), "1000".into()),
         ]))
         .with_status(200)
         .with_header("content-type", "application/json")

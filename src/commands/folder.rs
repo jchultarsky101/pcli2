@@ -79,7 +79,7 @@ pub fn folder_command() -> Command {
                         .long("force")
                         .short('f')
                         .action(clap::ArgAction::SetTrue)
-                        .help("Force deletion of non-empty folder by deleting all contents first"),
+                        .help("Delete the folder together with every asset and subfolder in it (the server deletes recursively). Without it a non-empty folder is refused."),
                 )
                 .group(folder_identifier_group())
                 .arg(dry_run_parameter()),

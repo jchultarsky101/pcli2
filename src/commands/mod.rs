@@ -52,7 +52,8 @@ const EXAMPLES_COLORED: &str = color_print::cstr!(
   PCLI2_LOG_LEVEL          error, warn (default), info, debug, trace (RUST_LOG wins when set)
   PCLI2_TIMEOUT            Total request timeout in seconds (default 1800)
   PCLI2_MAX_RETRIES        Retries for transient failures (default 2, 0 disables)
-  PCLI2_NO_COLOR, NO_COLOR Disable colored output
+  PCLI2_NO_COLOR, NO_COLOR Disable colored output (PCLI2_NO_COLOR=0/false/no/off keeps it on)
+  PCLI2_SAFE_CSV           Guard CSV cells against spreadsheet formula injection
   PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
   PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
   PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)"
@@ -89,7 +90,8 @@ Environment variables:
   PCLI2_LOG_LEVEL          error, warn (default), info, debug, trace (RUST_LOG wins when set)
   PCLI2_TIMEOUT            Total request timeout in seconds (default 1800)
   PCLI2_MAX_RETRIES        Retries for transient failures (default 2, 0 disables)
-  PCLI2_NO_COLOR, NO_COLOR Disable colored output
+  PCLI2_NO_COLOR, NO_COLOR Disable colored output (PCLI2_NO_COLOR=0/false/no/off keeps it on)
+  PCLI2_SAFE_CSV           Guard CSV cells against spreadsheet formula injection
   PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
   PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
   PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)";
@@ -167,7 +169,8 @@ pub fn create_full_command() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
                 .env("PCLI2_NO_COLOR")
-                .help("Disable color output"),
+                .value_parser(clap::builder::FalseyValueParser::new())
+                .help("Disable color output (PCLI2_NO_COLOR: empty, 0, false, no, off mean enabled; anything else disables)"),
         )
         .arg(
             clap::Arg::new("yes")
@@ -202,11 +205,21 @@ pub fn create_full_command() -> Command {
                 .help("Print request statistics (API requests, retries, token renewals, elapsed time) on stderr at exit"),
         )
         .arg(
+            clap::Arg::new("safe-csv")
+                .long("safe-csv")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .env("PCLI2_SAFE_CSV")
+                .value_parser(clap::builder::FalseyValueParser::new())
+                .help("Guard CSV output against spreadsheet formula injection: a text cell starting with =, +, -, @, tab or carriage return is prefixed with a single quote (numbers are left alone)"),
+        )
+        .arg(
             clap::Arg::new("no-input")
                 .long("no-input")
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
                 .env("PCLI2_NO_INPUT")
+                .value_parser(clap::builder::FalseyValueParser::new())
                 .help("Never prompt: a command that would need an answer fails with exit 64 instead (pass --yes to confirm, or name the tenant or environment)"),
         )
         .arg(

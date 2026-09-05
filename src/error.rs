@@ -23,6 +23,10 @@ pub enum CliError {
     /// Error when a required command-line argument is missing
     #[error("Missing required argument: {0}")]
     MissingRequiredArgument(String),
+    /// The command would have to prompt, and no prompt can be shown
+    /// (`--no-input`, or stdin/stderr is not a terminal).
+    #[error("{0}")]
+    InputRequired(String),
     /// Error related to JSON serialization/deserialization
     #[error("JSON serialization error: {0}")]
     JsonError(#[from] serde_json::Error),
@@ -73,9 +77,9 @@ impl CliError {
     /// documentation promised 100/101/102.
     pub fn exit_code(&self) -> PcliExitCode {
         match self {
-            CliError::UnsupportedSubcommand(_) | CliError::MissingRequiredArgument(_) => {
-                PcliExitCode::UsageError
-            }
+            CliError::UnsupportedSubcommand(_)
+            | CliError::MissingRequiredArgument(_)
+            | CliError::InputRequired(_) => PcliExitCode::UsageError,
             CliError::ConfigurationError(
                 crate::configuration::ConfigurationError::EnvironmentNotFound(_),
             ) => PcliExitCode::NotFound,

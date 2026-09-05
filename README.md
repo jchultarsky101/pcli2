@@ -505,10 +505,18 @@ pcli2 asset list --folder-path "/Home/Inventory" --metadata --format json | nu -
 ### 🤖 CI/CD Integration
 
 PCLI2 is designed to behave well in automation: colors and spinners turn off
-when output is piped, `--yes` skips confirmation prompts, `--quiet` limits
-diagnostics to errors, and exit codes identify the failure class (see
-[Exit Codes](#exit-codes)). Example GitHub Actions job that uploads build
-artifacts to Physna:
+when output is piped, `--yes` skips confirmation prompts, `--no-input` turns
+any prompt that would still be needed into an exit-64 error instead of a hang,
+`--quiet` limits diagnostics to errors, `--error-format json` makes every
+error on stderr a JSON object (the last one carries the exit code), and exit
+codes identify the failure class (see [Exit Codes](#exit-codes)).
+
+```bash
+$ pcli2 --error-format json asset delete --path /Home/Parts/nope.stl
+{"level":"ERROR","code":67,"kind":"not_found","message":"API error: Path not found: /Home/Parts/nope.stl"}
+```
+
+Example GitHub Actions job that uploads build artifacts to Physna:
 
 ```yaml
 jobs:
@@ -665,6 +673,8 @@ credentials) and 68 when the API or auth server cannot be reached.
 | `PCLI2_TIMEOUT` | Total request timeout in seconds (default 1800; connections time out after 15 s and a silent read after 300 s regardless) |
 | `PCLI2_MAX_RETRIES` | Retries for transient failures (default 2; `0` disables) |
 | `PCLI2_NO_COLOR`, `NO_COLOR` | Disable colored output |
+| `PCLI2_NO_INPUT` | Never prompt; a command that would need an answer exits 64 instead (same as `--no-input`) |
+| `PCLI2_ERROR_FORMAT` | `text` (default) or `json`: errors on stderr as one JSON object per line (same as `--error-format`) |
 | `PCLI2_NO_UPDATE_CHECK`, `CI` | Disable the new-version hint |
 
 ### Debugging Tips

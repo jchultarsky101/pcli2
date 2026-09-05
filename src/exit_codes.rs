@@ -68,6 +68,26 @@ impl PcliExitCode {
         *self as i32
     }
 
+    /// A stable machine-readable name for the failure class, used in JSON error
+    /// output alongside the numeric code.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            PcliExitCode::Success => "success",
+            PcliExitCode::UsageError => "usage",
+            PcliExitCode::DataError => "data",
+            PcliExitCode::NoInput => "no_input",
+            PcliExitCode::NotFound => "not_found",
+            PcliExitCode::Unavailable => "unavailable",
+            PcliExitCode::TempFail => "temp_fail",
+            PcliExitCode::SoftwareError => "software",
+            PcliExitCode::OSError => "os",
+            PcliExitCode::ConfigError => "config",
+            PcliExitCode::AuthError => "auth",
+            PcliExitCode::NetworkError => "network",
+            PcliExitCode::ApiError => "api",
+        }
+    }
+
     /// Get descriptive message for the exit code
     pub fn message(&self) -> &'static str {
         match self {

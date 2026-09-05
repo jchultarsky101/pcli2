@@ -26,6 +26,8 @@ export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
 | `PCLI2_TIMEOUT` | Total request timeout in seconds (default 1800, to allow very large transfers). Connections time out after 15 seconds and a read after 300 seconds of silence regardless. |
 | `PCLI2_MAX_RETRIES` | Retries for transient failures: connection errors, 408/429/502/503/504 (default 2; `0` disables). |
 | `PCLI2_NO_COLOR`, `NO_COLOR` | Disable colored output. |
+| `PCLI2_NO_INPUT` | Never prompt; a command that would need an answer exits 64 instead. Same as `--no-input`. |
+| `PCLI2_ERROR_FORMAT` | `text` (default) or `json`. With `json`, every error, hint and log line on stderr is one JSON object; the last one carries the exit code. Same as `--error-format`. |
 | `PCLI2_NO_UPDATE_CHECK`, `CI` | Disable the once-a-day new-version hint. |
 
 API, UI and authentication URLs are not read from the environment. They belong to

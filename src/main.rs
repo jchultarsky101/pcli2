@@ -79,6 +79,18 @@ fn init_logging(matches: &clap::ArgMatches) {
     // (pipes, --format json/csv, shell completions). ANSI colors are
     // disabled when stderr is redirected or the user opted out, since
     // tracing-subscriber would otherwise emit escape codes unconditionally.
+    // With --error-format json every line on stderr is a JSON object, log
+    // lines included, so a script can parse the whole stream.
+    if error_utils::json_errors() {
+        tracing_subscriber::fmt()
+            .json()
+            .flatten_event(true)
+            .with_env_filter(env_filter)
+            .with_writer(std::io::stderr)
+            .with_ansi(false)
+            .init();
+        return;
+    }
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .with_writer(std::io::stderr)
@@ -111,6 +123,9 @@ async fn main() {
     // Started first so the (cached, usually instant) lookup overlaps with the
     // command instead of being awaited on the way out.
     pcli2::stats::start();
+    // Read straight from argv/env so a usage error clap reports before parsing
+    // is finished can already be JSON; the parsed flag takes over below.
+    error_utils::set_json_errors(error_utils::json_errors_requested());
     let update_check = pcli2::update_check::start_update_check();
 
     let matches = match pcli2::commands::try_create_cli_commands() {
@@ -122,7 +137,12 @@ async fn main() {
             if e.kind() == clap::error::ErrorKind::DisplayHelp {
                 banner::print_banner();
             }
-            let _ = e.print();
+            if e.use_stderr() && error_utils::json_errors() {
+                let message = e.render().to_string();
+                eprintln!("{}", error_utils::json_usage_error(message.trim()));
+            } else {
+                let _ = e.print();
+            }
             if pcli2::commands::should_hint_after_parse_error(&e) {
                 pcli2::update_check::finish_update_check(update_check).await;
             }
@@ -135,6 +155,14 @@ async fn main() {
             });
         }
     };
+
+    error_utils::set_json_errors(
+        matches
+            .get_one::<String>("error-format")
+            .map(|format| format == "json")
+            .unwrap_or(false),
+    );
+    pcli2::terminal::set_no_input(matches.get_flag("no-input"));
 
     // Initialize the logging subsystem
     // Log level can be set via --verbose/--quiet flags or the

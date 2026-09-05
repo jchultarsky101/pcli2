@@ -16,6 +16,7 @@ of them contacts Physna. Run them all with `cargo test`, or one file with
 | `token_renewal_test.rs` | Token renewal against a mock API and auth server: a 401 renews once and the retry carries the new token, a burst of concurrent 401s costs one renewal, credentials without a token authenticate before the first request, a rejected credential reports the cause and keeps the old token, no credentials means no renewal. |
 | `output_shape_test.rs` | Every formatter in every format it supports: CSV parses with no ragged rows and `--headers` adds one line, nothing ends with a line break, compact JSON is one line and pretty JSON is the same value, unsupported formats are clean errors. |
 | `csv_trailing_newline_test.rs` | The original regression case for the trailing-line-break bug. |
+| `no_input_and_json_errors_test.rs` | The built binary with `--no-input` and `--error-format json`: prompts refused with exit 64 and a named flag, usage errors and the final error as JSON objects, `--stats` as JSON. |
 
 Unit tests live next to the code they test (`#[cfg(test)]` modules), including the
 HTTP retry path in `src/http_utils.rs`, the checkpoint file format in

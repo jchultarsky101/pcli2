@@ -163,6 +163,8 @@ async fn main() {
             .unwrap_or(false),
     );
     pcli2::terminal::set_no_input(matches.get_flag("no-input"));
+    pcli2::terminal::set_no_color(matches.get_flag("no-color"));
+    pcli2::format::set_safe_csv(matches.get_flag("safe-csv"));
 
     // Initialize the logging subsystem
     // Log level can be set via --verbose/--quiet flags or the

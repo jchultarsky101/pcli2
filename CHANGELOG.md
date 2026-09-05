@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-09-05
+
+### Added
+- **`--safe-csv`** (global, or `PCLI2_SAFE_CSV=1`) - Guards every CSV cell this process writes against spreadsheet formula injection: a text cell starting with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with a single quote, which Excel, LibreOffice and Google Sheets show as text. Numbers such as `-5` are left alone. Off by default because the quote is visible to other consumers of the file. Excel workbooks were already safe.
+
+### Fixed
+- **`PCLI2_NO_COLOR=0` disabled colour in one place and enabled it in another** - The terminal module treated any non-empty value as "disable" while clap parsed it as false. Both now follow one rule for pcli2 boolean variables: empty, `0`, `false`, `no` and `off` mean off, anything else means on. `NO_COLOR` keeps the no-color.org rule (any non-empty value disables). The same rule is pinned on `PCLI2_NO_INPUT` and `PCLI2_SAFE_CSV`.
+- **`--no-color` given as a value disabled colour** - The terminal module scanned the raw command line, so `text-match --text --no-color` turned colour off. After parsing, the parsed flag is used; the raw scan only decides how clap colours its own help and error output before parsing.
+
 ## [1.27.0] - 2026-09-05
 
 ### Changed

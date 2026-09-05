@@ -934,7 +934,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                     }
                 }
 
-                if let Err(e) = wtr.serialize(base_values.as_slice()) {
+                if let Err(e) = wtr.serialize(crate::format::guard_csv_row(&base_values).as_ref()) {
                     return Err(CliError::from(CliActionError::FormattingError(
                         crate::format::FormattingError::CsvError(e),
                     )));
@@ -1808,7 +1808,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             report_progress.start_rows("Writing CSV", rows.len());
             for (index, row) in rows.iter().enumerate() {
                 report_progress.set_row(index);
-                if let Err(e) = wtr.serialize(row.as_slice()) {
+                if let Err(e) = wtr.serialize(crate::format::guard_csv_row(row).as_ref()) {
                     return Err(CliError::from(CliActionError::FormattingError(
                         crate::format::FormattingError::CsvError(e),
                     )));
@@ -2443,7 +2443,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                     }
                 }
 
-                if let Err(e) = wtr.serialize(base_values.as_slice()) {
+                if let Err(e) = wtr.serialize(crate::format::guard_csv_row(&base_values).as_ref()) {
                     return Err(CliError::from(CliActionError::FormattingError(
                         crate::format::FormattingError::CsvError(e),
                     )));
@@ -3068,7 +3068,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
                     }
                 }
 
-                if let Err(e) = wtr.serialize(base_values.as_slice()) {
+                if let Err(e) = wtr.serialize(crate::format::guard_csv_row(&base_values).as_ref()) {
                     return Err(CliError::from(CliActionError::FormattingError(
                         crate::format::FormattingError::CsvError(e),
                     )));

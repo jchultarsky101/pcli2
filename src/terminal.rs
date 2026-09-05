@@ -11,8 +11,41 @@ use std::io::IsTerminal;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Returns true when the given environment variable is set to a non-empty value.
+///
+/// This is the no-color.org rule for `NO_COLOR`: presence with any non-empty
+/// value, even `0`, disables colour.
 fn env_var_set(name: &str) -> bool {
     env::var_os(name).is_some_and(|value| !value.is_empty())
+}
+
+/// Whether a pcli2 boolean environment variable is on.
+///
+/// Empty, `0`, `false`, `no` and `off` (any case) mean off; anything else means
+/// on. The same rule clap applies to the flag the variable backs, so
+/// `PCLI2_NO_COLOR=0` no longer disables colour in one place and enables it in
+/// another.
+pub fn env_flag(name: &str) -> bool {
+    match env::var(name) {
+        Ok(value) => {
+            let value = value.trim();
+            !(value.is_empty()
+                || ["0", "false", "no", "off"]
+                    .iter()
+                    .any(|off| value.eq_ignore_ascii_case(off)))
+        }
+        Err(_) => false,
+    }
+}
+
+/// The parsed `--no-color` flag, once main has parsed the command line.
+static NO_COLOR_FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// Record the parsed `--no-color` flag. Until this is called, the raw
+/// command line is scanned instead (clap needs the colour choice before it
+/// can parse), which cannot tell the flag from a value that merely looks like
+/// it, such as `--text --no-color`.
+pub fn set_no_color(no_color: bool) {
+    let _ = NO_COLOR_FLAG.set(no_color);
 }
 
 /// Returns true when the user explicitly disabled colors via the
@@ -20,8 +53,11 @@ fn env_var_set(name: &str) -> bool {
 /// command-line flag.
 fn colors_disabled_by_user() -> bool {
     env_var_set("NO_COLOR")
-        || env_var_set("PCLI2_NO_COLOR")
-        || env::args().any(|arg| arg == "--no-color")
+        || env_flag("PCLI2_NO_COLOR")
+        || NO_COLOR_FLAG
+            .get()
+            .copied()
+            .unwrap_or_else(|| env::args().any(|arg| arg == "--no-color"))
 }
 
 /// Determine whether colored output should be emitted on stdout.
@@ -317,6 +353,26 @@ pub fn confirm(question: &str, help: Option<&str>) -> Result<bool, PromptUnavail
             question, e
         ))
     })
+}
+
+#[cfg(test)]
+mod env_flag_tests {
+    use super::env_flag;
+
+    #[test]
+    fn off_values_are_off_and_anything_else_is_on() {
+        let name = "PCLI2_TEST_ENV_FLAG";
+        for off in ["", "0", "false", "FALSE", "no", "Off", " 0 "] {
+            std::env::set_var(name, off);
+            assert!(!env_flag(name), "{off:?} should be off");
+        }
+        for on in ["1", "true", "yes", "on", "anything"] {
+            std::env::set_var(name, on);
+            assert!(env_flag(name), "{on:?} should be on");
+        }
+        std::env::remove_var(name);
+        assert!(!env_flag(name));
+    }
 }
 
 #[cfg(test)]

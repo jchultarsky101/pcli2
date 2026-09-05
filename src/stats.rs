@@ -65,7 +65,22 @@ pub fn summary() -> String {
 pub fn report(print: bool) {
     let line = summary();
     if print {
-        eprintln!("📊 {}", line);
+        if crate::error_utils::json_errors() {
+            let (requests, retries, renewals, elapsed) = snapshot();
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "level": "INFO",
+                    "message": line,
+                    "requests": requests,
+                    "retries": retries,
+                    "renewals": renewals,
+                    "elapsed_seconds": (elapsed * 10.0).round() / 10.0,
+                })
+            );
+        } else {
+            eprintln!("📊 {}", line);
+        }
     } else {
         tracing::debug!("{}", line);
     }

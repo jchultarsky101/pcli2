@@ -216,6 +216,7 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
             .collect();
 
         // Use inquire to create an interactive selection
+        crate::terminal::require_prompt("a tenant name (--name)")?;
         let ans = inquire::Select::new("Select a tenant:", options)
             .with_help_message("Choose the tenant you want to set as active")
             .prompt();
@@ -528,6 +529,7 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
             crate::error::CliError::CheckpointError(e) => {
                 CliActionError::BusinessLogicError(e.to_string())
             }
+            crate::error::CliError::InputRequired(msg) => CliActionError::InputRequired(msg),
         })?;
 
     if let Some(state) = state_type {

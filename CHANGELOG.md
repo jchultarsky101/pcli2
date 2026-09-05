@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-09-05
+
+### Added
+- **`--error-format json`** (global, or `PCLI2_ERROR_FORMAT=json`) - Everything on stderr becomes one JSON object per line: errors with their hint and, for API errors, the HTTP status; warnings and log lines; the `--stats` summary. The final error object carries the process exit code and its class (`usage`, `not_found`, `auth`, `api`, ...), so a script reads one line instead of parsing prose. Usage errors clap reports before the command runs are JSON too.
+- **`--no-input`** (global, or `PCLI2_NO_INPUT=1`) - Never prompt. A confirmation that would otherwise be asked fails with exit 64 and names `--yes`; `tenant use` and `env use` without `--name` fail instead of opening a menu; `auth login` falls back to its missing-argument error. The same now happens without the flag whenever stdin is not a terminal.
+
+### Fixed
+- **`cache clear` without a terminal exited 0 as "cancelled"** - It read end-of-file as "no" and reported success to the calling script. It now refuses with exit 64 and asks for `--yes`. `folder delete`, `asset delete` and the environment commands already refused; all five prompts now go through one function and give the same message.
+
 ## [1.25.0] - 2026-09-05
 
 ### Added

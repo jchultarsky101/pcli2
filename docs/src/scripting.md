@@ -36,6 +36,40 @@ The same rules apply to diagnostics on stderr: warnings and `--verbose`
 logs captured with `2> warnings.log` are plain text with no ANSI escape
 codes, so they can be grepped and parsed directly.
 
+### Machine-Readable Errors
+
+With `--error-format json` (or `PCLI2_ERROR_FORMAT=json`) everything pcli2
+writes to stderr is one JSON object per line: errors, their hints, warnings,
+`--verbose` log lines and the `--stats` summary. The last object of a failed
+run carries the exit code and its class:
+
+```bash
+$ pcli2 --error-format json asset delete --path /Home/Parts/nope.stl
+{"level":"ERROR","code":67,"kind":"not_found","message":"API error: Path not found: /Home/Parts/nope.stl"}
+$ echo $?
+67
+```
+
+| Field | Meaning |
+|-------|---------|
+| `level` | `ERROR`, `WARN`, `INFO` or `DEBUG`, matching the log lines |
+| `code` | The process exit code, on the final error object |
+| `kind` | The failure class: `usage`, `data`, `no_input`, `not_found`, `unavailable`, `temp_fail`, `software`, `os`, `config`, `auth`, `network`, `api` |
+| `message` | The same text the human-readable error would show |
+| `hint` | What to do about it, when pcli2 knows |
+| `http_status` | The HTTP status behind an API error, when there is one |
+| `steps` | Remediation steps, on errors that list them |
+
+Progress bars and the upload/download statistics reports are not JSON; leave
+`--progress` off in scripts that parse stderr.
+
+```bash
+# Read the exit code and message of a failed run
+if ! out=$(pcli2 --error-format json asset list --folder-path "/Nope" 2>&1 >/dev/null); then
+  echo "$out" | tail -n 1 | jq -r '"\(.kind): \(.message)"'
+fi
+```
+
 ## Skipping Prompts
 
 Destructive commands ask for confirmation when run interactively. In
@@ -45,6 +79,13 @@ scripts, pass `--yes`:
 pcli2 folder delete --folder-path "/Home/Scratch/" --force --yes
 pcli2 cache clear --yes
 ```
+
+A prompt that cannot be shown is refused rather than answered for you: when
+stdin is not a terminal, or `--no-input` (or `PCLI2_NO_INPUT=1`) is set, a
+command that would have to ask exits 64 and says which flag to pass instead.
+`tenant use` and `env use` without `--name` fail the same way instead of
+showing a menu nobody can answer. Set `PCLI2_NO_INPUT=1` in CI so a forgotten
+`--yes` fails fast rather than hanging on a prompt.
 
 Authentication credentials can be passed as flags for non-interactive use:
 

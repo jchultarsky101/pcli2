@@ -147,9 +147,7 @@ fn extract_subcommand_name(sub_matches: &ArgMatches) -> String {
 /// Secrets are prompted with masked input so they never appear on screen or
 /// in shell history.
 fn prompt_for_credential(label: &str, secret: bool) -> Option<String> {
-    use std::io::IsTerminal;
-
-    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+    if !pcli2::terminal::prompts_allowed() {
         return None;
     }
 

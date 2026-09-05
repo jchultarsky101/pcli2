@@ -77,7 +77,6 @@ pub fn folder_command() -> Command {
                 .arg(
                     clap::Arg::new("force")
                         .long("force")
-                        .short('f')
                         .action(clap::ArgAction::SetTrue)
                         .help("Delete the folder together with every asset and subfolder in it (the server deletes recursively). Without it a non-empty folder is refused."),
                 )
@@ -129,12 +128,8 @@ pub fn folder_command() -> Command {
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
                 .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_OUTPUT)
-                        .long(crate::commands::params::PARAMETER_OUTPUT)
-                        .num_args(1)
-                        .required(false)
-                        .help("Output directory path (default: <folder_name> directory in the current directory)")
-                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                    crate::commands::params::output_file_parameter()
+                        .help("Output directory path (default: <folder_name> directory in the current directory)"),
                 )
                 .arg(
                     clap::Arg::new(PARAMETER_PROGRESS)
@@ -346,12 +341,9 @@ pub fn folder_command() -> Command {
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
                 .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_LOCAL_PATH)
-                        .long(crate::commands::params::PARAMETER_LOCAL_PATH)
-                        .num_args(1)
+                    crate::commands::params::input_parameter("Local directory containing the files to upload")
                         .required(true)
-                        .help("Local directory path containing asset files to upload")
-                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                        .alias(crate::commands::params::PARAMETER_LOCAL_PATH),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_SKIP_EXISTING)
@@ -403,12 +395,8 @@ pub fn folder_command() -> Command {
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
                 .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_OUTPUT)
-                        .long(crate::commands::params::PARAMETER_OUTPUT)
-                        .num_args(1)
-                        .required(false)
-                        .help("Output directory path (default: <folder_name> directory in the current directory)")
-                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                    crate::commands::params::output_file_parameter()
+                        .help("Output directory path (default: <folder_name> directory in the current directory)"),
                 )
                 .arg(
                     clap::Arg::new(PARAMETER_PROGRESS)

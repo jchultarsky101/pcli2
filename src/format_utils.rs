@@ -38,6 +38,8 @@ impl FormatParams {
             OutputFormat::from_string_with_options_safe(&format_str, format_options.clone())
                 .unwrap_or_else(|_| OutputFormat::Json(OutputFormatOptions::default()));
 
+        warn_about_noop_format_flags(sub_matches, &format_str);
+
         FormatParams {
             format,
             format_options,
@@ -64,11 +66,57 @@ impl FormatParams {
             OutputFormat::from_string_with_options_safe(&format_str, format_options.clone())
                 .unwrap_or_else(|_| OutputFormat::Json(OutputFormatOptions::default()));
 
+        warn_about_noop_format_flags(sub_matches, &format_str);
+
         FormatParams {
             format,
             format_options,
             format_str,
         }
+    }
+}
+
+/// Whether `id` was given on the command line (not defaulted, not from the
+/// environment). Unknown ids answer no.
+pub fn given_on_command_line(sub_matches: &ArgMatches, id: &str) -> bool {
+    // `value_source` panics on an id the command does not define; check first.
+    sub_matches.try_contains_id(id).unwrap_or(false)
+        && sub_matches.value_source(id) == Some(clap::parser::ValueSource::CommandLine)
+}
+
+/// Say so when a flag the user typed cannot change anything here.
+///
+/// Such flags used to be accepted in silence, which is worse than either
+/// rejecting or honouring them: `--headers` on a JSON listing looks like it
+/// worked. Rejecting would break scripts that pass them harmlessly, so this
+/// warns and carries on.
+pub fn warn_if_given(sub_matches: &ArgMatches, id: &str, why: &str) {
+    if given_on_command_line(sub_matches, id) {
+        crate::error_utils::report_warning(&format!("--{} has no effect here: {}", id, why));
+    }
+}
+
+/// Warn about `--pretty`/`--headers` when the chosen format ignores them.
+pub fn warn_about_noop_format_flags(sub_matches: &ArgMatches, format_str: &str) {
+    if format_str.eq_ignore_ascii_case("csv") {
+        warn_if_given(
+            sub_matches,
+            PARAMETER_PRETTY,
+            "CSV output is never pretty-printed",
+        );
+    } else if format_str.eq_ignore_ascii_case("json") {
+        warn_if_given(
+            sub_matches,
+            PARAMETER_HEADERS,
+            "JSON output has no header row",
+        );
+    } else if format_str.eq_ignore_ascii_case("tree") {
+        warn_if_given(sub_matches, PARAMETER_PRETTY, "tree output has one layout");
+        warn_if_given(
+            sub_matches,
+            PARAMETER_HEADERS,
+            "tree output has no header row",
+        );
     }
 }
 

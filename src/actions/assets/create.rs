@@ -7,8 +7,8 @@ use crate::{
     actions::assets::metadata_batch_csv::{parse_batch_csv, BatchAssetRef, BatchCsvFormat},
     actions::CliActionError,
     commands::params::{
-        PARAMETER_CONTINUE_ON_ERROR, PARAMETER_DELETE_IF_EMPTY, PARAMETER_FILE, PARAMETER_FILES,
-        PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_OVERRIDE, PARAMETER_PATH,
+        PARAMETER_CONTINUE_ON_ERROR, PARAMETER_DELETE_IF_EMPTY, PARAMETER_FOLDER_PATH,
+        PARAMETER_FOLDER_UUID, PARAMETER_INPUT, PARAMETER_OVERRIDE, PARAMETER_PATH,
         PARAMETER_RESTORE_METADATA, PARAMETER_UUID,
     },
     configuration::Configuration,
@@ -104,7 +104,7 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     .await?;
 
     let file_path = sub_matches
-        .get_one::<PathBuf>(PARAMETER_FILE)
+        .get_one::<PathBuf>(PARAMETER_INPUT)
         .ok_or(CliError::MissingRequiredArgument("file".to_string()))?;
 
     // Extract filename from path for use in asset path construction
@@ -293,8 +293,8 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     trace!("Executing \"create asset batch\" command...");
 
     let glob_pattern = sub_matches
-        .get_one::<String>(PARAMETER_FILES)
-        .ok_or(CliError::MissingRequiredArgument("files".to_string()))?
+        .get_one::<String>(PARAMETER_INPUT)
+        .ok_or(CliError::MissingRequiredArgument("--input".to_string()))?
         .clone();
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
     let concurrent = *concurrent_param;
@@ -430,8 +430,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     trace!("Executing \"create asset metadata batch\" command...");
 
     let csv_file_path = sub_matches
-        .get_one::<std::path::PathBuf>("csv-file")
-        .ok_or(CliError::MissingRequiredArgument("csv-file".to_string()))?;
+        .get_one::<std::path::PathBuf>(PARAMETER_INPUT)
+        .ok_or(CliError::MissingRequiredArgument("--input".to_string()))?;
 
     let show_progress = sub_matches.get_flag("progress");
     let continue_on_error = sub_matches.get_flag(PARAMETER_CONTINUE_ON_ERROR);

@@ -240,7 +240,7 @@ pcli2 folder create --name "New Folder" --parent-folder-path "/Home/Parent"
 pcli2 folder download --folder-path "/Home/MyFolder" --output "backup" --resume
 
 # Upload all assets from a local directory to a Physna folder
-pcli2 folder upload --local-path "./local_models" --folder-path "/Home/MyFolder" --skip-existing
+pcli2 folder upload --input "./local_models" --folder-path "/Home/MyFolder" --skip-existing
 
 # Download thumbnails for all assets in a folder
 pcli2 folder thumbnail --folder-path "/Home/MyFolder" --output "thumbnails" --progress
@@ -252,13 +252,13 @@ Upload, download, and manage assets:
 
 ```bash
 # Upload a single asset
-pcli2 asset create --file path/to/model.stl --folder-path "/Home/Models/"
+pcli2 asset create --input path/to/model.stl --folder-path "/Home/Models/"
 
 # Replace an existing asset (delete + re-upload)
-pcli2 asset create --file path/to/model.stl --folder-path "/Home/Models/" --override
+pcli2 asset create --input path/to/model.stl --folder-path "/Home/Models/" --override
 
 # Replace an existing asset and preserve its metadata
-pcli2 asset create --file path/to/model.stl --folder-path "/Home/Models/" --override --restore-metadata
+pcli2 asset create --input path/to/model.stl --folder-path "/Home/Models/" --override --restore-metadata
 
 # List assets in a folder
 pcli2 asset list --folder-path "/Home/Models/" --format json
@@ -282,7 +282,7 @@ pcli2 asset thumbnail --path "/Home/Models/model.stl"
 # or
 pcli2 asset thumbnail --uuid 550e8400-e29b-41d4-a716-446655440000
 # Specify custom output file
-pcli2 asset thumbnail --uuid 550e8400-e29b-41d4-a716-446655440000 --file "my_thumbnail.png"
+pcli2 asset thumbnail --uuid 550e8400-e29b-41d4-a716-446655440000 --output "my_thumbnail.png"
 ```
 
 ### 🔍 Geometric Matching
@@ -328,7 +328,7 @@ pcli2 asset metadata get --path "/Home/Models/part.stl"
 
 # Bulk metadata update from CSV (classic vertical or Physna UI horizontal
 # layout, auto-detected from the header row)
-pcli2 asset metadata create-batch --csv-file "metadata.csv"
+pcli2 asset metadata create-batch --input "metadata.csv"
 ```
 
 ## 🚀 Advanced Features
@@ -348,7 +348,7 @@ pcli2 folder download --folder-path "/Home/Folder/" --delay 2
 pcli2 folder download --folder-path "/Home/Folder/" --continue-on-error
 
 # Continue past unresolvable asset paths in a metadata batch
-pcli2 asset metadata create-batch --csv-file "metadata.csv" --continue-on-error
+pcli2 asset metadata create-batch --input "metadata.csv" --continue-on-error
 
 # Download thumbnails for all assets in a folder
 pcli2 folder thumbnail --folder-path "/Home/Folder/" --progress --concurrent 3
@@ -363,8 +363,8 @@ Every long-running command can pick up where it stopped:
 pcli2 folder download --folder-path "/Home/LargeFolder/" --resume --progress
 
 # Upload: skip files whose name is already in the target folder
-pcli2 folder upload --local-path ./parts --folder-path "/Home/Parts" --skip-existing
-pcli2 asset create-batch --files "parts/*.stl" --folder-path "/Home/Parts" --skip-existing
+pcli2 folder upload --input ./parts --folder-path "/Home/Parts" --skip-existing
+pcli2 asset create-batch --input "parts/*.stl" --folder-path "/Home/Parts" --skip-existing
 
 # Folder match: record each completed search, re-run the same command to continue
 pcli2 folder geometric-match --folder-path "/Home/Parts" --recursive \
@@ -389,8 +389,8 @@ pcli2 folder delete --folder-path "/Home/Old Projects/" --force --dry-run
 pcli2 asset delete --path "/Home/Models/part.stl" --dry-run
 
 # See exactly which files a batch upload would send, and where
-pcli2 asset create-batch --files "data/*.stl" --folder-path "/Home/Models/" --dry-run
-pcli2 folder upload --local-path ./models --folder-path "/Home/Models/" --dry-run
+pcli2 asset create-batch --input "data/*.stl" --folder-path "/Home/Models/" --dry-run
+pcli2 folder upload --input ./models --folder-path "/Home/Models/" --dry-run
 ```
 
 ### 🔁 Automatic Retries
@@ -531,7 +531,7 @@ jobs:
       - name: Upload models
         run: |
           pcli2 tenant use --name my-tenant
-          pcli2 asset create-batch --files "build/*.stl" \
+          pcli2 asset create-batch --input "build/*.stl" \
             --folder-path "/Home/CI Builds/" --quiet --format json
 ```
 

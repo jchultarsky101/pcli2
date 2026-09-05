@@ -86,7 +86,7 @@ pub const PARAMETER_PRETTY: &str = "pretty";
 pub const PARAMETER_HEADERS: &str = "headers";
 pub const PARAMETER_OUTPUT: &str = "output";
 pub const PARAMETER_FILE: &str = "file";
-pub const PARAMETER_FILES: &str = "files";
+pub const PARAMETER_INPUT: &str = "input";
 pub const PARAMETER_CLIENT_ID: &str = "client-id";
 pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
 pub const PARAMETER_UUID: &str = "uuid";
@@ -209,33 +209,32 @@ pub fn limit_parameter() -> Arg {
 }
 
 /// Create the global output file parameter.
+/// `-o/--output PATH`: where a command writes. The one name for the concept;
+/// commands that used to spell it differently keep the old spelling as a
+/// hidden alias.
 pub fn output_file_parameter() -> Arg {
     Arg::new(PARAMETER_OUTPUT)
         .short('o')
         .long(PARAMETER_OUTPUT)
+        .value_name("PATH")
         .num_args(1)
         .required(false)
         .help("Output file path")
         .value_parser(clap::value_parser!(PathBuf))
 }
 
-/// Create the global input file parameter.
-pub fn file_parameter() -> Arg {
-    Arg::new(PARAMETER_FILE)
-        .long(PARAMETER_FILE)
+/// `-i/--input PATH`: what a command reads. Every command that takes a local
+/// file, directory or glob uses this; `--file`, `--files`, `--csv-file` and
+/// `--local-path` survive as hidden aliases so existing scripts keep working.
+pub fn input_parameter(help: &'static str) -> Arg {
+    Arg::new(PARAMETER_INPUT)
+        .short('i')
+        .long(PARAMETER_INPUT)
+        .value_name("PATH")
         .num_args(1)
         .required(false)
-        .help("Input file path")
+        .help(help)
         .value_parser(clap::value_parser!(PathBuf))
-}
-
-pub fn multiple_files_parameter() -> Arg {
-    Arg::new(PARAMETER_FILES)
-        .long(PARAMETER_FILES)
-        .num_args(1)
-        .required(true)
-        .help("Glob pattern or comma-separated list of files to upload (e.g., \"data/puzzle/*.STL\" or \"file1.stl,file2.stl\")")
-        .value_parser(clap::value_parser!(String))
 }
 
 /// Create the client ID parameter.

@@ -53,6 +53,19 @@ pub struct DevKeyring {
 
 impl Default for DevKeyring {
     fn default() -> DevKeyring {
+        // The credentials file lives next to config.yml, so it follows
+        // PCLI2_CONFIG_DIR the same way the configuration does. It used to ignore
+        // the variable: a second profile got its own config.yml but shared the
+        // default profile's login, which is the opposite of what the docs promise.
+        if let Ok(config_dir_override) = std::env::var("PCLI2_CONFIG_DIR") {
+            let mut file_path = PathBuf::from(config_dir_override);
+            file_path.push("dev_credentials.json");
+            return DevKeyring {
+                file_path,
+                credentials: None,
+            };
+        }
+
         // Try to get the config directory, fallback to current directory if it fails
         let config_base = config_dir().unwrap_or_else(|| {
             // If config_dir fails, try to create a .config directory in the home directory

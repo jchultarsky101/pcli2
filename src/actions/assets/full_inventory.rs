@@ -21,7 +21,7 @@ pub async fn inventory(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Listing full asset inventory...");
     let format = get_format_parameter_value(sub_matches).await;
     let assets = fetch_all_assets(sub_matches).await?;
-    println!("{}", assets.format(format)?);
+    crate::format::print_output(&assets.format(format)?);
     Ok(())
 }
 
@@ -30,6 +30,6 @@ pub async fn count_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let format = get_format_parameter_value(sub_matches).await;
     let assets = fetch_all_assets(sub_matches).await?;
     let report = AssetHealthReport::from_assets(&assets);
-    println!("{}", report.format(&format)?);
+    crate::format::print_output(&report.format(&format)?);
     Ok(())
 }

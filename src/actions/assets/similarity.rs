@@ -117,7 +117,7 @@ pub async fn asset_similarity(sub_matches: &ArgMatches) -> Result<(), CliError> 
         comparison_url: Some(comparison_url),
     };
 
-    println!("{}", similarity.format(format)?);
+    crate::format::print_output(&similarity.format(format)?);
 
     Ok(())
 }

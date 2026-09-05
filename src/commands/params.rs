@@ -118,6 +118,7 @@ pub const PARAMETER_DELAY: &str = "delay";
 pub const PARAMETER_LOCAL_PATH: &str = "local-path";
 pub const PARAMETER_SKIP_EXISTING: &str = "skip-existing";
 pub const PARAMETER_RESUME: &str = "resume";
+pub const PARAMETER_CHECKPOINT: &str = "checkpoint";
 pub const PARAMETER_OVERRIDE: &str = "override";
 pub const PARAMETER_RESTORE_METADATA: &str = "restore-metadata";
 pub const PARAMETER_DRY_RUN: &str = "dry-run";
@@ -640,4 +641,17 @@ pub fn resume_parameter() -> Arg {
         .action(ArgAction::SetTrue)
         .required(false)
         .help("Resume download by skipping files that already exist in the destination directory")
+}
+
+/// `--checkpoint FILE` for the folder match commands: record each completed
+/// search as it finishes so an interrupted run can be resumed.
+pub fn checkpoint_parameter() -> Arg {
+    Arg::new(PARAMETER_CHECKPOINT)
+        .long(PARAMETER_CHECKPOINT)
+        .value_name("FILE")
+        .value_parser(clap::value_parser!(std::path::PathBuf))
+        .required(false)
+        .help(
+            "Record each completed search in FILE as the run progresses. Re-running the same command with the same FILE reuses the recorded results and searches only the remaining assets. FILE is removed once the report has been written",
+        )
 }

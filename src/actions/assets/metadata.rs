@@ -243,7 +243,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
                     )));
                 }
             };
-            print!("{}", csv_string);
+            crate::format::print_output(&csv_string);
         }
         _ => {
             // Default to JSON

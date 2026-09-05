@@ -240,6 +240,7 @@ pub fn folder_command() -> Command {
                 .arg(
                     crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
                 )
+                .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
                     clap::Arg::new("progress")
                         .long("progress")
@@ -283,6 +284,7 @@ pub fn folder_command() -> Command {
                 .arg(
                     crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
                 )
+                .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
                     clap::Arg::new("progress")
                         .long("progress")
@@ -327,6 +329,7 @@ pub fn folder_command() -> Command {
                 .arg(
                     crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
                 )
+                .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
                     clap::Arg::new("progress")
                         .long("progress")

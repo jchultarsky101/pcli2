@@ -283,13 +283,59 @@ pcli2 folder geometric-match --folder-path /Home/SearchFolder/ --concurrent 10 -
 pcli2 folder geometric-match --folder-path /Home/SearchFolder/ --threshold 85.0 --concurrent 8 --progress
 ```
 
+### Resuming an Interrupted Run
+
+A match over a large tenant can run for hours, and until the report is written
+nothing has been saved. `--checkpoint FILE` changes that: every asset's result
+is appended to `FILE` the moment its search finishes, and re-running the same
+command with the same file reuses what was recorded and searches only the
+assets that are left.
+
+```bash
+# First attempt - interrupted after two hours
+pcli2 folder geometric-match --folder-path "/Creo Files" --recursive \
+  --threshold 85 --concurrent 8 --progress \
+  --checkpoint creo-match.jsonl --format csv --headers > creo-matches.csv
+
+# Same command again: picks up where it stopped
+pcli2 folder geometric-match --folder-path "/Creo Files" --recursive \
+  --threshold 85 --concurrent 8 --progress \
+  --checkpoint creo-match.jsonl --format csv --headers > creo-matches.csv
+```
+
+On the second run `stderr` reports what was reused:
+
+```
+Resuming from checkpoint 'creo-match.jsonl': 2,431 of 3,182 asset(s) already searched
+```
+
+Points worth knowing:
+
+- The file is tied to the exact run: search type, tenant, folder paths,
+  `--threshold`, `--recursive`, `--exclusive` and (for visual search) `--limit`.
+  A file written by a different combination is refused with a message naming
+  the run it belongs to; delete it or pick another path.
+- Only successful searches are recorded. An asset whose search failed is
+  searched again on the next run, which is also how a run that stopped on
+  authentication failures is completed after `pcli2 auth login`.
+- The file is deleted once the report has been written successfully. It stays
+  if the report fails - for example an Excel workbook too tall for a worksheet -
+  so the same searches are not repeated after fixing the output options.
+- The output format is not part of the fingerprint: an interrupted CSV run can
+  be finished as JSON or Excel.
+- Assets added to the folder between runs are searched; assets removed are
+  dropped from the report.
+
+`part-match` and `visual-match` take the same option.
+
 ### Handling Large Folders
 
 For folders with many assets, consider these strategies:
 
-1. **Adjust threshold**: Higher thresholds reduce processing time
-2. **Increase concurrency**: Use more concurrent operations (but watch resource usage)
-3. **Process in batches**: Break large folders into smaller subfolders
+1. **Use a checkpoint**: `--checkpoint FILE` makes an interruption cost minutes instead of hours
+2. **Adjust threshold**: Higher thresholds reduce processing time
+3. **Increase concurrency**: Use more concurrent operations (but watch resource usage)
+4. **Process in batches**: Break large folders into smaller subfolders
 
 ## Direct Asset Similarity (Match Scores)
 

@@ -271,7 +271,7 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
             .await?
     };
 
-    println!("{}", asset.format(format)?);
+    crate::format::print_output(&asset.format(format)?);
 
     Ok(())
 }
@@ -336,10 +336,45 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         return Ok(());
     }
 
+    let mut paths = crate::physna_v3::expand_upload_paths(&glob_pattern)
+        .map_err(CliError::PhysnaExtendedApiError)?;
+    let total_matched = paths.len();
+
+    // --skip-existing is what makes an interrupted batch re-runnable: the folder
+    // is listed once and every file whose name is already there is left out.
+    let skip_existing = sub_matches.get_flag(crate::commands::params::PARAMETER_SKIP_EXISTING);
+    let mut skipped = 0usize;
+    if skip_existing && !paths.is_empty() {
+        let parent = if folder_uuid.is_nil() {
+            None
+        } else {
+            Some(&folder_uuid)
+        };
+        let existing: std::collections::HashSet<String> = api
+            .list_assets_by_parent_folder_uuid(&tenant.uuid, parent)
+            .await?
+            .get_all_assets()
+            .iter()
+            .map(|asset| asset.name().to_string())
+            .collect();
+        paths.retain(|path| {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let keep = !existing.contains(&name);
+            if !keep {
+                skipped += 1;
+                eprintln!("Skipping existing asset: {}", name);
+            }
+            keep
+        });
+    }
+
     let outcome = api
-        .create_assets_batch(
+        .create_assets_from_paths(
             &tenant.uuid,
-            &glob_pattern,
+            paths,
             Some(folder_path.as_str()),
             Some(&folder_uuid),
             concurrent,
@@ -351,6 +386,12 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     let failed = outcome.failures.len();
     if succeeded > 0 {
         println!("{}", AssetList::from(outcome.assets).format(format)?);
+    }
+    if skipped > 0 {
+        eprintln!(
+            "Skipped {} of {} file(s) that already exist in '{}'",
+            skipped, total_matched, folder_path
+        );
     }
     // Every failure is named. These used to go to the debug log only, so a run
     // that lost 40 of 500 files printed the 460 successes and exited 0.

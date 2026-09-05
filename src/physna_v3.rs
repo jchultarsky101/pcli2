@@ -722,6 +722,15 @@ impl PhysnaApiClient {
         self
     }
 
+    /// Set the OAuth token endpoint used for automatic token renewal.
+    ///
+    /// Tests point this at a mock server; production clients take it from the
+    /// configuration.
+    pub fn with_auth_url(mut self, auth_url: String) -> Self {
+        self.auth_url = auth_url;
+        self
+    }
+
     /// Attempt to refresh the access token using client credentials
     ///
     /// This method tries to obtain a new access token using the stored client credentials.
@@ -3502,11 +3511,6 @@ impl PhysnaApiClient {
         concurrent: usize,
         show_progress: bool,
     ) -> Result<BatchUploadOutcome, ApiError> {
-        debug!(
-            "Creating batch assets in tenant: {}, folder_path: {:?}, folder_id: {:?}",
-            &tenant_uuid, folder_path, folder_uuid
-        );
-
         // Expand the glob pattern to get matching files
         let paths = expand_upload_paths(glob_pattern)?;
 
@@ -3514,6 +3518,36 @@ impl PhysnaApiClient {
             "Found {} files matching pattern: {}",
             paths.len(),
             glob_pattern
+        );
+
+        self.create_assets_from_paths(
+            tenant_uuid,
+            paths,
+            folder_path,
+            folder_uuid,
+            concurrent,
+            show_progress,
+        )
+        .await
+    }
+
+    /// Upload the given files into a folder, `concurrent` at a time.
+    ///
+    /// The list form of [`create_assets_batch`](Self::create_assets_batch), for
+    /// callers that have already decided which files to send - for example after
+    /// dropping the ones the folder already holds.
+    pub async fn create_assets_from_paths(
+        &mut self,
+        tenant_uuid: &Uuid,
+        paths: Vec<std::path::PathBuf>,
+        folder_path: Option<&str>,
+        folder_uuid: Option<&Uuid>,
+        concurrent: usize,
+        show_progress: bool,
+    ) -> Result<BatchUploadOutcome, ApiError> {
+        debug!(
+            "Creating batch assets in tenant: {}, folder_path: {:?}, folder_id: {:?}",
+            &tenant_uuid, folder_path, folder_uuid
         );
 
         // Handle the case where no files match the glob pattern

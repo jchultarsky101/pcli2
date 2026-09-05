@@ -49,7 +49,7 @@ impl DependencyDiff {
 
         rendered.push_str(&format!(
             "\nLegend: (=) in both  (-) only in reference  (+) only in candidate\n\
-             Summary: {} common, {} only in reference, {} only in candidate\n",
+             Summary: {} common, {} only in reference, {} only in candidate",
             self.summary.common, self.summary.only_in_reference, self.summary.only_in_candidate
         ));
         rendered

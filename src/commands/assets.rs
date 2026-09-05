@@ -78,6 +78,13 @@ pub fn asset_command() -> Command {
                         .required(false)
                         .help("Display progress bar during upload"),
                 )
+                .arg(
+                    Arg::new(crate::commands::params::PARAMETER_SKIP_EXISTING)
+                        .long(crate::commands::params::PARAMETER_SKIP_EXISTING)
+                        .action(ArgAction::SetTrue)
+                        .required(false)
+                        .help("Skip files whose name already exists in the target folder, so an interrupted batch can be re-run without uploading duplicates"),
+                )
                 .arg(dry_run_parameter()),
         )
         .subcommand(

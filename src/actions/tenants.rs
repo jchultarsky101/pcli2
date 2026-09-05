@@ -135,7 +135,7 @@ pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionE
             // Convert to a format that can be handled by the Formattable trait
             let tenant_list = crate::model::TenantList::from(tenant_settings);
 
-            println!("{}", tenant_list.format(format)?);
+            crate::format::print_output(&tenant_list.format(format)?);
             Ok(())
         }
         Err(e) => {
@@ -323,7 +323,7 @@ pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActio
                 crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
                     .map_err(CliActionError::FormattingError)?;
 
-            println!("{}", tenant.format(&format)?);
+            crate::format::print_output(&tenant.format(&format)?);
         }
         None => {
             if let Some(uuid) = tenant_uuid_param {
@@ -390,7 +390,7 @@ pub async fn print_active_tenant_name_with_format(
                     name: tenant_setting.tenant_short_name.clone(),
                     description: tenant_setting.tenant_display_name.clone(),
                 };
-                println!("{}", tenant.format(&format)?);
+                crate::format::print_output(&tenant.format(&format)?);
             }
             None => {
                 // Create a minimal tenant for formatting when UUID exists but tenant not found
@@ -399,7 +399,7 @@ pub async fn print_active_tenant_name_with_format(
                     name: "Unknown Tenant".to_string(),
                     description: "Tenant not found in current user's tenants".to_string(),
                 };
-                println!("{}", tenant.format(&format)?);
+                crate::format::print_output(&tenant.format(&format)?);
             }
         }
     } else {
@@ -409,7 +409,7 @@ pub async fn print_active_tenant_name_with_format(
             name: "No active tenant".to_string(),
             description: "No tenant selected".to_string(),
         };
-        println!("{}", tenant.format(&format)?);
+        crate::format::print_output(&tenant.format(&format)?);
     }
 
     Ok(())
@@ -441,7 +441,7 @@ pub async fn print_current_context(sub_matches: &ArgMatches) -> Result<(), CliAc
     let configuration = Configuration::load_default()?;
     let context_info = ContextInfo::from_configuration(&configuration).await?;
 
-    println!("{}", context_info.format(&format)?);
+    crate::format::print_output(&context_info.format(&format)?);
 
     Ok(())
 }
@@ -525,16 +525,19 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
                     which, msg
                 ))
             }
+            crate::error::CliError::CheckpointError(e) => {
+                CliActionError::BusinessLogicError(e.to_string())
+            }
         })?;
 
     if let Some(state) = state_type {
         // Call the new function to list assets by state
         let assets = api.list_assets_by_state(&tenant.uuid, state).await?;
-        println!("{}", assets.format(format)?);
+        crate::format::print_output(&assets.format(format)?);
     } else {
         // Get the asset state counts from the API (original behavior)
         let state_counts = api.get_asset_state_counts(&tenant.uuid).await?;
-        println!("{}", state_counts.format(&format)?);
+        crate::format::print_output(&state_counts.format(&format)?);
     }
 
     Ok(())
@@ -579,7 +582,7 @@ pub async fn list_tenant_metadata_fields(
         .await
         .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
 
-    println!("{}", fields.format(format)?);
+    crate::format::print_output(&fields.format(format)?);
 
     Ok(())
 }

@@ -74,7 +74,7 @@ pub async fn compare_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), 
 
     // Compute the structural diff and print it in the requested format.
     let diff = compute_dependency_diff(&reference_tree, &candidate_tree);
-    println!("{}", diff.format(format)?);
+    crate::format::print_output(&diff.format(format)?);
 
     Ok(())
 }

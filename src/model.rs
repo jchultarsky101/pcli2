@@ -2465,16 +2465,13 @@ impl OutputFormatter for TextMatchPair {
                     }
                 }
 
+                // Rows come from the same producer as the header. They used to be
+                // written by hand with six fields under an eight-column header,
+                // which the CSV writer rejects outright.
+                let base_row = self.as_csv_records().into_iter().next().unwrap_or_default();
                 if options.with_metadata {
                     // Include metadata values in the output
-                    let mut base_values = vec![
-                        self.reference_asset.path.clone(),
-                        self.candidate_asset.path.clone(),
-                        format!("{}", self.relevance_score),
-                        self.reference_asset.uuid.to_string(),
-                        self.candidate_asset.uuid.to_string(),
-                        self.comparison_url.clone().unwrap_or_default(),
-                    ];
+                    let mut base_values = base_row;
 
                     // Get unique metadata keys from both reference and candidate assets
                     let mut all_metadata_keys = std::collections::HashSet::new();
@@ -2518,14 +2515,7 @@ impl OutputFormatter for TextMatchPair {
 
                     wtr.serialize(base_values.as_slice())?;
                 } else {
-                    wtr.serialize(vec![
-                        self.reference_asset.path.clone(),
-                        self.candidate_asset.path.clone(),
-                        format!("{}", self.relevance_score),
-                        self.reference_asset.uuid.to_string(),
-                        self.candidate_asset.uuid.to_string(),
-                        self.comparison_url.clone().unwrap_or_default(),
-                    ])?;
+                    wtr.serialize(base_row.as_slice())?;
                 }
 
                 let data = wtr.into_inner()?;

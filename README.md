@@ -354,14 +354,30 @@ pcli2 asset metadata create-batch --csv-file "metadata.csv" --continue-on-error
 pcli2 folder thumbnail --folder-path "/Home/Folder/" --progress --concurrent 3
 ```
 
-### 🔄 Resume Interrupted Downloads
+### 🔄 Resuming Interrupted Runs
 
-Skip existing files to resume large downloads:
+Every long-running command can pick up where it stopped:
 
 ```bash
-# Resume a partially completed download
+# Download: skip files that already exist in the destination
 pcli2 folder download --folder-path "/Home/LargeFolder/" --resume --progress
+
+# Upload: skip files whose name is already in the target folder
+pcli2 folder upload --local-path ./parts --folder-path "/Home/Parts" --skip-existing
+pcli2 asset create-batch --files "parts/*.stl" --folder-path "/Home/Parts" --skip-existing
+
+# Folder match: record each completed search, re-run the same command to continue
+pcli2 folder geometric-match --folder-path "/Home/Parts" --recursive \
+  --checkpoint parts-match.jsonl --format csv --headers > matches.csv
 ```
+
+With `--checkpoint FILE` a folder match appends each asset's result to FILE the
+moment its search finishes. If the run is interrupted, re-running the same
+command with the same file reuses the recorded results and searches only the
+assets that are left. The file is tied to the exact run (search type, tenant,
+folders, threshold, `--recursive`, `--exclusive`, `--limit`); a file from a
+different run is refused rather than mixed in. It is deleted once the report has
+been written.
 
 ### 🧪 Dry Run Mode
 
@@ -729,7 +745,7 @@ Manage individual assets in your Physna tenant.
 
 ```
 pcli2 asset create           # Upload a file as an asset
-pcli2 asset create-batch     # Upload multiple files as assets using glob patterns
+pcli2 asset create-batch     # Upload multiple files as assets using glob patterns (--skip-existing to re-run)
 pcli2 asset list             # List assets in a folder with optional recursive listing (--recursive)
 pcli2 asset inventory        # List complete inventory of all assets in the tenant
 pcli2 asset counts           # Show asset health report with counts by state, type, and structure
@@ -910,11 +926,11 @@ pcli2 folder delete           # Delete a folder
 pcli2 folder rename           # Rename a folder
 pcli2 folder move             # Move a folder to a new parent folder
 pcli2 folder resolve          # Resolve a folder path to its UUID
-pcli2 folder download         # Download all assets in a folder (supports --resume flag)
-pcli2 folder upload           # Upload all assets from a local directory to a Physna folder
+pcli2 folder download         # Download all assets in a folder (--resume skips files already on disk)
+pcli2 folder upload           # Upload all assets from a local directory to a Physna folder (--skip-existing)
 pcli2 folder dependencies     # Get dependencies for all assembly assets in folder
-pcli2 folder geometric-match  # Find geometrically similar assets for all assets in folder
-pcli2 folder part-match       # Find part matches for all assets in folder
+pcli2 folder geometric-match  # Find geometrically similar assets for all assets in folder (--checkpoint FILE to resume)
+pcli2 folder part-match       # Find part matches for all assets in folder (--checkpoint FILE to resume)
 pcli2 folder visual-match     # Find visually similar assets for all assets in folder (--limit N, default 100; --threshold N size filter, default 80)
 pcli2 folder thumbnail        # Download thumbnails for all assets in a folder
 ```

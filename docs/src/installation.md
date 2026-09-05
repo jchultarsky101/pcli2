@@ -24,9 +24,19 @@ directory it reports) and offers to add it to your `PATH`.
 
 ### macOS and Linux: Homebrew
 
+Homebrew 6 refuses formulae from taps it has not been told to trust, so the
+first step is a one-time `brew trust` (per machine and user account):
+
 ```bash
+brew trust jchultarsky101/pcli2
 brew install jchultarsky101/pcli2/pcli2
 ```
+
+Without it, `brew install` and every later `brew upgrade pcli2` stop with
+"Refusing to load formula jchultarsky101/pcli2/pcli2 from untrusted tap".
+Homebrew 5 has no such check, but the first upgrade after moving to Homebrew 6
+will. In CI, set `HOMEBREW_NO_REQUIRE_TAP_TRUST=1` instead of trusting
+interactively.
 
 ### Windows: PowerShell installer
 
@@ -63,7 +73,7 @@ pcli2 man --output-dir ./man
 | Installed with | Update with |
 |----------------|-------------|
 | Shell or PowerShell installer | `pcli2-update` |
-| Homebrew | `brew upgrade pcli2` |
+| Homebrew | `brew upgrade pcli2` (after the one-time `brew trust jchultarsky101/pcli2` on Homebrew 6) |
 | MSI | Download and run the newer MSI (the MSI does not ship the updater) |
 
 PCLI2 prints a one-line hint on stderr when a newer release exists (at most once a

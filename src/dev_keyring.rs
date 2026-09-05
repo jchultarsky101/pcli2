@@ -84,6 +84,11 @@ impl Default for DevKeyring {
 }
 
 impl DevKeyring {
+    /// Where the credentials file lives.
+    pub fn path(&self) -> &std::path::Path {
+        &self.file_path
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

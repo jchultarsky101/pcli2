@@ -189,6 +189,13 @@ pub fn create_full_command() -> Command {
                 .global(true)
                 .help("Suppress diagnostic output (error-level logging only)"),
         )
+        .arg(
+            clap::Arg::new("stats")
+                .long("stats")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .help("Print request statistics (API requests, retries, token renewals, elapsed time) on stderr at exit"),
+        )
         // Add examples
         .after_help(examples_after_help())
         // Add all the modularized command groups
@@ -202,6 +209,20 @@ pub fn create_full_command() -> Command {
         .subcommand(completions::completions_command())
         .subcommand(man::man_command())
         .subcommand(cache::cache_command())
+        .subcommand(
+            Command::new("doctor")
+                .about("Check the local setup: binary, configuration, credentials, token, tenant, caches, and connectivity")
+                .arg(
+                    clap::Arg::new("format")
+                        .short('f')
+                        .long("format")
+                        .num_args(1)
+                        .value_parser(["text", "json"])
+                        .ignore_case(true)
+                        .default_value("text")
+                        .help("Output format"),
+                ),
+        )
 }
 
 #[cfg(test)]

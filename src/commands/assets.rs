@@ -15,8 +15,8 @@ use crate::commands::params::{
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES,
     COMMAND_DEPENDENCY_DIFF, COMMAND_DOWNLOAD, COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_LIST,
     COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_TEXT_MATCH,
-    COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_FILE,
-    PARAMETER_FUZZY, PARAMETER_PROGRESS,
+    COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_FUZZY,
+    PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
 
@@ -43,7 +43,8 @@ pub fn asset_command() -> Command {
                 .visible_alias("upload")
                 .about("Create a new asset by uploading a file")
                 .arg(tenant_parameter())
-                .arg(input_parameter("File to upload").alias("file"))
+                .arg(input_parameter("File to upload"))
+                .arg(crate::commands::params::removed_parameter("file", "--input"))
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
@@ -63,9 +64,9 @@ pub fn asset_command() -> Command {
                 .arg(
                     input_parameter("Glob pattern or comma-separated list of files to upload (e.g. \"data/*.stl\" or \"a.stl,b.stl\")")
                         .required(true)
-                        .value_parser(clap::value_parser!(String))
-                        .alias("files"),
+                        .value_parser(clap::value_parser!(String)),
                 )
+                .arg(crate::commands::params::removed_parameter("files", "--input"))
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
@@ -175,17 +176,13 @@ pub fn asset_command() -> Command {
                 .arg(path_parameter())
                 .arg(
                     output_file_parameter()
-                        .help("Output file path (default: asset filename in current directory)")
-                        .conflicts_with(PARAMETER_FILE),
+                        .help("Output file path (default: asset filename in current directory)"),
                 )
-                // The output used to be a bare positional argument; still accepted, unadvertised.
-                .arg(
-                    Arg::new(PARAMETER_FILE)
-                        .num_args(1)
-                        .required(false)
-                        .hide(true)
-                        .value_parser(clap::value_parser!(std::path::PathBuf)),
-                )
+                // The output used to be a bare positional argument.
+                .arg(crate::commands::params::removed_positional(
+                    "a positional output path",
+                    "-o/--output",
+                ))
                 .group(asset_identifier_group()),
         )
     .subcommand(
@@ -316,9 +313,9 @@ pub fn asset_command() -> Command {
             .arg(path_parameter())
             .arg(
                 output_file_parameter()
-                    .help("Output file path (default: asset name with .png extension in current directory)")
-                    .alias("file"),
+                    .help("Output file path (default: asset name with .png extension in current directory)"),
             )
+            .arg(crate::commands::params::removed_parameter("file", "--output"))
             .group(asset_identifier_group()),
     )
 }

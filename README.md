@@ -179,6 +179,24 @@ cargo build --release
 sudo cp target/release/pcli2 /usr/local/bin/
 ```
 
+#### Upgrading to 2.0
+
+Version 2.0 drops the old spellings of the input and output flags that 1.27
+kept as hidden aliases. A script that still uses one stops with exit 64 and a
+message naming the replacement:
+
+| Old | New |
+|-----|-----|
+| `asset create --file` | `asset create --input` |
+| `asset create-batch --files` | `asset create-batch --input` |
+| `asset metadata create-batch --csv-file` | `asset metadata create-batch --input` |
+| `folder upload --local-path` | `folder upload --input` |
+| `config import --file` | `config import --input` |
+| `asset thumbnail --file` | `asset thumbnail --output` |
+| `asset download <path>` (positional) | `asset download --output <path>` |
+
+Nothing else changed between 1.29 and 2.0.
+
 ## 🔐 Authentication
 
 Securely authenticate with your Physna tenant:

@@ -137,6 +137,17 @@ async fn main() {
             if e.kind() == clap::error::ErrorKind::DisplayHelp {
                 banner::print_banner();
             }
+            // A removed flag next to a now-missing required one: clap reports
+            // the missing one; the removed one is the actual mistake.
+            if e.use_stderr() {
+                let args: Vec<String> = std::env::args().collect();
+                if let Some(message) = pcli2::commands::removed_argument_in_argv(&args) {
+                    error_utils::report_cli_error(&pcli2::error::CliError::RemovedArgument(
+                        message,
+                    ));
+                    process::exit(PcliExitCode::UsageError.code());
+                }
+            }
             if e.use_stderr() && error_utils::json_errors() {
                 let message = e.render().to_string();
                 eprintln!("{}", error_utils::json_usage_error(message.trim()));
@@ -165,6 +176,13 @@ async fn main() {
     pcli2::terminal::set_no_input(matches.get_flag("no-input"));
     pcli2::terminal::set_no_color(matches.get_flag("no-color"));
     pcli2::format::set_safe_csv(matches.get_flag("safe-csv"));
+
+    // A flag that no longer exists is refused before anything else happens,
+    // with its replacement named. Clap alone would say "unexpected argument".
+    if let Some(message) = pcli2::commands::removed_argument_used(&matches) {
+        error_utils::report_cli_error(&pcli2::error::CliError::RemovedArgument(message));
+        process::exit(PcliExitCode::UsageError.code());
+    }
 
     // Initialize the logging subsystem
     // Log level can be set via --verbose/--quiet flags or the

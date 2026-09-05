@@ -54,7 +54,7 @@ mod tests {
     /// This test verifies that:
     /// - The command exits successfully
     /// - Help text contains the command description
-    /// - Help text shows required parameters like --file and --folder-path or --folder-uuid
+    /// - Help text shows required parameters like --input and --folder-path or --folder-uuid
     #[test]
     fn test_asset_create_command_help() {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
@@ -65,7 +65,7 @@ mod tests {
             .stdout(predicate::str::contains(
                 "Create a new asset by uploading a file",
             ))
-            .stdout(predicate::str::contains("--file"))
+            .stdout(predicate::str::contains("--input"))
             .stdout(predicate::str::contains("--folder-path"));
     }
 
@@ -75,7 +75,7 @@ mod tests {
     /// This test verifies that:
     /// - The command exits successfully
     /// - Help text contains the command description
-    /// - Help text shows required parameters like --files
+    /// - Help text shows required parameters like --input
     #[test]
     fn test_asset_create_batch_command_help() {
         let mut cmd = Command::cargo_bin("pcli2").unwrap();
@@ -86,7 +86,7 @@ mod tests {
             .stdout(predicate::str::contains(
                 "Create multiple assets by uploading files",
             ))
-            .stdout(predicate::str::contains("--files"));
+            .stdout(predicate::str::contains("--input"));
     }
 
     /// Test that the asset delete command displays help information correctly

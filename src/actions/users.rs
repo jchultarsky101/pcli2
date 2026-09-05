@@ -158,6 +158,7 @@ pub async fn list_users(matches: &ArgMatches) -> Result<(), CliActionError> {
 
     let with_headers = matches.get_flag("headers");
     let pretty = matches.get_flag("pretty");
+    crate::format_utils::warn_about_noop_format_flags(matches, format_str);
 
     let format_options = OutputFormatOptions {
         with_metadata: false,
@@ -219,6 +220,7 @@ pub async fn get_user(matches: &ArgMatches) -> Result<(), CliActionError> {
 
     let with_headers = matches.get_flag("headers");
     let pretty = matches.get_flag("pretty");
+    crate::format_utils::warn_about_noop_format_flags(matches, format_str);
 
     let format_options = OutputFormatOptions {
         with_metadata: false,

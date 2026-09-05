@@ -44,8 +44,8 @@ use pcli2::{
         COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_METADATA,
         COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_STATE, COMMAND_TENANT,
         COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH,
-        PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FILE, PARAMETER_FORMAT,
-        PARAMETER_HEADERS, PARAMETER_OUTPUT, PARAMETER_PRETTY,
+        PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_HEADERS,
+        PARAMETER_INPUT, PARAMETER_OUTPUT, PARAMETER_PRETTY,
     },
     format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions},
     physna_v3::TryDefault,
@@ -646,6 +646,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
 
                     let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
                     let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
+                    pcli2::format_utils::warn_about_noop_format_flags(sub_matches, format_str);
                     // Note: auth commands don't have metadata flag
 
                     let format_options = OutputFormatOptions {
@@ -903,6 +904,10 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
 
                             let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
                             let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
+                            pcli2::format_utils::warn_about_noop_format_flags(
+                                sub_matches,
+                                format_str,
+                            );
                             // Note: config commands don't have metadata flag
 
                             let format_options = OutputFormatOptions {
@@ -937,8 +942,8 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                 }
                 Some((COMMAND_IMPORT, sub_matches)) => {
                     trace!("Executing config import command");
-                    let path = sub_matches.get_one::<PathBuf>(PARAMETER_FILE).ok_or(
-                        CliError::MissingRequiredArgument(PARAMETER_FILE.to_string()),
+                    let path = sub_matches.get_one::<PathBuf>(PARAMETER_INPUT).ok_or(
+                        CliError::MissingRequiredArgument(PARAMETER_INPUT.to_string()),
                     )?;
                     // Never implemented: say so instead of exiting 0 having done nothing.
                     debug!("config import requested for: {:?}", path);

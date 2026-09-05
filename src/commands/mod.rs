@@ -30,7 +30,7 @@ const EXAMPLES_COLORED: &str = color_print::cstr!(
   <green>pcli2 folder list --format tree</green>
 
   <cyan># Upload an asset to a folder</cyan>
-  <green>pcli2 asset create --file model.stl --folder-path /Root/Models/</green>
+  <green>pcli2 asset create --input model.stl --folder-path /Root/Models/</green>
 
   <cyan># Find geometrically similar assets</cyan>
   <green>pcli2 asset geometric-match --path /Root/Models/part.stl --threshold 85.0</green>
@@ -67,7 +67,7 @@ const EXAMPLES_PLAIN: &str = "Examples:
   pcli2 folder list --format tree
 
   # Upload an asset to a folder
-  pcli2 asset create --file model.stl --folder-path /Root/Models/
+  pcli2 asset create --input model.stl --folder-path /Root/Models/
 
   # Find geometrically similar assets
   pcli2 asset geometric-match --path /Root/Models/part.stl --threshold 85.0
@@ -189,6 +189,7 @@ pub fn create_full_command() -> Command {
         .arg(
             clap::Arg::new("quiet")
                 .long("quiet")
+                .short('q')
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
                 .help("Suppress diagnostic output (error-level logging only)"),

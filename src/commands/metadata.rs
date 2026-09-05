@@ -152,12 +152,9 @@ pub fn metadata_command() -> Command {
                 )
                 .arg(tenant_parameter())
                 .arg(
-                    Arg::new("csv-file")
-                        .long("csv-file")
-                        .num_args(1)
+                    crate::commands::params::input_parameter("CSV file with the metadata entries")
                         .required(true)
-                        .help("Path to the CSV file containing metadata entries")
-                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                        .alias("csv-file"),
                 )
                 .arg(
                     Arg::new("csv-format")

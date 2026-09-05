@@ -1606,7 +1606,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
 
     // Get the local directory path from command line
     let local_dir_path = sub_matches
-        .get_one::<std::path::PathBuf>("local-path")
+        .get_one::<std::path::PathBuf>(crate::commands::params::PARAMETER_INPUT)
         .ok_or_else(|| {
             CliError::MissingRequiredArgument("Local directory path is required".to_string())
         })?;

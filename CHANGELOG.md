@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.0] - 2026-09-05
+
+### Changed
+- **One name per concept: `-i/--input` and `-o/--output`** - Every command that reads a local file, directory or glob now takes `--input`: `asset create` (was `--file`), `asset create-batch` (was `--files`), `asset metadata create-batch` (was `--csv-file`), `folder upload` (was `--local-path`), `config import` (was `--file`). Every command that writes takes `-o/--output`: `asset download` (was a bare positional argument), `asset thumbnail` (was `--file`), `folder download` and `folder thumbnails` (gained the `-o` short form). **The old spellings still work** as hidden aliases, and `asset download` still accepts the positional path, so no script breaks; only the help text and documentation changed.
+- **`-q` is now `--quiet`, and `--force` has no short form** - `-f` meant `--format` on about forty commands but `--force` on `folder delete`; `-q` was `--text` on `text-match` while `--quiet` had no short form. `folder delete -f` and `text-match -q` no longer parse; use `--force` and `--text`. These are the only two breaking changes in this release.
+- **A flag that can change nothing now says so** - `--pretty` with CSV, `--headers` with JSON or tree, `--metadata` on `asset similarity`, and format flags on `tenant use` used to be accepted in silence. They still are, but with a warning naming the flag and why it has no effect.
+
 ## [1.26.0] - 2026-09-05
 
 ### Added

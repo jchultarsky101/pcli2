@@ -41,6 +41,11 @@ pub async fn asset_similarity(sub_matches: &ArgMatches) -> Result<(), CliError> 
 
     // Use FormatParams for consistent format parameter handling
     let format = crate::format_utils::FormatParams::from_args(sub_matches).format;
+    crate::format_utils::warn_if_given(
+        sub_matches,
+        crate::commands::params::PARAMETER_METADATA,
+        "similarity output has no metadata columns",
+    );
 
     // Extract tenant info before calling resolve_asset to avoid borrowing conflicts
     let tenant_uuid = *ctx.tenant_uuid();

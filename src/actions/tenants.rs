@@ -113,6 +113,7 @@ pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionE
 
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
 
     // Create format options with metadata set to false since tenants don't have metadata
     let format_options = crate::format::OutputFormatOptions {
@@ -172,6 +173,24 @@ pub async fn print_active_tenant_name() -> Result<(), CliActionError> {
 }
 
 pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
+    // This command prints nothing structured, so the format flags it accepts
+    // for uniformity change nothing.
+    for (flag, why) in [
+        (
+            crate::commands::params::PARAMETER_FORMAT,
+            "tenant use prints no data",
+        ),
+        (
+            crate::commands::params::PARAMETER_PRETTY,
+            "tenant use prints no data",
+        ),
+        (
+            crate::commands::params::PARAMETER_HEADERS,
+            "tenant use prints no data",
+        ),
+    ] {
+        crate::format_utils::warn_if_given(sub_matches, flag, why);
+    }
     let name = sub_matches.get_one::<String>(PARAMETER_NAME);
     let refresh = sub_matches.get_flag(PARAMETER_REFRESH);
     let mut api = PhysnaApiClient::try_default()?;
@@ -312,6 +331,7 @@ pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActio
 
             let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
             let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+            crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
 
             // Create format options (no metadata for tenants)
             let format_options = crate::format::OutputFormatOptions {
@@ -364,6 +384,7 @@ pub async fn print_active_tenant_name_with_format(
 
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    crate::format_utils::warn_about_noop_format_flags(sub_matches, format_str);
     // Note: context commands don't have metadata flag for tenant
     let format_options = crate::format::OutputFormatOptions {
         with_metadata: false, // No metadata for context tenant
@@ -461,6 +482,7 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
 
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
 
     // Create format options with metadata set to false since tenant state counts don't have metadata
     let format_options = crate::format::OutputFormatOptions {
@@ -566,6 +588,7 @@ pub async fn list_tenant_metadata_fields(
         .unwrap_or_else(|| "json".to_string());
     let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
 
     let format_options = crate::format::OutputFormatOptions {
         with_metadata: false,

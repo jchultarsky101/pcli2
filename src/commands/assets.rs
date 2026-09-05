@@ -6,10 +6,10 @@
 use crate::commands::metadata::metadata_command;
 use crate::commands::params::{
     asset_identifier_group, asset_identifier_multiple_group, candidate_identifier_group,
-    candidate_path_parameter, candidate_uuid_parameter, dry_run_parameter, file_parameter,
-    folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
-    format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
-    limit_parameter, multiple_files_parameter, override_parameter, path_parameter,
+    candidate_path_parameter, candidate_uuid_parameter, dry_run_parameter, folder_identifier_group,
+    folder_path_parameter, folder_uuid_parameter, format_parameter, format_pretty_parameter,
+    format_with_headers_parameter, format_with_metadata_parameter, input_parameter,
+    limit_parameter, output_file_parameter, override_parameter, path_parameter,
     reference_identifier_group, reference_path_parameter, reference_uuid_parameter,
     restore_metadata_parameter, tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_COUNTS,
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES,
@@ -43,7 +43,7 @@ pub fn asset_command() -> Command {
                 .visible_alias("upload")
                 .about("Create a new asset by uploading a file")
                 .arg(tenant_parameter())
-                .arg(file_parameter())
+                .arg(input_parameter("File to upload").alias("file"))
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
@@ -60,7 +60,12 @@ pub fn asset_command() -> Command {
                 .about("Create multiple assets by uploading files matching a glob pattern")
                 .visible_alias("upload-batch")
                 .arg(tenant_parameter())
-                .arg(multiple_files_parameter())
+                .arg(
+                    input_parameter("Glob pattern or comma-separated list of files to upload (e.g. \"data/*.stl\" or \"a.stl,b.stl\")")
+                        .required(true)
+                        .value_parser(clap::value_parser!(String))
+                        .alias("files"),
+                )
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
                 .group(folder_identifier_group())
@@ -169,10 +174,16 @@ pub fn asset_command() -> Command {
                 .arg(uuid_parameter())
                 .arg(path_parameter())
                 .arg(
+                    output_file_parameter()
+                        .help("Output file path (default: asset filename in current directory)")
+                        .conflicts_with(PARAMETER_FILE),
+                )
+                // The output used to be a bare positional argument; still accepted, unadvertised.
+                .arg(
                     Arg::new(PARAMETER_FILE)
                         .num_args(1)
                         .required(false)
-                        .help("Output file path (default: asset filename in current directory)")
+                        .hide(true)
                         .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
                 .group(asset_identifier_group()),
@@ -233,7 +244,6 @@ pub fn asset_command() -> Command {
             .arg(tenant_parameter())
             .arg(
                 Arg::new("text")
-                    .short('q')  // Changed from 't' to 'q' to avoid conflict with tenant parameter
                     .long("text")
                     .num_args(1)
                     .required(true)
@@ -305,12 +315,9 @@ pub fn asset_command() -> Command {
             .arg(uuid_parameter())
             .arg(path_parameter())
             .arg(
-                clap::Arg::new(PARAMETER_FILE)
-                    .long(PARAMETER_FILE)
-                    .num_args(1)
-                    .required(false)
+                output_file_parameter()
                     .help("Output file path (default: asset name with .png extension in current directory)")
-                    .value_parser(clap::value_parser!(std::path::PathBuf)),
+                    .alias("file"),
             )
             .group(asset_identifier_group()),
     )

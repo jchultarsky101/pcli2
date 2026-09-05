@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.0] - 2026-09-05
+
+### Added
+- **Contract tests against Physna's OpenAPI specification** - A snapshot of the spec now lives in `tests/fixtures/physna-openapi.json`. For each of the 22 endpoints the client reads, a response body is generated from the spec's schema (once with only the required properties, once with all of them) and must deserialize into the model type the client uses, so a field Physna renames, drops or retypes fails in CI instead of as a deserialization error in a user's terminal. The asset states, metadata field types, dependency statuses and tenant roles the code hard-codes are compared with the spec's enumerations, the page sizes the client sends are checked against the spec's maximums, and every URL the client builds must exist. A weekly `spec-drift` workflow fetches the live spec and fails when any endpoint or schema the client depends on has changed, with the diff in the log and instructions for refreshing the snapshot.
+
+### Fixed
+- **Two things the contract tests found on their first run** - A tenant without a display or short name (both optional in the spec) failed the whole tenant listing; both now default to empty. An asset listing without `pageData` (optional in the spec, absent in cursor mode) was rejected; it now reads as a single page.
+
 ## [1.28.0] - 2026-09-05
 
 ### Added

@@ -713,10 +713,12 @@ pub struct TenantSetting {
     #[serde(rename = "userEnabled")]
     pub user_enabled: bool,
     /// The display name of the tenant
-    #[serde(rename = "tenantDisplayName")]
+    // Optional in the specification (the contract test found this): a tenant
+    // without them used to fail the whole tenant listing.
+    #[serde(rename = "tenantDisplayName", default)]
     pub tenant_display_name: String,
     /// The short name of the tenant
-    #[serde(rename = "tenantShortName")]
+    #[serde(rename = "tenantShortName", default)]
     pub tenant_short_name: String,
 }
 
@@ -877,7 +879,9 @@ pub struct AssetListResponse {
     #[serde(alias = "contents")]
     pub assets: Vec<AssetResponse>,
     /// Pagination data
-    #[serde(rename = "pageData")]
+    /// Optional in the specification for the asset listing (cursor mode has
+    /// none); a missing one reads as a single page.
+    #[serde(rename = "pageData", default)]
     pub page_data: PageData,
 }
 
@@ -966,6 +970,21 @@ pub struct PageData {
     /// End index of items on this page
     #[serde(rename = "endIndex", default)]
     pub end_index: usize,
+}
+
+impl Default for PageData {
+    /// "Everything is on this one page": what a response without page data
+    /// means to a pagination loop.
+    fn default() -> Self {
+        PageData {
+            total: 0,
+            per_page: 0,
+            current_page: 1,
+            last_page: 1,
+            start_index: 0,
+            end_index: 0,
+        }
+    }
 }
 
 // Asset models for Physna V3 API

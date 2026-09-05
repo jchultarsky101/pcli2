@@ -64,6 +64,92 @@ pub fn print_output(text: &str) {
     }
 }
 
+static SAFE_CSV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Switch on formula guarding for every CSV cell this process writes.
+pub fn set_safe_csv(safe: bool) {
+    SAFE_CSV.store(safe, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Whether `--safe-csv` (or `PCLI2_SAFE_CSV`) is in effect.
+pub fn safe_csv() -> bool {
+    SAFE_CSV.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Whether a cell would be read as a formula by a spreadsheet opening the CSV.
+///
+/// The trigger characters are the ones Excel, LibreOffice and Google Sheets
+/// evaluate at the start of a cell. A value that parses as a number is not a
+/// formula, so `-5` and `+3.2` are left alone: prefixing them would turn every
+/// negative measurement into text.
+pub fn looks_like_formula(cell: &str) -> bool {
+    let Some(first) = cell.chars().next() else {
+        return false;
+    };
+    matches!(first, '=' | '+' | '-' | '@' | '\t' | '\r') && cell.trim().parse::<f64>().is_err()
+}
+
+/// The cell as it should be written: unchanged unless `--safe-csv` is on and
+/// it looks like a formula, in which case it gets a leading single quote,
+/// which spreadsheets treat as "this is text".
+pub fn guard_csv_cell(cell: &str) -> std::borrow::Cow<'_, str> {
+    if safe_csv() && looks_like_formula(cell) {
+        std::borrow::Cow::Owned(format!("'{}", cell))
+    } else {
+        std::borrow::Cow::Borrowed(cell)
+    }
+}
+
+/// A row with every cell guarded, or the row itself when nothing needs guarding.
+pub fn guard_csv_row(row: &[String]) -> std::borrow::Cow<'_, [String]> {
+    if safe_csv() && row.iter().any(|cell| looks_like_formula(cell)) {
+        std::borrow::Cow::Owned(
+            row.iter()
+                .map(|cell| guard_csv_cell(cell).into_owned())
+                .collect(),
+        )
+    } else {
+        std::borrow::Cow::Borrowed(row)
+    }
+}
+
+/// Rewrite finished CSV text with every cell guarded. Used by the one place
+/// all buffered CSV output passes through, so no formatter has to know.
+fn guard_csv_text(text: &str) -> String {
+    if !text
+        .chars()
+        .any(|c| matches!(c, '=' | '+' | '-' | '@' | '\t' | '\r'))
+    {
+        return text.to_string();
+    }
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(text.as_bytes());
+    let mut writer = csv::WriterBuilder::new()
+        .flexible(true)
+        .from_writer(Vec::new());
+    for record in reader.records() {
+        let Ok(record) = record else {
+            // Not something we produced; leave it as it is rather than guess.
+            return text.to_string();
+        };
+        let guarded: Vec<String> = record
+            .iter()
+            .map(|cell| guard_csv_cell(cell).into_owned())
+            .collect();
+        if writer.write_record(&guarded).is_err() {
+            return text.to_string();
+        }
+    }
+    match writer.into_inner() {
+        Ok(bytes) => String::from_utf8(bytes)
+            .map(|t| t.trim_end_matches(['\r', '\n']).to_string())
+            .unwrap_or_else(|_| text.to_string()),
+        Err(_) => text.to_string(),
+    }
+}
+
 /// The bytes a CSV writer produced, as text, without the trailing line break.
 ///
 /// The writer terminates its last record with a newline and every command prints
@@ -71,7 +157,70 @@ pub fn print_output(text: &str) {
 /// | wc -l` reported 117 lines for 116 assets, and a CSV opened in a spreadsheet
 /// gained an empty last row.
 pub fn csv_text(data: Vec<u8>) -> Result<String, std::string::FromUtf8Error> {
-    String::from_utf8(data).map(|text| text.trim_end_matches(['\r', '\n']).to_string())
+    String::from_utf8(data).map(|text| {
+        let text = text.trim_end_matches(['\r', '\n']);
+        if safe_csv() {
+            guard_csv_text(text)
+        } else {
+            text.to_string()
+        }
+    })
+}
+
+#[cfg(test)]
+mod safe_csv_tests {
+    use super::*;
+
+    #[test]
+    fn formula_detection_spares_numbers() {
+        for formula in [
+            "=SUM(A1)",
+            "+cmd|' /C calc'!A0",
+            "-2+3",
+            "@SUM(1)",
+            "\tx",
+            "-",
+            "+",
+        ] {
+            assert!(looks_like_formula(formula), "{formula:?}");
+        }
+        for plain in [
+            "",
+            "bracket.stl",
+            "-5",
+            "+3.25",
+            "-1e3",
+            " -7 ",
+            "5-3",
+            "a=b",
+        ] {
+            assert!(!looks_like_formula(plain), "{plain:?}");
+        }
+    }
+
+    #[test]
+    fn guarding_rewrites_only_formula_cells_and_keeps_quoting_valid() {
+        let input = "NAME,PATH\n=SUM(A1),\"/a, b\"\n-5,plain\n";
+        // Off: untouched apart from the trailing line break.
+        set_safe_csv(false);
+        assert_eq!(
+            csv_text(input.as_bytes().to_vec()).unwrap(),
+            input.trim_end()
+        );
+        // On: the formula cell is prefixed; the number and the quoted cell are not.
+        set_safe_csv(true);
+        let out = csv_text(input.as_bytes().to_vec()).unwrap();
+        let row = guard_csv_row(&["=1+1".to_string(), "-5".to_string()]).into_owned();
+        set_safe_csv(false);
+        assert_eq!(out, "NAME,PATH\n'=SUM(A1),\"/a, b\"\n-5,plain");
+        assert_eq!(row, vec!["'=1+1", "-5"]);
+        assert!(!out.ends_with('\n'));
+        // Off again: the streaming guard is a no-op.
+        assert_eq!(
+            guard_csv_row(&["=1+1".to_string()]).as_ref(),
+            &["=1+1".to_string()]
+        );
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]

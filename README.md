@@ -672,7 +672,8 @@ credentials) and 68 when the API or auth server cannot be reached.
 | `PCLI2_LOG_LEVEL` | Log level (`error`, `warn`, `info`, `debug`, `trace`); `RUST_LOG` takes precedence when set |
 | `PCLI2_TIMEOUT` | Total request timeout in seconds (default 1800; connections time out after 15 s and a silent read after 300 s regardless) |
 | `PCLI2_MAX_RETRIES` | Retries for transient failures (default 2; `0` disables) |
-| `PCLI2_NO_COLOR`, `NO_COLOR` | Disable colored output |
+| `PCLI2_NO_COLOR`, `NO_COLOR` | Disable colored output. `PCLI2_NO_COLOR` set to empty, `0`, `false`, `no` or `off` keeps colour on; `NO_COLOR` disables when set to anything non-empty, per no-color.org |
+| `PCLI2_SAFE_CSV` | Guard CSV output against spreadsheet formula injection (same as `--safe-csv`) |
 | `PCLI2_NO_INPUT` | Never prompt; a command that would need an answer exits 64 instead (same as `--no-input`) |
 | `PCLI2_ERROR_FORMAT` | `text` (default) or `json`: errors on stderr as one JSON object per line (same as `--error-format`) |
 | `PCLI2_NO_UPDATE_CHECK`, `CI` | Disable the new-version hint |

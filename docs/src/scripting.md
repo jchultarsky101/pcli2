@@ -36,6 +36,23 @@ The same rules apply to diagnostics on stderr: warnings and `--verbose`
 logs captured with `2> warnings.log` are plain text with no ANSI escape
 codes, so they can be grepped and parsed directly.
 
+### Safe CSV for Spreadsheets
+
+A CSV cell that starts with `=`, `+`, `-` or `@` is evaluated as a formula by
+Excel, LibreOffice and Google Sheets when the file is opened, and asset names
+and metadata values come from whoever uploaded them. With `--safe-csv` (or
+`PCLI2_SAFE_CSV=1`) such cells are written with a leading single quote, which
+spreadsheets show as plain text. Values that are numbers, such as `-5`, are
+left alone. The default is off because the quote is visible to every other
+consumer of the file.
+
+```bash
+pcli2 asset list --folder-path "/Home/Parts" --format csv --headers --safe-csv > parts.csv
+```
+
+Excel workbooks written with `--format xls` are not affected: their cells are
+stored as strings and are never evaluated.
+
 ### Machine-Readable Errors
 
 With `--error-format json` (or `PCLI2_ERROR_FORMAT=json`) everything pcli2

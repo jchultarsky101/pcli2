@@ -223,9 +223,43 @@ pub fn output_file_parameter() -> Arg {
         .value_parser(clap::value_parser!(PathBuf))
 }
 
+/// Prefix of the argument id for a flag that no longer exists.
+///
+/// The id carries the old spelling and its replacement:
+/// `removed:--files=>--input`. `removed_argument_used` reads it back so the
+/// rejection can say what to type instead.
+pub const REMOVED_PREFIX: &str = "removed:";
+
+/// A long flag that was removed, still recognised so the failure names its
+/// replacement instead of being "unexpected argument".
+pub fn removed_parameter(old_long: &'static str, replacement: &'static str) -> Arg {
+    Arg::new(removed_id(old_long, replacement))
+        .long(old_long)
+        .num_args(0..=1)
+        .default_missing_value("")
+        .hide(true)
+        .value_parser(clap::value_parser!(String))
+}
+
+/// The argument id `removed_parameter` uses.
+pub fn removed_id(old_long: &str, replacement: &str) -> String {
+    format!("{}--{}=>{}", REMOVED_PREFIX, old_long, replacement)
+}
+
+/// A positional argument that was removed, still recognised so the failure
+/// names its replacement.
+pub fn removed_positional(what: &'static str, replacement: &'static str) -> Arg {
+    Arg::new(format!("{}{}=>{}", REMOVED_PREFIX, what, replacement))
+        .num_args(1)
+        .required(false)
+        .hide(true)
+        .value_parser(clap::value_parser!(String))
+}
+
 /// `-i/--input PATH`: what a command reads. Every command that takes a local
-/// file, directory or glob uses this; `--file`, `--files`, `--csv-file` and
-/// `--local-path` survive as hidden aliases so existing scripts keep working.
+/// file, directory or glob uses this. The old spellings (`--file`, `--files`,
+/// `--csv-file`, `--local-path`) were aliases in 1.27 to 1.29 and are
+/// rejected with a pointer here since 2.0.
 pub fn input_parameter(help: &'static str) -> Arg {
     Arg::new(PARAMETER_INPUT)
         .short('i')

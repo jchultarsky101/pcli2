@@ -27,6 +27,9 @@ pub enum CliError {
     /// (`--no-input`, or stdin/stderr is not a terminal).
     #[error("{0}")]
     InputRequired(String),
+    /// A flag or positional argument that no longer exists was given.
+    #[error("{0}")]
+    RemovedArgument(String),
     /// Error related to JSON serialization/deserialization
     #[error("JSON serialization error: {0}")]
     JsonError(#[from] serde_json::Error),
@@ -79,7 +82,8 @@ impl CliError {
         match self {
             CliError::UnsupportedSubcommand(_)
             | CliError::MissingRequiredArgument(_)
-            | CliError::InputRequired(_) => PcliExitCode::UsageError,
+            | CliError::InputRequired(_)
+            | CliError::RemovedArgument(_) => PcliExitCode::UsageError,
             CliError::ConfigurationError(
                 crate::configuration::ConfigurationError::EnvironmentNotFound(_),
             ) => PcliExitCode::NotFound,

@@ -7,8 +7,8 @@ use crate::actions::CliActionError;
 use crate::{
     actions::folders::resolve_folder_uuid_by_path,
     commands::params::{
-        PARAMETER_FILE, PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_OUTPUT,
-        PARAMETER_PATH, PARAMETER_UUID,
+        PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_OUTPUT, PARAMETER_PATH,
+        PARAMETER_UUID,
     },
     configuration::Configuration,
     error::CliError,
@@ -476,17 +476,7 @@ fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError
     Ok(())
 }
 
-/// The output path the user asked for: `-o/--output`, or on `asset download`
-/// the bare positional argument it used to be.
+/// The output path the user asked for with `-o/--output`.
 fn requested_output(sub_matches: &clap::ArgMatches) -> Option<PathBuf> {
-    sub_matches
-        .get_one::<PathBuf>(PARAMETER_OUTPUT)
-        .cloned()
-        .or_else(|| {
-            sub_matches
-                .try_get_one::<PathBuf>(PARAMETER_FILE)
-                .ok()
-                .flatten()
-                .cloned()
-        })
+    sub_matches.get_one::<PathBuf>(PARAMETER_OUTPUT).cloned()
 }

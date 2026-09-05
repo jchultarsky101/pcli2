@@ -552,6 +552,9 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
                 CliActionError::BusinessLogicError(e.to_string())
             }
             crate::error::CliError::InputRequired(msg) => CliActionError::InputRequired(msg),
+            crate::error::CliError::RemovedArgument(msg) => {
+                CliActionError::MissingRequiredArgument(msg)
+            }
         })?;
 
     if let Some(state) = state_type {

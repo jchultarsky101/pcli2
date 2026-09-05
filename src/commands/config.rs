@@ -39,6 +39,9 @@ pub fn config_command() -> Command {
         .subcommand(
             Command::new(COMMAND_IMPORT)
                 .about("Import configuration from file")
-                .arg(input_parameter("Configuration file to import").alias("file")),
+                .arg(input_parameter("Configuration file to import"))
+                .arg(crate::commands::params::removed_parameter(
+                    "file", "--input",
+                )),
         )
 }

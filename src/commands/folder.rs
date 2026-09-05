@@ -342,9 +342,12 @@ pub fn folder_command() -> Command {
                 .group(folder_identifier_group())
                 .arg(
                     crate::commands::params::input_parameter("Local directory containing the files to upload")
-                        .required(true)
-                        .alias(crate::commands::params::PARAMETER_LOCAL_PATH),
+                        .required(true),
                 )
+                .arg(crate::commands::params::removed_parameter(
+                    crate::commands::params::PARAMETER_LOCAL_PATH,
+                    "--input",
+                ))
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_SKIP_EXISTING)
                         .long(crate::commands::params::PARAMETER_SKIP_EXISTING)

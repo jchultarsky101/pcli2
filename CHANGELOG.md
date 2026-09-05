@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-05
+
+### Removed
+- **The old spellings of the input and output flags** - `--file` (on `asset create` and `config import`), `--files`, `--csv-file`, `--local-path`, `--file` on `asset thumbnail`, and the bare positional output path on `asset download` were kept as hidden aliases by 1.27. They are gone. Each is still recognised so a script that uses one stops with exit 64 and a message naming the replacement (`--input`, or `-o/--output`), rather than clap's "unexpected argument". The README has the full mapping under "Upgrading to 2.0". This is the only change since 1.29.0, and the reason for the major version.
+
 ## [1.29.0] - 2026-09-05
 
 ### Added

@@ -153,9 +153,9 @@ pub fn metadata_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(
                     crate::commands::params::input_parameter("CSV file with the metadata entries")
-                        .required(true)
-                        .alias("csv-file"),
+                        .required(true),
                 )
+                .arg(crate::commands::params::removed_parameter("csv-file", "--input"))
                 .arg(
                     Arg::new("csv-format")
                         .long("csv-format")

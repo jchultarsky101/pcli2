@@ -142,6 +142,70 @@ pub fn should_hint_after_parse_error(error: &clap::Error) -> bool {
     )
 }
 
+/// The message for the first removed argument found on the command line, if any.
+///
+/// Walks the subcommand chain. Ids are only present in a match set when the
+/// argument was given, and every removed argument is hidden, so a hit means the
+/// user typed it.
+pub fn removed_argument_used(matches: &clap::ArgMatches) -> Option<String> {
+    for id in matches.ids() {
+        if let Some(rest) = id.as_str().strip_prefix(params::REMOVED_PREFIX) {
+            if matches.value_source(id.as_str()) != Some(clap::parser::ValueSource::CommandLine) {
+                continue;
+            }
+            let (old, replacement) = rest
+                .split_once("=>")
+                .unwrap_or((rest, "the documented flag"));
+            return Some(removed_message(old, replacement));
+        }
+    }
+    matches
+        .subcommand()
+        .and_then(|(_, sub)| removed_argument_used(sub))
+}
+
+/// The message for a removed flag found on the raw command line, if any.
+///
+/// Used when clap has already rejected the command line: a required `--input`
+/// that was spelled `--files` is reported by clap as "missing --input", which
+/// is true but unhelpful. This follows the subcommand names in `args` to the
+/// command being run and checks its removed flags against the raw tokens.
+pub fn removed_argument_in_argv(args: &[String]) -> Option<String> {
+    let root = create_full_command();
+    let mut current = &root;
+    for token in args.iter().skip(1) {
+        if let Some(sub) = current.find_subcommand(token) {
+            current = sub;
+        }
+    }
+    for arg in current.get_arguments() {
+        let Some(rest) = arg.get_id().as_str().strip_prefix(params::REMOVED_PREFIX) else {
+            continue;
+        };
+        let Some(long) = arg.get_long() else {
+            continue;
+        };
+        let flag = format!("--{}", long);
+        let typed = args
+            .iter()
+            .any(|t| t == &flag || t.starts_with(&format!("{}=", flag)));
+        if typed {
+            let (old, replacement) = rest
+                .split_once("=>")
+                .unwrap_or((rest, "the documented flag"));
+            return Some(removed_message(old, replacement));
+        }
+    }
+    None
+}
+
+fn removed_message(old: &str, replacement: &str) -> String {
+    format!(
+        "{} was removed in pcli2 2.0.0; use {} instead (see the CHANGELOG for the full list of renamed flags)",
+        old, replacement
+    )
+}
+
 /// Create the full CLI command structure without parsing arguments.
 ///
 /// This function creates the complete command structure for use with completion generation.

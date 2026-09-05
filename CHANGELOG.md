@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`pcli2 doctor`** - One screen with everything support would otherwise ask for: which binary is running and whether others are on the PATH, whether the configuration loads, the active environment and its URLs, where credentials are stored (with the file's permissions), whether a usable token exists and when it expires, the active tenant, cache ages, whether the API and the auth server answer and how fast, and whether a newer release exists. `--format json` for scripts. Exits 78 for a local problem, 68 when a server is unreachable, 0 otherwise.
+- **`--stats`** on every command prints one line on stderr at exit with the number of API requests, retries and token renewals and the elapsed time, so a run that hammers the server is visible to the person running it. The same line always goes to the debug log.
+
 ## [1.23.3] - 2026-09-04
 
 ### Documentation

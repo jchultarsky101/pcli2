@@ -621,6 +621,22 @@ case $? in
 esac
 ```
 
+### Diagnostics
+
+```bash
+# One screen with everything support would ask for: binary and PATH, config file,
+# environment, credentials backend, token expiry, active tenant, cache ages,
+# API and auth-server reachability, and whether a newer release exists.
+pcli2 doctor
+pcli2 doctor --format json
+
+# What a run cost the server: API requests, retries, token renewals, elapsed time
+pcli2 --stats folder geometric-match --folder-path "/Home/Parts" --format csv > report.csv
+```
+
+`doctor` exits 0 when everything passes, 78 for a local problem (configuration,
+credentials) and 68 when the API or auth server cannot be reached.
+
 ### Environment Variables
 
 | Variable | Effect |

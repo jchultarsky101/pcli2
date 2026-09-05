@@ -113,6 +113,19 @@ pub enum ApiError {
     },
 }
 
+impl PhysnaApiClient {
+    /// The API base URL this client talks to.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// `try_default` for diagnostics: the same client, but an error is returned as
+    /// a plain `ApiError` rather than reported.
+    pub fn try_default_quiet() -> Result<Self, ApiError> {
+        <Self as TryDefault>::try_default()
+    }
+}
+
 impl ApiError {
     /// The HTTP status behind this error, when there is one.
     pub fn http_status(&self) -> Option<u16> {
@@ -764,6 +777,7 @@ impl PhysnaApiClient {
                     debug!("Successfully obtained new access token automatically");
                     // Update the stored access token
                     self.store_token(new_token.clone());
+                    crate::stats::record_renewal();
 
                     // Save the new token to the keyring immediately to ensure subsequent commands use the fresh token
                     if let Err(e) = self.save_current_token_to_keyring(&self.environment_name) {
@@ -835,7 +849,7 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(i64)` - The expiration timestamp (Unix epoch seconds)
     /// * `Err(ApiError)` - If the token cannot be decoded
-    fn decode_token_expiration(token: &str) -> Result<i64, ApiError> {
+    pub fn decode_token_expiration(token: &str) -> Result<i64, ApiError> {
         use base64::Engine;
 
         // Split the JWT into its three parts: header.payload.signature

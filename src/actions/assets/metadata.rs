@@ -61,6 +61,7 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
 
     let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
     let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
+    crate::format_utils::warn_about_noop_format_flags(sub_matches, format_str);
 
     let format_options = crate::format::OutputFormatOptions {
         with_metadata: false,

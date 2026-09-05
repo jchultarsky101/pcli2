@@ -54,7 +54,7 @@ Create or update metadata for multiple assets from a CSV file:
 
 ```bash
 # Create or update metadata for multiple assets from a CSV file
-pcli2 asset metadata create-batch --csv-file "metadata.csv"
+pcli2 asset metadata create-batch --input "metadata.csv"
 ```
 
 ## CSV Formats for Batch Metadata Operations
@@ -65,7 +65,7 @@ In both layouts, **empty values are skipped by default**: the existing metadata 
 
 ### Classic (Vertical) Format
 
-The classic CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --csv-file` is designed for seamless round-trip operations:
+The classic CSV format used by `asset metadata get --format csv` and `asset metadata create-batch --input` is designed for seamless round-trip operations:
 
 ```csv
 ASSET_PATH,NAME,VALUE,TYPE
@@ -91,7 +91,7 @@ The CSV format specifications:
 **Example Command:**
 ```bash
 # Create/update metadata for multiple assets from a CSV file
-pcli2 asset metadata create-batch --csv-file "metadata.csv"
+pcli2 asset metadata create-batch --input "metadata.csv"
 ```
 
 **Deleting metadata fields via CSV:**
@@ -105,7 +105,7 @@ ASSET_PATH,NAME,VALUE
 ```
 
 ```bash
-pcli2 asset metadata create-batch --csv-file "metadata.csv" --delete-if-empty
+pcli2 asset metadata create-batch --input "metadata.csv" --delete-if-empty
 ```
 
 In the example above, `ObsoleteField` is deleted and `Material` is set to `Steel` in a single pass. Without `--delete-if-empty`, the `ObsoleteField` row would be skipped with a warning and only `Material` would be updated.
@@ -135,10 +135,10 @@ The whole file is parsed and validated before any API call is made, so a malform
 
 ```bash
 # Auto-detected from the header row
-pcli2 asset metadata create-batch --csv-file "ui-export.csv"
+pcli2 asset metadata create-batch --input "ui-export.csv"
 
 # Or forced explicitly
-pcli2 asset metadata create-batch --csv-file "ui-export.csv" --csv-format ui
+pcli2 asset metadata create-batch --input "ui-export.csv" --csv-format ui
 ```
 
 ## Listing a Tenant's Registered Metadata Fields
@@ -200,10 +200,10 @@ One of the most powerful features of PCLI2 is the ability to export metadata, mo
 3. **Reimport Modified Metadata**:
    ```bash
    # Update assets with modified metadata (blank values are skipped)
-   pcli2 asset metadata create-batch --csv-file "modified_metadata.csv"
+   pcli2 asset metadata create-batch --input "modified_metadata.csv"
 
    # Or replace metadata wholesale: blank values delete the field from the asset
-   pcli2 asset metadata create-batch --csv-file "modified_metadata.csv" --delete-if-empty
+   pcli2 asset metadata create-batch --input "modified_metadata.csv" --delete-if-empty
    ```
 
 This workflow enables powerful bulk metadata operations while maintaining the flexibility to use familiar spreadsheet tools for data manipulation.
@@ -284,7 +284,7 @@ With `--continue-on-error`, skipped assets are reported with a concise warning a
 **Example — skip both unresolvable paths and conflicting values:**
 
 ```bash
-pcli2 asset metadata create-batch --csv-file "metadata.csv" --continue-on-error
+pcli2 asset metadata create-batch --input "metadata.csv" --continue-on-error
 ```
 
 On completion (or termination), a summary is printed to stderr showing the number of successful and failed assets.
@@ -297,7 +297,7 @@ For bulk metadata operations:
 
 ```bash
 # Process during off-peak hours
-pcli2 asset metadata create-batch --csv-file "large_metadata.csv"
+pcli2 asset metadata create-batch --input "large_metadata.csv"
 ```
 
 ### Monitoring Progress
@@ -306,7 +306,7 @@ Monitor progress during long-running operations:
 
 ```bash
 # Show progress during batch operations
-pcli2 asset metadata create-batch --csv-file "metadata.csv" --progress
+pcli2 asset metadata create-batch --input "metadata.csv" --progress
 ```
 
 ## Integration with Other Commands
@@ -316,7 +316,7 @@ Metadata operations work seamlessly with other PCLI2 commands:
 ```bash
 # Chain with asset operations
 pcli2 asset list --folder-path "/Home/Parts/" --format csv | \
-pcli2 asset metadata create-batch --csv-file "metadata_updates.csv"
+pcli2 asset metadata create-batch --input "metadata_updates.csv"
 
 # Export results for auditing
 pcli2 asset metadata get --path "/Home/Parts/Model.stl" --format csv > metadata_export.csv

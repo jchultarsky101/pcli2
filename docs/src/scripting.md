@@ -101,7 +101,7 @@ server. Supported by `asset delete`, `folder delete`, `asset create`,
 
 ```bash
 # List exactly which files a batch upload would send, and where
-pcli2 asset create-batch --files "build/*.stl" --folder-path "/Home/CI Builds/" --dry-run
+pcli2 asset create-batch --input "build/*.stl" --folder-path "/Home/CI Builds/" --dry-run
 
 # Confirm what a forced folder delete would remove
 pcli2 folder delete --folder-path "/Home/Old Projects/" --force --dry-run
@@ -149,7 +149,7 @@ precedence over the `PCLI2_LOG_LEVEL` and `RUST_LOG` environment
 variables:
 
 ```bash
-pcli2 --quiet asset create-batch --files "build/*.stl" --folder-path "/Home/CI Builds/"
+pcli2 --quiet asset create-batch --input "build/*.stl" --folder-path "/Home/CI Builds/"
 PCLI2_LOG_LEVEL=trace pcli2 folder list
 ```
 
@@ -186,7 +186,7 @@ work:
 pcli2 folder download --folder-path "/Home/Parts" --output ./parts --resume
 
 # Uploads skip files whose name is already in the folder
-pcli2 asset create-batch --files "parts/*.stl" --folder-path "/Home/Parts" --skip-existing
+pcli2 asset create-batch --input "parts/*.stl" --folder-path "/Home/Parts" --skip-existing
 
 # Folder matches record each completed search; the same command continues the run
 pcli2 folder geometric-match --folder-path "/Home/Parts" --recursive \
@@ -204,7 +204,7 @@ and the elapsed time. It is the quickest way to see whether a batch is doing
 more work than it should:
 
 ```bash
-pcli2 --stats asset metadata create-batch --csv-file metadata.csv
+pcli2 --stats asset metadata create-batch --input metadata.csv
 # 📊 5,102 API request(s), 2 retried, 1 token renewal(s) in 3m41s
 ```
 
@@ -244,6 +244,6 @@ jobs:
       - name: Upload models
         run: |
           pcli2 tenant use --name my-tenant
-          pcli2 asset create-batch --files "build/*.stl" \
+          pcli2 asset create-batch --input "build/*.stl" \
             --folder-path "/Home/CI Builds/" --quiet --format json
 ```

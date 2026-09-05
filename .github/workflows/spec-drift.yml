@@ -1,0 +1,22 @@
+name: Spec drift
+
+# Fetches Physna's current OpenAPI specification and compares the endpoints
+# and schemas the client depends on with the snapshot in
+# tests/fixtures/physna-openapi.json. A failure means the API changed under
+# us: review the diff in the job log, refresh the snapshot, and re-run the
+# contract tests to see whether the model still fits.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Compare the live specification with the snapshot
+        run: cargo test --test openapi_contract_test -- --ignored --nocapture

@@ -111,12 +111,18 @@ cargo build --release
 #### 🍺 Homebrew (macOS/Linux)
 
 ```bash
-# Add the PCLI2 tap
-brew tap jchultarsky101/pcli2
+# Homebrew 6 refuses formulae from taps it has not been told to trust.
+# Run this once per machine and user account:
+brew trust jchultarsky101/pcli2
 
 # Install PCLI2
-brew install pcli2
+brew install jchultarsky101/pcli2/pcli2
 ```
+
+Without the trust step, `brew install` and every later `brew upgrade pcli2`
+refuse with "Refusing to load formula ... from untrusted tap". Homebrew 5 does
+not have the check, but the first `brew upgrade` after updating Homebrew will.
+In CI, set `HOMEBREW_NO_REQUIRE_TAP_TRUST=1` instead.
 
 #### 🐳 Docker
 

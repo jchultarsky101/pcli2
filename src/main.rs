@@ -110,6 +110,7 @@ async fn main() {
     // concludes the feature is broken, and has no reason to suspect their own install.
     // Started first so the (cached, usually instant) lookup overlaps with the
     // command instead of being awaited on the way out.
+    pcli2::stats::start();
     let update_check = pcli2::update_check::start_update_check();
 
     let matches = match pcli2::commands::try_create_cli_commands() {
@@ -143,11 +144,13 @@ async fn main() {
     // Commands whose stdout is consumed by other tools (shell init,
     // man page generation) must not trigger the update hint
     let machine_output_command = matches!(matches.subcommand_name(), Some("completions" | "man"));
+    let want_stats = matches.get_flag("stats");
 
     // Execute the CLI command
     match execute_command(matches).await {
         Ok(()) => {
             // Check for a newer release (cached, terminal sessions only)
+            pcli2::stats::report(want_stats);
             if !machine_output_command {
                 pcli2::update_check::finish_update_check(update_check).await;
             }
@@ -166,6 +169,7 @@ async fn main() {
             // reason to suspect their own install. That is not hypothetical - it cost a
             // user a support round trip and cost us a release chasing a bug they never
             // had.
+            pcli2::stats::report(want_stats);
             if !machine_output_command {
                 pcli2::update_check::finish_update_check(update_check).await;
             }

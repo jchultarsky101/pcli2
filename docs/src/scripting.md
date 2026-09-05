@@ -135,6 +135,26 @@ Note that timeouts abort-and-retry only read requests (GETs); a timed-out
 write is never retried automatically because the server may have already
 processed it.
 
+## Request Statistics
+
+Add `--stats` to any command to get one line on stderr at exit with the number
+of API requests made, how many were retried, how many token renewals happened,
+and the elapsed time. It is the quickest way to see whether a batch is doing
+more work than it should:
+
+```bash
+pcli2 --stats asset metadata create-batch --csv-file metadata.csv
+# 📊 5,102 API request(s), 2 retried, 1 token renewal(s) in 3m41s
+```
+
+## Checking the Setup
+
+`pcli2 doctor` prints the local state in one screen (binary and PATH,
+configuration, environment, credentials, token expiry, tenant, caches, API and
+auth-server reachability, update state) and exits non-zero when something is
+wrong: 78 for a local problem, 68 when a server cannot be reached.
+`--format json` makes it machine-readable.
+
 ## Update Notifications
 
 In interactive terminal sessions, PCLI2 prints a one-line hint on stderr

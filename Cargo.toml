@@ -1,6 +1,6 @@
 [package]
 name = "pcli2"
-version = "1.23.3"
+version = "1.24.0"
 edition = "2021"
 rust-version = "1.88"
 authors = ["Julian Chultarsky <jchultarsky@physna.com>"]

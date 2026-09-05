@@ -233,6 +233,7 @@ impl HttpClient {
 
         loop {
             let mut request = request_builder(&self.client)?;
+            crate::stats::record_request();
 
             if let Some(token) = auth_token {
                 request = request.header("Authorization", format!("Bearer {}", token));
@@ -248,6 +249,7 @@ impl HttpClient {
                     if is_retryable_network_error(&e, idempotent) && attempt < max_retries {
                         let delay = retry_delay(None, attempt);
                         attempt += 1;
+                        crate::stats::record_retry();
                         warn!(
                             "Transient network error ({}); retrying in {:.1}s (attempt {}/{})",
                             e,
@@ -265,6 +267,7 @@ impl HttpClient {
             if is_transient_status(response.status()) && attempt < max_retries {
                 let delay = retry_delay(Some(&response), attempt);
                 attempt += 1;
+                crate::stats::record_retry();
                 warn!(
                     "Server responded with {}; retrying in {:.1}s (attempt {}/{})",
                     response.status(),

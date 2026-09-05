@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.3] - 2026-09-04
+
+### Documentation
+- **Homebrew 6 requires a one-time `brew trust jchultarsky101/pcli2`** - Homebrew 6.0 refuses to load formulae from any tap that has not been trusted, so `brew install` and `brew upgrade pcli2` stop with "Refusing to load formula ... from untrusted tap" until the tap is trusted once per machine and user. The README and install guide now say so, including the `HOMEBREW_NO_REQUIRE_TAP_TRUST=1` escape hatch for CI. The installers, MSI and `pcli2-update` are unaffected.
+
 ## [1.23.2] - 2026-09-04
 
 ### Fixed

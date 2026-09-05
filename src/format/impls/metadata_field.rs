@@ -85,7 +85,8 @@ impl OutputFormatter for MetadataFieldListResponse {
                 for field in fields {
                     output.push_str(&format!("{} ({})\n", field.name, field.field_type));
                 }
-                Ok(output)
+                // The caller adds the final line break.
+                Ok(output.trim_end_matches('\n').to_string())
             }
         }
     }

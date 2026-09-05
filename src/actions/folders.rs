@@ -128,7 +128,7 @@ pub async fn list_folders(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     .ok_or(CliError::FolderNotFound(path.clone(), String::new()))?
             };
 
-            println!("{}", folder_list.format(format)?);
+            crate::format::print_output(&folder_list.format(format)?);
         }
     }
 
@@ -158,7 +158,7 @@ pub async fn print_folder_details(sub_matches: &ArgMatches) -> Result<(), CliErr
         folder.set_path(path.to_owned());
     }
 
-    println!("{}", folder.format(format)?);
+    crate::format::print_output(&folder.format(format)?);
 
     Ok(())
 }

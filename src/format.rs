@@ -53,6 +53,17 @@ impl From<csv::IntoInnerError<csv::Writer<Vec<u8>>>> for FormattingError {
     }
 }
 
+/// Print a formatted result to stdout, followed by exactly one line break.
+///
+/// Nothing at all is printed for an empty result: an empty folder listed as
+/// CSV without headers used to print one blank line, which `wc -l` counted
+/// and a spreadsheet import turned into an empty row.
+pub fn print_output(text: &str) {
+    if !text.is_empty() {
+        println!("{}", text);
+    }
+}
+
 /// The bytes a CSV writer produced, as text, without the trailing line break.
 ///
 /// The writer terminates its last record with a newline and every command prints

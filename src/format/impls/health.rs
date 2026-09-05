@@ -89,7 +89,8 @@ impl Formattable for AssetHealthReport {
                     }
                 }
 
-                Ok(out)
+                // The caller adds the final line break.
+                Ok(out.trim_end_matches('\n').to_string())
             }
         }
     }

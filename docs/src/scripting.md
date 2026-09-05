@@ -135,6 +135,26 @@ Note that timeouts abort-and-retry only read requests (GETs); a timed-out
 write is never retried automatically because the server may have already
 processed it.
 
+## Resuming Interrupted Runs
+
+Long runs in a script should be written so that a retry does not redo finished
+work:
+
+```bash
+# Downloads skip files already on disk
+pcli2 folder download --folder-path "/Home/Parts" --output ./parts --resume
+
+# Uploads skip files whose name is already in the folder
+pcli2 asset create-batch --files "parts/*.stl" --folder-path "/Home/Parts" --skip-existing
+
+# Folder matches record each completed search; the same command continues the run
+pcli2 folder geometric-match --folder-path "/Home/Parts" --recursive \
+  --checkpoint parts.jsonl --format csv --headers > parts.csv
+```
+
+The checkpoint file is removed when the report is written, so a loop that
+retries until the command exits 0 needs no cleanup of its own.
+
 ## Request Statistics
 
 Add `--stats` to any command to get one line on stderr at exit with the number

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.25.0] - 2026-09-05
+
+### Added
+- **`--checkpoint FILE` on `folder geometric-match`, `part-match` and `visual-match`** - Each asset's completed search is appended to FILE the moment it finishes, so an interrupted multi-hour run is no longer lost. Re-running the same command with the same file reuses the recorded results and searches only the remaining assets; `stderr` says how many were reused. The file is fingerprinted with the search type, tenant, folders, threshold, `--recursive`, `--exclusive` and `--limit`, and a file from a different run is refused instead of being mixed in. Only successful searches are recorded, so a run that stopped on expired credentials finishes after `pcli2 auth login`. The file is deleted once the report has been written; it stays if the report fails, so a too-tall Excel workbook can be re-rendered as CSV without searching again.
+- **`asset create-batch --skip-existing`** - Skips files whose name is already in the target folder, the same way `folder upload --skip-existing` does, so an interrupted batch upload can be re-run without creating duplicates.
+- **Token renewal is now covered by tests against a mock API and auth server** - A 401 renews once and the retry carries the new token; a burst of eight concurrent 401s costs one renewal; a client with credentials but no token authenticates before its first request; a rejected credential reports the auth server's reason and keeps the old token; and without credentials no renewal is attempted.
+- **Every formatter is checked for output shape** - Each printable type is formatted in every output format it supports and checked for the properties scripts rely on: CSV parses with no ragged rows, `--headers` adds exactly one line, nothing ends with a line break, compact JSON is one line, and an unsupported format is a clean error. This is what found the three fixes below.
+
+### Fixed
+- **Four tree outputs printed a trailing empty line** - `tenant list`, `tenant metadata list`, `asset health` and `asset dependency-diff` in `--format tree` ended with a line break that `println!` doubled.
+- **Four CSV outputs had no final line break at all** - `auth token --format csv`, `asset metadata --format csv`, `asset visual-match --format csv` and `asset text-match --format csv` were printed with `print!` after the 1.23.2 change made CSV text stop carrying its own line break, so the last line ran into the shell prompt and `wc -l` under-counted by one.
+- **An empty listing in CSV without headers printed one blank line** - Every command now prints formatted output through one helper that prints nothing for an empty result, so `asset list --folder-path /Empty --format csv | wc -l` is 0.
+- **Text-match CSV rows had six fields under an eight-column header** - The `TextMatchPair` formatter wrote rows by hand that did not match its own header; the CSV writer rejected the combination outright. Rows now come from the same producer as the header.
+- **The credentials file ignored `PCLI2_CONFIG_DIR`** - The documentation has said the variable holds both `config.yml` and the credentials file; only `config.yml` followed it, so a second profile shared the default profile's login. Both now live in the directory the variable names. Anyone who set `PCLI2_CONFIG_DIR` and logged in before this release will need to log in once more.
+
 ## [1.24.0] - 2026-09-04
 
 ### Added

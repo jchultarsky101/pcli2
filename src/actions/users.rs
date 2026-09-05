@@ -199,7 +199,7 @@ pub async fn list_users(matches: &ArgMatches) -> Result<(), CliActionError> {
 
     // Format and print the response
     let output = users_response.format(&format)?;
-    println!("{}", output);
+    crate::format::print_output(&output);
 
     Ok(())
 }
@@ -245,7 +245,7 @@ pub async fn get_user(matches: &ArgMatches) -> Result<(), CliActionError> {
 
     // Format and print the response
     let output = user.format(&format)?;
-    println!("{}", output);
+    crate::format::print_output(&output);
 
     Ok(())
 }

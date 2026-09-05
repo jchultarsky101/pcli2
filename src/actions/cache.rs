@@ -30,14 +30,17 @@ pub async fn clear_cache(sub_matches: &ArgMatches) -> Result<(), CliError> {
     // Determine what to clear
     let clear_all = !clear_folder && !clear_metadata && !clear_tenant;
 
-    // Show what will be cleared
-    if clear_all {
+    // Show what will be cleared, but only ahead of a prompt: with --yes or
+    // without a terminal there is nobody to read it, and in JSON error mode
+    // stderr must stay one object per line.
+    let will_prompt = !skip_confirm && crate::terminal::prompts_allowed();
+    if will_prompt && clear_all {
         eprintln!("This will clear:");
         eprintln!("  • Folder hierarchy cache");
         eprintln!("  • Metadata field cache");
         eprintln!("  • Tenant list cache");
         eprintln!();
-    } else {
+    } else if will_prompt {
         eprintln!("This will clear:");
         if clear_folder {
             eprintln!("  • Folder hierarchy cache");
@@ -51,19 +54,11 @@ pub async fn clear_cache(sub_matches: &ArgMatches) -> Result<(), CliError> {
         eprintln!();
     }
 
-    // Confirm unless --yes flag is provided
-    if !skip_confirm {
-        eprint!("Continue? [y/N] ");
-        let mut input = String::new();
-        std::io::stdin()
-            .read_line(&mut input)
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-        let response = input.trim().to_lowercase();
-        if response != "y" && response != "yes" {
-            eprintln!("Cache clear cancelled.");
-            return Ok(());
-        }
+    // Confirm unless --yes flag is provided. Without a terminal the old
+    // read_line took end-of-file as "no" and exited 0, so a script saw success.
+    if !skip_confirm && !crate::terminal::confirm("Clear the cache?", None)? {
+        eprintln!("Cache clear cancelled.");
+        return Ok(());
     }
 
     // Track failures so the command exits non-zero when a purge fails,

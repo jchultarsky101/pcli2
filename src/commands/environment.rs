@@ -177,6 +177,7 @@ pub async fn execute_environment_command(
                     .collect();
 
                 // Use inquire to create an interactive selection
+                crate::terminal::require_prompt("an environment name (--name)")?;
                 let ans = inquire::Select::new("Select an environment:", options)
                     .with_help_message("Choose the environment you want to set as active")
                     .prompt();
@@ -614,20 +615,13 @@ fn confirm_or_abort(
     if sub_matches.get_flag("yes") {
         return Ok(());
     }
-    match inquire::Confirm::new(question).with_default(false).prompt() {
-        Ok(true) => Ok(()),
-        Ok(false) => {
-            eprintln!("Cancelled.");
-            Err(crate::error::CliError::AlreadyReported(
-                crate::exit_codes::PcliExitCode::UsageError,
-            ))
-        }
-        Err(e) => Err(crate::error::CliError::ActionError(
-            crate::actions::CliActionError::BusinessLogicError(format!(
-                "confirmation required but no prompt could be shown ({}); pass --yes to proceed without one",
-                e
-            )),
-        )),
+    if crate::terminal::confirm(question, None)? {
+        Ok(())
+    } else {
+        eprintln!("Cancelled.");
+        Err(crate::error::CliError::AlreadyReported(
+            crate::exit_codes::PcliExitCode::UsageError,
+        ))
     }
 }
 

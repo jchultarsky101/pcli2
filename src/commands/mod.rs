@@ -53,6 +53,8 @@ const EXAMPLES_COLORED: &str = color_print::cstr!(
   PCLI2_TIMEOUT            Total request timeout in seconds (default 1800)
   PCLI2_MAX_RETRIES        Retries for transient failures (default 2, 0 disables)
   PCLI2_NO_COLOR, NO_COLOR Disable colored output
+  PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
+  PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
   PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)"
 );
 
@@ -88,6 +90,8 @@ Environment variables:
   PCLI2_TIMEOUT            Total request timeout in seconds (default 1800)
   PCLI2_MAX_RETRIES        Retries for transient failures (default 2, 0 disables)
   PCLI2_NO_COLOR, NO_COLOR Disable colored output
+  PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
+  PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
   PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)";
 
 /// Select the examples text for the top-level help based on terminal capabilities.
@@ -195,6 +199,24 @@ pub fn create_full_command() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
                 .help("Print request statistics (API requests, retries, token renewals, elapsed time) on stderr at exit"),
+        )
+        .arg(
+            clap::Arg::new("no-input")
+                .long("no-input")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .env("PCLI2_NO_INPUT")
+                .help("Never prompt: a command that would need an answer fails with exit 64 instead (pass --yes to confirm, or name the tenant or environment)"),
+        )
+        .arg(
+            clap::Arg::new("error-format")
+                .long("error-format")
+                .value_name("FORMAT")
+                .value_parser(["text", "json"])
+                .default_value("text")
+                .global(true)
+                .env("PCLI2_ERROR_FORMAT")
+                .help("How errors are written to stderr: text, or json (one object per line; the last one carries the exit code)"),
         )
         // Add examples
         .after_help(examples_after_help())

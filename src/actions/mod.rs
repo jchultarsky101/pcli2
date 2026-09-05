@@ -47,6 +47,9 @@ pub enum CliActionError {
 
     #[error("Missing required argument: {0}")]
     MissingRequiredArgument(String),
+    /// The command would have to prompt, and no prompt can be shown.
+    #[error("{0}")]
+    InputRequired(String),
 
     #[error("Tenant not found: {identifier}")]
     TenantNotFound { identifier: String },
@@ -91,6 +94,7 @@ impl CliActionError {
             CliActionError::UuidPartsinError(_)
             | CliActionError::UnsupportedOutputFormat(_)
             | CliActionError::MissingRequiredArgument(_)
+            | CliActionError::InputRequired(_)
             | CliActionError::BusinessLogicError(_) => PcliExitCode::UsageError,
             CliActionError::ConfigurationError(_) => PcliExitCode::ConfigError,
             CliActionError::IncompleteReport { .. } | CliActionError::PartialFailure { .. } => {

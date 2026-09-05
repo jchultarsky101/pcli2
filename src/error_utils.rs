@@ -3,7 +3,89 @@
 //! This module provides consistent error reporting and handling utilities
 //! across the application to ensure uniform user experience.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
+
+static JSON_ERRORS: AtomicBool = AtomicBool::new(false);
+
+/// Switch stderr diagnostics to one JSON object per line.
+pub fn set_json_errors(json: bool) {
+    JSON_ERRORS.store(json, Ordering::SeqCst);
+}
+
+/// Whether `--error-format json` (or `PCLI2_ERROR_FORMAT=json`) is in effect.
+pub fn json_errors() -> bool {
+    JSON_ERRORS.load(Ordering::SeqCst)
+}
+
+/// Whether JSON errors were asked for, read straight from the command line and
+/// the environment.
+///
+/// Needed before clap has parsed anything: a usage error is reported by clap
+/// itself, and a script that asked for JSON must get JSON for that too.
+pub fn json_errors_requested() -> bool {
+    if std::env::var("PCLI2_ERROR_FORMAT")
+        .map(|v| v.eq_ignore_ascii_case("json"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    let args: Vec<String> = std::env::args().collect();
+    args.iter().enumerate().any(|(i, arg)| {
+        arg.eq_ignore_ascii_case("--error-format=json")
+            || (arg == "--error-format"
+                && args
+                    .get(i + 1)
+                    .map(|v| v.eq_ignore_ascii_case("json"))
+                    .unwrap_or(false))
+    })
+}
+
+fn emit_json(value: &serde_json::Value) {
+    eprintln!("{}", value);
+}
+
+/// The JSON object for a failed command: exit code, its class, the message,
+/// and when known a hint and the HTTP status behind it.
+pub fn json_error_object(error: &crate::error::CliError) -> serde_json::Value {
+    let code = error.exit_code();
+    let message = error.to_string();
+    let hint = hint_for(error).or_else(|| oauth_hint(&message));
+    let mut object = serde_json::json!({
+        "level": "ERROR",
+        "code": code.code(),
+        "kind": code.kind(),
+        "message": message,
+    });
+    if let Some(hint) = hint {
+        object["hint"] = serde_json::Value::String(hint.to_string());
+    }
+    if let Some(status) = http_status_of(error) {
+        object["http_status"] = serde_json::Value::from(status);
+    }
+    object
+}
+
+/// The JSON object for a command line clap rejected.
+pub fn json_usage_error(message: &str) -> serde_json::Value {
+    let code = crate::exit_codes::PcliExitCode::UsageError;
+    serde_json::json!({
+        "level": "ERROR",
+        "code": code.code(),
+        "kind": code.kind(),
+        "message": message,
+    })
+}
+
+fn http_status_of(error: &crate::error::CliError) -> Option<u16> {
+    match error {
+        crate::error::CliError::PhysnaExtendedApiError(e) => e.http_status(),
+        crate::error::CliError::ActionError(crate::actions::CliActionError::ApiError(e)) => {
+            e.http_status()
+        }
+        _ => None,
+    }
+}
 
 /// Common error types used throughout the application
 #[derive(Debug, Error)]
@@ -49,6 +131,10 @@ pub enum CommonError {
 ///
 /// This function displays errors in a user-friendly format without internal logging.
 pub fn report_error<E: std::fmt::Display>(error: &E) {
+    if json_errors() {
+        emit_json(&serde_json::json!({"level": "ERROR", "message": error.to_string()}));
+        return;
+    }
     eprintln!("❌ Error: {}", error);
 }
 
@@ -61,6 +147,17 @@ pub fn report_error<E: std::fmt::Display>(error: &E) {
 /// - Relevant command examples when applicable
 pub fn report_detailed_error<E: std::fmt::Display>(error: &E, context: Option<&str>) {
     let error_str = error.to_string();
+    if json_errors() {
+        let mut object = serde_json::json!({"level": "ERROR", "message": error_str});
+        if let Some(hint) = oauth_hint(&error_str) {
+            object["hint"] = serde_json::Value::String(hint.to_string());
+        }
+        if let Some(ctx) = context.filter(|c| !c.trim().is_empty()) {
+            object["context"] = serde_json::Value::String(ctx.to_string());
+        }
+        emit_json(&object);
+        return;
+    }
     let user_friendly_msg = create_user_friendly_error(&error_str);
 
     // Print the main error message
@@ -87,6 +184,17 @@ pub fn report_detailed_error<E: std::fmt::Display>(error: &E, context: Option<&s
 /// This function provides error messages with specific steps users can take to resolve the issue.
 pub fn report_error_with_remediation<E: std::fmt::Display>(error: &E, remediation_steps: &[&str]) {
     let error_str = error.to_string();
+    if json_errors() {
+        let mut object = serde_json::json!({"level": "ERROR", "message": error_str});
+        if let Some(hint) = oauth_hint(&error_str) {
+            object["hint"] = serde_json::Value::String(hint.to_string());
+        }
+        if !remediation_steps.is_empty() {
+            object["steps"] = serde_json::json!(remediation_steps);
+        }
+        emit_json(&object);
+        return;
+    }
     let user_friendly_msg = create_user_friendly_error(&error_str);
 
     eprintln!("❌ Error: {}", user_friendly_msg);
@@ -148,6 +256,11 @@ fn oauth_hint(error_str: &str) -> Option<&'static str> {
 /// Print a failed command's error the way `main` wants it: the message as-is,
 /// then one hint chosen from what the error *is* rather than from its text.
 pub fn report_cli_error(error: &crate::error::CliError) {
+    if json_errors() {
+        emit_json(&json_error_object(error));
+        tracing::debug!("Technical error details: {:?}", error);
+        return;
+    }
     eprintln!("❌ Error: {}", create_user_friendly_error(error));
     if let Some(hint) = hint_for(error) {
         eprintln!("💡 {}", hint);
@@ -183,6 +296,10 @@ fn hint_for(error: &crate::error::CliError) -> Option<&'static str> {
 
 /// Report an error with a user-friendly message based on error content
 pub fn report_error_with_user_friendly_message<E: std::fmt::Display>(error: E) {
+    if json_errors() {
+        report_detailed_error(&error, None);
+        return;
+    }
     let user_message = create_user_friendly_error(error);
     eprintln!("❌ Error: {}", user_message);
 }
@@ -250,6 +367,34 @@ mod tests {
 
         let not_found = CliError::FolderNotFound("/x".into(), String::new());
         assert!(hint_for(&not_found).is_none());
+    }
+
+    #[test]
+    fn json_error_objects_carry_code_kind_hint_and_http_status() {
+        use crate::error::CliError;
+        use crate::physna_v3::ApiError;
+
+        let not_found = json_error_object(&CliError::FolderNotFound("/x".into(), String::new()));
+        assert_eq!(not_found["level"], "ERROR");
+        assert_eq!(not_found["code"], 67);
+        assert_eq!(not_found["kind"], "not_found");
+        assert!(not_found["message"].as_str().unwrap().contains("/x"));
+        assert!(not_found.get("hint").is_none());
+        assert!(not_found.get("http_status").is_none());
+
+        let forbidden =
+            json_error_object(&CliError::PhysnaExtendedApiError(ApiError::HttpStatus {
+                status: 403,
+                message: "Forbidden".into(),
+            }));
+        assert_eq!(forbidden["code"], 102);
+        assert_eq!(forbidden["kind"], "api");
+        assert_eq!(forbidden["http_status"], 403);
+        assert!(forbidden["hint"].as_str().unwrap().contains("Author role"));
+
+        let usage = json_usage_error("unexpected argument '--bogus'");
+        assert_eq!(usage["code"], 64);
+        assert_eq!(usage["kind"], "usage");
     }
 
     #[test]

@@ -8,6 +8,7 @@
 
 use std::env;
 use std::io::IsTerminal;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Returns true when the given environment variable is set to a non-empty value.
 fn env_var_set(name: &str) -> bool {
@@ -221,6 +222,101 @@ impl Drop for ReportProgress {
     fn drop(&mut self) {
         self.finish();
     }
+}
+
+static NO_INPUT: AtomicBool = AtomicBool::new(false);
+
+/// Record the global `--no-input` flag.
+pub fn set_no_input(no_input: bool) {
+    NO_INPUT.store(no_input, Ordering::SeqCst);
+}
+
+/// Whether `--no-input` (or `PCLI2_NO_INPUT`) is in effect.
+pub fn no_input() -> bool {
+    NO_INPUT.load(Ordering::SeqCst)
+}
+
+/// Why a prompt cannot be shown right now, if it cannot.
+///
+/// A prompt needs a terminal on both ends: stdin to read the answer and stderr
+/// to show the question. Without one, a prompt either hangs a script or reads
+/// end-of-file and takes that as an answer. `--no-input` says so explicitly.
+pub fn prompt_unavailable_reason() -> Option<&'static str> {
+    if no_input() {
+        Some("--no-input was given")
+    } else if !std::io::stdin().is_terminal() {
+        Some("stdin is not a terminal")
+    } else if !std::io::stderr().is_terminal() {
+        Some("stderr is not a terminal")
+    } else {
+        None
+    }
+}
+
+/// Whether an interactive prompt may be shown.
+pub fn prompts_allowed() -> bool {
+    prompt_unavailable_reason().is_none()
+}
+
+/// A prompt that could not be shown. Converts into either error type, so
+/// every command reports it the same way: usage error, exit 64.
+#[derive(Debug)]
+pub struct PromptUnavailable(pub String);
+
+impl std::fmt::Display for PromptUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<PromptUnavailable> for crate::error::CliError {
+    fn from(e: PromptUnavailable) -> Self {
+        crate::error::CliError::InputRequired(e.0)
+    }
+}
+
+impl From<PromptUnavailable> for crate::actions::CliActionError {
+    fn from(e: PromptUnavailable) -> Self {
+        crate::actions::CliActionError::InputRequired(e.0)
+    }
+}
+
+/// Fail when the command would have to prompt for `missing`.
+///
+/// Used before a selection menu: a script that forgot `--name` gets an error
+/// naming the flag instead of a menu it cannot answer.
+pub fn require_prompt(missing: &str) -> Result<(), PromptUnavailable> {
+    match prompt_unavailable_reason() {
+        None => Ok(()),
+        Some(reason) => Err(PromptUnavailable(format!(
+            "{} is required because no prompt can be shown ({})",
+            missing, reason
+        ))),
+    }
+}
+
+/// Ask a yes/no question, defaulting to no.
+///
+/// Refuses, rather than answering for the user, when no prompt can be shown.
+/// A confirmation that read end-of-file as "no" used to exit 0 as "cancelled",
+/// which scripts took for success.
+pub fn confirm(question: &str, help: Option<&str>) -> Result<bool, PromptUnavailable> {
+    if let Some(reason) = prompt_unavailable_reason() {
+        return Err(PromptUnavailable(format!(
+            "confirmation required for \"{}\" but no prompt can be shown ({}); nothing was changed. Pass --yes to proceed without one",
+            question, reason
+        )));
+    }
+    let mut prompt = inquire::Confirm::new(question).with_default(false);
+    if let Some(help) = help {
+        prompt = prompt.with_help_message(help);
+    }
+    prompt.prompt().map_err(|e| {
+        PromptUnavailable(format!(
+            "confirmation prompt for \"{}\" failed ({}); nothing was changed. Pass --yes to proceed without one",
+            question, e
+        ))
+    })
 }
 
 #[cfg(test)]

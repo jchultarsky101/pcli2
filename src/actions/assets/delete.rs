@@ -64,28 +64,9 @@ pub async fn delete_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     if !yes_flag {
         let delete_msg = format!("Delete asset '{}'?", asset_identifier);
 
-        let confirm = inquire::Confirm::new(&delete_msg)
-            .with_default(false)
-            .with_help_message("This action cannot be undone")
-            .prompt();
-
-        match confirm {
-            Ok(true) => {} // User confirmed
-            Ok(false) => {
-                println!("Deletion cancelled.");
-                return Ok(());
-            }
-            Err(e) => {
-                // The prompt itself failed (e.g. not a TTY). Nothing was
-                // deleted, so exit with an error instead of a success code
-                // that scripts would misread as "deleted".
-                return Err(CliError::ActionError(
-                    crate::actions::CliActionError::BusinessLogicError(format!(
-                        "Confirmation prompt failed ({}). Nothing was deleted. Use --yes to skip confirmation in non-interactive environments.",
-                        e
-                    )),
-                ));
-            }
+        if !crate::terminal::confirm(&delete_msg, Some("This action cannot be undone"))? {
+            eprintln!("Deletion cancelled.");
+            return Ok(());
         }
     }
 

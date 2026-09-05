@@ -84,7 +84,8 @@ pub async fn finish_update_check(check: UpdateCheck) {
     };
     let current = env!("CARGO_PKG_VERSION");
     if let Some(latest) = latest {
-        if is_newer(&latest, current) {
+        // In JSON error mode stderr is one object per line; the hint is prose.
+        if is_newer(&latest, current) && !crate::error_utils::json_errors() {
             eprintln!(
                 "\n💡 A new version of pcli2 is available: v{} → v{} (https://github.com/jchultarsky101/pcli2/releases/latest)",
                 current, latest

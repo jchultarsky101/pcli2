@@ -730,7 +730,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                             ))
                                         }
                                     };
-                                    print!("{}", csv_output);
+                                    pcli2::format::print_output(&csv_output);
                                 }
                                 OutputFormat::Tree(_) => {
                                     // For tree format, just print the token
@@ -920,7 +920,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                             let configuration = Configuration::load_or_create_default()?;
                             match configuration.format(&format) {
                                 Ok(output) => {
-                                    println!("{}", output);
+                                    pcli2::format::print_output(&output);
                                     Ok(())
                                 }
                                 Err(e) => Err(CliError::FormattingError(e)),

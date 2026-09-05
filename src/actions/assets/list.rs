@@ -109,13 +109,13 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
             }
 
             let all_assets = list_assets_recursively(&mut api, &tenant.uuid, &path).await?;
-            println!("{}", all_assets.format(format)?);
+            crate::format::print_output(&all_assets.format(format)?);
         } else if path == "/" {
             // Root path - list assets at the root level (no parent folder)
             let assets = api
                 .list_assets_by_parent_folder_uuid(&tenant.uuid, None)
                 .await?;
-            println!("{}", assets.format(format)?);
+            crate::format::print_output(&assets.format(format)?);
         } else {
             // First verify the folder exists by building the hierarchy
             let hierarchy =
@@ -147,14 +147,14 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
             let assets = api
                 .list_assets_by_parent_folder_path(&tenant.uuid, path.as_str())
                 .await?;
-            println!("{}", assets.format(format)?);
+            crate::format::print_output(&assets.format(format)?);
         }
     } else {
         // Without a folder path, just list top-level assets (non-recursive)
         let assets = api
             .list_assets_by_parent_folder_uuid(&tenant.uuid, None)
             .await?;
-        println!("{}", assets.format(format)?);
+        crate::format::print_output(&assets.format(format)?);
     };
 
     Ok(())

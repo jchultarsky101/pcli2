@@ -56,6 +56,9 @@ pub enum CliError {
     #[error("Excel report error: {0}")]
     XlsxReportError(#[from] crate::xlsx_report::XlsxReportError),
 
+    #[error("{0}")]
+    CheckpointError(#[from] crate::checkpoint::CheckpointError),
+
     /// The failure was already reported in full, with remediation steps, by the
     /// code that detected it. Carries only the exit code; nothing is printed again.
     #[error("{}", .0.message())]
@@ -89,6 +92,10 @@ impl CliError {
             CliError::UuidParsingError(_) => PcliExitCode::UsageError,
             CliError::ActionError(e) => e.exit_code(),
             CliError::FolderListError(FolderHierarchyError::ApiError(e)) => e.exit_code(),
+            CliError::CheckpointError(crate::checkpoint::CheckpointError::Io {
+                source, ..
+            }) => PcliExitCode::for_io_error(source),
+            CliError::CheckpointError(_) => PcliExitCode::DataError,
             CliError::AlreadyReported(code) => *code,
         }
     }

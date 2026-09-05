@@ -584,7 +584,7 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
         matches: search_results.matches,
     };
 
-    println!("{}", enhanced_response.format(format)?);
+    crate::format::print_output(&enhanced_response.format(format)?);
 
     Ok(())
 }
@@ -958,7 +958,7 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
                 }
             };
 
-            print!("{}", output);
+            crate::format::print_output(&output);
         }
         _ => {
             // Default to JSON
@@ -1321,6 +1321,31 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         Vec::new()
     };
 
+    // With --checkpoint, results recorded by an interrupted run are reused and
+    // only the remaining assets are searched. Opened before the folder scan so a
+    // file from a different run is refused before minutes are spent scanning.
+    let checkpoint_path = sub_matches
+        .get_one::<std::path::PathBuf>(crate::commands::params::PARAMETER_CHECKPOINT)
+        .cloned();
+    let (checkpoint, mut recorded_matches) = match &checkpoint_path {
+        Some(path) => {
+            let fingerprint = crate::checkpoint::Fingerprint::new(
+                "geometric",
+                tenant.uuid,
+                &folder_paths,
+                recursive,
+                exclusive,
+                threshold,
+                None,
+            );
+            let (checkpoint, done) = crate::checkpoint::Checkpoint::<
+                crate::model::EnhancedGeometricSearchResponse,
+            >::open(path, fingerprint)?;
+            (Some(std::sync::Arc::new(checkpoint)), done)
+        }
+        None => (None, std::collections::HashMap::new()),
+    };
+
     let all_assets = match collect_assets_in_folders(
         &mut api,
         &tenant.uuid,
@@ -1331,8 +1356,29 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     .await?
     {
         Some(assets) => assets,
-        None => return Ok(()),
+        None => {
+            // Nothing to search, so nothing to resume.
+            if let Some(cp) = &checkpoint {
+                cp.finish();
+            }
+            return Ok(());
+        }
     };
+
+    if let Some(cp) = &checkpoint {
+        let reusable = all_assets
+            .keys()
+            .filter(|uuid| recorded_matches.contains_key(uuid))
+            .count();
+        if reusable > 0 {
+            eprintln!(
+                "Resuming from checkpoint '{}': {} of {} asset(s) already searched",
+                cp.path().display(),
+                reusable,
+                all_assets.len()
+            );
+        }
+    }
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -1389,8 +1435,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         let abort = abort.clone();
         let ui_base_url_for_task = ui_base_url.clone();
         let exclusive_folder_ids = exclusive_folder_ids.clone();
+        let checkpoint = checkpoint.clone();
+        let recorded = recorded_matches.remove(&asset_uuid);
 
         let task = tokio::spawn(async move {
+            // Already searched by the run this one resumes.
+            if let Some(matches) = recorded {
+                return Ok((matches, None));
+            }
+
             let _permit = semaphore.acquire().await.unwrap();
 
             // An earlier task hit something that makes every remaining search
@@ -1549,6 +1602,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
                     // Renewal is evidently working; forget any earlier blip.
                     abort.record_success();
+                    if let Some(cp) = &checkpoint {
+                        cp.record(asset_uuid, &asset_matches);
+                    }
                     Ok((asset_matches, None))
                 }
                 Err(e) => {
@@ -1718,6 +1774,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             HumanCount(row_count as u64),
             output_path.display()
         ));
+        if let Some(cp) = &checkpoint {
+            cp.finish();
+        }
         // UNIX-style: on success there is no data to print, so print nothing.
         return Ok(());
     }
@@ -1765,6 +1824,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
         }
+    }
+
+    // The report is written; there is nothing left to resume.
+    if let Some(cp) = &checkpoint {
+        cp.finish();
     }
 
     Ok(())
@@ -1865,6 +1929,31 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         Vec::new()
     };
 
+    // With --checkpoint, results recorded by an interrupted run are reused and
+    // only the remaining assets are searched. Opened before the folder scan so a
+    // file from a different run is refused before minutes are spent scanning.
+    let checkpoint_path = sub_matches
+        .get_one::<std::path::PathBuf>(crate::commands::params::PARAMETER_CHECKPOINT)
+        .cloned();
+    let (checkpoint, mut recorded_matches) = match &checkpoint_path {
+        Some(path) => {
+            let fingerprint = crate::checkpoint::Fingerprint::new(
+                "part",
+                tenant.uuid,
+                &folder_paths,
+                recursive,
+                exclusive,
+                threshold,
+                None,
+            );
+            let (checkpoint, done) = crate::checkpoint::Checkpoint::<
+                crate::model::EnhancedPartSearchResponse,
+            >::open(path, fingerprint)?;
+            (Some(std::sync::Arc::new(checkpoint)), done)
+        }
+        None => (None, std::collections::HashMap::new()),
+    };
+
     let all_assets = match collect_assets_in_folders(
         &mut api,
         &tenant.uuid,
@@ -1875,8 +1964,29 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     .await?
     {
         Some(assets) => assets,
-        None => return Ok(()),
+        None => {
+            // Nothing to search, so nothing to resume.
+            if let Some(cp) = &checkpoint {
+                cp.finish();
+            }
+            return Ok(());
+        }
     };
+
+    if let Some(cp) = &checkpoint {
+        let reusable = all_assets
+            .keys()
+            .filter(|uuid| recorded_matches.contains_key(uuid))
+            .count();
+        if reusable > 0 {
+            eprintln!(
+                "Resuming from checkpoint '{}': {} of {} asset(s) already searched",
+                cp.path().display(),
+                reusable,
+                all_assets.len()
+            );
+        }
+    }
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -1933,8 +2043,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         let abort = abort.clone();
         let ui_base_url_for_task = ui_base_url.clone();
         let exclusive_folder_ids = exclusive_folder_ids.clone();
+        let checkpoint = checkpoint.clone();
+        let recorded = recorded_matches.remove(&asset_uuid);
 
         let task = tokio::spawn(async move {
+            // Already searched by the run this one resumes.
+            if let Some(matches) = recorded {
+                return Ok((matches, None));
+            }
+
             let _permit = semaphore.acquire().await.unwrap();
 
             // An earlier task hit something that makes every remaining search
@@ -2095,6 +2212,9 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
                     // Renewal is evidently working; forget any earlier blip.
                     abort.record_success();
+                    if let Some(cp) = &checkpoint {
+                        cp.record(asset_uuid, &asset_matches);
+                    }
                     Ok((asset_matches, None))
                 }
                 Err(e) => {
@@ -2340,6 +2460,11 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
         }
     }
 
+    // The report is written; there is nothing left to resume.
+    if let Some(cp) = &checkpoint {
+        cp.finish();
+    }
+
     Ok(())
 }
 
@@ -2424,6 +2549,31 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         Vec::new()
     };
 
+    // With --checkpoint, results recorded by an interrupted run are reused and
+    // only the remaining assets are searched. Opened before the folder scan so a
+    // file from a different run is refused before minutes are spent scanning.
+    let checkpoint_path = sub_matches
+        .get_one::<std::path::PathBuf>(crate::commands::params::PARAMETER_CHECKPOINT)
+        .cloned();
+    let (checkpoint, mut recorded_matches) = match &checkpoint_path {
+        Some(path) => {
+            let fingerprint = crate::checkpoint::Fingerprint::new(
+                "visual",
+                tenant.uuid,
+                &folder_paths,
+                recursive,
+                exclusive,
+                threshold,
+                Some(limit),
+            );
+            let (checkpoint, done) = crate::checkpoint::Checkpoint::<
+                crate::model::EnhancedPartSearchResponse,
+            >::open(path, fingerprint)?;
+            (Some(std::sync::Arc::new(checkpoint)), done)
+        }
+        None => (None, std::collections::HashMap::new()),
+    };
+
     let all_assets = match collect_assets_in_folders(
         &mut api,
         &tenant.uuid,
@@ -2434,8 +2584,29 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     .await?
     {
         Some(assets) => assets,
-        None => return Ok(()),
+        None => {
+            // Nothing to search, so nothing to resume.
+            if let Some(cp) = &checkpoint {
+                cp.finish();
+            }
+            return Ok(());
+        }
     };
+
+    if let Some(cp) = &checkpoint {
+        let reusable = all_assets
+            .keys()
+            .filter(|uuid| recorded_matches.contains_key(uuid))
+            .count();
+        if reusable > 0 {
+            eprintln!(
+                "Resuming from checkpoint '{}': {} of {} asset(s) already searched",
+                cp.path().display(),
+                reusable,
+                all_assets.len()
+            );
+        }
+    }
 
     // Create multi-progress bar if show_progress is true
     let multi_progress = if show_progress {
@@ -2492,8 +2663,15 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         let abort = abort.clone();
         let ui_base_url_for_task = ui_base_url.clone();
         let exclusive_folder_ids = exclusive_folder_ids.clone();
+        let checkpoint = checkpoint.clone();
+        let recorded = recorded_matches.remove(&asset_uuid);
 
         let task = tokio::spawn(async move {
+            // Already searched by the run this one resumes.
+            if let Some(matches) = recorded {
+                return Ok((matches, None));
+            }
+
             let _permit = semaphore.acquire().await.unwrap();
 
             // An earlier task hit something that makes every remaining search
@@ -2665,6 +2843,9 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
                     // Renewal is evidently working; forget any earlier blip.
                     abort.record_success();
+                    if let Some(cp) = &checkpoint {
+                        cp.record(asset_uuid, &asset_matches);
+                    }
                     Ok((asset_matches, None))
                 }
                 Err(e) => {
@@ -2904,6 +3085,11 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
         }
     }
 
+    // The report is written; there is nothing left to resume.
+    if let Some(cp) = &checkpoint {
+        cp.finish();
+    }
+
     Ok(())
 }
 
@@ -3125,7 +3311,7 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     )));
                 }
             };
-            print!("{}", output);
+            crate::format::print_output(&output);
         }
         _ => {
             // Default to JSON

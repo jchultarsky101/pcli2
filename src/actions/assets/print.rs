@@ -107,7 +107,7 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
     if matches!(format, crate::format::OutputFormat::Tree(_))
         || matches!(format, crate::format::OutputFormat::Json(_))
     {
-        println!("{}", assembly_tree.format(format)?);
+        crate::format::print_output(&assembly_tree.format(format)?);
     } else {
         // For other formats (CSV), extract all dependencies from the full tree structure
         let all_dependencies = extract_all_dependencies_from_tree(&assembly_tree);
@@ -118,7 +118,7 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
             dependencies: all_dependencies,
         };
 
-        println!("{}", dependency_list.format(format)?);
+        crate::format::print_output(&dependency_list.format(format)?);
     }
 
     Ok(())
@@ -161,7 +161,7 @@ pub async fn print_asset_metadata(sub_matches: &ArgMatches) -> Result<(), CliErr
     let metadata = asset.metadata().cloned().unwrap_or_else(|| {
         crate::model::AssetMetadata::from(std::collections::HashMap::<String, String>::new())
     });
-    println!("{}", metadata.format(format)?);
+    crate::format::print_output(&metadata.format(format)?);
 
     Ok(())
 }
@@ -333,7 +333,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
         // For tree and JSON formats, if we have multiple assembly trees, we need to handle them appropriately
         if all_assembly_trees.len() == 1 {
             // If there's only one tree, just output it directly
-            println!("{}", all_assembly_trees[0].format(format)?);
+            crate::format::print_output(&all_assembly_trees[0].format(format)?);
         } else if all_assembly_trees.is_empty() {
             // If no assembly trees were found, output an empty result
             if matches!(format, crate::format::OutputFormat::Json(_)) {
@@ -347,7 +347,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
                 if i > 0 {
                     println!("---"); // Separator between different folder results
                 }
-                println!("{}", tree.format(format.clone())?);
+                crate::format::print_output(&tree.format(format.clone())?);
             }
         }
     } else {
@@ -358,7 +358,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
             dependencies: all_dependencies,
         };
 
-        println!("{}", dependency_list.format(format)?);
+        crate::format::print_output(&dependency_list.format(format)?);
     }
 
     Ok(())

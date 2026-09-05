@@ -20,6 +20,7 @@
 pub mod actions;
 pub mod auth;
 pub mod cache;
+pub mod checkpoint;
 pub mod commands;
 pub mod configuration;
 pub mod context;

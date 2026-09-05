@@ -128,7 +128,8 @@ impl OutputFormatter for TenantList {
                         tenant.name, tenant.uuid, tenant.description
                     ));
                 }
-                Ok(output)
+                // The caller adds the final line break.
+                Ok(output.trim_end_matches('\n').to_string())
             }
         }
     }

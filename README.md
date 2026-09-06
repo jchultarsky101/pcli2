@@ -707,8 +707,8 @@ pcli2 auth get
 # Verify current context
 pcli2 tenant current
 
-# Review configuration
-pcli2 config get
+# Where the configuration file is
+pcli2 config get path
 
 # Validate setup
 pcli2 config validate --verbose
@@ -726,6 +726,7 @@ Quick reference for all available command aliases:
 |-------------|-------|
 | `pcli2 tenant list` | `pcli2 tenant ls` |
 | `pcli2 tenant use` | `pcli2 tenant select` |
+| `pcli2 tenant get` | `pcli2 tenant current` |
 | `pcli2 tenant clear` | `pcli2 tenant unset` |
 | `pcli2 tenant metadata list` | `pcli2 tenant metadata ls` |
 
@@ -740,6 +741,9 @@ Quick reference for all available command aliases:
 | `pcli2 folder rename` | `pcli2 folder ren` |
 | `pcli2 folder resolve` | `pcli2 folder res` |
 | `pcli2 folder download` | `pcli2 folder dl` |
+| `pcli2 folder geometric-match` | `pcli2 folder geometric-search` |
+| `pcli2 folder part-match` | `pcli2 folder part-search` |
+| `pcli2 folder visual-match` | `pcli2 folder visual-search` |
 
 ### Asset Commands
 | Full Command | Alias |
@@ -748,10 +752,19 @@ Quick reference for all available command aliases:
 | `pcli2 asset delete` | `pcli2 asset rm` |
 | `pcli2 asset get` | `pcli2 asset cat` |
 | `pcli2 asset create` | `pcli2 asset upload` |
+| `pcli2 asset create-batch` | `pcli2 asset upload-batch` |
 | `pcli2 asset download` | `pcli2 asset dl` |
 | `pcli2 asset dependencies` | `pcli2 asset deps` |
 | `pcli2 asset dependency-diff` | `pcli2 asset deps-diff` |
 | `pcli2 asset thumbnail` | `pcli2 asset thumb` |
+| `pcli2 asset geometric-match` | `pcli2 asset geometric-search` |
+| `pcli2 asset part-match` | `pcli2 asset part-search` |
+| `pcli2 asset visual-match` | `pcli2 asset visual-search` |
+| `pcli2 asset text-match` | `pcli2 asset text-search` |
+| `pcli2 asset similarity` | `pcli2 asset match-scores` |
+| `pcli2 asset metadata create` | `pcli2 asset metadata update` |
+| `pcli2 asset metadata create-batch` | `pcli2 asset metadata update-batch` |
+| `pcli2 asset metadata delete` | `pcli2 asset metadata rm` |
 
 ### Authentication Commands
 | Full Command | Alias |
@@ -767,6 +780,12 @@ Quick reference for all available command aliases:
 | Full Command | Alias |
 |-------------|-------|
 | `pcli2 environment` | `pcli2 env` |
+
+### Other Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 user list` | `pcli2 user ls` |
+| `pcli2 cache clear` | `pcli2 cache clean` |
 
 ## 📜 Commands Reference
 
@@ -789,9 +808,10 @@ pcli2 asset geometric-match  # Find geometrically similar assets
 pcli2 asset part-match       # Find part matches for an asset
 pcli2 asset visual-match     # Find visually similar assets (--limit N, default 100; --threshold N size filter, default 80)
 pcli2 asset text-match       # Find assets using text search (--limit N, default 1000; warns on stderr when more matches exist)
+pcli2 asset similarity       # Match scores between two specific assets (--reference-* and --candidate-*)
 pcli2 asset reprocess        # Reprocess an asset to refresh its analysis
 pcli2 asset thumbnail        # Download asset thumbnail
-pcli2 asset metadata         # Manage asset metadata
+pcli2 asset metadata         # Manage asset metadata (get, create, create-batch, delete, inference)
 ```
 
 #### Asset List Command
@@ -1050,10 +1070,11 @@ pcli2 auth expiration   # Show token expiration time
 Manage PCLI2 configuration settings.
 
 ```
-pcli2 config get           # Get configuration details
-pcli2 config export        # Export configuration to file
-pcli2 config import        # Import configuration from file
-pcli2 env   # Manage environment configurations
+pcli2 config get path      # Print the path of the configuration file
+pcli2 config validate      # Check the configuration and credentials (--api also calls the API)
+pcli2 config export        # Export configuration to file (-o/--output)
+pcli2 config import        # Import configuration from file (-i/--input)
+pcli2 env ...              # Manage environment configurations (below)
 ```
 
 #### Environment Configuration Commands
@@ -1078,9 +1099,12 @@ pcli2 env get -n <name>         # Short form of get with name
 Additional utility commands.
 
 ```
-pcli2 cache          # Cache management (clear cached data)
+pcli2 user list      # List the users of the active tenant
+pcli2 user get <id>  # Get one user's details
+pcli2 cache clear    # Clear cached data (all caches, or --folder / --metadata / --tenant)
 pcli2 completions    # Generate shell completions for various shells
 pcli2 man            # Generate man pages for all commands
+pcli2 doctor         # Check the local setup: binary, configuration, credentials, token, tenant, caches, connectivity
 ```
 
 #### Cache Management Command

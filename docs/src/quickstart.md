@@ -185,8 +185,8 @@ The metadata operations help you efficiently manage your asset metadata, whether
 Manage your PCLI2 configuration:
 
 ```bash
-# View current configuration
-pcli2 config get
+# Where the configuration file is
+pcli2 config get path
 
 # Export configuration for backup
 pcli2 config export --output my-config.yaml

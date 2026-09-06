@@ -67,11 +67,13 @@ pcli2 config validate --verbose
 - **Confirmation Prompts** - Safety for destructive operations with `--yes` flag for scripting
 - **Configuration Validation** - `config validate` command to verify setup before operations
 - **Flexible Output Formats** - JSON, CSV, and tree views
-- **Resume Capability** - Continue interrupted downloads seamlessly
+- **Resumable Runs** - Interrupted downloads (`--resume`), uploads (`--skip-existing`) and folder matches (`--checkpoint`) pick up where they stopped
 - **Performance Optimizations** - Concurrent operations and caching for faster processing
 - **Structured Logging** - Debug with `--verbose`/`--quiet` flags or the `PCLI2_LOG_LEVEL` environment variable
 - **Progress Tracking** - Enhanced progress bars with throughput and ETA
 - **Dry Run Mode** - Preview deletes and uploads with `--dry-run` before making changes
+- **Built for Scripts** - `--no-input` turns any prompt into an error, `--error-format json` makes every error on stderr a JSON object with the exit code, `--safe-csv` guards CSV cells against spreadsheet formulas
+- **Diagnostics** - `pcli2 doctor` checks the whole setup in one screen; `--stats` reports API requests, retries and token renewals at exit
 - **Automatic Retries** - Transient network and server errors retried with exponential backoff
 - **Man Pages** - Generate Unix man pages for every command with `pcli2 man`
 - **Update Notifications** - A gentle hint when a newer release is available

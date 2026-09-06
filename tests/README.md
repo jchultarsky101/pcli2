@@ -17,6 +17,7 @@ of them contacts Physna. Run them all with `cargo test`, or one file with
 | `output_shape_test.rs` | Every formatter in every format it supports: CSV parses with no ragged rows and `--headers` adds one line, nothing ends with a line break, compact JSON is one line and pretty JSON is the same value, unsupported formats are clean errors. |
 | `csv_trailing_newline_test.rs` | The original regression case for the trailing-line-break bug. |
 | `openapi_contract_test.rs` | Contract tests against the snapshot of Physna's OpenAPI spec in `fixtures/physna-openapi.json`: for every endpoint the client calls, a body generated from the spec (required properties only, then all of them) must deserialize into the model type; hard-coded enumerations and page sizes are checked against the spec; every URL the client builds must exist. The ignored `live_spec_matches_the_snapshot` fetches the current spec and reports drift (run weekly by the `spec-drift` workflow). |
+| `removed_flags_test.rs` | The flag spellings removed in 2.0 (`--file`, `--files`, `--csv-file`, `--local-path`, the positional output on `asset download`) are refused with exit 64 and a message naming the replacement, in text and JSON error mode; the new spellings still parse. |
 | `no_input_and_json_errors_test.rs` | The built binary with `--no-input` and `--error-format json`: prompts refused with exit 64 and a named flag, usage errors and the final error as JSON objects, `--stats` as JSON. |
 
 Unit tests live next to the code they test (`#[cfg(test)]` modules), including the

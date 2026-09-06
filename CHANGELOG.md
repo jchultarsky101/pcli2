@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-06
+
+### Documentation
+- **The command reference and alias tables now cover every command** - Every `pcli2 ...` example in the README and the documentation site was checked against the binary's own help: all commands and flags exist. Twelve commands were missing from the README reference (`asset similarity`, `config get path`, `config validate`, `user list`, `user get`, `cache clear`, `doctor` and the environment commands), the alias tables lacked a dozen aliases, the feature lists still described resume as downloads-only and omitted the scripting flags and diagnostics, and `pcli2 config get` (a command group) was shown where `config get path` was meant. No code changes.
+
 ## [2.0.0] - 2026-09-05
 
 ### Removed

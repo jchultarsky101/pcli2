@@ -1786,12 +1786,68 @@ pub struct GeometricMatchScores {
 ///
 /// Volumetric scoring must be explicitly enabled for the tenant, so this is
 /// optional in [`MatchScoresResponse`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct VolumetricMatchScores {
     /// Overall volumetric similarity: how much of the source asset's volume is
     /// contained in the target asset.
     #[serde(rename = "matchPercentage")]
     pub match_percentage: f64,
+    /// Holes in the source asset with no counterpart in the target.
+    #[serde(rename = "sourceHoleMisses", skip_serializing_if = "Option::is_none")]
+    pub source_hole_misses: Option<Vec<HoleDescriptor>>,
+    /// Holes in the target asset with no counterpart in the source.
+    #[serde(rename = "targetHoleMisses", skip_serializing_if = "Option::is_none")]
+    pub target_hole_misses: Option<Vec<HoleDescriptor>>,
+    /// Sum of the centre-to-centre distances of the matched holes, in millimetres.
+    #[serde(
+        rename = "matchedHoleCenterDistanceTotalMm",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub matched_hole_center_distance_total_mm: Option<f64>,
+    /// Volume that the two assets do not share, broken down by side.
+    #[serde(rename = "mismatchVolumeMm3", skip_serializing_if = "Option::is_none")]
+    pub mismatch_volume_mm3: Option<MismatchVolume>,
+}
+
+/// A point or direction in three dimensions, as the volumetric scores report it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Vector3 {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+/// A hole the volumetric comparison found in one asset but not the other.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HoleDescriptor {
+    /// Hole centre after alignment, in millimetres.
+    #[serde(rename = "centerMm")]
+    pub center_mm: Vector3,
+    /// Unitless direction vector along the hole axis.
+    pub axis: Vector3,
+    /// Detected hole radius, in millimetres.
+    #[serde(rename = "radiusMm")]
+    pub radius_mm: f64,
+}
+
+/// Volume the two assets do not share, in cubic millimetres.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MismatchVolume {
+    /// Source volume with no counterpart in the target.
+    #[serde(rename = "sourceMissMm3")]
+    pub source_miss_mm3: f64,
+    /// Target volume with no counterpart in the source.
+    #[serde(rename = "targetMissMm3")]
+    pub target_miss_mm3: f64,
+    /// Source hole volume with no counterpart in the target.
+    #[serde(rename = "sourceHoleMissMm3")]
+    pub source_hole_miss_mm3: f64,
+    /// Target hole volume with no counterpart in the source.
+    #[serde(rename = "targetHoleMissMm3")]
+    pub target_hole_miss_mm3: f64,
+    /// Total mismatched volume.
+    #[serde(rename = "totalMm3")]
+    pub total_mm3: f64,
 }
 
 /// Response from the "match scores" endpoint.

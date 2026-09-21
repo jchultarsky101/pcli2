@@ -327,7 +327,7 @@ const OTHER_ENDPOINTS: &[(&str, &str)] = &[
     ("delete", "/tenants/{tenantId}/assets/{assetId}/metadata"),
     ("get", "/tenants/{tenantId}/assets/{assetId}/file"),
     ("get", "/tenants/{tenantId}/assets/{assetId}/thumbnail.png"),
-    ("post", "/tenants/{tenantId}/assets/reprocess"),
+    ("post", "/tenants/{tenantId}/assets/{assetId}/reprocess"),
     ("post", "/tenants/{tenantId}/metadata-fields"),
 ];
 
@@ -499,6 +499,40 @@ fn page_sizes_the_client_uses_are_within_the_spec_maximum() {
 
 // ---- drift -----------------------------------------------------------------
 
+/// Fetch the swagger-ui bootstrap script.
+///
+/// Physna's CDN intermittently answers a bare client with HTTP 200 and an
+/// empty body; a browser user agent plus a few retries gets the real script.
+async fn fetch_live_script() -> String {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Macintosh) pcli2-spec-drift")
+        .build()
+        .expect("http client");
+    let mut last = String::new();
+    for attempt in 1..=5 {
+        last = client
+            .get(LIVE_URL)
+            .send()
+            .await
+            .expect("fetch swagger-ui-init.js")
+            .text()
+            .await
+            .expect("read swagger-ui-init.js");
+        if last.contains("\"swaggerDoc\"") {
+            return last;
+        }
+        eprintln!(
+            "attempt {attempt}: swagger-ui-init.js came back without swaggerDoc ({} bytes)",
+            last.len()
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(2 * attempt)).await;
+    }
+    panic!(
+        "swagger-ui-init.js never contained swaggerDoc after 5 attempts (last body: {} bytes)",
+        last.len()
+    );
+}
+
 /// Extract the `swaggerDoc` object from the swagger-ui bootstrap script.
 fn extract_swagger_doc(js: &str) -> Value {
     let start = js.find("\"swaggerDoc\"").expect("swaggerDoc in script");
@@ -552,13 +586,7 @@ fn referenced_schemas(spec: &Value, value: &Value, seen: &mut BTreeSet<String>) 
 #[ignore = "fetches the live specification; run by the spec-drift workflow"]
 async fn live_spec_matches_the_snapshot() {
     let snapshot = spec();
-    let js = reqwest::get(LIVE_URL)
-        .await
-        .expect("fetch swagger-ui-init.js")
-        .text()
-        .await
-        .expect("read swagger-ui-init.js");
-    let live = extract_swagger_doc(&js);
+    let live = extract_swagger_doc(&fetch_live_script().await);
     let live_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/target/physna-openapi.live.json"

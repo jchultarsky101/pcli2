@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-21
+
 ### Fixed
 - **`asset reprocess` works again** - Physna removed the bulk `POST /tenants/{tenantId}/assets/reprocess` endpoint the command used (spec 1.0.39, without a version bump). The command now calls the per-asset `POST /tenants/{tenantId}/assets/{assetId}/reprocess`, which is the only reprocess endpoint left. Behaviour is unchanged: the asset is queued for indexing and the command prints nothing on success.
 - **The weekly spec-drift check reports the drift instead of crashing** - Physna's CDN intermittently answers a bare HTTP client with an empty body, so the live-spec comparison panicked before it could compare anything (it had been failing that way since 14 September). The fetch now sends a browser user agent and retries an empty response up to five times.

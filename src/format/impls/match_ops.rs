@@ -873,6 +873,7 @@ mod similarity_tests {
             },
             volumetric: Some(VolumetricMatchScores {
                 match_percentage: 74.2,
+                ..Default::default()
             }),
             comparison_url: Some("https://example.com/compare".to_string()),
         }

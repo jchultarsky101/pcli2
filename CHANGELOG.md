@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-21
+
+### Fixed
+- **`asset reprocess` works again** - Physna removed the bulk `POST /tenants/{tenantId}/assets/reprocess` endpoint the command used (spec 1.0.39, without a version bump). The command now calls the per-asset `POST /tenants/{tenantId}/assets/{assetId}/reprocess`, which is the only reprocess endpoint left. Behaviour is unchanged: the asset is queued for indexing and the command prints nothing on success.
+- **The weekly spec-drift check reports the drift instead of crashing** - Physna's CDN intermittently answers a bare HTTP client with an empty body, so the live-spec comparison panicked before it could compare anything (it had been failing that way since 14 September). The fetch now sends a browser user agent and retries an empty response up to five times.
+
+- **`cargo audit` passes again** - rustls 0.23.43 carried RUSTSEC-2026-0285 (TLS 1.3 handshake messages accepted across encryption level boundaries). The lockfile pins 0.23.45. No other dependency moved.
+
+### Changed
+- **Volumetric match scores carry everything the API now returns** - `asset similarity` output includes the new optional volumetric fields when the tenant has volumetric scoring enabled: `sourceHoleMisses`, `targetHoleMisses`, `matchedHoleCenterDistanceTotalMm` and `mismatchVolumeMm3`. Existing fields and the CSV columns are unchanged.
+- **The OpenAPI snapshot is refreshed** to the current live specification, so the contract tests cover the current shapes. Besides the reprocess and volumetric changes above, the update touches only endpoints pcli2 does not call (reports, activity metrics, mold analysis, the viewer) and adds three new ones (`assets/existing-paths`, `assets/without-labels`, `labeling-coverage`).
+
+### Removed
+- **Four unused client methods that called endpoints the API does not have** - `update_folder` and `update_asset` sent `PUT` requests to paths that only accept `PATCH`, and `get_root_contents`/`list_folders_in_parent` passed `contentType` and `parentFolderId` to the folder listing, which ignores them. No command used any of them.
+
 ## [2.0.1] - 2026-09-06
 
 ### Documentation

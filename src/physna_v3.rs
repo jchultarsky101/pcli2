@@ -1144,16 +1144,6 @@ impl PhysnaApiClient {
         result
     }
 
-    /// Generic method to build and execute PUT requests
-    async fn put<T, B>(&mut self, url: &str, body: &B) -> Result<T, ApiError>
-    where
-        T: serde::de::DeserializeOwned,
-        B: serde::Serialize,
-    {
-        self.execute_request(|client| Ok(client.put(url).json(body)), true)
-            .await
-    }
-
     /// Generic method to build and execute PATCH requests
     #[allow(dead_code)]
     async fn patch<T, B>(&mut self, url: &str, body: &B) -> Result<T, ApiError>
@@ -1249,75 +1239,17 @@ impl PhysnaApiClient {
         self.get(&url).await
     }
 
-    ///   List folders in a specific parent folder with optional pagination
-    ///
-    /// This method lists folders that have a specific parent folder, allowing
-    /// for efficient traversal of the folder hierarchy without fetching all folders.
-    ///
-    /// # Arguments
-    /// * `tenant_uuid` - The UUID of the tenant
-    /// * `parent_folder_id` - The ID of the parent folder (None for root level)
-    /// * `page` - Page number for pagination (optional)
-    /// * `per_page` - Number of items per page for pagination (optional)
-    ///
-    /// # Returns
-    /// * `Ok(FolderListResponse)` - List of folders in the parent
-    /// * `Err(ApiError)` - If there was an error during API calls
-    ///   Get details for a specific folder by ID
+    /// Get details for a specific folder by ID
     ///
     /// This method fetches detailed information about a specific folder by its ID.
     /// The response includes folder metadata such as name, creation date, asset count, etc.
     ///
     /// # Arguments
-    /// * `tenant_id` - The ID of the tenant that owns the folder
-    /// * `folder_id` - The UUID of the folder to retrieve
-    ///   List folders in a specific parent folder with optional pagination
-    ///
-    /// This method lists folders that have a specific parent folder, allowing
-    /// for efficient traversal of the folder hierarchy without fetching all folders.
-    ///
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
-    /// * `parent_folder_id` - The ID of the parent folder (None for root level)
-    /// * `page` - Page number for pagination (optional)
-    /// * `per_page` - Number of items per page for pagination (optional)
+    /// * `tenant_uuid` - The UUID of the tenant that owns the folder
+    /// * `folder_uuid` - The UUID of the folder to retrieve
     ///
     /// # Returns
-    /// * `Ok(FolderListResponse)` - List of folders in the parent
-    /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn list_folders_in_parent(
-        &mut self,
-        tenant_uuid: &Uuid,
-        parent_folder_id: Option<&str>,
-        page: Option<u32>,
-        per_page: Option<u32>,
-    ) -> Result<FolderListResponse, ApiError> {
-        let url = format!("{}/tenants/{}/folders", self.base_url, tenant_uuid);
-
-        // Build query parameters for parent filtering, pagination
-        let mut query_params = vec![("contentType", "folders")];
-        if let Some(parent_id) = parent_folder_id {
-            query_params.push(("parentFolderId", parent_id));
-        }
-
-        // Handle defaults - always provide values to avoid API defaulting to 20
-        let page_val = page.unwrap_or(1).to_string();
-        let per_page_val = per_page.unwrap_or(1000).to_string(); // the API maximum; its default is 20
-
-        query_params.push(("page", page_val.as_str()));
-        query_params.push(("perPage", per_page_val.as_str()));
-
-        // Add query parameters to URL
-        let query_string = serde_urlencoded::to_string(&query_params).unwrap();
-        let url = format!("{}?{}", url, query_string);
-
-        trace!("Making API call to list folders in parent: {}", url);
-        self.get(&url).await
-    }
-
-    ///
-    /// # Returns
-    /// * `Ok(FolderResponse)` - Successfully fetched folder details
+    /// * `Ok(Folder)` - Successfully fetched folder details
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
     pub async fn get_folder(
         &mut self,
@@ -1369,26 +1301,6 @@ impl PhysnaApiClient {
 
         // Execute POST request to create the folder
         self.post(&url, &body).await
-    }
-
-    pub async fn update_folder(
-        &mut self,
-        tenant_id: &str,
-        folder_id: &str,
-        name: &str,
-    ) -> Result<crate::model::FolderResponse, ApiError> {
-        let url = format!(
-            "{}/tenants/{}/folders/{}",
-            self.base_url, tenant_id, folder_id
-        );
-
-        let body = serde_json::json!({
-            "name": name
-        });
-
-        // The API returns a SingleFolderResponse with a "folder" field
-        let response: crate::model::SingleFolderResponse = self.put(&url, &body).await?;
-        Ok(response.folder)
     }
 
     /// Rename a folder by ID
@@ -1762,46 +1674,6 @@ impl PhysnaApiClient {
             debug!("Folder not found at path: {}", folder_path);
             Ok(None)
         }
-    }
-
-    /// List folders in a specific parent folder
-    ///
-    /// This method lists folders that have a specific parent folder, allowing
-    /// for efficient traversal of the folder hierarchy without fetching all folders.
-    ///
-    /// # Arguments
-    /// * `tenant_uuid` - The UUID of the tenant
-    /// * `parent_folder_id` - The ID of the parent folder (None for root level)
-    /// * `page` - Page number for pagination (optional)
-    /// * `per_page` - Number of items per page for pagination (optional)
-    ///
-    /// # Returns
-    /// * `Ok(FolderListResponse)` - List of folders in the parent
-    /// * `Err(ApiError)` - If there was an error during API calls
-    ///   Get contents of root folder by tenant ID, filtered by content type
-    ///
-    /// This method gets contents of the root folder with a specific content type (folders only, assets only, or all).
-    ///
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant
-    /// * `content_type` - The type of content to return ("all", "assets", "folders")
-    /// * `page` - Page number for pagination (optional)
-    /// * `per_page` - Number of items per page for pagination (optional)
-    ///
-    /// # Returns
-    /// * `Ok(FolderListResponse)` - List of contents in the root folder
-    /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn get_root_contents(
-        &mut self,
-        tenant_uuid: &Uuid,
-        _content_type: &str,
-        page: Option<u32>,
-        per_page: Option<u32>,
-    ) -> Result<FolderListResponse, ApiError> {
-        // Use list_folders_in_parent with None parent to get root contents
-        // The list_folders_in_parent function now handles default values
-        self.list_folders_in_parent(tenant_uuid, None, page, per_page)
-            .await
     }
 
     /// Get contents of a specific folder by ID, filtered by content type
@@ -2236,34 +2108,6 @@ impl PhysnaApiClient {
         self.delete(&path).await
     }
 
-    /// Update an asset's metadata
-    ///
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant that owns the asset
-    /// * `asset_id` - The UUID of the asset to update
-    /// * `name` - The new name for the asset
-    ///
-    /// # Returns
-    /// * `Ok(crate::model::AssetResponse)` - Successfully updated asset with new metadata
-    /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    pub async fn update_asset(
-        &mut self,
-        tenant_id: &str,
-        asset_id: &str,
-        name: &str,
-    ) -> Result<crate::model::AssetResponse, ApiError> {
-        let url = format!(
-            "{}/tenants/{}/assets/{}",
-            self.base_url, tenant_id, asset_id
-        );
-
-        let body = serde_json::json!({
-            "name": name
-        });
-
-        self.put(&url, &body).await
-    }
-
     /// Update an asset's metadata fields
     ///
     /// # Arguments
@@ -2600,14 +2444,6 @@ impl PhysnaApiClient {
     /// # Returns
     /// * `Ok(())` - Successfully executed request (empty response is considered success)
     /// * `Err(ApiError)` - HTTP error or JSON parsing error
-    async fn post_no_response<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
-    where
-        B: serde::Serialize,
-    {
-        self.execute_request_no_response(|client| Ok(client.post(url).json(body)), false)
-            .await
-    }
-
     async fn patch_no_response<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
     where
         B: serde::Serialize,
@@ -4706,9 +4542,10 @@ impl PhysnaApiClient {
 
     /// Reprocess a single asset by its UUID
     ///
-    /// This method triggers reprocessing of a specific asset in the Physna system.
-    /// The reprocess endpoint accepts an array of asset IDs, but for this method
-    /// we only submit a single asset ID.
+    /// This method triggers reprocessing of a specific asset in the Physna system
+    /// via `POST /tenants/{tenantId}/assets/{assetId}/reprocess`. The asset's
+    /// state is set to `indexing` and a reprocess event is emitted; assets can be
+    /// reprocessed regardless of their current state.
     ///
     /// # Arguments
     /// * `tenant_uuid` - The UUID of the tenant that owns the asset
@@ -4722,15 +4559,14 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         asset_uuid: &Uuid,
     ) -> Result<(), ApiError> {
-        let url = format!("{}/tenants/{}/assets/reprocess", self.base_url, tenant_uuid);
+        let url = format!(
+            "{}/tenants/{}/assets/{}/reprocess",
+            self.base_url, tenant_uuid, asset_uuid
+        );
 
-        // Create the request body with a single asset ID in the array
-        let body = serde_json::json!({
-            "assetIds": [asset_uuid.to_string()]
-        });
-
-        // Execute POST request to trigger reprocessing
-        self.post_no_response(&url, &body).await
+        // POST with no body; the API answers 204 No Content.
+        self.execute_request_no_response(|client| Ok(client.post(&url)), false)
+            .await
     }
 
     /// List users in a specific tenant with pagination support

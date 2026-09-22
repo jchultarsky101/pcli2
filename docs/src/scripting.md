@@ -136,6 +136,7 @@ where possible) so scripts can react to specific failure classes:
 | 65 | Data format error |
 | 66 | Cannot open input file |
 | 67 | Resource not found |
+| 68 | Service unavailable |
 | 69 | Temporary failure |
 | 70 | Internal software error |
 | 71 | Operating system error |
@@ -146,7 +147,9 @@ where possible) so scripts can react to specific failure classes:
 
 A usage error rejected by the argument parser also exits 64. Batch commands that
 finished with some items failed, and folder matches whose report would be
-incomplete, exit 69.
+incomplete, exit 69. `asset diagnose` exits 68 on a deployment without failure
+log search (`pcli2 doctor` shows that up front on its `diagnostics` line); a
+`not-found` answer is printed and exits 0, since it is an answer.
 
 ```bash
 pcli2 asset get --path "/Home/Models/part.stl" --format json
@@ -229,7 +232,8 @@ pcli2 --stats asset metadata create-batch --input metadata.csv
 
 `pcli2 doctor` prints the local state in one screen (binary and PATH,
 configuration, environment, credentials, token expiry, tenant, caches, API and
-auth-server reachability, update state) and exits non-zero when something is
+auth-server reachability, whether failure diagnostics are available for
+`asset diagnose`, update state) and exits non-zero when something is
 wrong: 78 for a local problem, 68 when a server cannot be reached.
 `--format json` makes it machine-readable.
 

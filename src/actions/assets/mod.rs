@@ -8,10 +8,12 @@
 //! - Deleting assets
 //! - Finding matching assets (geometric, visual, part, text)
 //! - Reprocessing assets
+//! - Explaining why an asset failed (server-side failure diagnostics)
 
 pub mod create;
 pub mod delete;
 pub mod dependency_diff;
+pub mod diagnose;
 pub mod download;
 pub mod full_inventory;
 pub mod list;
@@ -27,6 +29,7 @@ pub use create::{
 };
 pub use delete::{delete_asset, delete_asset_metadata};
 pub use dependency_diff::compare_asset_dependencies;
+pub use diagnose::diagnose_asset;
 pub use download::{download_asset, download_asset_thumbnail, download_folder};
 pub use full_inventory::{count_assets, inventory};
 pub use list::list_assets;

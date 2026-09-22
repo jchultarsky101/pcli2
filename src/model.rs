@@ -2165,6 +2165,191 @@ impl AssetStateCounts {
     }
 }
 
+// ---- failure diagnostics ---------------------------------------------------
+
+/// Whether the deployment can look up why an asset failed.
+///
+/// Returned by `GET /tenants/{tenantId}/failure-diagnostics/availability`. It is
+/// a property of the deployment, not of the tenant: customer-managed and enclave
+/// stacks have no failure log search, and every lookup there answers
+/// `unavailable`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FailureDiagnosticsAvailability {
+    pub available: bool,
+}
+
+/// Outcome of a failure-diagnostics lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FailureDiagnosticsStatus {
+    /// A matching failure log entry was located.
+    Found,
+    /// The record is not failed, or the entry has aged out of log retention.
+    NotFound,
+    /// Log search is not configured for this deployment.
+    Unavailable,
+}
+
+impl FailureDiagnosticsStatus {
+    /// The value as the API spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FailureDiagnosticsStatus::Found => "found",
+            FailureDiagnosticsStatus::NotFound => "not-found",
+            FailureDiagnosticsStatus::Unavailable => "unavailable",
+        }
+    }
+}
+
+/// Which side a failure is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FailureKind {
+    /// A failure the requester can act on; `summary` says what to change.
+    User,
+    /// A failure on Physna's side; `summary` is a fixed string and the
+    /// `traceId` is what to quote to support.
+    Internal,
+}
+
+impl FailureKind {
+    /// The value as the API spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FailureKind::User => "user",
+            FailureKind::Internal => "internal",
+        }
+    }
+}
+
+/// Why an asset failed to process, as the ingestion logs remember it.
+///
+/// Returned by `GET /tenants/{tenantId}/assets/{assetId}/failure-diagnostics`.
+/// Nothing is persisted server-side: the lookup searches the logs on demand,
+/// so the answer is only as durable as log retention. Only `status` is always
+/// present.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FailureDiagnostics {
+    pub status: FailureDiagnosticsStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<FailureKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(rename = "traceId", default, skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+    #[serde(
+        rename = "occurredAt",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub occurred_at: Option<String>,
+}
+
+/// The `asset diagnose` output: the asset's identity and state next to what
+/// the server knows about its failure.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetFailureDiagnostics {
+    #[serde(rename = "assetPath")]
+    pub asset_path: String,
+    #[serde(rename = "assetUuid")]
+    pub asset_uuid: Uuid,
+    /// The asset's processing state as the asset record reports it
+    /// (`failed`, `finished`, ...), so a `not-found` answer can be read.
+    #[serde(rename = "assetState", skip_serializing_if = "Option::is_none")]
+    pub asset_state: Option<String>,
+    pub status: FailureDiagnosticsStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<FailureKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(rename = "traceId", skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+    #[serde(rename = "occurredAt", skip_serializing_if = "Option::is_none")]
+    pub occurred_at: Option<String>,
+}
+
+impl AssetFailureDiagnostics {
+    /// Pair an asset with the diagnostics the server returned for it.
+    pub fn new(asset: &Asset, diagnostics: FailureDiagnostics) -> Self {
+        AssetFailureDiagnostics {
+            asset_path: asset.path(),
+            asset_uuid: asset.uuid(),
+            asset_state: asset.processing_status().cloned(),
+            status: diagnostics.status,
+            kind: diagnostics.kind,
+            summary: diagnostics.summary,
+            trace_id: diagnostics.trace_id,
+            occurred_at: diagnostics.occurred_at,
+        }
+    }
+}
+
+/// Which surface a recent failure came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FailureSource {
+    Asset,
+    Report,
+    PartFinderReport,
+}
+
+impl FailureSource {
+    /// Every kind the listing can filter by, as the API spells them.
+    pub const ALL: [&'static str; 3] = ["asset", "report", "part-finder-report"];
+
+    /// The value as the API spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FailureSource::Asset => "asset",
+            FailureSource::Report => "report",
+            FailureSource::PartFinderReport => "part-finder-report",
+        }
+    }
+}
+
+/// One failed asset, report or part-finder report in a tenant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecentFailure {
+    pub kind: FailureSource,
+    pub id: Uuid,
+    pub name: String,
+    /// When the record last changed: nothing persists the moment of failure,
+    /// so this is the closest available signal.
+    #[serde(rename = "failedAt")]
+    pub failed_at: String,
+}
+
+/// Tenant-wide failure totals, not just the current page.
+///
+/// The spec types these as JSON numbers, so they are read as floats and
+/// exposed as counts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FailureCountsByKind {
+    pub asset: f64,
+    pub report: f64,
+    #[serde(rename = "part-finder-report")]
+    pub part_finder_report: f64,
+}
+
+/// One page of `GET /tenants/{tenantId}/failures`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecentFailuresPage {
+    pub failures: Vec<RecentFailure>,
+    #[serde(rename = "countsByKind")]
+    pub counts_by_kind: FailureCountsByKind,
+    #[serde(rename = "pageData")]
+    pub page_data: PageData,
+}
+
+/// The `tenant failures` output: every failure fetched, newest first, with the
+/// tenant-wide totals so a limited listing still says how many there are.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecentFailuresList {
+    pub failures: Vec<RecentFailure>,
+    #[serde(rename = "countsByKind")]
+    pub counts_by_kind: FailureCountsByKind,
+}
+
 /// Represents a health report computed from all assets in a tenant
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetHealthReport {

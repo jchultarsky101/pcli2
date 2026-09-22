@@ -20,7 +20,8 @@ built for scripts (JSON, CSV, Excel) as much as for people.
 - Nested sub-commands with short aliases (`pcli2 asset ls`, `pcli2 folder rm`)
 - Multiple environments (production, staging) and multiple tenants
 - OAuth2 client-credentials login with automatic token renewal
-- Asset upload, download, listing, deletion, reprocessing and thumbnails
+- Asset upload, download, listing, deletion, reprocessing, thumbnails, and
+  server-side failure diagnostics for assets that did not process
 - Folder tree listing, creation, renaming, moving, bulk upload and download
 - Geometric, part and visual matching, single-asset or folder-wide, with CSV and
   Excel reports

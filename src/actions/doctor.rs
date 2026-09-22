@@ -43,6 +43,38 @@ fn check(name: &'static str, status: Status, detail: impl Into<String>) -> Check
     }
 }
 
+/// Whether `asset diagnose` can work here. Never a failure: a deployment
+/// without failure log search is healthy, it just cannot answer that command.
+async fn diagnostics_check(
+    api: &mut crate::physna_v3::PhysnaApiClient,
+    tenant: Option<uuid::Uuid>,
+) -> Check {
+    let Some(tenant) = tenant else {
+        return check(
+            "diagnostics",
+            Status::Warn,
+            "not checked: no tenant to ask through",
+        );
+    };
+    match api.get_failure_diagnostics_availability(&tenant).await {
+        Ok(availability) if availability.available => check(
+            "diagnostics",
+            Status::Ok,
+            "failure diagnostics available ('pcli2 asset diagnose')",
+        ),
+        Ok(_) => check(
+            "diagnostics",
+            Status::Warn,
+            "failure diagnostics not available on this deployment ('pcli2 asset diagnose' will exit 68)",
+        ),
+        Err(e) => check(
+            "diagnostics",
+            Status::Warn,
+            format!("availability could not be checked: {}", e),
+        ),
+    }
+}
+
 pub async fn run(sub_matches: &clap::ArgMatches) -> Result<(), CliError> {
     let as_json = sub_matches
         .get_one::<String>("format")
@@ -243,16 +275,23 @@ pub async fn run(sub_matches: &clap::ArgMatches) -> Result<(), CliError> {
             Ok(mut api) => {
                 let started = Instant::now();
                 match crate::tenant_cache::TenantCache::get_all_tenants(&mut api, true).await {
-                    Ok(tenants) => checks.push(check(
-                        "api",
-                        Status::Ok,
-                        format!(
-                            "{} answered in {} ms; {} tenant(s) visible",
-                            api.base_url(),
-                            started.elapsed().as_millis(),
-                            tenants.len()
-                        ),
-                    )),
+                    Ok(tenants) => {
+                        checks.push(check(
+                            "api",
+                            Status::Ok,
+                            format!(
+                                "{} answered in {} ms; {} tenant(s) visible",
+                                api.base_url(),
+                                started.elapsed().as_millis(),
+                                tenants.len()
+                            ),
+                        ));
+                        // Failure diagnostics are a property of the deployment; the
+                        // tenant only scopes the request, so any tenant will do.
+                        let tenant =
+                            active_tenant.or_else(|| tenants.first().map(|t| t.tenant_uuid));
+                        checks.push(diagnostics_check(&mut api, tenant).await);
+                    }
                     Err(e) => {
                         connectivity_failed = true;
                         checks.push(check(

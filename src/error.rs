@@ -51,6 +51,11 @@ pub enum CliError {
     #[error("Could not resolve {0} asset: {1}")]
     AssetResolutionError(String, String),
 
+    /// The server answered, but the feature the command needs is not
+    /// configured on this deployment (for example failure log search).
+    #[error("{0}")]
+    FeatureUnavailable(String),
+
     #[error("UUID parsing error: {0}")]
     UuidParsingError(#[from] uuid::Error),
 
@@ -96,6 +101,7 @@ impl CliError {
             | CliError::FolderNotFound(..)
             | CliError::AssetResolutionError(..) => PcliExitCode::NotFound,
             CliError::FolderRenameFailed(..) => PcliExitCode::ApiError,
+            CliError::FeatureUnavailable(_) => PcliExitCode::Unavailable,
             CliError::PhysnaExtendedApiError(e) => e.exit_code(),
             CliError::UuidParsingError(_) => PcliExitCode::UsageError,
             CliError::ActionError(e) => e.exit_code(),

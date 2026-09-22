@@ -4,10 +4,10 @@
 
 use crate::commands::params::{
     format_parameter, format_pretty_parameter, format_with_headers_parameter,
-    tenant_name_parameter, tenant_parameter, COMMAND_CLEAR, COMMAND_GET, COMMAND_LIST,
-    COMMAND_METADATA, COMMAND_TENANT, COMMAND_USE,
+    tenant_name_parameter, tenant_parameter, COMMAND_CLEAR, COMMAND_FAILURES, COMMAND_GET,
+    COMMAND_LIST, COMMAND_METADATA, COMMAND_TENANT, COMMAND_USE, PARAMETER_KIND, PARAMETER_LIMIT,
 };
-use clap::Command;
+use clap::{Arg, Command};
 
 /// Create the tenant command with all its subcommands.
 pub fn tenant_command() -> Command {
@@ -33,6 +33,36 @@ pub fn tenant_command() -> Command {
                         .required(false)
                         .value_parser(["indexing", "finished", "failed", "unsupported", "no-3d-data", "missing-dependencies"])
                         .help("Filter assets by state: indexing, finished, failed, unsupported, no-3d-data, or missing-dependencies"),
+                )
+                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_pretty_parameter())
+                .arg(format_with_headers_parameter()),
+        )
+        .subcommand(
+            Command::new(COMMAND_FAILURES)
+                .about("List recent failures (assets, reports, part-finder reports), newest first")
+                .long_about(
+                    "List recent failures (assets, reports, part-finder reports), newest first.\n\n\
+                     JSON output also carries the tenant-wide totals per kind. The ID of an `asset` \
+                     row is what 'asset diagnose --uuid' takes to explain the failure.",
+                )
+                .arg(tenant_parameter())
+                .arg(
+                    Arg::new(PARAMETER_KIND)
+                        .long(PARAMETER_KIND)
+                        .num_args(1)
+                        .action(clap::ArgAction::Append)
+                        .required(false)
+                        .value_parser(crate::model::FailureSource::ALL)
+                        .help("Only failures of this kind (repeatable): asset, report, part-finder-report"),
+                )
+                .arg(
+                    Arg::new(PARAMETER_LIMIT)
+                        .long(PARAMETER_LIMIT)
+                        .num_args(1)
+                        .required(false)
+                        .value_parser(clap::value_parser!(usize))
+                        .help("Stop after this many failures (default: all of them)"),
                 )
                 .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(format_pretty_parameter())

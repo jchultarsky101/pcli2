@@ -299,6 +299,21 @@ fn contracts() -> Vec<Contract> {
             MetadataFieldListResponse
         ),
         contract!(
+            "get",
+            "/tenants/{tenantId}/metadata-fields/{fieldId}/assets",
+            AssetListResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/assets/without-metadata",
+            AssetListResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/metadata-coverage",
+            MetadataCoverageResponse
+        ),
+        contract!(
             "post",
             "/tenants/{tenantId}/assets/{assetId}/geometric-search",
             GeometricSearchResponse
@@ -335,6 +350,22 @@ fn contracts() -> Vec<Contract> {
             FailureDiagnosticsAvailability
         ),
         contract!("get", "/tenants/{tenantId}/failures", RecentFailuresPage),
+        contract!("get", "/tenants/{tenantId}/reports", ReportListResponse),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/reports/{id}",
+            SingleReportResponse
+        ),
+        contract!(
+            "post",
+            "/tenants/{tenantId}/reports/duplication",
+            SingleReportResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/reports/{id}/failure-diagnostics",
+            FailureDiagnostics
+        ),
         contract!(
             "post",
             "/tenants/{tenantId}/assets/existing-paths",
@@ -359,7 +390,15 @@ const OTHER_ENDPOINTS: &[(&str, &str)] = &[
     ("get", "/tenants/{tenantId}/assets/{assetId}/file"),
     ("get", "/tenants/{tenantId}/assets/{assetId}/thumbnail.png"),
     ("post", "/tenants/{tenantId}/assets/{assetId}/reprocess"),
+    (
+        "post",
+        "/tenants/{tenantId}/assets/{assetId}/resolve-dependency",
+    ),
     ("post", "/tenants/{tenantId}/metadata-fields"),
+    ("patch", "/tenants/{tenantId}/metadata-fields/{fieldId}"),
+    ("delete", "/tenants/{tenantId}/metadata-fields/{fieldId}"),
+    ("delete", "/tenants/{tenantId}/reports/{id}"),
+    ("get", "/tenants/{tenantId}/reports/{id}/file"),
 ];
 
 /// Every endpoint above, for the drift check.
@@ -522,6 +561,10 @@ fn hard_coded_enumerations_match_the_spec() {
         property_values("RecentFailureItem", "kind"),
         pcli2::model::FailureSource::ALL
     );
+    // Reports: the statuses `report create --wait` stops on and the types
+    // `report list --type` accepts.
+    assert_eq!(values("JobStatus"), pcli2::model::JobStatus::ALL);
+    assert_eq!(values("ReportType"), pcli2::model::ReportType::ALL);
     let mut counts: Vec<String> = spec["components"]["schemas"]["ListRecentFailuresResponse"]
         ["properties"]["countsByKind"]["required"]
         .as_array()
@@ -553,6 +596,9 @@ fn page_sizes_the_client_uses_are_within_the_spec_maximum() {
         ),
         ("/tenants/{tenantId}/users", 100),
         ("/tenants/{tenantId}/failures", 100),
+        ("/tenants/{tenantId}/metadata-fields/{fieldId}/assets", 1000),
+        ("/tenants/{tenantId}/assets/without-metadata", 1000),
+        ("/tenants/{tenantId}/reports", 1000),
     ] {
         let parameters = spec["paths"][path]["get"]["parameters"]
             .as_array()

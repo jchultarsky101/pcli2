@@ -2452,6 +2452,15 @@ impl PhysnaApiClient {
             .await
     }
 
+    /// POST a JSON body to an endpoint whose success response has no body (204).
+    async fn post_no_response<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
+    where
+        B: serde::Serialize,
+    {
+        self.execute_request_no_response(|client| Ok(client.post(url).json(body)), false)
+            .await
+    }
+
     /// Generic method to build and execute DELETE requests that may have a request body and return empty responses
     ///
     /// This method is similar to the standard delete method but allows request bodies for DELETE operations.
@@ -3918,6 +3927,267 @@ impl PhysnaApiClient {
         Ok(response)
     }
 
+    /// The tenant's reports, newest first as the API orders them.
+    ///
+    /// `GET /tenants/{tenantId}/reports?type&status&page&perPage`; every page
+    /// (`perPage=1000`, the maximum) unless `limit` stops it early.
+    pub async fn list_reports(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_type: Option<&str>,
+        status: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<crate::model::Report>, ApiError> {
+        const PER_PAGE: usize = 1000;
+        let mut filters = String::new();
+        if let Some(report_type) = report_type {
+            filters.push_str(&format!("&type={}", urlencoding::encode(report_type)));
+        }
+        if let Some(status) = status {
+            filters.push_str(&format!("&status={}", urlencoding::encode(status)));
+        }
+        let mut page = 1;
+        let mut reports = Vec::new();
+        loop {
+            let per_page = match limit {
+                Some(limit) => PER_PAGE.min(limit.saturating_sub(reports.len()).max(1)),
+                None => PER_PAGE,
+            };
+            let url = format!(
+                "{}/tenants/{}/reports?page={}&perPage={}{}",
+                self.base_url, tenant_uuid, page, per_page, filters
+            );
+            debug!("Reports request URL: {}", url);
+            let response: crate::model::ReportListResponse = self.get(&url).await?;
+            let last_page = response.page_data.last_page;
+            reports.extend(response.reports);
+            let enough = limit.is_some_and(|limit| reports.len() >= limit);
+            if enough || page >= last_page || page >= 1000 {
+                break;
+            }
+            page += 1;
+        }
+        if let Some(limit) = limit {
+            reports.truncate(limit);
+        }
+        Ok(reports)
+    }
+
+    /// One report. `GET /tenants/{tenantId}/reports/{id}`.
+    pub async fn get_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<crate::model::Report, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}",
+            self.base_url, tenant_uuid, report_id
+        );
+        let response: crate::model::SingleReportResponse = self.get(&url).await?;
+        Ok(response.report)
+    }
+
+    /// Delete a report. `DELETE /tenants/{tenantId}/reports/{id}`, 204.
+    pub async fn delete_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<(), ApiError> {
+        self.delete(&format!("/tenants/{}/reports/{}", tenant_uuid, report_id))
+            .await
+    }
+
+    /// Why a report failed, from the job service logs.
+    ///
+    /// `GET /tenants/{tenantId}/reports/{id}/failure-diagnostics`; same answer
+    /// shape as an asset's.
+    pub async fn get_report_failure_diagnostics(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<crate::model::FailureDiagnostics, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}/failure-diagnostics",
+            self.base_url, tenant_uuid, report_id
+        );
+        self.get(&url).await
+    }
+
+    /// Start a duplication report. `POST /tenants/{tenantId}/reports/duplication`, 201.
+    pub async fn create_duplication_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        request: &crate::model::CreateDuplicationReportRequest,
+    ) -> Result<crate::model::Report, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/duplication",
+            self.base_url, tenant_uuid
+        );
+        let response: crate::model::SingleReportResponse = self.post(&url, request).await?;
+        Ok(response.report)
+    }
+
+    /// Walk a paged asset listing, `perPage=1000` (the API maximum), until the
+    /// last page or `limit` assets. `url` carries the endpoint and any filter
+    /// query; the page parameters are appended.
+    async fn collect_asset_pages(
+        &mut self,
+        url: &str,
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        const PER_PAGE: usize = 1000;
+        let separator = if url.contains('?') { '&' } else { '?' };
+        let mut page = 1;
+        let mut assets: Vec<Asset> = Vec::new();
+        loop {
+            let per_page = match limit {
+                Some(limit) => PER_PAGE.min(limit.saturating_sub(assets.len()).max(1)),
+                None => PER_PAGE,
+            };
+            let page_url = format!("{url}{separator}page={page}&perPage={per_page}");
+            debug!("Asset listing request URL: {}", page_url);
+            let response: AssetListResponse = self.get(&page_url).await?;
+            let last_page = response.page_data.last_page;
+            assets.extend(response.assets.iter().map(Asset::from));
+            let enough = limit.is_some_and(|limit| assets.len() >= limit);
+            if enough || page >= last_page || page >= 1000 {
+                break;
+            }
+            page += 1;
+        }
+        if let Some(limit) = limit {
+            assets.truncate(limit);
+        }
+        Ok(AssetList::from(assets))
+    }
+
+    /// The assets that carry a value for a metadata field.
+    ///
+    /// `GET /tenants/{tenantId}/metadata-fields/{fieldId}/assets`, every page
+    /// unless `limit` stops it early.
+    pub async fn list_assets_using_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-fields/{}/assets",
+            self.base_url, tenant_uuid, field_id
+        );
+        self.collect_asset_pages(&url, limit).await
+    }
+
+    /// The assets that have no metadata value at all, oldest first.
+    ///
+    /// `GET /tenants/{tenantId}/assets/without-metadata`; `folders` and
+    /// `extensions` narrow it (comma-separated on the wire). Demo assets
+    /// uploaded by Physna are excluded by the server.
+    pub async fn list_assets_without_metadata(
+        &mut self,
+        tenant_uuid: &Uuid,
+        folders: &[String],
+        extensions: &[String],
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        let mut url = format!(
+            "{}/tenants/{}/assets/without-metadata",
+            self.base_url, tenant_uuid
+        );
+        let mut query: Vec<String> = Vec::new();
+        if !folders.is_empty() {
+            query.push(format!(
+                "folders={}",
+                urlencoding::encode(&folders.join(","))
+            ));
+        }
+        if !extensions.is_empty() {
+            query.push(format!(
+                "extensions={}",
+                urlencoding::encode(&extensions.join(","))
+            ));
+        }
+        if !query.is_empty() {
+            url.push('?');
+            url.push_str(&query.join("&"));
+        }
+        self.collect_asset_pages(&url, limit).await
+    }
+
+    /// How many of the tenant's assets carry at least one metadata value.
+    pub async fn get_metadata_coverage(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<crate::model::MetadataCoverageResponse, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-coverage",
+            self.base_url, tenant_uuid
+        );
+        self.get(&url).await
+    }
+
+    /// Rename a metadata field. `PATCH /tenants/{tenantId}/metadata-fields/{fieldId}`, 204.
+    pub async fn rename_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        new_name: &str,
+    ) -> Result<(), ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-fields/{}",
+            self.base_url, tenant_uuid, field_id
+        );
+        debug!("Renaming metadata field {} to '{}'", field_id, new_name);
+        self.patch_no_response(&url, &serde_json::json!({ "name": new_name }))
+            .await
+    }
+
+    /// Delete a metadata field. `DELETE /tenants/{tenantId}/metadata-fields/{fieldId}`, 204.
+    ///
+    /// Without `force` the server refuses a field that assets still use; with
+    /// it the field goes and its values are removed from every asset.
+    pub async fn delete_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        force: bool,
+    ) -> Result<(), ApiError> {
+        debug!("Deleting metadata field {} (force: {})", field_id, force);
+        self.delete(&format!(
+            "/tenants/{}/metadata-fields/{}?force={}",
+            tenant_uuid, field_id, force
+        ))
+        .await
+    }
+
+    /// Link a missing dependency of an assembly to an existing asset.
+    ///
+    /// `POST /tenants/{tenantId}/assets/{assetId}/resolve-dependency` with
+    /// `{"resolvedAssetId", "dependencyPath"}`; the assembly is re-indexed with
+    /// the resolved dependency. `dependency_path` is the path string the
+    /// dependency listing reports for the missing part. Answers 204.
+    pub async fn resolve_asset_dependency(
+        &mut self,
+        tenant_uuid: &Uuid,
+        assembly_uuid: &Uuid,
+        dependency_path: &str,
+        resolved_asset_uuid: &Uuid,
+    ) -> Result<(), ApiError> {
+        let url = format!(
+            "{}/tenants/{}/assets/{}/resolve-dependency",
+            self.base_url, tenant_uuid, assembly_uuid
+        );
+        let body = serde_json::json!({
+            "resolvedAssetId": resolved_asset_uuid.to_string(),
+            "dependencyPath": dependency_path,
+        });
+        debug!(
+            "Resolving dependency '{}' of assembly {} with asset {}",
+            dependency_path, assembly_uuid, resolved_asset_uuid
+        );
+        self.post_no_response(&url, &body).await
+    }
+
     /// Move an asset to another folder, or to the root when `folder_uuid` is `None`.
     ///
     /// `PATCH /tenants/{tenantId}/assets/{assetId}/folder` with `{"folderId": ...}`
@@ -4338,10 +4608,47 @@ impl PhysnaApiClient {
         asset_name_opt: Option<&str>,
         dest: &std::path::Path,
     ) -> Result<u64, ApiError> {
+        let what = format!("asset {}", describe_asset(asset_id, asset_name_opt));
+        let url = format!(
+            "{}/tenants/{}/assets/{}/file",
+            self.base_url, tenant_id, asset_id
+        );
+        self.download_url_to_file(&url, &what, dest).await
+    }
+
+    /// Download a report's data as CSV or XLSX straight to disk.
+    ///
+    /// `GET /tenants/{tenantId}/reports/{id}/file?format=csv|xlsx`; the report
+    /// must be COMPLETED. Same temporary-file discipline as an asset download.
+    pub async fn download_report_to_file(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+        format: &str,
+        dest: &std::path::Path,
+    ) -> Result<u64, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}/file?format={}",
+            self.base_url, tenant_uuid, report_id, format
+        );
+        self.download_url_to_file(&url, &format!("report {}", report_id), dest)
+            .await
+    }
+
+    /// Stream a GET response body to `dest` through `<dest>.part`.
+    ///
+    /// `what` names the thing being downloaded in error messages. The part file
+    /// is removed on any failure; an empty body is a failure.
+    async fn download_url_to_file(
+        &mut self,
+        url: &str,
+        what: &str,
+        dest: &std::path::Path,
+    ) -> Result<u64, ApiError> {
         use futures::StreamExt;
         use tokio::io::AsyncWriteExt;
 
-        let asset_display = describe_asset(asset_id, asset_name_opt);
+        debug!("Download request URL: {}", url);
         if let Some(parent) = dest.parent() {
             if !parent.as_os_str().is_empty() {
                 tokio::fs::create_dir_all(parent).await?;
@@ -4355,9 +4662,11 @@ impl PhysnaApiClient {
         );
         let part_path = dest.with_file_name(part_name);
 
-        let mut stream = self
-            .download_asset_stream(tenant_id, asset_id, asset_name_opt)
-            .await?;
+        let response = self
+            .request_with_auth(|client| Ok(client.get(url)), true)
+            .await
+            .map_err(|e| e.about(what))?;
+        let mut stream = response.bytes_stream();
         let mut file = tokio::fs::File::create(&part_path).await?;
         let mut written: u64 = 0;
         let write_result: Result<(), ApiError> = async {
@@ -4380,17 +4689,14 @@ impl PhysnaApiClient {
             let _ = tokio::fs::remove_file(&part_path).await;
             return Err(ApiError::IoError(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!(
-                    "the server returned an empty file for asset {}",
-                    asset_display
-                ),
+                format!("the server returned an empty file for {}", what),
             )));
         }
         tokio::fs::rename(&part_path, dest).await?;
         debug!(
-            "Downloaded {} bytes for asset {} to {}",
+            "Downloaded {} bytes for {} to {}",
             written,
-            asset_display,
+            what,
             dest.display()
         );
         Ok(written)

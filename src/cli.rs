@@ -22,8 +22,9 @@ use pcli2::{
             diagnose_asset, download_asset, download_asset_thumbnail, geometric_match_asset,
             geometric_match_folder, inventory, list_assets, metadata_inference, move_asset,
             part_match_asset, part_match_folder, print_asset, print_asset_dependencies,
-            print_asset_metadata, print_folder_dependencies, reprocess_asset, text_match,
-            update_asset_metadata, visual_match_asset, visual_match_folder,
+            print_asset_metadata, print_folder_dependencies, reprocess_asset,
+            resolve_asset_dependency, text_match, update_asset_metadata, visual_match_asset,
+            visual_match_folder,
         },
         cache::clear_cache,
         folders::{
@@ -43,10 +44,10 @@ use pcli2::{
         COMMAND_EXPORT, COMMAND_FAILURES, COMMAND_FOLDER, COMMAND_FULL_INVENTORY, COMMAND_GET,
         COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT,
         COMMAND_MATCH, COMMAND_METADATA, COMMAND_MOVE, COMMAND_PART_MATCH, COMMAND_REPROCESS,
-        COMMAND_SIMILARITY, COMMAND_STATE, COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL,
-        COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH, PARAMETER_CLIENT_ID,
-        PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_INPUT,
-        PARAMETER_OUTPUT, PARAMETER_PRETTY,
+        COMMAND_RESOLVE_DEPENDENCY, COMMAND_SIMILARITY, COMMAND_STATE, COMMAND_TENANT,
+        COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH,
+        PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_HEADERS,
+        PARAMETER_INPUT, PARAMETER_OUTPUT, PARAMETER_PRETTY,
     },
     format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions},
     physna_v3::TryDefault,
@@ -229,6 +230,42 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                             );
 
                             pcli2::actions::tenants::list_tenant_metadata_fields(sub_matches)
+                                .await?;
+                            Ok(())
+                        }
+                        Some(("rename", sub_matches)) => {
+                            trace!("Command: {} {} rename", COMMAND_TENANT, COMMAND_METADATA);
+                            pcli2::actions::tenants::rename_tenant_metadata_field(sub_matches)
+                                .await?;
+                            Ok(())
+                        }
+                        Some((COMMAND_DELETE, sub_matches)) => {
+                            trace!(
+                                "Command: {} {} {}",
+                                COMMAND_TENANT,
+                                COMMAND_METADATA,
+                                COMMAND_DELETE
+                            );
+                            pcli2::actions::tenants::delete_tenant_metadata_field(sub_matches)
+                                .await?;
+                            Ok(())
+                        }
+                        Some(("assets", sub_matches)) => {
+                            trace!("Command: {} {} assets", COMMAND_TENANT, COMMAND_METADATA);
+                            pcli2::actions::tenants::list_assets_using_tenant_metadata_field(
+                                sub_matches,
+                            )
+                            .await?;
+                            Ok(())
+                        }
+                        Some(("coverage", sub_matches)) => {
+                            trace!("Command: {} {} coverage", COMMAND_TENANT, COMMAND_METADATA);
+                            pcli2::actions::tenants::tenant_metadata_coverage(sub_matches).await?;
+                            Ok(())
+                        }
+                        Some(("missing", sub_matches)) => {
+                            trace!("Command: {} {} missing", COMMAND_TENANT, COMMAND_METADATA);
+                            pcli2::actions::tenants::list_assets_without_metadata(sub_matches)
                                 .await?;
                             Ok(())
                         }
@@ -488,6 +525,11 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                 Some((COMMAND_MOVE, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MOVE);
                     move_asset(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_RESOLVE_DEPENDENCY, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_RESOLVE_DEPENDENCY);
+                    resolve_asset_dependency(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
@@ -1148,6 +1190,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
 
             let count = pcli2::actions::man::generate_man_pages(&output_dir)?;
             println!("Wrote {} man page(s) to '{}'", count, output_dir.display());
+            Ok(())
+        }
+        Some(("report", sub_matches)) => {
+            trace!("Command: report");
+
+            pcli2::commands::report::execute_report_command(sub_matches).await?;
             Ok(())
         }
         Some(("user", sub_matches)) => {

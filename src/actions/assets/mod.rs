@@ -23,6 +23,7 @@ pub mod metadata_batch_csv;
 pub mod move_asset;
 pub mod print;
 pub mod reprocess;
+pub mod resolve_dependency;
 pub mod similarity;
 
 pub use create::{
@@ -44,4 +45,5 @@ pub use print::{
     print_asset, print_asset_dependencies, print_asset_metadata, print_folder_dependencies,
 };
 pub use reprocess::reprocess_asset;
+pub use resolve_dependency::resolve_asset_dependency;
 pub use similarity::asset_similarity;

@@ -301,11 +301,19 @@ pcli2 asset reprocess --uuid 550e8400-e29b-41d4-a716-446655440000
 # Move an asset to another folder (keeps its UUID and metadata); '/' is the root
 pcli2 asset move --path "/Home/Models/model.stl" --folder-path "/Home/Archive"
 
+# An assembly with a missing part: see which, then link the part that should stand in for it
+pcli2 asset dependencies --path "/Home/Models/top.asm" --format csv --headers
+pcli2 asset resolve-dependency --path "/Home/Models/top.asm" --dependency "Models/Body01.par" --target-path "/Home/Parts/Body01.par"
+
 # Ask the server why an asset failed to process (alias: asset why)
 pcli2 asset diagnose --path "/Home/Models/model.stl"
 
 # List what failed lately, newest first (assets, reports, part-finder reports)
 pcli2 tenant failures --format csv --headers
+
+# Reports: start a duplication report and wait for it, then download its data
+pcli2 report create --name "Brackets" --folder-path "/Home/Parts/Brackets" --wait
+pcli2 report download --id <ID> --format xlsx
 
 # Download asset thumbnail
 pcli2 asset thumbnail --path "/Home/Models/model.stl"
@@ -776,6 +784,7 @@ Quick reference for all available command aliases:
 | `pcli2 asset similarity` | `pcli2 asset match-scores` |
 | `pcli2 asset diagnose` | `pcli2 asset failure`, `pcli2 asset why` |
 | `pcli2 asset move` | `pcli2 asset mv` |
+| `pcli2 asset resolve-dependency` | `pcli2 asset resolve-dep` |
 | `pcli2 asset metadata create` | `pcli2 asset metadata update` |
 | `pcli2 asset metadata create-batch` | `pcli2 asset metadata update-batch` |
 | `pcli2 asset metadata delete` | `pcli2 asset metadata rm` |
@@ -794,6 +803,14 @@ Quick reference for all available command aliases:
 | Full Command | Alias |
 |-------------|-------|
 | `pcli2 environment` | `pcli2 env` |
+
+### Report Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 report list` | `pcli2 report ls` |
+| `pcli2 report download` | `pcli2 report dl` |
+| `pcli2 report diagnose` | `pcli2 report why` |
+| `pcli2 report delete` | `pcli2 report rm` |
 
 ### Other Commands
 | Full Command | Alias |
@@ -819,6 +836,7 @@ pcli2 asset delete           # Delete an asset
 pcli2 asset move             # Move an asset to another folder, or to the root (--folder-path /)
 pcli2 asset dependencies     # Get dependencies for an asset
 pcli2 asset dependency-diff  # Diff the dependency trees of two assets
+pcli2 asset resolve-dependency  # Link a missing dependency of an assembly to an existing asset
 pcli2 asset geometric-match  # Find geometrically similar assets
 pcli2 asset part-match       # Find part matches for an asset
 pcli2 asset visual-match     # Find visually similar assets (--limit N, default 100; --threshold N size filter, default 80)
@@ -1061,7 +1079,12 @@ pcli2 tenant current        # Get the active tenant
 pcli2 tenant clear          # Clear the active tenant
 pcli2 tenant state          # Get asset state counts for the current tenant
 pcli2 tenant failures       # List recent failures (assets, reports, part-finder reports), newest first
-pcli2 tenant metadata list  # List the tenant's registered metadata fields with their types
+pcli2 tenant metadata list      # List the tenant's registered metadata fields with their types
+pcli2 tenant metadata rename    # Rename a field (--name OLD --new-name NEW); values on assets are kept
+pcli2 tenant metadata delete    # Delete a field (--name NAME); --force also removes its values from every asset
+pcli2 tenant metadata assets    # List the assets that have a value for a field (--name NAME, --limit N)
+pcli2 tenant metadata coverage  # How many assets carry any metadata at all (counts and percentage)
+pcli2 tenant metadata missing   # List the assets with no metadata at all (--folder-path, --extension, --limit)
 ```
 
 The `tenant metadata list` output (CSV) uses the same header as the classic `create-batch` input (`ASSET_PATH,NAME,VALUE,TYPE`) with `NAME` and `TYPE` filled from the registry and `ASSET_PATH`/`VALUE` blank, so it can be saved and turned into a batch-upload template:
@@ -1108,6 +1131,28 @@ pcli2 asset diagnose --uuid 5db69606-661e-4019-a9b4-a4d122fc0f9e
   has a `diagnostics` line that says up front whether the lookup is available.
 
 CSV columns: `ASSET_PATH,ASSET_STATE,STATUS,KIND,SUMMARY,TRACE_ID,OCCURRED_AT,ASSET_UUID`.
+
+### Report Commands
+
+Reports (duplication, simplification, custom) are jobs that run on the server and then hold data you can download. See the [Reports](docs/src/reports.md) chapter for details.
+
+```
+pcli2 report list      # List the tenant's reports, newest first (--type, --status, --limit)
+pcli2 report get       # Show one report: status, progress, settings (--id)
+pcli2 report download  # Download a COMPLETED report's data (--id, --format csv|xlsx, -o PATH)
+pcli2 report diagnose  # Explain why a report failed, like 'asset diagnose' (--id)
+pcli2 report delete    # Delete a report; asks for confirmation unless --yes (--id, --dry-run)
+pcli2 report create    # Start a duplication report over folders; --wait follows it to the end
+```
+
+```bash
+# Start a duplication report over a folder, wait for it, then download the data as Excel
+pcli2 report create --name "Brackets" --folder-path "/Home/Parts/Brackets" --wait --format csv --headers
+pcli2 report download --id <ID> --format xlsx -o brackets.xlsx
+
+# Why did a report fail? (tenant failures lists the failed ones)
+pcli2 report diagnose --id <ID>
+```
 
 ### Authentication Commands
 

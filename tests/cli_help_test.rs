@@ -40,7 +40,15 @@ mod cli_help_tests {
     #[test]
     fn test_cli_subcommand_help_outputs() {
         // Test help output for each major subcommand
-        let subcommands = vec!["tenant", "folder", "asset", "auth", "config", "environment"];
+        let subcommands = vec![
+            "tenant",
+            "folder",
+            "asset",
+            "auth",
+            "config",
+            "environment",
+            "report",
+        ];
 
         for subcommand in subcommands {
             let mut cmd = Command::cargo_bin("pcli2").unwrap();
@@ -87,6 +95,13 @@ mod cli_help_tests {
                 assert!(help_output.contains("get"));
                 assert!(help_output.contains("export"));
                 assert!(help_output.contains("import"));
+            } else if subcommand == "report" {
+                for expected in ["list", "get", "download", "diagnose", "delete", "create"] {
+                    assert!(
+                        help_output.contains(expected),
+                        "report help lacks {expected}"
+                    );
+                }
             } else if subcommand == "environment" {
                 assert!(help_output.contains("add"));
                 assert!(help_output.contains("use"));
@@ -140,6 +155,13 @@ mod cli_help_tests {
             ("folder", "visual-match"),
             ("asset", "dependencies"),
             ("asset", "move"),
+            ("asset", "resolve-dependency"),
+            ("report", "list"),
+            ("report", "get"),
+            ("report", "download"),
+            ("report", "diagnose"),
+            ("report", "delete"),
+            ("report", "create"),
             ("asset", "diagnose"),
             ("tenant", "failures"),
             ("auth", "login"),
@@ -183,6 +205,12 @@ mod cli_help_tests {
             ("asset", "metadata", "delete"),
             ("asset", "metadata", "inference"),
             ("asset", "metadata", "create-batch"),
+            ("tenant", "metadata", "list"),
+            ("tenant", "metadata", "rename"),
+            ("tenant", "metadata", "delete"),
+            ("tenant", "metadata", "assets"),
+            ("tenant", "metadata", "coverage"),
+            ("tenant", "metadata", "missing"),
         ];
 
         for (parent_cmd, sub_cmd, sub_sub_cmd) in deeply_nested_commands {

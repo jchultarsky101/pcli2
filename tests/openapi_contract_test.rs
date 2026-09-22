@@ -306,7 +306,7 @@ fn contracts() -> Vec<Contract> {
         ),
         contract!(
             "get",
-            "/tenants/{tenantId}/assets/{assetPath}/dependencies",
+            "/tenants/{tenantId}/assets/{assetId}/dependencies-by-id",
             AssetDependenciesResponse
         ),
         contract!(
@@ -473,10 +473,10 @@ fn hard_coded_enumerations_match_the_spec() {
     );
     // The role the 403 hint tells the user to ask for.
     assert!(values("TenantRole").iter().any(|r| r == "author"));
-    // Dependency statuses the diff and print commands know about.
+    // Dependency statuses: `resolve-dependency` and the tree builder branch on them.
     assert_eq!(
         values("DependencyStatus"),
-        ["matched", "resolved", "missing"]
+        pcli2::model::DependencyStatus::ALL
     );
 
     // Failure diagnostics: the statuses `asset diagnose` branches on and the
@@ -527,7 +527,10 @@ fn page_sizes_the_client_uses_are_within_the_spec_maximum() {
         ("/tenants/{tenantId}/folders/{folderId}/contents", 1000),
         ("/tenants/{tenantId}/assets", 1000),
         ("/tenants/{tenantId}/metadata-fields", 1000),
-        ("/tenants/{tenantId}/assets/{assetPath}/dependencies", 1000),
+        (
+            "/tenants/{tenantId}/assets/{assetId}/dependencies-by-id",
+            1000,
+        ),
         ("/tenants/{tenantId}/users", 100),
         ("/tenants/{tenantId}/failures", 100),
     ] {

@@ -100,7 +100,7 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
     // Get the full assembly tree with all recursive dependencies
     let assembly_tree = ctx
         .api()
-        .get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str())
+        .get_asset_dependencies_by_uuid(&tenant_uuid, &asset.uuid())
         .await?;
 
     // For tree and JSON formats, output the assembly tree directly to preserve hierarchy
@@ -238,12 +238,16 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
             .list_assets_by_parent_folder_path(&tenant_uuid, folder_path)
             .await?;
 
-        // Count total assemblies in this folder for progress tracking
-        let assemblies: Vec<_> = assets_response
+        // Count total assemblies in this folder for progress tracking. The
+        // listing is a map, so it is sorted by path here: otherwise the JSON
+        // and tree output listed the assemblies in a different order on every
+        // run (the CSV path sorts its rows itself).
+        let mut assemblies: Vec<_> = assets_response
             .get_all_assets()
             .into_iter()
             .filter(|asset| asset.is_assembly())
             .collect();
+        assemblies.sort_by_key(|a| a.path());
 
         // Create individual progress bar for this folder if progress is enabled
         let folder_progress = if let Some((ref mp, _)) = multi_progress {
@@ -277,7 +281,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
             // Get the full assembly tree with all recursive dependencies for this asset
             let assembly_tree = ctx
                 .api()
-                .get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str())
+                .get_asset_dependencies_by_uuid(&tenant_uuid, &asset.uuid())
                 .await?;
 
             // For tree and JSON formats, we'll collect the assembly trees to preserve hierarchy

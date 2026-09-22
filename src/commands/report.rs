@@ -62,6 +62,9 @@ pub fn report_command() -> Command {
         .subcommand(output_format_args(
             Command::new(COMMAND_LIST)
                 .about("List the tenant's reports, newest first")
+                .after_help(crate::commands::examples(&[
+                    ("Completed duplication reports", "pcli2 report list --type DUPLICATION --status COMPLETED"),
+                ]))
                 .visible_alias("ls")
                 .arg(tenant_parameter())
                 .arg(

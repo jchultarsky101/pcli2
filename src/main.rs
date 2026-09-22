@@ -98,6 +98,15 @@ fn init_logging(matches: &clap::ArgMatches) {
         .init();
 }
 
+/// Whether the help being shown is `pcli2`'s own (`pcli2 --help`, `pcli2 help`),
+/// not a subcommand's.
+fn is_top_level_help() -> bool {
+    env::args()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-'))
+        .all(|arg| arg == "help")
+}
+
 /// Main entry point for the Physna CLI client application.
 ///
 /// This function performs the following steps:
@@ -135,7 +144,9 @@ async fn main() {
             // The banner goes above help output only. It used to be printed whenever
             // any argument equalled "help", which put ASCII art on stdout ahead of the
             // JSON of `env list --name help` or `asset text-match --text help`.
-            if e.kind() == clap::error::ErrorKind::DisplayHelp {
+            // Only above the top-level help: on `pcli2 asset get --help` thirteen
+            // lines of art pushed the usage line off a small screen.
+            if e.kind() == clap::error::ErrorKind::DisplayHelp && is_top_level_help() {
                 banner::print_banner();
             }
             // A removed flag next to a now-missing required one: clap reports

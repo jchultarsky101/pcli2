@@ -213,7 +213,7 @@ mod tests {
 /// # Fields
 /// * `uuid` - Unique identifier from the Physna API (required for API operations)
 /// * `name` - Display name of the folder
-/// * `path` - Full path of the folder in the hierarchy (e.g., "/Root/Parent/Child")
+/// * `path` - Full path of the folder in the hierarchy (e.g., "/Home/Parent/Child")
 ///
 /// # Examples
 /// ```
@@ -223,7 +223,7 @@ mod tests {
 /// let folder = Folder::new(
 ///     Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
 ///     "My Folder".to_string(),
-///     "/Root/My Folder".to_string(),
+///     "/Home/My Folder".to_string(),
 ///     0,  // assets count
 ///     0   // folders count
 /// );
@@ -1051,7 +1051,7 @@ impl From<HashMap<String, serde_json::Value>> for AssetMetadata {
 /// # Fields
 /// * `uuid` - Unique identifier from the Physna API (required for API operations)
 /// * `name` - Display name of the asset (derived from the file name part of the path)
-/// * `path` - Full path of the asset in the folder hierarchy (e.g., "/Root/Folder/file.stl")
+/// * `path` - Full path of the asset in the folder hierarchy (e.g., "/Home/Folder/file.stl")
 /// * `file_size` - Size of the uploaded file in bytes (optional)
 /// * `file_type` - File type/extension (e.g., "stl", "step", "iges") (optional)
 /// * `processing_status` - Current processing status (e.g., "processed", "processing", "failed") (optional)

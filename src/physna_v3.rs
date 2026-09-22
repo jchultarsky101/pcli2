@@ -66,7 +66,7 @@ pub enum ApiError {
     #[error("{0}")]
     KeyringError(#[from] KeyringError),
 
-    #[error("Access token not found. Please login first with 'pcli2 auth login --client-id <id> --client-secret <secret>'")]
+    #[error("Access token not found. Please login first with 'pcli2 auth login'")]
     InvalidToken,
 
     #[error("Login credentials not provided")]
@@ -1565,7 +1565,7 @@ impl PhysnaApiClient {
     ///
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant
-    /// * `folder_path` - The path to resolve (e.g., "Root/Child/Grandchild" or "/Root/Child/Grandchild")
+    /// * `folder_path` - The path to resolve (e.g., "Projects/Child" or "/Home/Projects/Child")
     ///
     /// # Returns
     /// * `Ok(Some(String))` - The folder ID if found
@@ -2466,7 +2466,7 @@ impl PhysnaApiClient {
     /// # Arguments
     /// * `tenant_id` - The ID of the tenant where to create the asset
     /// * `file_path` - The local file system path to the file to upload
-    /// * `folder_path` - Optional folder path where to place the asset (e.g., "/Root/Folder/Subfolder")
+    /// * `folder_path` - Optional folder path where to place the asset (e.g., "/Home/Folder/Subfolder")
     /// * `folder_id` - Optional folder ID where to place the asset (takes precedence if both path and ID are provided)
     ///
     /// # Returns
@@ -2485,7 +2485,7 @@ impl PhysnaApiClient {
     ///     let mut client = PhysnaApiClient::new();
     ///     let tenant_uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
     ///     let folder_uuid = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap();
-    ///     let asset = client.create_asset(&tenant_uuid, Path::new("/path/to/file.stl"), &"/Root/MyFolder".to_string(), &folder_uuid).await?;
+    ///     let asset = client.create_asset(&tenant_uuid, Path::new("/path/to/file.stl"), &"/Home/MyFolder".to_string(), &folder_uuid).await?;
     ///     println!("Created asset with UUID: {}", asset.uuid());
     ///     Ok(())
     /// }

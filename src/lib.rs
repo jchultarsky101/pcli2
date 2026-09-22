@@ -17,6 +17,11 @@
 //! - `model`: Data models for Physna entities (folders, assets, tenants, etc.)
 //! - `physna_v3`: Physna V3 API client implementation
 
+#[cfg(not(any(feature = "dev-keyring", feature = "os-keyring")))]
+compile_error!(
+    "choose a credential store: the default `dev-keyring` feature, or `--no-default-features --features os-keyring`"
+);
+
 pub mod actions;
 pub mod auth;
 pub mod cache;

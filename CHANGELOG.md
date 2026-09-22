@@ -33,11 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A part-match score the API did not report is an empty cell** - It was printed as `0` or `0.0`, which reads as a 0% match.
 - **Text-match asset links with a UI URL ending in `/tenants`** - They came out as `.../tenants/tenants/...`. All comparison and asset links are now built in one place.
 
+- **`PCLI2_FORMAT` works for every command** - `tenant list`, `tenant get`, `tenant state`, `tenant failures`, `tenant metadata list|assets|coverage|missing`, `asset metadata inference` and `folder part-match` read `--format` themselves and never looked at the variable. They now honour it like the rest (an explicit `--format` still wins), and `PCLI2_FORMAT=xls` now works for `folder geometric-match` as `--format xls` does.
+- **`tenant use --name` accepts a tenant UUID** - As `--tenant` does. A name the cached tenant list does not know is looked up again once before giving up, so a newly granted tenant no longer needs `--refresh`.
+- **Tree output no longer depends on ptree settings** - The tree renderer used to read `~/.config/ptree.toml` and `PTREE_*` variables, so a user's settings could change what `--format tree` printed.
+
 ### Changed
 - **Exit codes** - A request the server keeps answering with 429 or a 5xx after every retry exits 69 (temporary failure, try again later) instead of 102. A connection lost mid-download exits 101 (network) instead of 102. `asset dependency-diff` and `asset resolve-dependency` exit with the real cause (100 for an expired login, 101 for the network, ...) instead of always 67 when one of their input assets could not be resolved.
+- **Dependencies** - ptree is built without its default features, which removes seven of the nine `cargo audit` warnings (unmaintained `atty`, `ansi_term`, `yaml-rust`, and the unsound `lexical-core`). `inquire` 0.9 and `indicatif` 0.18 remove two more unmaintained crates. The OS-keychain `keyring` crate is only built with the new `os-keyring` feature (`--no-default-features --features os-keyring`); the default build stores credentials in the file as before. Dependabot now proposes weekly updates against `develop`.
 - **`env add` warns about plain `http://` URLs** - Credentials and tokens sent to such a URL are not encrypted; loopback addresses are exempt. The URL is still accepted.
 
 ### Removed
+- **About 1,100 lines of unreachable code** - Public functions and types that nothing in the CLI or the tests used, among them the unused metadata cache, an in-memory download method, the unused per-operation client variants and several tenant printers. The library/binary split had hidden them from the compiler's dead-code warnings.
 - **An unused folder-download function in the client library** - `actions::assets::download_folder` was never reachable from the CLI (`folder download` has its own implementation) and extracted archives into a predictable shared temporary directory.
 
 ## [2.2.1] - 2026-09-22

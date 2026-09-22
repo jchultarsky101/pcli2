@@ -4,7 +4,6 @@
 //! command definition module. It handles the execution of all supported commands
 //! including tenant, folder, asset, authentication, context, and configuration operations.
 
-use base64::Engine;
 use chrono::{DateTime, Local, Utc};
 use clap::ArgMatches;
 use pcli2::auth::AuthClient;
@@ -63,36 +62,8 @@ struct TokenExpirationInfo {
 }
 
 fn decode_jwt_expiration(token: &str) -> Result<TokenExpirationInfo, Box<dyn std::error::Error>> {
-    // Split the JWT token into its three parts: header.payload.signature
-    let parts: Vec<&str> = token.split('.').collect();
-
-    if parts.len() != 3 {
-        return Err("Invalid JWT format: token must have exactly 3 parts separated by dots".into());
-    }
-
-    // Decode the payload (the middle part)
-    let payload = parts[1];
-
-    // Add padding if necessary (JWTs use base64url encoding without padding)
-    let mut padded_payload = payload.to_string();
-    match payload.len() % 4 {
-        2 => padded_payload.push_str("=="),
-        3 => padded_payload.push('='),
-        _ => {} // 0 remainder means no padding needed, 1 remainder is invalid
-    }
-
-    // Decode the base64url-encoded payload
-    let decoded_bytes = base64::engine::general_purpose::URL_SAFE.decode(&padded_payload)?;
-    let payload_str = String::from_utf8(decoded_bytes)?;
-
-    // Parse the JSON payload
-    let payload_json: serde_json::Value = serde_json::from_str(&payload_str)?;
-
-    // Extract the 'exp' claim (expiration time)
-    let exp = payload_json
-        .get("exp")
-        .and_then(|v| v.as_i64())
-        .ok_or("Token does not contain an 'exp' (expiration) claim")?;
+    // The client already decodes the `exp` claim for its own renewal decisions.
+    let exp = pcli2::physna_v3::PhysnaApiClient::decode_token_expiration(token)?;
 
     // Calculate time remaining
     let current_time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;

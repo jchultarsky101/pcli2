@@ -6,6 +6,15 @@ use clap::ArgMatches;
 use tracing::{debug, trace};
 use uuid::Uuid;
 
+/// Whether `identifier` names this tenant: its UUID, or its exact short name.
+///
+/// The one rule `--tenant` and `tenant use --name` share. `tenant use` used to
+/// accept only the short name, so a UUID that worked with `--tenant` failed there.
+pub fn tenant_matches(tenant: &crate::model::TenantSetting, identifier: &str) -> bool {
+    tenant.tenant_short_name == identifier
+        || Uuid::parse_str(identifier).is_ok_and(|uuid| uuid == tenant.tenant_uuid)
+}
+
 /// Resolve a tenant by name
 ///
 /// This function handles the case where users provide a tenant name
@@ -19,15 +28,6 @@ use uuid::Uuid;
 /// # Returns
 /// * `Ok(Tenant)` - The resolved tenant
 /// * `Err(CliError)` - If the tenant cannot be found
-/// Whether `identifier` names this tenant: its UUID, or its exact short name.
-///
-/// The one rule `--tenant` and `tenant use --name` share. `tenant use` used to
-/// accept only the short name, so a UUID that worked with `--tenant` failed there.
-pub fn tenant_matches(tenant: &crate::model::TenantSetting, identifier: &str) -> bool {
-    tenant.tenant_short_name == identifier
-        || Uuid::parse_str(identifier).is_ok_and(|uuid| uuid == tenant.tenant_uuid)
-}
-
 async fn resolve_tenant_by_name(
     client: &mut PhysnaApiClient,
     tenant_name: &String,

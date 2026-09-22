@@ -24,15 +24,6 @@ struct CachedHierarchy {
     hierarchy: FolderHierarchy,
 }
 
-/// The active environment's name, made safe for a file name.
-pub(crate) fn active_environment_key() -> String {
-    let name = crate::configuration::Configuration::load_default()
-        .ok()
-        .and_then(|c| c.get_active_environment())
-        .unwrap_or_else(|| "default".to_string());
-    name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_")
-}
-
 pub struct FolderCache {
     // Removed unused base field since we're not using BaseCache directly
 }
@@ -61,7 +52,7 @@ impl FolderCache {
         let mut path = Self::get_cache_dir();
         path.push(format!(
             "{}-{}.json",
-            active_environment_key(),
+            crate::cache::BaseCache::environment_key(),
             key.as_ref()
         ));
         path

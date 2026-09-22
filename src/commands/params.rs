@@ -639,12 +639,13 @@ pub fn concurrent_parameter(default: &'static str, help: &'static str) -> Arg {
 }
 
 /// Create the delay parameter.
-pub fn delay_parameter() -> Arg {
+pub fn delay_parameter(help: &'static str) -> Arg {
     Arg::new(PARAMETER_DELAY)
         .long(PARAMETER_DELAY)
         .num_args(1)
         .required(false)
         .default_value("0")
+        .help(help)
         .value_parser(|s: &str| -> Result<usize, String> {
             let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
             if val > 180 {

@@ -107,6 +107,20 @@ impl BaseCache {
         }
     }
 
+    /// The active environment's name, made safe for a file name.
+    ///
+    /// Caches are kept per environment, since a staging tenant does not exist in
+    /// production. Every cache names its file with this, so they all agree on
+    /// which environment is active; the tenant cache used to work it out itself,
+    /// and could create `config.yml` as a side effect of doing so.
+    pub fn environment_key() -> String {
+        let name = crate::configuration::Configuration::load_default()
+            .ok()
+            .and_then(|c| c.get_active_environment())
+            .unwrap_or_else(|| "default".to_string());
+        name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_")
+    }
+
     /// Check if a cache file is expired based on file modification time
     pub fn is_file_expired(cache_file: &std::path::Path) -> bool {
         match std::fs::metadata(cache_file) {

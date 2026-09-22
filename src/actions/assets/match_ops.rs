@@ -1251,18 +1251,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     // Get concurrent and progress parameters
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
-    let concurrent = match concurrent_param {
-        Some(val) => {
-            if !(1..=10).contains(&val) {
-                return Err(CliError::MissingRequiredArgument(format!(
-                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-                    val
-                )));
-            }
-            val
-        }
-        None => 1, // Default value
-    };
+    // clap's parser already holds --concurrent to 1-10.
+    let concurrent = concurrent_param.unwrap_or(1);
 
     let show_progress = sub_matches.get_flag("progress");
 
@@ -1827,18 +1817,8 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
     // Get concurrent and progress parameters
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
-    let concurrent = match concurrent_param {
-        Some(val) => {
-            if !(1..=10).contains(&val) {
-                return Err(CliError::MissingRequiredArgument(format!(
-                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-                    val
-                )));
-            }
-            val
-        }
-        None => 1, // Default value
-    };
+    // clap's parser already holds --concurrent to 1-10.
+    let concurrent = concurrent_param.unwrap_or(1);
 
     let show_progress = sub_matches.get_flag("progress");
 
@@ -2436,18 +2416,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
     // Get concurrent and progress parameters
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
-    let concurrent = match concurrent_param {
-        Some(val) => {
-            if !(1..=10).contains(&val) {
-                return Err(CliError::MissingRequiredArgument(format!(
-                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-                    val
-                )));
-            }
-            val
-        }
-        None => 1, // Default value
-    };
+    // clap's parser already holds --concurrent to 1-10.
+    let concurrent = concurrent_param.unwrap_or(1);
 
     let show_progress = sub_matches.get_flag("progress");
 

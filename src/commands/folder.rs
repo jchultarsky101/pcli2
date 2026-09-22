@@ -148,22 +148,7 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Continue downloading other assets if one fails"),
                 )
-                .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
-                        .long(crate::commands::params::PARAMETER_DELAY)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("0")
-                        .help("Delay in seconds between downloads (range: 0-180)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if val > 180 {
-                                Err("Value must be between 0 and 180".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
-                )
+                .arg(crate::commands::params::delay_parameter("Delay in seconds between downloads (range: 0-180)"))
                 .arg(
                     crate::commands::params::resume_parameter()
                 )
@@ -365,22 +350,7 @@ pub fn folder_command() -> Command {
                 .arg(
                     crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent uploads (range: 1-10)"),
                 )
-                .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
-                        .long(crate::commands::params::PARAMETER_DELAY)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("0")
-                        .help("Delay in seconds between uploads (range: 0-180)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if val > 180 {
-                                Err("Value must be between 0 and 180".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
-                )
+                .arg(crate::commands::params::delay_parameter("Delay in seconds between uploads (range: 0-180)"))
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
                         .long(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
@@ -418,21 +388,6 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Continue downloading other thumbnails if one fails"),
                 )
-                .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
-                        .long(crate::commands::params::PARAMETER_DELAY)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("0")
-                        .help("Delay in seconds between downloads (range: 0-180)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if val > 180 {
-                                Err("Value must be between 0 and 180".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
-                )
+                .arg(crate::commands::params::delay_parameter("Delay in seconds between downloads (range: 0-180)"))
         )
 }

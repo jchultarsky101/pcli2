@@ -247,7 +247,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
             .into_iter()
             .filter(|asset| asset.is_assembly())
             .collect();
-        assemblies.sort_by(|a, b| a.path().cmp(&b.path()));
+        assemblies.sort_by_key(|a| a.path());
 
         // Create individual progress bar for this folder if progress is enabled
         let folder_progress = if let Some((ref mp, _)) = multi_progress {

@@ -2878,28 +2878,14 @@ impl PhysnaApiClient {
 
         // Initialize with page 1 and reasonable page size
         let mut all_matches = Vec::new();
-        let mut page = 1;
         let per_page = 500; // search pages carry full asset records; the API allows up to 1000
-
-        // Track the maximum last_page value seen to prevent infinite loops
-        let mut max_last_page_seen = 0;
-        // Hard limit to prevent excessive API calls; aligned with
-        // visual_search (1000 pages) so large result sets aren't cut short.
-        let max_pages_limit = 1000;
+                            // Stops on the last page, on a repeated page number (which used to append
+                            // the same matches again), and at the page cap with a warning.
+        let mut pager = crate::paging::Pager::new("part search");
 
         loop {
+            let page = pager.page();
             debug!("Fetching page {} of part search results", page);
-
-            // Check if we've hit the hard limit. Truncation must be visible
-            // to the user, not just a debug log (warn is the default level).
-            if page > max_pages_limit {
-                tracing::warn!(
-                    "Part search results truncated at {} matches ({}-page safety limit); results are incomplete",
-                    all_matches.len(),
-                    max_pages_limit
-                );
-                break;
-            }
 
             // Build request body with the correct structure
             let body = serde_json::json!({
@@ -2931,25 +2917,23 @@ impl PhysnaApiClient {
                             page_data.current_page, page_data.last_page, page_data.total
                         );
 
-                        // Update the maximum last_page value seen
-                        if page_data.last_page > max_last_page_seen {
-                            max_last_page_seen = page_data.last_page;
-                        }
-
-                        // Add matches from this page to our collection
-                        all_matches.extend(response.matches);
-
-                        // Check if we've reached the last page or gone beyond what we've seen
-                        if page_data.current_page >= page_data.last_page
-                            || page > max_last_page_seen
-                        {
-                            debug!("Reached last page of results or beyond max seen: current={}, last={}, requested={}",
-                                   page_data.current_page, page_data.last_page, page);
+                        // A repeated page is not added again.
+                        if page_data.current_page < page {
+                            pager.advance(
+                                page_data.current_page,
+                                page_data.last_page,
+                                all_matches.len(),
+                            );
                             break;
                         }
-
-                        // Move to next page
-                        page += 1;
+                        all_matches.extend(response.matches);
+                        if !pager.advance(
+                            page_data.current_page,
+                            page_data.last_page,
+                            all_matches.len(),
+                        ) {
+                            break;
+                        }
                     } else {
                         // No pagination data - the endpoint returned everything
                         // at once. Keep this page's matches together with any
@@ -3696,10 +3680,11 @@ impl PhysnaApiClient {
             );
             return Ok(());
         }
-        let mut page: usize = 1;
         let per_page: usize = 1000; // the API maximum for this endpoint
+        let mut pager = crate::paging::Pager::new("dependency listing");
 
         loop {
+            let page = pager.page();
             // Use the UUID-based pagination method
             let response = self
                 .get_asset_dependencies_by_uuid_with_pagination(
@@ -3758,11 +3743,13 @@ impl PhysnaApiClient {
                 }
             }
 
-            // Pagination: stop when we've reached the last page
-            if page >= response.page_data.last_page {
+            if !pager.advance(
+                response.page_data.current_page,
+                response.page_data.last_page,
+                root.children().count(),
+            ) {
                 break;
             }
-            page += 1;
         }
 
         ancestors.remove(root_uuid);
@@ -3858,26 +3845,28 @@ impl PhysnaApiClient {
         if let Some(status) = status {
             filters.push_str(&format!("&status={}", urlencoding::encode(status)));
         }
-        let mut page = 1;
+        // One page size for the whole walk. It used to shrink on the last request
+        // to fit --limit, but the page number still counted in the old size, so
+        // `page=2&perPage=500` after a first page of 1000 returned records 501-1000
+        // again and never reached 1001-1500.
+        let per_page = limit.map_or(PER_PAGE, |limit| PER_PAGE.min(limit.max(1)));
+        let mut pager = crate::paging::Pager::new("report listing");
         let mut reports = Vec::new();
         loop {
-            let per_page = match limit {
-                Some(limit) => PER_PAGE.min(limit.saturating_sub(reports.len()).max(1)),
-                None => PER_PAGE,
-            };
+            let page = pager.page();
             let url = format!(
                 "{}/tenants/{}/reports?page={}&perPage={}{}",
                 self.base_url, tenant_uuid, page, per_page, filters
             );
             debug!("Reports request URL: {}", url);
             let response: crate::model::ReportListResponse = self.get(&url).await?;
+            let current_page = response.page_data.current_page;
             let last_page = response.page_data.last_page;
             reports.extend(response.reports);
             let enough = limit.is_some_and(|limit| reports.len() >= limit);
-            if enough || page >= last_page || page >= 1000 {
+            if enough || !pager.advance(current_page, last_page, reports.len()) {
                 break;
             }
-            page += 1;
         }
         if let Some(limit) = limit {
             reports.truncate(limit);
@@ -3949,23 +3938,25 @@ impl PhysnaApiClient {
     ) -> Result<AssetList, ApiError> {
         const PER_PAGE: usize = 1000;
         let separator = if url.contains('?') { '&' } else { '?' };
-        let mut page = 1;
+        // One page size for the whole walk. It used to shrink on the last request
+        // to fit --limit, but the page number still counted in the old size, so
+        // `page=2&perPage=500` after a first page of 1000 returned records 501-1000
+        // again and never reached 1001-1500.
+        let per_page = limit.map_or(PER_PAGE, |limit| PER_PAGE.min(limit.max(1)));
+        let mut pager = crate::paging::Pager::new("asset listing");
         let mut assets: Vec<Asset> = Vec::new();
         loop {
-            let per_page = match limit {
-                Some(limit) => PER_PAGE.min(limit.saturating_sub(assets.len()).max(1)),
-                None => PER_PAGE,
-            };
+            let page = pager.page();
             let page_url = format!("{url}{separator}page={page}&perPage={per_page}");
             debug!("Asset listing request URL: {}", page_url);
             let response: AssetListResponse = self.get(&page_url).await?;
+            let current_page = response.page_data.current_page;
             let last_page = response.page_data.last_page;
             assets.extend(response.assets.iter().map(Asset::from));
             let enough = limit.is_some_and(|limit| assets.len() >= limit);
-            if enough || page >= last_page || page >= 1000 {
+            if enough || !pager.advance(current_page, last_page, assets.len()) {
                 break;
             }
-            page += 1;
         }
         if let Some(limit) = limit {
             assets.truncate(limit);
@@ -4217,20 +4208,23 @@ impl PhysnaApiClient {
             format!("&kinds={}", names.join(","))
         };
 
-        let mut page = 1;
+        // One page size for the whole walk. It used to shrink on the last request
+        // to fit --limit, but the page number still counted in the old size, so
+        // `page=2&perPage=500` after a first page of 1000 returned records 501-1000
+        // again and never reached 1001-1500.
+        let per_page = limit.map_or(PER_PAGE, |limit| PER_PAGE.min(limit.max(1)));
+        let mut pager = crate::paging::Pager::new("failure listing");
         let mut failures = Vec::new();
         let mut counts_by_kind = None;
         loop {
-            let per_page = match limit {
-                Some(limit) => PER_PAGE.min(limit.saturating_sub(failures.len()).max(1)),
-                None => PER_PAGE,
-            };
+            let page = pager.page();
             let url = format!(
                 "{}/tenants/{}/failures?page={}&perPage={}{}",
                 self.base_url, tenant_uuid, page, per_page, kinds_query
             );
             debug!("Recent failures request URL: {}", url);
             let response: crate::model::RecentFailuresPage = self.get(&url).await?;
+            let current_page = response.page_data.current_page;
             let last_page = response.page_data.last_page;
             if counts_by_kind.is_none() {
                 counts_by_kind = Some(response.counts_by_kind);
@@ -4238,10 +4232,9 @@ impl PhysnaApiClient {
             failures.extend(response.failures);
 
             let enough = limit.is_some_and(|limit| failures.len() >= limit);
-            if enough || page >= last_page || page >= 1000 {
+            if enough || !pager.advance(current_page, last_page, failures.len()) {
                 break;
             }
-            page += 1;
         }
         if let Some(limit) = limit {
             failures.truncate(limit);
@@ -4286,13 +4279,13 @@ impl PhysnaApiClient {
             _ => return Err(ApiError::InvalidParameterError(format!("Invalid state: {}. Valid states are: indexing, finished, failed, unsupported, no-3d-data, missing-dependencies", state))),
         }
 
-        // Initialize pagination variables
-        let mut page: usize = 1;
         let per_page: usize = 1000; // the API maximum for this endpoint
         let mut all_assets: Vec<Asset> = Vec::new();
+        let mut pager = crate::paging::Pager::new("asset listing by state");
 
         // Loop through all pages to get all assets with the specified state
         loop {
+            let page = pager.page();
             let url = format!(
                 "{}/tenants/{}/assets/state/{}?page={}&perPage={}",
                 self.base_url, tenant_uuid, state, page, per_page
@@ -4333,25 +4326,11 @@ impl PhysnaApiClient {
                 response.assets.iter().map(|a| a.into()).collect();
             all_assets.extend(current_page_assets);
 
-            // Check if we've reached the last page
-            if page >= response.page_data.last_page as usize {
-                break;
-            }
-
-            // Increment the page number to avoid infinite loops
-            page += 1;
-
-            // Safety check to prevent infinite loops in case of API issues.
-            // If a tenant legitimately exceeds this, the truncation must be
-            // visible to the user, not just a debug log (warn is the default
-            // level).
-            if page > 1000 {
-                tracing::warn!(
-                    "Asset listing for state '{}' was truncated at {} assets (1000-page safety limit); results are incomplete",
-                    state,
-                    all_assets.len()
-                );
-                debug!("Reached maximum page limit (1000) while fetching assets by state: {} for tenant: {}", state, tenant_uuid);
+            if !pager.advance(
+                response.page_data.current_page,
+                response.page_data.last_page,
+                all_assets.len(),
+            ) {
                 break;
             }
         }
@@ -4376,11 +4355,14 @@ impl PhysnaApiClient {
     ) -> Result<AssetList, ApiError> {
         debug!("Listing all assets for tenant_uuid: {}", tenant_uuid);
 
-        let mut page: usize = 1;
         let per_page: usize = 1000; // the API maximum for this endpoint
         let mut all_assets: Vec<Asset> = Vec::new();
+        // Up to ten million assets. Past that it used to stop with only a debug
+        // line; the partial inventory now says it is partial.
+        let mut pager = crate::paging::Pager::with_max_pages("tenant asset listing", 10_000);
 
         loop {
+            let page = pager.page();
             let url = format!(
                 "{}/tenants/{}/assets?page={}&perPage={}",
                 self.base_url, tenant_uuid, page, per_page
@@ -4392,17 +4374,11 @@ impl PhysnaApiClient {
                 response.assets.iter().map(|a| a.into()).collect();
             all_assets.extend(current_page_assets);
 
-            if page >= response.page_data.last_page {
-                break;
-            }
-
-            page += 1;
-
-            if page > 10000 {
-                debug!(
-                    "Reached maximum page limit (10000) while listing all assets for tenant: {}",
-                    tenant_uuid
-                );
+            if !pager.advance(
+                response.page_data.current_page,
+                response.page_data.last_page,
+                all_assets.len(),
+            ) {
                 break;
             }
         }
@@ -4695,73 +4671,33 @@ impl PhysnaApiClient {
         &mut self,
         tenant_uuid: &Uuid,
     ) -> Result<crate::actions::users::UserListResponse, ApiError> {
-        // Initialize pagination variables
-        let mut page: usize = 1;
         let per_page: usize = 100; // Reasonable page size for user listings
         let mut all_users: Vec<crate::actions::users::User> = Vec::new();
-
-        // Track the maximum last_page value seen to prevent infinite loops
-        let mut max_last_page_seen = 0;
-        let max_pages_limit = 50; // Hard limit to prevent excessive API calls
+        // It used to stop at 50 pages (5,000 users) without a word.
+        let mut pager = crate::paging::Pager::new("user listing");
 
         loop {
-            // Check if we've hit the hard limit
-            if page > max_pages_limit {
-                warn!(
-                    "Reached hard page limit of {}, stopping to prevent excessive API calls",
-                    max_pages_limit
-                );
-                break;
-            }
-
-            let url = format!("{}/tenants/{}/users", self.base_url, tenant_uuid);
-
-            // Build query parameters for pagination
-            let query_params = vec![
-                ("page", page.to_string()),
-                ("perPage", per_page.to_string()),
-            ];
-
-            // Add query parameters to URL
-            let query_string = serde_urlencoded::to_string(&query_params).unwrap();
-            let url = format!("{}?{}", url, query_string);
-
+            let page = pager.page();
+            let url = format!(
+                "{}/tenants/{}/users?{}",
+                self.base_url,
+                tenant_uuid,
+                serde_urlencoded::to_string([
+                    ("page", page.to_string()),
+                    ("perPage", per_page.to_string()),
+                ])
+                .unwrap()
+            );
             debug!("Fetching users page {} for tenant {}", page, tenant_uuid);
 
-            // Execute GET request to fetch users
             let mut response: crate::actions::users::UserListResponse = self.get(&url).await?;
+            all_users.extend(std::mem::take(&mut response.users));
 
-            // Extract users from the current page
-            let current_page_users = std::mem::take(&mut response.users);
-            all_users.extend(current_page_users);
-
-            // Check if we have pagination data
-            if let Some(page_data) = &response.page_data {
-                debug!(
-                    "Page {}/{} with {} total users",
-                    page_data.current_page, page_data.last_page, page_data.total
-                );
-
-                // Update the maximum last_page value seen
-                if page_data.last_page > max_last_page_seen {
-                    max_last_page_seen = page_data.last_page;
-                }
-
-                // Check if we've reached the last page or gone beyond what we've seen
-                if page_data.current_page >= page_data.last_page || page > max_last_page_seen {
-                    debug!("Reached last page of results or beyond max seen: current={}, last={}, requested={}",
-                           page_data.current_page, page_data.last_page, page);
-                    break;
-                }
-
-                // Move to next page
-                page += 1;
-            } else {
-                // No pagination data - the endpoint returned everything at
-                // once. The page's users were already moved into `all_users`
-                // above, so break and return the accumulated list (returning
-                // `response` here would return an EMPTY user list).
-                debug!("No pagination data in response, returning accumulated users");
+            // Without pagination data the endpoint returned everything at once.
+            let Some(page_data) = &response.page_data else {
+                break;
+            };
+            if !pager.advance(page_data.current_page, page_data.last_page, all_users.len()) {
                 break;
             }
         }

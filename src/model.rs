@@ -2205,6 +2205,17 @@ impl AssetStateCounts {
     }
 }
 
+/// Which of the paths a client asked about already hold an asset.
+///
+/// Returned by `POST /tenants/{tenantId}/assets/existing-paths`. Every path is
+/// echoed back exactly as it was sent, so a caller tests membership on the
+/// string it asked with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExistingPathsResponse {
+    #[serde(rename = "existingPaths")]
+    pub existing_paths: Vec<String>,
+}
+
 // ---- failure diagnostics ---------------------------------------------------
 
 /// Whether the deployment can look up why an asset failed.

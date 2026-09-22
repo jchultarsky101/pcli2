@@ -3850,6 +3850,40 @@ impl PhysnaApiClient {
         Ok(response)
     }
 
+    /// Which of `paths` already hold an asset, as a set of the strings asked about.
+    ///
+    /// `POST /tenants/{tenantId}/assets/existing-paths`: a path matches when an
+    /// asset with the same file name exists in the same folder (case-sensitive,
+    /// with or without a leading slash); paths in folders that do not exist are
+    /// never returned. The server echoes each matching path exactly as it was
+    /// sent, so the caller tests membership with the string it built. Requests
+    /// carry at most 1000 paths (the specification's maximum), so a larger batch
+    /// is sent in chunks; an empty batch makes no request.
+    pub async fn find_existing_asset_paths(
+        &mut self,
+        tenant_uuid: &Uuid,
+        paths: &[String],
+    ) -> Result<std::collections::HashSet<String>, ApiError> {
+        const MAX_PATHS_PER_REQUEST: usize = 1000;
+        let url = format!(
+            "{}/tenants/{}/assets/existing-paths",
+            self.base_url, tenant_uuid
+        );
+        let mut existing = std::collections::HashSet::new();
+        for chunk in paths.chunks(MAX_PATHS_PER_REQUEST) {
+            debug!(
+                "Checking {} path(s) for existing assets in tenant {}",
+                chunk.len(),
+                tenant_uuid
+            );
+            let response: crate::model::ExistingPathsResponse = self
+                .post(&url, &serde_json::json!({ "paths": chunk }))
+                .await?;
+            existing.extend(response.existing_paths);
+        }
+        Ok(existing)
+    }
+
     /// Whether this deployment can look up why an asset failed.
     ///
     /// `GET /tenants/{tenantId}/failure-diagnostics/availability`. The tenant

@@ -61,6 +61,23 @@ pub async fn canonical_folder_path(
     }
 }
 
+/// The asset path a file will have inside a folder, in one canonical spelling.
+///
+/// Three places used to join a folder path and a file name, each its own way
+/// (with or without a leading slash). The upload endpoint tolerates both, but
+/// the existing-paths check echoes each string as sent, so every caller that
+/// asks about a path and then looks it up must build it the same way. The
+/// folder goes through [`crate::model::normalize_path`], which drops the
+/// `/Home` alias the server does not know.
+pub fn asset_path_for(folder_path: &str, file_name: &str) -> String {
+    let folder = crate::model::normalize_path(folder_path);
+    if folder == "/" {
+        format!("/{}", file_name)
+    } else {
+        format!("{}/{}", folder, file_name)
+    }
+}
+
 /// A path relative to a download directory, built from names the server sent.
 ///
 /// Every segment must be a plain name: no `..`, no empty segments, no path

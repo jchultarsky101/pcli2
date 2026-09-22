@@ -118,7 +118,7 @@ impl TenantCache {
         };
 
         let data = serde_json::to_string_pretty(&cache_to_save)?;
-        crate::folder_cache::write_atomically(&path, data.as_bytes())?;
+        crate::fs_utils::write_atomically(&path, data.as_bytes())?;
         debug!("Saved tenant cache to file");
         Ok(())
     }

@@ -9,7 +9,6 @@ use crate::folder_hierarchy::FolderHierarchy;
 use crate::physna_v3::PhysnaApiClient;
 use serde_json;
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -23,19 +22,6 @@ struct CachedHierarchy {
     #[serde(default)]
     schema_version: u32,
     hierarchy: FolderHierarchy,
-}
-
-/// Write a cache file through a temporary name and rename it into place, so a
-/// concurrent reader (two pcli2 processes under `xargs -P`) never sees a
-/// half-written file.
-pub(crate) fn write_atomically(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
-    {
-        let mut file = std::fs::File::create(&tmp)?;
-        file.write_all(data)?;
-        file.flush()?;
-    }
-    fs::rename(&tmp, path)
 }
 
 /// The active environment's name, made safe for a file name.
@@ -172,7 +158,7 @@ impl FolderCache {
         let cache_file = Self::get_cache_file_path(tenant_uuid.to_string());
         tracing::debug!("Writing cache file to: {:?}", cache_file);
 
-        write_atomically(&cache_file, &serialized)?;
+        crate::fs_utils::write_atomically(&cache_file, &serialized)?;
 
         tracing::debug!("Successfully wrote cache file");
 

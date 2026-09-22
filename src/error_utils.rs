@@ -45,6 +45,83 @@ fn emit_json(value: &serde_json::Value) {
     eprintln!("{}", value);
 }
 
+/// Whether a message describes a write to a pipe whose reader has gone away.
+///
+/// `println!` panics with "failed printing to stdout: Broken pipe (os error 32)" and
+/// other writers report `kind: BrokenPipe`; Windows says "os error 232" (the pipe is
+/// being closed).
+fn mentions_broken_pipe(message: &str) -> bool {
+    message.contains("Broken pipe")
+        || message.contains("BrokenPipe")
+        || message.contains("os error 232")
+}
+
+/// Whether an error is a closed *output* pipe.
+///
+/// `pcli2 asset list | head -1` closes the pipe after one line. That is the reader
+/// being done, not pcli2 failing, and it must not be reported as an error.
+///
+/// A socket to the API can fail with `BrokenPipe` too, mid-upload for instance, and
+/// that is a real failure. So a chain that passes through an HTTP error is never
+/// taken for a closed pipe, whatever I/O error sits underneath it.
+pub fn is_broken_pipe(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    let mut broken_pipe = false;
+    while let Some(e) = current {
+        if e.is::<reqwest::Error>() {
+            return false;
+        }
+        if let Some(io) = e.downcast_ref::<std::io::Error>() {
+            if io.kind() == std::io::ErrorKind::BrokenPipe {
+                broken_pipe = true;
+            }
+        }
+        current = e.source();
+    }
+    broken_pipe
+}
+
+/// Route panics through pcli2's own error reporting.
+///
+/// Without this a closed pipe (`pcli2 ... | head`) panicked inside `println!` and the
+/// process exited 101, which is pcli2's documented *network error* code, so a script
+/// following the exit-code table blamed the network for a `head`. A closed pipe now
+/// ends the run quietly with 0, as `cat` and `grep` do. Any other panic is a bug: it
+/// is reported as one line (JSON under `--error-format json`) and exits 70.
+pub fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic".to_string());
+        if mentions_broken_pipe(&payload) {
+            std::process::exit(0);
+        }
+        let location = info
+            .location()
+            .map(|l| format!(" ({}:{})", l.file(), l.line()))
+            .unwrap_or_default();
+        let code = crate::exit_codes::PcliExitCode::SoftwareError;
+        let message = format!("internal error: {}{}", payload, location);
+        if json_errors() {
+            emit_json(&serde_json::json!({
+                "level": "ERROR",
+                "code": code.code(),
+                "kind": code.kind(),
+                "message": message,
+            }));
+        } else {
+            eprintln!("❌ Error: {}", message);
+            eprintln!(
+                "💡 This is a bug in pcli2. Please report it with the command you ran: https://github.com/jchultarsky101/pcli2/issues"
+            );
+        }
+        std::process::exit(code.code());
+    }));
+}
+
 /// The JSON object for a failed command: exit code, its class, the message,
 /// and when known a hint and the HTTP status behind it.
 pub fn json_error_object(error: &crate::error::CliError) -> serde_json::Value {

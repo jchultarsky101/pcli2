@@ -131,19 +131,12 @@ pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionE
     let tenants_result = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await;
     progress.finish_and_clear();
 
-    match tenants_result {
-        Ok(tenant_settings) => {
-            // Convert to a format that can be handled by the Formattable trait
-            let tenant_list = crate::model::TenantList::from(tenant_settings);
-
-            crate::format::print_output(&tenant_list.format(format)?);
-            Ok(())
-        }
-        Err(e) => {
-            error_utils::report_error(&e);
-            Ok(())
-        }
-    }
+    // A failure is returned, not just printed: it used to be reported and then
+    // exit 0, so a script saw an empty tenant list as success.
+    let tenant_settings = tenants_result?;
+    let tenant_list = crate::model::TenantList::from(tenant_settings);
+    crate::format::print_output(&tenant_list.format(format)?);
+    Ok(())
 }
 
 pub async fn print_active_tenant_name() -> Result<(), CliActionError> {

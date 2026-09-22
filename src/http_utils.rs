@@ -54,10 +54,20 @@ fn default_timeout() -> u64 {
         .unwrap_or(1800)
 }
 
-/// HTTP status codes that indicate a transient condition worth retrying:
-/// request timeout, rate limiting, and upstream gateway failures.
-pub(crate) fn is_transient_status(status: reqwest::StatusCode) -> bool {
-    matches!(status.as_u16(), 408 | 429 | 502 | 503 | 504)
+/// Whether a transient status may be retried for this request.
+///
+/// 408, 429 and 503 say the server did not act on the request, so resending is safe
+/// for anything. A 502 or 504 comes from a gateway that gave up waiting while the
+/// backend may still have done the work: resending an upload after one used to hit
+/// the asset the first attempt had created, and a file that uploaded fine was
+/// reported as "Asset already exists". Those two are only retried when repeating the
+/// request is harmless.
+pub(crate) fn is_retryable_status(status: reqwest::StatusCode, idempotent: bool) -> bool {
+    match status.as_u16() {
+        408 | 429 | 503 => true,
+        502 | 504 => idempotent,
+        _ => false,
+    }
 }
 
 /// Network-level errors that are safe to retry for the given request.
@@ -215,8 +225,9 @@ impl HttpClient {
     /// returned as-is.
     ///
     /// Transient failures are connection errors, network timeouts (idempotent
-    /// requests only - see `is_retryable_network_error`), and the
-    /// 408/429/502/503/504 status codes. The Retry-After header is honored
+    /// requests only - see `is_retryable_network_error`), and the 408/429/503
+    /// status codes, plus 502/504 for idempotent requests (see
+    /// `is_retryable_status`). The Retry-After header is honored
     /// when the server provides one. Every other response, including 401/403
     /// and other error statuses, is returned to the caller for handling.
     pub(crate) async fn send_with_retry<F>(
@@ -264,7 +275,7 @@ impl HttpClient {
                 }
             };
 
-            if is_transient_status(response.status()) && attempt < max_retries {
+            if is_retryable_status(response.status(), idempotent) && attempt < max_retries {
                 let delay = retry_delay(Some(&response), attempt);
                 attempt += 1;
                 crate::stats::record_retry();
@@ -307,18 +318,50 @@ mod tests {
 
     #[test]
     fn test_transient_status_detection() {
-        assert!(is_transient_status(reqwest::StatusCode::REQUEST_TIMEOUT));
-        assert!(is_transient_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
-        assert!(is_transient_status(reqwest::StatusCode::BAD_GATEWAY));
-        assert!(is_transient_status(
-            reqwest::StatusCode::SERVICE_UNAVAILABLE
+        assert!(is_retryable_status(
+            reqwest::StatusCode::REQUEST_TIMEOUT,
+            true
         ));
-        assert!(is_transient_status(reqwest::StatusCode::GATEWAY_TIMEOUT));
-        assert!(!is_transient_status(reqwest::StatusCode::UNAUTHORIZED));
-        assert!(!is_transient_status(reqwest::StatusCode::NOT_FOUND));
-        assert!(!is_transient_status(
-            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        assert!(is_retryable_status(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            true
         ));
+        assert!(is_retryable_status(reqwest::StatusCode::BAD_GATEWAY, true));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            true
+        ));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::GATEWAY_TIMEOUT,
+            true
+        ));
+        assert!(!is_retryable_status(
+            reqwest::StatusCode::UNAUTHORIZED,
+            true
+        ));
+        assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND, true));
+        assert!(!is_retryable_status(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            true
+        ));
+    }
+
+    #[test]
+    fn gateway_errors_are_only_retried_for_idempotent_requests() {
+        use reqwest::StatusCode;
+        for status in [StatusCode::BAD_GATEWAY, StatusCode::GATEWAY_TIMEOUT] {
+            assert!(is_retryable_status(status, true));
+            assert!(!is_retryable_status(status, false), "{status}");
+        }
+        for status in [
+            StatusCode::REQUEST_TIMEOUT,
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::SERVICE_UNAVAILABLE,
+        ] {
+            assert!(is_retryable_status(status, true));
+            assert!(is_retryable_status(status, false), "{status}");
+        }
+        assert!(!is_retryable_status(StatusCode::NOT_FOUND, true));
     }
 
     #[test]

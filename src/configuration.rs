@@ -5,12 +5,7 @@ use crate::{
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    io::Write,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs, io::Write, path::PathBuf};
 use tracing::debug;
 use uuid::Uuid;
 
@@ -219,7 +214,7 @@ impl Configuration {
         }
     }
 
-    pub fn save(&self, path: &PathBuf) -> Result<(), ConfigurationError> {
+    pub fn save(&self, path: &std::path::Path) -> Result<(), ConfigurationError> {
         // first check if the parent directory exists and try to create it if not
         let configuration_directory = path.parent();
         match configuration_directory {
@@ -233,14 +228,12 @@ impl Configuration {
             None => return Err(ConfigurationError::FailedToFindConfigurationDirectory),
         }
 
-        let file = File::create(path);
-        match file {
-            Ok(file) => {
-                let writer: Box<dyn Write> = Box::new(file);
-                Ok(self.write(writer)?)
-            }
-            Err(e) => Err(ConfigurationError::FailedToWriteData { cause: Box::new(e) }),
-        }
+        // Serialised first and renamed into place, so a crash or a concurrent pcli2
+        // process never leaves a truncated config.yml behind.
+        let data = serde_yaml::to_string(self)
+            .map_err(|e| ConfigurationError::FailedToWriteData { cause: Box::new(e) })?;
+        crate::fs_utils::write_atomically(path, data.as_bytes())
+            .map_err(|e| ConfigurationError::FailedToWriteData { cause: Box::new(e) })
     }
 
     pub fn save_to_default(&self) -> Result<(), ConfigurationError> {

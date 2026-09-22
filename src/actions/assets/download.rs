@@ -1,29 +1,18 @@
 //! Download asset functionality.
 //!
-//! This module provides functionality for downloading assets and thumbnails,
-//! including folder downloads as ZIP archives.
+//! This module provides functionality for downloading assets and thumbnails.
+//! Folder downloads live in `actions::folders`.
 
 use crate::actions::CliActionError;
 use crate::{
-    actions::folders::resolve_folder_uuid_by_path,
-    commands::params::{
-        PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_OUTPUT, PARAMETER_PATH,
-        PARAMETER_UUID,
-    },
-    configuration::Configuration,
+    commands::params::{PARAMETER_OUTPUT, PARAMETER_PATH, PARAMETER_UUID},
     error::CliError,
-    error_utils,
-    param_utils::get_tenant,
-    physna_v3::{PhysnaApiClient, TryDefault},
+    physna_v3::PhysnaApiClient,
 };
 use clap::ArgMatches;
-use indicatif::{ProgressBar, ProgressStyle};
 use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
 use tracing::trace;
-use zip::write::FileOptions;
-use zip::ZipWriter;
 
 /// Download an asset by UUID or path to a local file.
 ///
@@ -62,12 +51,15 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let output_file_path = if let Some(output_path) = requested_output(sub_matches).as_ref() {
         output_path.clone()
     } else {
-        // Use the asset name as the default output file name
+        // Use the asset name as the default output file name, provided it is a plain
+        // name: it comes from the server and is joined to the working directory.
         let asset_name = asset.name();
-
-        let mut path = std::path::PathBuf::new();
-        path.push(asset_name);
-        path
+        crate::actions::utils::safe_file_name(&asset_name).ok_or_else(|| {
+            CliError::from(CliActionError::BusinessLogicError(format!(
+                "The asset's name '{}' is not a safe local file name; choose one with -o/--output",
+                asset_name
+            )))
+        })?
     };
 
     let tenant_id = tenant_uuid.to_string();
@@ -188,194 +180,6 @@ pub async fn download_asset_thumbnail(sub_matches: &ArgMatches) -> Result<(), Cl
 
     // Write the thumbnail content to the output file
     std::fs::write(&output_file_path, thumbnail_content).map_err(CliActionError::IoError)?;
-
-    Ok(())
-}
-
-/// Download all assets in a folder as a ZIP archive.
-///
-/// This function handles the "asset download-folder" command, retrieving all assets
-/// in a specified folder from the Physna API and packaging them into a ZIP file.
-///
-/// # Arguments
-///
-/// * `sub_matches` - The command-line argument matches containing the command parameters
-///
-/// # Returns
-///
-/// * `Ok(())` - If the folder was downloaded successfully
-/// * `Err(CliError)` - If an error occurred during download
-pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
-    trace!("Executing \"asset download-folder\" command...");
-
-    let configuration = Configuration::load_or_create_default()?;
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-
-    // Get folder UUID or path from command line
-    let folder_uuid_param = sub_matches.get_one::<uuid::Uuid>(PARAMETER_FOLDER_UUID);
-    let folder_path_param = sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH);
-
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        // Resolve folder UUID by path
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
-
-    // Get the output file path
-    let output_file_path = if let Some(output_path) = requested_output(sub_matches).as_ref() {
-        output_path.clone()
-    } else {
-        // Use the folder name as the default output file name
-        // Determine the folder name from the provided path or get it from the folder details
-        let folder_name = if let Some(path) = folder_path_param {
-            // If the folder was specified by path, extract the folder name from the path
-            let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-            if path_segments.is_empty() {
-                "untitled".to_string()
-            } else {
-                path_segments.last().unwrap().to_string()
-            }
-        } else {
-            // If the folder was specified by UUID, get the folder details to determine the name
-            let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-
-            let folder_path = folder.path();
-            let path_segments: Vec<&str> =
-                folder_path.split('/').filter(|s| !s.is_empty()).collect();
-            if path_segments.is_empty() {
-                "untitled".to_string()
-            } else {
-                path_segments.last().unwrap().to_string()
-            }
-        };
-
-        let mut path = std::path::PathBuf::new();
-        path.push(format!("{}.zip", folder_name));
-        path
-    };
-
-    // Get all assets in the folder
-    let assets_response = api
-        .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&folder_uuid))
-        .await?;
-    let assets: Vec<_> = assets_response.get_all_assets().to_vec();
-
-    if assets.is_empty() {
-        // Nothing to do is not a failure, and it was confusing to see it printed as
-        // one with a success exit code.
-        error_utils::report_warning(&format!(
-            "No assets found directly in folder {}; nothing to download (subfolders are not included)",
-            folder_uuid
-        ));
-        return Ok(());
-    }
-
-    // Check if progress should be displayed
-    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
-
-    // Create a temporary directory to store downloaded files. Remove any
-    // leftovers from a previous (failed) run first: the ZIP-building step
-    // below archives every file in this directory, so stale files from an
-    // earlier run would silently end up inside the output archive.
-    let temp_dir = std::env::temp_dir().join(format!("pcli2_temp_{}", folder_uuid));
-    if temp_dir.exists() {
-        std::fs::remove_dir_all(&temp_dir)
-            .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
-    }
-    std::fs::create_dir_all(&temp_dir)
-        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
-
-    // Create progress bar if requested
-    let progress_bar = if show_progress {
-        let pb = ProgressBar::new(assets.len() as u64);
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec} - Downloading assets")
-            .unwrap()
-            .progress_chars("#>-"));
-        Some(pb)
-    } else {
-        None
-    };
-
-    // Download each asset to the temporary directory
-    for asset in &assets {
-        let file_content = api
-            .download_asset(
-                &tenant.uuid.to_string(),
-                &asset.uuid().to_string(),
-                Some(&asset.name()),
-            )
-            .await?;
-
-        let asset_file_path = temp_dir.join(asset.name());
-        let mut file = File::create(&asset_file_path).map_err(CliActionError::IoError)?;
-        file.write_all(&file_content)
-            .map_err(CliActionError::IoError)?;
-
-        // Update progress bar if present
-        if let Some(ref pb) = progress_bar {
-            pb.inc(1);
-        }
-    }
-
-    // Finish progress bar if present
-    if let Some(pb) = progress_bar {
-        pb.finish_with_message("Assets downloaded, creating ZIP...");
-    }
-
-    // Create ZIP file with all downloaded assets
-    let zip_file = File::create(&output_file_path).map_err(CliActionError::IoError)?;
-    let mut zip_writer = ZipWriter::new(zip_file);
-
-    // Walk through the temp directory and add files to the ZIP
-    for entry in std::fs::read_dir(&temp_dir)
-        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?
-    {
-        let entry = entry.map_err(CliActionError::IoError)?;
-        let path = entry.path();
-
-        if path.is_file() {
-            let file_name = path
-                .file_name()
-                .ok_or_else(|| {
-                    CliError::ActionError(CliActionError::IoError(std::io::Error::other(
-                        "Could not get file name",
-                    )))
-                })?
-                .to_str()
-                .ok_or_else(|| {
-                    CliError::ActionError(CliActionError::IoError(std::io::Error::other(
-                        "Invalid file name",
-                    )))
-                })?;
-
-            let options: FileOptions<()> = FileOptions::default();
-            zip_writer
-                .start_file(file_name, options)
-                .map_err(|e| CliError::ActionError(CliActionError::ZipError(e)))?;
-            let file_content = std::fs::read(&path)
-                .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
-            zip_writer
-                .write_all(&file_content)
-                .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
-        }
-    }
-
-    zip_writer
-        .finish()
-        .map_err(|e| CliError::ActionError(CliActionError::ZipError(e)))?;
-
-    // Clean up temporary directory
-    std::fs::remove_dir_all(&temp_dir)
-        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
 
     Ok(())
 }

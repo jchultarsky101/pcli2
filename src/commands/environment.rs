@@ -631,7 +631,22 @@ fn confirm_or_abort(
 /// and only surface later as an opaque request error.
 fn validate_url(flag: &str, value: &str) -> Result<(), crate::error::CliError> {
     match reqwest::Url::parse(value) {
-        Ok(url) if url.scheme() == "http" || url.scheme() == "https" => Ok(()),
+        Ok(url) if url.scheme() == "http" => {
+            // Accepted, because an existing setup may rely on it, but the client
+            // secret and every access token would cross the network in clear text.
+            let loopback = matches!(
+                url.host_str(),
+                Some("localhost") | Some("127.0.0.1") | Some("[::1]") | Some("::1")
+            );
+            if !loopback {
+                crate::error_utils::report_warning(&format!(
+                    "{} '{}' is plain http: credentials and tokens sent to it are not encrypted. Use https unless this is a local test server.",
+                    flag, value
+                ));
+            }
+            Ok(())
+        }
+        Ok(url) if url.scheme() == "https" => Ok(()),
         Ok(url) => Err(crate::error::CliError::MissingRequiredArgument(format!(
             "{} '{}' must use http or https, not '{}'",
             flag,

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The credentials file can no longer be wiped by two pcli2 runs at once** - `dev_credentials.json` was rewritten in place, and a file that could not be parsed was treated as empty. Two runs in parallel (`xargs -P`, cron, CI), one of them renewing its token, or a crash mid-write, could leave the file holding a single environment with an empty client ID and secret. It is now written to a temporary file and renamed into place, created owner-only (`0600`) from the start, and each change is a read-modify-write under a lock file, so parallel runs no longer lose each other's updates. A file that cannot be parsed is kept as `dev_credentials.json.unreadable-<time>` with a warning instead of being overwritten. `config.yml` and the update-check cache are written the same atomic way.
+- **`pcli2 ... | head` no longer exits 101** - A reader that stops early made pcli2 panic ("failed printing to stdout: Broken pipe") and exit 101, the *network error* code. A closed output pipe now ends the run quietly with exit 0. Any other internal panic is reported as one line (JSON under `--error-format json`) and exits 70.
+- **Token requests have timeouts and are retried** - The login and renewal request went out on a client with no timeout at all, so an auth server that accepted the connection and never answered hung the run forever, and a single 503 from it failed the run. It now uses the same connect, read and total timeouts and the same retries with backoff as every other request.
+- **`asset metadata create-batch` survives a failed token renewal** - One failed renewal stopped the whole batch. Each call is now retried up to three times when authentication fails (the rule folder matches already follow); a credential that is really revoked still stops the run.
+- **An upload is no longer resent after a gateway error** - After a 502 or 504 the upload was sent again, found the asset the first attempt had created, and a file that uploaded fine was reported as "Asset already exists" (a report job could be created twice the same way). Requests that create something are now retried only on 408, 429 and 503, which say the server did not act on them. Searches and batch lookups, which only read, are still retried on every transient status.
+- **A dropped connection during a download is retried** - A reset while the file body was streaming failed the item at once. The download now starts again, up to the usual number of retries, and writes through a 1 MiB buffer.
+- **`auth login` checks the credentials before saving them** - A mistyped secret used to replace a working one even though the login then failed.
+- **An error on the request retried after a token renewal keeps its meaning** - A 404 exited 102 instead of 67, and a 409 was no longer recognised as a conflict (which broke `folder upload` onto an existing folder in that situation).
+- **`tenant list` exits non-zero when it fails** - The error was printed but the exit code was 0.
+- **A new value in the API no longer breaks a listing** - A report status, report type, dependency status or failure kind that this build does not know reads as `unknown` / `UNKNOWN` instead of failing `report list`, `tenant failures` or `asset dependencies` with a JSON error. `report create --wait` keeps polling a status it does not know.
+- **Names from the server are checked before they become local paths** - `asset download` without `-o`, and `folder download` without `-o`, use the asset's or folder's name as the file or directory name. A name that is not one plain path segment (an absolute path, `..`, a `\` on Windows) is now refused with a pointer to `-o`.
+
+### Changed
+- **Exit codes** - A request the server keeps answering with 429 or a 5xx after every retry exits 69 (temporary failure, try again later) instead of 102. A connection lost mid-download exits 101 (network) instead of 102. `asset dependency-diff` and `asset resolve-dependency` exit with the real cause (100 for an expired login, 101 for the network, ...) instead of always 67 when one of their input assets could not be resolved.
+- **`env add` warns about plain `http://` URLs** - Credentials and tokens sent to such a URL are not encrypted; loopback addresses are exempt. The URL is still accepted.
+
+### Removed
+- **An unused folder-download function in the client library** - `actions::assets::download_folder` was never reachable from the CLI (`folder download` has its own implementation) and extracted archives into a predictable shared temporary directory.
+
 ## [2.2.1] - 2026-09-22
 
 ### Fixed

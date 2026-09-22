@@ -1929,6 +1929,11 @@ pub enum DependencyStatus {
     Resolved,
     /// No asset stands in for the reference; the assembly cannot be fully indexed.
     Missing,
+    /// A value this build does not know yet. Physna adds values without bumping
+    /// the API version; one new value must not turn a whole listing into a
+    /// deserialization error. The weekly spec-drift check reports the new value.
+    #[serde(other)]
+    Unknown,
 }
 
 impl DependencyStatus {
@@ -1941,6 +1946,7 @@ impl DependencyStatus {
             DependencyStatus::Matched => "matched",
             DependencyStatus::Resolved => "resolved",
             DependencyStatus::Missing => "missing",
+            DependencyStatus::Unknown => "unknown",
         }
     }
 }
@@ -2273,6 +2279,11 @@ pub enum JobStatus {
     Completed,
     Failed,
     Cancelled,
+    /// A value this build does not know yet. Physna adds values without bumping
+    /// the API version; one new value must not turn a whole listing into a
+    /// deserialization error. The weekly spec-drift check reports the new value.
+    #[serde(other)]
+    Unknown,
 }
 
 impl JobStatus {
@@ -2287,6 +2298,7 @@ impl JobStatus {
             JobStatus::Completed => "COMPLETED",
             JobStatus::Failed => "FAILED",
             JobStatus::Cancelled => "CANCELLED",
+            JobStatus::Unknown => "UNKNOWN",
         }
     }
 
@@ -2306,6 +2318,11 @@ pub enum ReportType {
     Duplication,
     Simplification,
     Custom,
+    /// A value this build does not know yet. Physna adds values without bumping
+    /// the API version; one new value must not turn a whole listing into a
+    /// deserialization error. The weekly spec-drift check reports the new value.
+    #[serde(other)]
+    Unknown,
 }
 
 impl ReportType {
@@ -2318,6 +2335,7 @@ impl ReportType {
             ReportType::Duplication => "DUPLICATION",
             ReportType::Simplification => "SIMPLIFICATION",
             ReportType::Custom => "CUSTOM",
+            ReportType::Unknown => "UNKNOWN",
         }
     }
 }
@@ -2522,6 +2540,11 @@ pub enum FailureDiagnosticsStatus {
     NotFound,
     /// Log search is not configured for this deployment.
     Unavailable,
+    /// A value this build does not know yet. Physna adds values without bumping
+    /// the API version; one new value must not turn a whole listing into a
+    /// deserialization error. The weekly spec-drift check reports the new value.
+    #[serde(other)]
+    Unknown,
 }
 
 impl FailureDiagnosticsStatus {
@@ -2531,6 +2554,7 @@ impl FailureDiagnosticsStatus {
             FailureDiagnosticsStatus::Found => "found",
             FailureDiagnosticsStatus::NotFound => "not-found",
             FailureDiagnosticsStatus::Unavailable => "unavailable",
+            FailureDiagnosticsStatus::Unknown => "unknown",
         }
     }
 }
@@ -2544,6 +2568,11 @@ pub enum FailureKind {
     /// A failure on Physna's side; `summary` is a fixed string and the
     /// `traceId` is what to quote to support.
     Internal,
+    /// A value this build does not know yet. Physna adds values without bumping
+    /// the API version; one new value must not turn a whole listing into a
+    /// deserialization error. The weekly spec-drift check reports the new value.
+    #[serde(other)]
+    Unknown,
 }
 
 impl FailureKind {
@@ -2552,6 +2581,7 @@ impl FailureKind {
         match self {
             FailureKind::User => "user",
             FailureKind::Internal => "internal",
+            FailureKind::Unknown => "unknown",
         }
     }
 }
@@ -2625,6 +2655,11 @@ pub enum FailureSource {
     Asset,
     Report,
     PartFinderReport,
+    /// A value this build does not know yet. Physna adds values without bumping
+    /// the API version; one new value must not turn a whole listing into a
+    /// deserialization error. The weekly spec-drift check reports the new value.
+    #[serde(other)]
+    Unknown,
 }
 
 impl FailureSource {
@@ -2637,6 +2672,7 @@ impl FailureSource {
             FailureSource::Asset => "asset",
             FailureSource::Report => "report",
             FailureSource::PartFinderReport => "part-finder-report",
+            FailureSource::Unknown => "unknown",
         }
     }
 }
@@ -3117,5 +3153,47 @@ impl OutputFormatter for TextMatchPair {
             }
             _ => Err(FormattingError::UnsupportedOutputFormat(f.to_string())),
         }
+    }
+}
+
+#[cfg(test)]
+mod unknown_enum_value_tests {
+    use super::*;
+
+    #[test]
+    fn a_value_added_by_the_api_reads_as_unknown_instead_of_failing() {
+        assert_eq!(
+            serde_json::from_str::<JobStatus>(r#""QUEUED""#).unwrap(),
+            JobStatus::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<ReportType>(r#""MOLD""#).unwrap(),
+            ReportType::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<DependencyStatus>(r#""ignored""#).unwrap(),
+            DependencyStatus::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<FailureSource>(r#""viewer""#).unwrap(),
+            FailureSource::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<FailureKind>(r#""partner""#).unwrap(),
+            FailureKind::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<FailureDiagnosticsStatus>(r#""pending""#).unwrap(),
+            FailureDiagnosticsStatus::Unknown
+        );
+        // Known values are unaffected.
+        assert_eq!(
+            serde_json::from_str::<JobStatus>(r#""RUNNING""#).unwrap(),
+            JobStatus::Running
+        );
+        assert!(
+            !JobStatus::Unknown.is_terminal(),
+            "keep polling an unknown status"
+        );
     }
 }

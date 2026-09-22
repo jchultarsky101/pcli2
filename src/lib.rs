@@ -33,6 +33,7 @@ pub mod folder_cache;
 pub mod folder_hierarchy;
 pub mod format;
 pub mod format_utils;
+pub mod fs_utils;
 pub mod http_utils;
 pub mod keyring;
 pub mod metadata;

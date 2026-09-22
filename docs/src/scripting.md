@@ -147,7 +147,9 @@ where possible) so scripts can react to specific failure classes:
 
 A usage error rejected by the argument parser also exits 64. Batch commands that
 finished with some items failed, and folder matches whose report would be
-incomplete, exit 69. `asset diagnose` exits 68 on a deployment without failure
+incomplete, exit 69, as does a request the server kept rejecting with 429 (rate
+limited) or a 5xx after every retry: try again later. A closed output pipe
+(`pcli2 ... | head`) is not an error and exits 0. `asset diagnose` exits 68 on a deployment without failure
 log search (`pcli2 doctor` shows that up front on its `diagnostics` line); a
 `not-found` answer is printed and exits 0, since it is an answer.
 

@@ -135,7 +135,7 @@ async fn latest_version() -> Option<String> {
         let _ = std::fs::create_dir_all(parent);
     }
     if let Ok(serialized) = serde_json::to_string(&cache) {
-        if let Err(e) = std::fs::write(&cache_path, serialized) {
+        if let Err(e) = crate::fs_utils::write_atomically(&cache_path, serialized.as_bytes()) {
             debug!("Failed to write update-check cache: {}", e);
         }
     }

@@ -569,9 +569,14 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             }
         };
 
-        let mut path = std::path::PathBuf::new();
-        path.push(folder_name);
-        path
+        // The folder's name comes from the server; it must be one plain name before
+        // it becomes the default download directory.
+        crate::actions::utils::safe_file_name(&folder_name).ok_or_else(|| {
+            CliError::from(crate::actions::CliActionError::BusinessLogicError(format!(
+                "The folder's name '{}' is not a safe local directory name; choose one with -o/--output",
+                folder_name
+            )))
+        })?
     };
 
     // Use the destination directory directly instead of a temporary directory to avoid cross-device issues

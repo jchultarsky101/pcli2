@@ -101,6 +101,20 @@ pub fn safe_relative_path(relative: &str) -> Option<std::path::PathBuf> {
     }
 }
 
+/// A single file or directory name the server sent, checked before it is used as a
+/// default local path.
+///
+/// `PathBuf::push` replaces the whole path when given an absolute one, and on
+/// Windows `\` separates directories, so an asset named `/etc/x` or `..\x` would
+/// otherwise be written somewhere the user never chose. `None` when the name is not
+/// one plain path segment.
+pub fn safe_file_name(name: &str) -> Option<std::path::PathBuf> {
+    if name.contains('/') {
+        return None;
+    }
+    safe_relative_path(name)
+}
+
 /// Expand repeatable list arguments that the help text promises accept
 /// comma-separated values (`--name a,b` as well as `--name a --name b`).
 ///
@@ -257,6 +271,25 @@ pub async fn resolve_folder<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::safe_file_name;
+
+    #[test]
+    fn a_server_name_is_only_a_default_path_when_it_is_one_plain_segment() {
+        assert!(safe_file_name("bracket.stl").is_some());
+        assert!(safe_file_name("Part 1 (copy).SLDPRT").is_some());
+        for bad in [
+            "",
+            ".",
+            "..",
+            "/etc/passwd",
+            "../x.stl",
+            "a/b.stl",
+            "..\\x.stl",
+        ] {
+            assert!(safe_file_name(bad).is_none(), "{bad:?} must be refused");
+        }
+    }
+
     #[test]
     fn test_resolve_asset_neither_provided() {
         // This test verifies that the function correctly returns an error when neither parameter is provided

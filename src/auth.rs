@@ -24,6 +24,12 @@ pub struct TokenResponse {
     pub token_type: String,
 }
 
+/// Total time allowed for one token request, retries excluded.
+///
+/// A token response is a few hundred bytes; anything slower than this is a server
+/// that is not going to answer.
+const TOKEN_REQUEST_TIMEOUT_SECS: u64 = 60;
+
 pub struct AuthClient {
     token_url: String,
     client_id: String,
@@ -61,7 +67,13 @@ impl AuthClient {
     }
 
     pub async fn get_access_token(&self) -> Result<String, AuthError> {
-        let client = reqwest::Client::builder().user_agent("PCLI2").build()?;
+        // The shared transport: connect, read and total timeouts, pcli2's user agent,
+        // and retries with backoff. The token request used to go out on a bare client
+        // with no timeout at all, so a token endpoint that accepted the connection
+        // and never answered hung login - and every task waiting on a renewal -
+        // forever, and a single 503 from it failed the whole run.
+        let http = crate::http_utils::HttpClient::new_with_timeout(TOKEN_REQUEST_TIMEOUT_SECS)
+            .map_err(|e| AuthError::AuthFailed(e.to_string()))?;
 
         // Add tracing to see which URL is being used
         tracing::debug!("Authenticating with token URL: {}", &self.token_url);
@@ -72,16 +84,28 @@ impl AuthClient {
         let params = [
             ("grant_type", "client_credentials"),
             // Some OAuth 2.0 implementations expect client_id in the body as well
-            ("client_id", &self.client_id),
+            ("client_id", self.client_id.as_str()),
         ];
 
-        let response = client
-            .post(&self.token_url)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .form(&params)
-            .basic_auth(&self.client_id, Some(&self.client_secret))
-            .send()
-            .await?;
+        // Asking for a token changes nothing on the server, so it is safe to resend
+        // after a timeout: the request counts as idempotent.
+        let response = http
+            .send_with_retry(
+                |client| {
+                    Ok(client
+                        .post(&self.token_url)
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .form(&params)
+                        .basic_auth(&self.client_id, Some(&self.client_secret)))
+                },
+                None,
+                true,
+            )
+            .await
+            .map_err(|e| match e {
+                crate::physna_v3::ApiError::HttpError(e) => AuthError::HttpError(e),
+                other => AuthError::AuthFailed(other.to_string()),
+            })?;
 
         tracing::debug!("Authentication response status: {}", response.status());
 

@@ -470,3 +470,43 @@ fn failure_types() {
     }));
     shapes_of_empty("RecentFailuresList (empty)", &none, &[Fmt::Csv, Fmt::Json]);
 }
+
+#[test]
+fn report_types() {
+    let report_json = json!({
+        "id": "f046e5b8-c08b-4bbb-b685-c6fd85e4d1b1", "tenantId": TENANT,
+        "status": "COMPLETED", "progress": 100, "reportType": "CUSTOM",
+        "name": "Custom 9/21/2026", "minThreshold": 80, "maxThreshold": 100,
+        "folderIds": ["3c91b897-0c8b-40f5-946d-6c3a867e7869"], "includeHomeFolderAssets": false,
+        "creator": {"id": A1, "email": "someone@example.com"},
+        "excludeAssemblies": false, "excludeExactDuplicates": false,
+        "createdAt": "2026-09-21T18:33:10.382Z", "updatedAt": "2026-09-21T18:33:11.254Z",
+        "groupCount": 1
+    });
+    let report: Report = from(report_json.clone());
+    shapes("Report", &report, &[Fmt::Csv, Fmt::Json]);
+
+    let list: ReportList = from(json!({ "reports": [report_json, {
+        "id": "98e51614-3e5b-4eee-957b-fa19699535ce", "tenantId": TENANT, "status": "FAILED",
+        "progress": 20, "reportType": "DUPLICATION", "minThreshold": 80, "maxThreshold": 100,
+        "createdAt": "2026-09-21T18:13:25.987Z", "updatedAt": "2026-09-22T14:16:24.033Z",
+        "groupCount": 0
+    }]}));
+    shapes("ReportList", &list, &[Fmt::Csv, Fmt::Json]);
+    shapes_of_empty(
+        "ReportList (empty)",
+        &ReportList { reports: vec![] },
+        &[Fmt::Csv, Fmt::Json],
+    );
+
+    let diagnostics: ReportFailureDiagnostics = from(json!({
+        "reportId": "98e51614-3e5b-4eee-957b-fa19699535ce", "reportName": "Custom 9/21/2026",
+        "reportStatus": "FAILED", "status": "found", "kind": "internal",
+        "summary": "Processing failed inside Physna.", "traceId": "abc", "occurredAt": "2026-09-22T14:16:24.033Z"
+    }));
+    shapes(
+        "ReportFailureDiagnostics",
+        &diagnostics,
+        &[Fmt::Csv, Fmt::Json],
+    );
+}

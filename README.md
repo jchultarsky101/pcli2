@@ -311,6 +311,10 @@ pcli2 asset diagnose --path "/Home/Models/model.stl"
 # List what failed lately, newest first (assets, reports, part-finder reports)
 pcli2 tenant failures --format csv --headers
 
+# Reports: start a duplication report and wait for it, then download its data
+pcli2 report create --name "Brackets" --folder-path "/Home/Parts/Brackets" --wait
+pcli2 report download --id <ID> --format xlsx
+
 # Download asset thumbnail
 pcli2 asset thumbnail --path "/Home/Models/model.stl"
 # or
@@ -800,6 +804,14 @@ Quick reference for all available command aliases:
 |-------------|-------|
 | `pcli2 environment` | `pcli2 env` |
 
+### Report Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 report list` | `pcli2 report ls` |
+| `pcli2 report download` | `pcli2 report dl` |
+| `pcli2 report diagnose` | `pcli2 report why` |
+| `pcli2 report delete` | `pcli2 report rm` |
+
 ### Other Commands
 | Full Command | Alias |
 |-------------|-------|
@@ -1119,6 +1131,28 @@ pcli2 asset diagnose --uuid 5db69606-661e-4019-a9b4-a4d122fc0f9e
   has a `diagnostics` line that says up front whether the lookup is available.
 
 CSV columns: `ASSET_PATH,ASSET_STATE,STATUS,KIND,SUMMARY,TRACE_ID,OCCURRED_AT,ASSET_UUID`.
+
+### Report Commands
+
+Reports (duplication, simplification, custom) are jobs that run on the server and then hold data you can download. See the [Reports](docs/src/reports.md) chapter for details.
+
+```
+pcli2 report list      # List the tenant's reports, newest first (--type, --status, --limit)
+pcli2 report get       # Show one report: status, progress, settings (--id)
+pcli2 report download  # Download a COMPLETED report's data (--id, --format csv|xlsx, -o PATH)
+pcli2 report diagnose  # Explain why a report failed, like 'asset diagnose' (--id)
+pcli2 report delete    # Delete a report; asks for confirmation unless --yes (--id, --dry-run)
+pcli2 report create    # Start a duplication report over folders; --wait follows it to the end
+```
+
+```bash
+# Start a duplication report over a folder, wait for it, then download the data as Excel
+pcli2 report create --name "Brackets" --folder-path "/Home/Parts/Brackets" --wait --format csv --headers
+pcli2 report download --id <ID> --format xlsx -o brackets.xlsx
+
+# Why did a report fail? (tenant failures lists the failed ones)
+pcli2 report diagnose --id <ID>
+```
 
 ### Authentication Commands
 

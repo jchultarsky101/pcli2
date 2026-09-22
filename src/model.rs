@@ -2262,6 +2262,243 @@ impl From<MetadataCoverageResponse> for MetadataCoverage {
     }
 }
 
+// ---- reports ----------------------------------------------------------------
+
+/// Where a report job stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum JobStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl JobStatus {
+    /// Every status, as the API spells them.
+    pub const ALL: [&'static str; 5] = ["PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"];
+
+    /// The value as the API spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            JobStatus::Pending => "PENDING",
+            JobStatus::Running => "RUNNING",
+            JobStatus::Completed => "COMPLETED",
+            JobStatus::Failed => "FAILED",
+            JobStatus::Cancelled => "CANCELLED",
+        }
+    }
+
+    /// True once the job will not change any more.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled
+        )
+    }
+}
+
+/// What a report is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum ReportType {
+    Duplication,
+    Simplification,
+    Custom,
+}
+
+impl ReportType {
+    /// Every type, as the API spells them.
+    pub const ALL: [&'static str; 3] = ["DUPLICATION", "SIMPLIFICATION", "CUSTOM"];
+
+    /// The value as the API spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReportType::Duplication => "DUPLICATION",
+            ReportType::Simplification => "SIMPLIFICATION",
+            ReportType::Custom => "CUSTOM",
+        }
+    }
+}
+
+/// Who created a report or a metadata field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Creator {
+    pub id: Uuid,
+    pub email: String,
+}
+
+/// A report job, as `GET /tenants/{tenantId}/reports` and friends describe it.
+///
+/// Only the fields the spec marks required are plain; everything else is
+/// optional and left out of the JSON output when the API did not send it.
+/// `metadataFilters` is kept as raw JSON: pcli2 never interprets it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Report {
+    pub id: String,
+    #[serde(rename = "tenantId")]
+    pub tenant_id: String,
+    pub status: JobStatus,
+    /// Percent complete, 0 to 100.
+    pub progress: f64,
+    #[serde(rename = "reportType")]
+    pub report_type: ReportType,
+    #[serde(rename = "minThreshold")]
+    pub min_threshold: f64,
+    #[serde(rename = "maxThreshold")]
+    pub max_threshold: f64,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    #[serde(rename = "groupCount")]
+    pub group_count: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creator: Option<Creator>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<Vec<String>>,
+    #[serde(rename = "folderIds", default, skip_serializing_if = "Option::is_none")]
+    pub folder_ids: Option<Vec<String>>,
+    #[serde(
+        rename = "folderPaths",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub folder_paths: Option<Vec<String>>,
+    #[serde(
+        rename = "excludedFolderIds",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub excluded_folder_ids: Option<Vec<String>>,
+    #[serde(
+        rename = "excludeAssemblies",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub exclude_assemblies: Option<bool>,
+    #[serde(
+        rename = "excludeExactDuplicates",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub exclude_exact_duplicates: Option<bool>,
+    #[serde(
+        rename = "includeHomeFolderAssets",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub include_home_folder_assets: Option<bool>,
+    #[serde(
+        rename = "metadataFilters",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub metadata_filters: Option<serde_json::Value>,
+    #[serde(
+        rename = "searchQuery",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub search_query: Option<String>,
+    #[serde(
+        rename = "modelIndexConfigId",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub model_index_config_id: Option<String>,
+}
+
+impl Report {
+    /// The name to show for the report: its name, or its id when it has none.
+    pub fn display_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.id)
+    }
+}
+
+/// One page of `GET /tenants/{tenantId}/reports`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportListResponse {
+    pub reports: Vec<Report>,
+    #[serde(rename = "pageData", default)]
+    pub page_data: PageData,
+}
+
+/// `GET /tenants/{tenantId}/reports/{id}` and the answer to a create.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SingleReportResponse {
+    pub report: Report,
+}
+
+/// The `report list` output: every report fetched, as the API ordered them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportList {
+    pub reports: Vec<Report>,
+}
+
+/// What `report create` sends for a duplication report.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateDuplicationReportRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(rename = "minThreshold")]
+    pub min_threshold: f64,
+    #[serde(rename = "maxThreshold")]
+    pub max_threshold: f64,
+    #[serde(rename = "folderIds", skip_serializing_if = "Vec::is_empty")]
+    pub folder_ids: Vec<String>,
+    #[serde(rename = "excludedFolderIds", skip_serializing_if = "Vec::is_empty")]
+    pub excluded_folder_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
+    #[serde(rename = "excludeAssemblies")]
+    pub exclude_assemblies: bool,
+    #[serde(rename = "excludeExactDuplicates")]
+    pub exclude_exact_duplicates: bool,
+    #[serde(rename = "includeHomeFolderAssets")]
+    pub include_home_folder_assets: bool,
+}
+
+/// The `report diagnose` output: the report's identity next to what the
+/// server knows about its failure.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportFailureDiagnostics {
+    #[serde(rename = "reportId")]
+    pub report_id: String,
+    #[serde(rename = "reportName", skip_serializing_if = "Option::is_none")]
+    pub report_name: Option<String>,
+    #[serde(rename = "reportStatus")]
+    pub report_status: JobStatus,
+    pub status: FailureDiagnosticsStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<FailureKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(rename = "traceId", skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+    #[serde(rename = "occurredAt", skip_serializing_if = "Option::is_none")]
+    pub occurred_at: Option<String>,
+}
+
+impl ReportFailureDiagnostics {
+    /// Pair a report with the diagnostics the server returned for it.
+    pub fn new(report: &Report, diagnostics: FailureDiagnostics) -> Self {
+        ReportFailureDiagnostics {
+            report_id: report.id.clone(),
+            report_name: report.name.clone(),
+            report_status: report.status,
+            status: diagnostics.status,
+            kind: diagnostics.kind,
+            summary: diagnostics.summary,
+            trace_id: diagnostics.trace_id,
+            occurred_at: diagnostics.occurred_at,
+        }
+    }
+}
+
 // ---- failure diagnostics ---------------------------------------------------
 
 /// Whether the deployment can look up why an asset failed.

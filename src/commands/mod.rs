@@ -17,6 +17,7 @@ pub mod folder;
 pub mod man;
 pub mod metadata;
 pub mod params;
+pub mod report;
 pub mod tenant;
 pub mod user;
 
@@ -306,6 +307,7 @@ pub fn create_full_command() -> Command {
         .subcommand(config::config_command())
         .subcommand(environment::environment_command())
         .subcommand(user::user_command())
+        .subcommand(report::report_command())
         .subcommand(completions::completions_command())
         .subcommand(man::man_command())
         .subcommand(cache::cache_command())

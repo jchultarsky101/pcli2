@@ -4500,42 +4500,43 @@ impl PhysnaApiClient {
         }
     }
 
-    /// Retrieve multiple assets by their UUIDs concurrently with controlled parallelism
-    /// This is more efficient than sequential API calls for multiple assets
+    /// The assets with the given UUIDs, in the order they were asked for.
+    ///
+    /// `POST /tenants/{tenantId}/assets/batch`, at most 1000 ids per request
+    /// (the specification's maximum), so a longer list goes out in chunks.
+    /// Duplicate ids are asked about once. An id the tenant does not have is
+    /// simply absent from the result: use [`missing_asset_ids`] to find out
+    /// which. An empty list makes no request.
     pub async fn get_assets_batch(
         &mut self,
         tenant_uuid: &Uuid,
         asset_uuids: &[Uuid],
     ) -> Result<Vec<Asset>, ApiError> {
-        use futures::stream;
-        use futures::stream::StreamExt;
-
-        // Process assets concurrently but with limited parallelism to avoid overwhelming the API
-        const MAX_CONCURRENT_REQUESTS: usize = 10;
-
-        let results: Vec<Result<Asset, ApiError>> = stream::iter(asset_uuids)
-            .map(|asset_uuid| {
-                let mut client = self.clone(); // Clone client for the async operation
-                let tenant_uuid = *tenant_uuid;
-                let asset_uuid = *asset_uuid;
-
-                async move { client.get_asset_by_uuid(&tenant_uuid, &asset_uuid).await }
-            })
-            .buffer_unordered(MAX_CONCURRENT_REQUESTS)
-            .collect()
-            .await;
-
-        // Collect all successful results, ignoring errors for now
-        // In a more robust implementation, we might want to handle individual errors differently
-        let mut assets = Vec::new();
-        for result in results {
-            match result {
-                Ok(asset) => assets.push(asset),
-                Err(e) => return Err(e), // Return first error encountered
+        const MAX_IDS_PER_REQUEST: usize = 1000;
+        let mut wanted: Vec<Uuid> = Vec::with_capacity(asset_uuids.len());
+        for id in asset_uuids {
+            if !wanted.contains(id) {
+                wanted.push(*id);
             }
         }
-
-        Ok(assets)
+        let url = format!("{}/tenants/{}/assets/batch", self.base_url, tenant_uuid);
+        let mut found: std::collections::HashMap<Uuid, Asset> =
+            std::collections::HashMap::with_capacity(wanted.len());
+        for chunk in wanted.chunks(MAX_IDS_PER_REQUEST) {
+            debug!(
+                "Fetching {} asset(s) by id from tenant {}",
+                chunk.len(),
+                tenant_uuid
+            );
+            let response: crate::model::AssetListResponse = self
+                .post(&url, &serde_json::json!({ "assetIds": chunk }))
+                .await?;
+            for asset in &response.assets {
+                let asset: Asset = asset.into();
+                found.insert(asset.uuid(), asset);
+            }
+        }
+        Ok(wanted.iter().filter_map(|id| found.remove(id)).collect())
     }
 
     /// Reprocess a single asset by its UUID
@@ -5064,6 +5065,18 @@ fn parse_created_asset(text: &str) -> Result<Asset, ApiError> {
             }
         },
     }
+}
+
+/// Which of `requested` have no asset in `found`, in request order, once each.
+pub fn missing_asset_ids(requested: &[Uuid], found: &[Asset]) -> Vec<Uuid> {
+    let present: std::collections::HashSet<Uuid> = found.iter().map(|a| a.uuid()).collect();
+    let mut missing = Vec::new();
+    for id in requested {
+        if !present.contains(id) && !missing.contains(id) {
+            missing.push(*id);
+        }
+    }
+    missing
 }
 
 /// Helper function to extract file extension from error message

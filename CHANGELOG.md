@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`asset create --override` replaces the file in place** - When the asset exists and the new file has the same extension, the file is sent to `PUT /tenants/{tenantId}/assets/{assetId}/file`: the asset keeps its UUID, path and metadata and is re-indexed with the new content. Nothing is deleted, so a failed upload leaves the tenant as it was. `--restore-metadata` has nothing to do in that case and says so. A file with a different extension still goes the old way (delete, then upload, with the conflict retry and the loss report). `--override --dry-run` now says which of the two would happen and names the asset; without `--override` the dry-run line is unchanged. Uploads (`asset create`, `asset create-batch`, `folder upload`) go through the client's upload variant, which shares the token with the rest of the run; it makes no difference today because there is no separate upload timeout setting.
 
+- **`asset get` takes several `--uuid` values** - They are fetched with one `POST /tenants/{tenantId}/assets/batch` request (up to 1000 per request) and printed as an asset list, in the same JSON and CSV shapes as `asset list`. Every id must exist: otherwise nothing is printed and the missing ids are named (exit 67). With one `--uuid` or `--path` the output is unchanged. The client's batch method, which nothing used, now calls that endpoint instead of one request per asset.
+
 ### Fixed
 - **`folder dependencies` lists assemblies in a stable order** - The JSON and tree output listed a folder's assemblies in a different order on every run (the folder listing is a map). They are now sorted by path, as the CSV rows already were.
 

@@ -28,6 +28,7 @@ pub const COMMAND_TEXT_MATCH: &str = "text-match"; // Allow non snake case since
 pub const COMMAND_SIMILARITY: &str = "similarity";
 pub const COMMAND_REPROCESS: &str = "reprocess";
 pub const COMMAND_DIAGNOSE: &str = "diagnose";
+pub const COMMAND_MOVE: &str = "move";
 pub const COMMAND_FAILURES: &str = "failures";
 pub const PARAMETER_KIND: &str = "kind";
 pub const COMMAND_COUNTS: &str = "counts";

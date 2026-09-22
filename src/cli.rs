@@ -20,10 +20,10 @@ use pcli2::{
             asset_similarity, compare_asset_dependencies, count_assets, create_asset,
             create_asset_batch, create_asset_metadata_batch, delete_asset, delete_asset_metadata,
             diagnose_asset, download_asset, download_asset_thumbnail, geometric_match_asset,
-            geometric_match_folder, inventory, list_assets, metadata_inference, part_match_asset,
-            part_match_folder, print_asset, print_asset_dependencies, print_asset_metadata,
-            print_folder_dependencies, reprocess_asset, text_match, update_asset_metadata,
-            visual_match_asset, visual_match_folder,
+            geometric_match_folder, inventory, list_assets, metadata_inference, move_asset,
+            part_match_asset, part_match_folder, print_asset, print_asset_dependencies,
+            print_asset_metadata, print_folder_dependencies, reprocess_asset, text_match,
+            update_asset_metadata, visual_match_asset, visual_match_folder,
         },
         cache::clear_cache,
         folders::{
@@ -42,10 +42,11 @@ use pcli2::{
         COMMAND_DEPENDENCIES, COMMAND_DEPENDENCY_DIFF, COMMAND_DIAGNOSE, COMMAND_DOWNLOAD,
         COMMAND_EXPORT, COMMAND_FAILURES, COMMAND_FOLDER, COMMAND_FULL_INVENTORY, COMMAND_GET,
         COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT,
-        COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY,
-        COMMAND_STATE, COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD,
-        COMMAND_USE, COMMAND_VISUAL_MATCH, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET,
-        PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_INPUT, PARAMETER_OUTPUT, PARAMETER_PRETTY,
+        COMMAND_MATCH, COMMAND_METADATA, COMMAND_MOVE, COMMAND_PART_MATCH, COMMAND_REPROCESS,
+        COMMAND_SIMILARITY, COMMAND_STATE, COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL,
+        COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH, PARAMETER_CLIENT_ID,
+        PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_INPUT,
+        PARAMETER_OUTPUT, PARAMETER_PRETTY,
     },
     format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions},
     physna_v3::TryDefault,
@@ -482,6 +483,11 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                 Some((COMMAND_DIAGNOSE, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_DIAGNOSE);
                     diagnose_asset(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_MOVE, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_MOVE);
+                    move_asset(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

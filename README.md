@@ -298,6 +298,9 @@ pcli2 asset reprocess --path "/Home/Models/model.stl"
 # or
 pcli2 asset reprocess --uuid 550e8400-e29b-41d4-a716-446655440000
 
+# Move an asset to another folder (keeps its UUID and metadata); '/' is the root
+pcli2 asset move --path "/Home/Models/model.stl" --folder-path "/Home/Archive"
+
 # Ask the server why an asset failed to process (alias: asset why)
 pcli2 asset diagnose --path "/Home/Models/model.stl"
 
@@ -772,6 +775,7 @@ Quick reference for all available command aliases:
 | `pcli2 asset text-match` | `pcli2 asset text-search` |
 | `pcli2 asset similarity` | `pcli2 asset match-scores` |
 | `pcli2 asset diagnose` | `pcli2 asset failure`, `pcli2 asset why` |
+| `pcli2 asset move` | `pcli2 asset mv` |
 | `pcli2 asset metadata create` | `pcli2 asset metadata update` |
 | `pcli2 asset metadata create-batch` | `pcli2 asset metadata update-batch` |
 | `pcli2 asset metadata delete` | `pcli2 asset metadata rm` |
@@ -812,6 +816,7 @@ pcli2 asset counts           # Show asset health report with counts by state, ty
 pcli2 asset get              # Get asset details (--uuid may be repeated to fetch several in one request)
 pcli2 asset download         # Download an asset
 pcli2 asset delete           # Delete an asset
+pcli2 asset move             # Move an asset to another folder, or to the root (--folder-path /)
 pcli2 asset dependencies     # Get dependencies for an asset
 pcli2 asset dependency-diff  # Diff the dependency trees of two assets
 pcli2 asset geometric-match  # Find geometrically similar assets

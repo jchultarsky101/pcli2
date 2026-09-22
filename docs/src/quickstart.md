@@ -113,6 +113,9 @@ pcli2 asset get --path /Home/MyFolder/model.stl
 # Delete an asset
 pcli2 asset delete --path /Home/MyFolder/model.stl
 
+# Move an asset to another folder (it keeps its UUID and metadata)
+pcli2 asset move --path /Home/MyFolder/model.stl --folder-path /Home/Archive
+
 # See what failed to process lately, then ask the server why
 pcli2 tenant failures --kind asset --format csv --headers
 pcli2 asset diagnose --path /Home/MyFolder/model.stl

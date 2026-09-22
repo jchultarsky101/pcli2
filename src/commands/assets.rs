@@ -14,7 +14,7 @@ use crate::commands::params::{
     restore_metadata_parameter, tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_COUNTS,
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES,
     COMMAND_DEPENDENCY_DIFF, COMMAND_DIAGNOSE, COMMAND_DOWNLOAD, COMMAND_FULL_INVENTORY,
-    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS,
+    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_MOVE, COMMAND_PART_MATCH, COMMAND_REPROCESS,
     COMMAND_SIMILARITY, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV,
     FORMAT_JSON, FORMAT_TREE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
@@ -289,6 +289,24 @@ pub fn asset_command() -> Command {
             .arg(uuid_parameter())
             .arg(path_parameter())
             .group(asset_identifier_group()), // Use the standard asset identifier group to ensure either UUID or path is provided, but not both
+    )
+    .subcommand(
+        Command::new(COMMAND_MOVE)
+            .visible_alias("mv")
+            .about("Move an asset to another folder (or to the root with --folder-path /)")
+            .arg(tenant_parameter())
+            .arg(uuid_parameter())
+            .arg(path_parameter())
+            .group(asset_identifier_group())
+            .arg(folder_uuid_parameter())
+            // `-p` belongs to --path here; the destination has no short form.
+            .arg(
+                folder_path_parameter()
+                    .short(None)
+                    .help("Destination folder path; '/' or '/Home' is the root"),
+            )
+            .group(folder_identifier_group())
+            .arg(dry_run_parameter()),
     )
     .subcommand(
         Command::new(COMMAND_DIAGNOSE)

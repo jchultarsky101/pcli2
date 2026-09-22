@@ -2652,6 +2652,73 @@ impl PhysnaApiClient {
         parse_created_asset(&text)
     }
 
+    /// Replace the file of an existing asset, keeping its ID, path and metadata.
+    ///
+    /// `PUT /tenants/{tenantId}/assets/{assetId}/file`: the asset is re-indexed
+    /// with the new content and comes back in the `indexing` state. The API
+    /// requires the new file's extension to match the asset's path; the caller
+    /// checks that before calling, since a mismatch is better refused locally
+    /// than reported as a server error after the upload. A 409 is passed on as
+    /// the server phrased it (it does not mean "already exists" here).
+    pub async fn replace_asset_file(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+        file_path: &Path,
+    ) -> Result<crate::model::Asset, ApiError> {
+        trace!("Replacing the file of asset {}...", asset_uuid);
+
+        let url = format!(
+            "{}/tenants/{}/assets/{}/file",
+            self.base_url, tenant_uuid, asset_uuid
+        );
+
+        if !file_path.exists() || !file_path.is_file() {
+            return Err(ApiError::PathNotFound(
+                file_path.to_string_lossy().into_owned(),
+            ));
+        }
+
+        let file_name = file_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(); // Safe to unwrap: the file was just confirmed to exist
+
+        let mime_type = mime_guess::from_path(file_path)
+            .first_or_octet_stream()
+            .to_string();
+        let build = |client: &reqwest::Client| -> Result<reqwest::RequestBuilder, ApiError> {
+            // Opened afresh for every attempt: a retry after a token renewal or a
+            // transient 5xx has to stream the file from the start again.
+            let file = std::fs::File::open(file_path).map_err(ApiError::IoError)?;
+            let file_part = reqwest::multipart::Part::stream(tokio::fs::File::from_std(file))
+                .file_name(file_name.clone())
+                .mime_str(&mime_type)
+                .map_err(|e| {
+                    ApiError::InvalidParameterError(format!(
+                        "invalid MIME type '{}' for upload: {}",
+                        mime_type, e
+                    ))
+                })?;
+            let form = reqwest::multipart::Form::new().part("file", file_part);
+            Ok(client.put(&url).multipart(form))
+        };
+
+        debug!(
+            "Replacing the file of asset {} with {}",
+            asset_uuid, file_name
+        );
+
+        let response = self
+            .request_with_auth(build, false)
+            .await
+            .map_err(map_file_error)?;
+        let text: String = response.text().await?;
+        debug!("Raw asset replacement response: {}", text);
+        parse_created_asset(&text)
+    }
+
     /// Perform a geometric search for similar assets with pagination support
     ///
     /// This method searches for assets that are geometrically similar to the reference asset.
@@ -3405,8 +3472,9 @@ impl PhysnaApiClient {
 
         // Every task works on a clone of this client. A clone shares the token slot,
         // the renewal lock and the connection pool, so an expiry mid-batch costs one
-        // renewal between all tasks instead of one per file.
-        let client_template = self.clone();
+        // renewal between all tasks instead of one per file. The upload variant
+        // carries the upload timeout when one is configured.
+        let client_template = self.for_upload_operations();
         let folder_path = folder_path.map(|s| s.to_string());
 
         debug!(
@@ -4352,13 +4420,21 @@ impl PhysnaApiClient {
         Ok(bytes.to_vec())
     }
 
-    /// Create a specialized client for upload operations with appropriate timeout
+    /// Create a specialized client for upload operations with appropriate timeout.
+    ///
+    /// The clone shares the token slot and the renewal lock with `self`, so a
+    /// renewal in either is seen by both. When no separate upload timeout is
+    /// configured (the default today) the plain clone is returned, so the
+    /// connection pool is shared too.
     pub fn for_upload_operations(&self) -> Self {
         let timeout = self
             .http_client
             .config()
             .upload_timeout
             .unwrap_or(self.http_client.config().timeout);
+        if timeout == self.http_client.config().timeout {
+            return self.clone();
+        }
         let http_client_with_upload_timeout =
             match crate::http_utils::HttpClient::new_with_timeout(timeout) {
                 Ok(client) => client,
@@ -4927,13 +5003,26 @@ fn describe_asset(asset_id: &str, asset_name: Option<&str>) -> String {
 ///
 /// Applied to whichever attempt failed, so a file with an unsupported extension
 /// gets the same explanation whether or not the first try also hit an expired token.
+/// Errors of a new upload. A 409 here means the path is taken.
 fn map_upload_error(error: ApiError) -> ApiError {
     match error {
         ApiError::ConflictError(_) => ApiError::ConflictError(
             "Asset already exists. Please use a different filename or delete the existing asset first."
                 .to_string(),
         ),
-        ApiError::HttpStatus { status: 422, message } => ApiError::HttpStatus {
+        other => map_file_error(other),
+    }
+}
+
+/// Errors any file transfer to the API can produce, worded for the user. A
+/// 409 is left as the server phrased it: for a replacement it does not mean
+/// "the path is taken".
+fn map_file_error(error: ApiError) -> ApiError {
+    match error {
+        ApiError::HttpStatus {
+            status: 422,
+            message,
+        } => ApiError::HttpStatus {
             status: 422,
             message: format!(
                 "Invalid request data. Please check your input and try again. ({})",

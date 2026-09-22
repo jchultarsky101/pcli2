@@ -70,6 +70,18 @@ fn convert_string_to_json_type(value: &str, _existing_type: Option<&str>) -> Val
     Value::String(value.to_string())
 }
 
+/// Whether two file names share an extension, ignoring case. Two names without
+/// an extension count as sharing one. The replace-in-place endpoint requires
+/// the new file's extension to match the asset's path.
+fn same_extension(existing_name: &str, new_name: &str) -> bool {
+    let ext = |name: &str| {
+        std::path::Path::new(name)
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+    };
+    ext(existing_name) == ext(new_name)
+}
+
 /// Create a single asset by uploading a file.
 ///
 /// This function handles the "asset create" command, uploading a file
@@ -124,40 +136,86 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     debug!("Creating asset with path: {}", asset_path);
 
-    // Report and stop without uploading anything when --dry-run is given
-    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
-        println!(
-            "Dry run: would upload '{}' as asset '{}'",
-            file_path.display(),
-            asset_path
-        );
-        return Ok(());
-    }
-
     let override_flag = sub_matches.get_flag(PARAMETER_OVERRIDE);
     let restore_metadata = sub_matches.get_flag(PARAMETER_RESTORE_METADATA);
+    let dry_run = sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN);
 
-    // Check the local file before anything destructive happens. With --override the
-    // existing asset is deleted before the new one is uploaded, and the API layer only
-    // validates the file at upload time - so a mistyped filename used to delete the
-    // remote asset and then fail with "Path not found", with no way to get it back.
-    if !file_path.is_file() {
-        return Err(ApiError::PathNotFound(file_path.to_string_lossy().into_owned()).into());
-    }
-
-    let asset = if override_flag {
-        // Only "absent" means absent. A network or session failure used to be
-        // read as "does not exist", after which the plain upload hit a 409.
-        let existing = match api.get_asset_by_path(&tenant.uuid, &asset_path).await {
+    // With --override, find the asset the file would replace. Only "absent" means
+    // absent: a network or session failure used to be read as "does not exist",
+    // after which the plain upload hit a 409. Read-only, so a dry run may do it.
+    let existing = if override_flag {
+        match api.get_asset_by_path(&tenant.uuid, &asset_path).await {
             Ok(asset) => Some(asset),
             Err(ApiError::PathNotFound(_))
             | Err(ApiError::NotFoundError(_))
             | Err(ApiError::FolderNotFound(_))
             | Err(ApiError::InvalidAssetPath(_)) => None,
             Err(e) => return Err(e.into()),
-        };
+        }
+    } else {
+        None
+    };
 
-        if let Some(existing) = existing {
+    // Report and stop without uploading anything when --dry-run is given
+    if dry_run {
+        match &existing {
+            Some(existing) if same_extension(&existing.name(), &file_name) => println!(
+                "Dry run: would replace the file of existing asset '{}' (UUID {}) in place with '{}'",
+                asset_path,
+                existing.uuid(),
+                file_path.display()
+            ),
+            Some(existing) => println!(
+                "Dry run: would delete existing asset '{}' (UUID {}) and upload '{}'",
+                asset_path,
+                existing.uuid(),
+                file_path.display()
+            ),
+            None => println!(
+                "Dry run: would upload '{}' as asset '{}'",
+                file_path.display(),
+                asset_path
+            ),
+        }
+        return Ok(());
+    }
+
+    // Check the local file before anything destructive happens. With --override the
+    // existing asset may be deleted before the new one is uploaded, and the API layer
+    // only validates the file at upload time - so a mistyped filename used to delete
+    // the remote asset and then fail with "Path not found", with no way to get it back.
+    if !file_path.is_file() {
+        return Err(ApiError::PathNotFound(file_path.to_string_lossy().into_owned()).into());
+    }
+
+    // Uploads go through the upload variant of the client (same token and renewal
+    // state; the upload timeout when one is configured). Lookups and the delete
+    // below stay on `api`.
+    let mut upload_api = api.for_upload_operations();
+
+    let asset = match existing {
+        // The asset exists and the new file has the same extension: replace the
+        // file in place. The asset keeps its UUID, path and metadata and is
+        // re-indexed. Nothing is deleted, so a failure here leaves the tenant as
+        // it was. (The lookup is by the full path, so the extension always
+        // matches in practice; the check guards the delete below all the same.)
+        Some(existing) if same_extension(&existing.name(), &file_name) => {
+            crate::format_utils::warn_if_given(
+                sub_matches,
+                PARAMETER_RESTORE_METADATA,
+                "the server keeps the asset's metadata when its file is replaced in place",
+            );
+            debug!(
+                "Asset already exists at path '{}', --override specified, replacing its file in place",
+                asset_path
+            );
+            upload_api
+                .replace_asset_file(&tenant.uuid, &existing.uuid(), file_path)
+                .await?
+        }
+        // A different extension cannot be replaced in place: delete and upload,
+        // as --override always did.
+        Some(existing) => {
             debug!(
                 "Asset already exists at path '{}', --override specified, deleting and re-uploading",
                 asset_path
@@ -218,7 +276,7 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
             let mut created_asset = None;
             for attempt in 0..=MAX_RETRIES {
-                match api
+                match upload_api
                     .create_asset_with_metadata(
                         &tenant.uuid,
                         file_path,
@@ -262,13 +320,12 @@ pub async fn create_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
                     return Err(error.into());
                 }
             }
-        } else {
-            api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
+        }
+        None => {
+            upload_api
+                .create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
                 .await?
         }
-    } else {
-        api.create_asset(&tenant.uuid, file_path, &asset_path, &folder_uuid)
-            .await?
     };
 
     crate::format::print_output(&asset.format(format)?);
@@ -1044,4 +1101,27 @@ async fn asset_by_path_cached(
         .find_by_name(&name)
         .cloned()
         .ok_or_else(|| ApiError::PathNotFound(asset_path.to_string()))
+}
+
+#[cfg(test)]
+mod override_tests {
+    use super::same_extension;
+
+    #[test]
+    fn extensions_compare_case_insensitively() {
+        assert!(same_extension("part.stl", "part.STL"));
+        assert!(same_extension("Part.Step", "other.step"));
+    }
+
+    #[test]
+    fn a_different_extension_is_not_replaceable_in_place() {
+        assert!(!same_extension("part.stl", "part.step"));
+        assert!(!same_extension("part.stl", "part"));
+    }
+
+    #[test]
+    fn names_without_an_extension_match_each_other() {
+        assert!(same_extension("README", "NOTES"));
+        assert!(same_extension(".hidden", ".other"));
+    }
 }

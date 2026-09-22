@@ -259,9 +259,10 @@ pub async fn create_report(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
     let folder_paths = many(crate::commands::params::PARAMETER_FOLDER_PATH);
     let excluded_paths = many(PARAMETER_EXCLUDE_FOLDER_PATH);
+    // The report endpoint wants extensions with their dot (".stl"); accept both.
     let extensions: Vec<String> = many(crate::commands::params::PARAMETER_EXTENSION)
         .into_iter()
-        .map(|e| e.trim_start_matches('.').to_string())
+        .map(|e| format!(".{}", e.trim_start_matches('.')))
         .collect();
     let mut include_home = sub_matches.get_flag(PARAMETER_INCLUDE_HOME);
     let wait = sub_matches.get_flag(PARAMETER_WAIT);

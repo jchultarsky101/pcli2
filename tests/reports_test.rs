@@ -81,7 +81,7 @@ async fn a_create_posts_the_request_and_reads_the_created_report() {
             "minThreshold": 80.0,
             "maxThreshold": 100.0,
             "folderIds": ["3c91b897-0c8b-40f5-946d-6c3a867e7869"],
-            "extensions": ["stl"],
+            "extensions": [".stl"],
             "excludeAssemblies": true,
             "excludeExactDuplicates": false,
             "includeHomeFolderAssets": false
@@ -106,7 +106,7 @@ async fn a_create_posts_the_request_and_reads_the_created_report() {
                 max_threshold: 100.0,
                 folder_ids: vec!["3c91b897-0c8b-40f5-946d-6c3a867e7869".to_string()],
                 excluded_folder_ids: vec![],
-                extensions: vec!["stl".to_string()],
+                extensions: vec![".stl".to_string()],
                 exclude_assemblies: true,
                 exclude_exact_duplicates: false,
                 include_home_folder_assets: false,

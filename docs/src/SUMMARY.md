@@ -10,6 +10,8 @@
 - [Reports](reports.md)
 - [Scripting and Automation](scripting.md)
 - [Cross-Platform Configuration](cross_platform.md)
-- [Documentation Deployment](documentation_deployment.md)
+- [Credentials and Security](security.md)
+- [Proxies, Certificates and Timeouts](network.md)
+- [Troubleshooting](troubleshooting.md)
 
 <!-- This file is used by mdBook to generate the documentation navigation -->

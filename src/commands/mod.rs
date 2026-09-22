@@ -57,7 +57,9 @@ const EXAMPLES_COLORED: &str = color_print::cstr!(
   PCLI2_SAFE_CSV           Guard CSV cells against spreadsheet formula injection
   PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
   PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
-  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)"
+  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)
+  PCLI2_CLIENT_ID          Client ID for 'auth login' (instead of --client-id)
+  PCLI2_CLIENT_SECRET      Client secret for 'auth login' (keeps it out of shell history)"
 );
 
 /// Usage examples appended to the top-level help output, without ANSI colors.
@@ -95,7 +97,9 @@ Environment variables:
   PCLI2_SAFE_CSV           Guard CSV cells against spreadsheet formula injection
   PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
   PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
-  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)";
+  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)
+  PCLI2_CLIENT_ID          Client ID for 'auth login' (instead of --client-id)
+  PCLI2_CLIENT_SECRET      Client secret for 'auth login' (keeps it out of shell history)";
 
 /// Select the examples text for the top-level help based on terminal capabilities.
 fn examples_after_help() -> &'static str {

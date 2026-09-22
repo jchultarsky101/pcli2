@@ -227,12 +227,11 @@ Control how many simultaneous operations are performed (range: 1-10, default: 1)
 # Use 8 concurrent operations (default is 4, maximum is 10)
 pcli2 folder geometric-match --folder-path /Home/SearchFolder/ --concurrent 8
 
-# Use the default (1 concurrent operation)
+# Use the default (4 concurrent operations)
 pcli2 folder geometric-match --folder-path /Home/SearchFolder/
 
-# Invalid values will cause the command to fail
-pcli2 folder geometric-match --folder-path /Home/SearchFolder/ --concurrent 15
-# This will show an error: "Invalid value for '--concurrent': must be between 1 and 10, got 15"
+# Invalid values are refused before anything runs (exit 64)
+pcli2 folder geometric-match --folder-path /Home/SearchFolder/ --concurrent 15   # error: concurrency must be between 1 and 10, got 15
 ```
 
 #### Progress Tracking

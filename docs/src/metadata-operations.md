@@ -46,8 +46,6 @@ pcli2 asset metadata delete --path "/Home/Folder/Model.stl" --name "Material" --
 pcli2 asset metadata delete --uuid "123e4567-e89b-12d3-a456-426614174000" --name "Material,Weight,Description"
 ```
 
-The delete command now uses the dedicated API endpoint to properly remove metadata fields from assets, rather than fetching all metadata and re-updating the asset without the specified fields. This provides more efficient and accurate metadata deletion.
-
 ### 4. Create/Update Metadata for Multiple Assets
 
 Create or update metadata for multiple assets from a CSV file:
@@ -221,13 +219,14 @@ Demo assets uploaded by Physna are excluded from both `coverage` and `missing`.
 
 One of the most powerful features of PCLI2 is the ability to export metadata, modify it externally, and reimport it:
 
-1. **Export Metadata**:
+1. **Export Metadata** in the `ASSET_PATH,NAME,VALUE` layout that
+   `create-batch` reads. `asset metadata get` shows one asset's fields as
+   `NAME,VALUE` (no path, so it cannot be imported back); for a folder, build the
+   file from the JSON listing with `jq`:
    ```bash
-   # Export all metadata for an asset to a CSV file
-   pcli2 asset metadata get --path "/Home/Folder/Model.stl" --format csv > model_metadata.csv
-
-   # Export metadata for multiple assets in a folder
-   pcli2 asset list --folder-path "/Home/Folder/" --metadata --format csv > folder_metadata.csv
+   pcli2 asset list --folder-path "/Home/Folder/" --metadata --format json \
+     | jq -r '["ASSET_PATH","NAME","VALUE"], (.[] | .path as $p | (.metadata // {}) | to_entries[] | [$p, .key, .value]) | @csv' \
+     > folder_metadata.csv
    ```
 
 2. **Modify Metadata Externally**:
@@ -328,23 +327,10 @@ pcli2 asset metadata create-batch --input "metadata.csv" --continue-on-error
 
 On completion (or termination), a summary is printed to stderr showing the number of successful and failed assets.
 
-## Performance Considerations
-
-### Large-Scale Operations
-
-For bulk metadata operations:
+## Progress
 
 ```bash
-# Process during off-peak hours
-pcli2 asset metadata create-batch --input "large_metadata.csv"
-```
-
-### Monitoring Progress
-
-Monitor progress during long-running operations:
-
-```bash
-# Show progress during batch operations
+# A progress bar during long batch operations
 pcli2 asset metadata create-batch --input "metadata.csv" --progress
 ```
 
@@ -353,10 +339,6 @@ pcli2 asset metadata create-batch --input "metadata.csv" --progress
 Metadata operations work seamlessly with other PCLI2 commands:
 
 ```bash
-# Chain with asset operations
-pcli2 asset list --folder-path "/Home/Parts/" --format csv | \
-pcli2 asset metadata create-batch --input "metadata_updates.csv"
-
 # Export results for auditing
 pcli2 asset metadata get --path "/Home/Parts/Model.stl" --format csv > metadata_export.csv
 ```

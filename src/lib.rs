@@ -1,21 +1,31 @@
-//! The Physna CLI client library.
+//! The Physna CLI client library behind the `pcli2` binary.
 //!
-//! This crate provides the core functionality for the Physna CLI client,
-//! including API interactions, data models, caching, authentication, and
-//! command execution.
+//! # Layers
 //!
-//! # Modules
+//! - `commands`: the clap command tree (flags, help, examples). `cli.rs` in the
+//!   binary dispatches a parsed command to `actions`.
+//! - `actions`: one function per command; `actions::bulk` runs an operation over
+//!   many items (folder download, thumbnail, upload).
+//! - `physna_v3`: the API client. Every request goes through
+//!   `http_utils::HttpClient` (timeouts, retries) and renews the token on a 401;
+//!   `paging` decides when a paginated listing is complete.
+//! - `model`: API and output types; `format` and `xlsx_report` turn them into
+//!   JSON, CSV, tree and Excel output.
 //!
-//! - `api`: Legacy API client implementations
-//! - `asset_cache`: Caching functionality for assets
-//! - `auth`: Authentication mechanisms
-//! - `commands`: CLI command parsing and execution
-//! - `configuration`: Configuration management
-//! - `folder_cache`: Caching functionality for folders
-//! - `folder_hierarchy`: Folder hierarchy management and traversal
-//! - `format`: Data formatting utilities for various output formats
-//! - `model`: Data models for Physna entities (folders, assets, tenants, etc.)
-//! - `physna_v3`: Physna V3 API client implementation
+//! # Local state
+//!
+//! - `configuration`: `config.yml` (environments, the active tenant).
+//! - `keyring` / `dev_keyring`: credentials and tokens (a file next to the
+//!   configuration by default, the OS keychain with the `os-keyring` feature).
+//! - `cache`, `folder_cache`, `tenant_cache`: per-environment caches.
+//! - `checkpoint`: resumable folder matches.
+//! - `fs_utils`: atomic writes and the lock file every state file uses.
+//!
+//! # Contracts
+//!
+//! - `exit_codes`: the documented exit codes; `error` and `error_utils` map
+//!   failures to them and report them (text or `--error-format json`).
+//! - `ui_url`: links into the Physna web application.
 
 #[cfg(not(any(feature = "dev-keyring", feature = "os-keyring")))]
 compile_error!(

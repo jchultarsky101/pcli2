@@ -108,55 +108,34 @@ pcli2 asset metadata inference --path /Home/Parts/Reference.stl --name "Material
 
 ## Error Handling
 
-The metadata inference command is designed to be resilient:
-- Continues processing even if individual asset operations fail
-- Provides detailed error messages for troubleshooting
-- Automatically skips inaccessible assets
+The command checks before it changes anything, then stops at the first failure:
 
-Common error scenarios and their handling:
-- **Missing reference asset**: Command aborts with clear error message
-- **Network failures**: Individual operations retry, overall process continues
-- **Permission issues**: Skips problematic assets with warning messages
-- **Invalid metadata**: Logs error but continues processing other assets
+- **The reference asset has none of the named fields**: the command stops before
+  searching, with exit 64, and names the fields it looked for.
+- **The reference asset does not exist**: exit 67.
+- **A metadata update fails** (a permission problem, a type conflict with an
+  existing field): the command stops there. Assets updated before the failure
+  keep their new values; the error says which asset failed.
+- **Network hiccups** are retried by the client before they count as a failure,
+  as for every command.
 
-## Performance Considerations
-
-### Large-Scale Operations
-
-For bulk metadata inference operations:
-
-```bash
-# Process during off-peak hours
-pcli2 asset metadata inference --path /Home/LargeAssembly/Reference.stl --name "Category" --threshold 80.0
-```
-
-### Monitoring Progress
-
-Monitor progress during long-running operations using the available flags:
-
-```bash
-pcli2 asset metadata inference --path /Home/Parts/Reference.stl --name "Material" --threshold 85.0
-```
+Because a run can stop partway, preview the matches first (see above) and run it
+again after fixing the cause: assets that already carry the values are simply
+written again.
 
 ## Integration with Other Commands
 
-Metadata inference works seamlessly with other PCLI2 commands:
-
 ```bash
-# Chain with folder operations
-pcli2 folder list --folder-path /Home/ProductLine/ | \
-pcli2 asset metadata inference --name "ProductLine" --threshold 85.0
-
-# Export results for auditing
+# Keep a record of what was changed
 pcli2 asset metadata inference --path /Home/Parts/Reference.stl --name "Category" --threshold 85.0 \
-  --format csv > metadata_propagation_log.csv
+  --format csv --headers > metadata_propagation_log.csv
 ```
 
 ## Limitations
 
 1. **API Rate Limits**: Large operations may be rate-limited by the Physna API
 2. **Processing Time**: Large operations can take considerable time
-3. **Metadata Types**: Only supports text, number, and boolean metadata fields
+3. **Metadata Types**: Supports text, number, boolean and url metadata fields
 4. **Asset Access**: Can only process assets accessible to your authenticated user
 
 Always test operations on a small scale before running them on large datasets.

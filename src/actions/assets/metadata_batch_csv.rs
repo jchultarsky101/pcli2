@@ -478,6 +478,20 @@ mod tests {
     }
 
     #[test]
+    fn the_documented_export_round_trips() {
+        // docs/src/metadata-operations.md builds this file with jq from
+        // `asset list --metadata --format json`; every value is quoted.
+        let csv = "\"ASSET_PATH\",\"NAME\",\"VALUE\"\n\
+                   \"/MyFolder/bearing.stl\",\"Material\",\"Brass\"\n\
+                   \"/MyFolder/bearing.stl\",\"Weight\",\"3\"\n\
+                   \"/MyFolder/plate.stl\",\"Material\",\"Steel\"\n";
+        let parsed = parse(csv, BatchCsvFormat::Auto).unwrap();
+        assert_eq!(parsed.format, BatchCsvFormat::Classic);
+        assert_eq!(parsed.entries.len(), 2);
+        assert_eq!(parsed.entries[0].metadata.get("Weight").unwrap(), "3");
+    }
+
+    #[test]
     fn auto_detects_classic_format() {
         let csv = "ASSET_PATH,NAME,VALUE\n\
                    folder/a.stl,Material,Steel\n\

@@ -1,17 +1,9 @@
 //! Main entry point for the Physna CLI client.
 //!
-//! This module contains the main function that serves as the entry point
-//! for the CLI application. It handles initialization, configuration loading,
-//! command parsing, and error handling.
-//!
-//! The application follows a layered architecture pattern:
-//! - main.rs: Entry point and application initialization
-//! - cli.rs: Command execution logic
-//! - commands.rs: Command definitions and parsing
-//! - physna_v3.rs: API client and communication layer
-//! - model.rs: Data models and structures
-//! - auth.rs: Authentication handling
-//! - configuration.rs: Configuration management
+//! Parses the command line (`pcli2::commands`), sets up logging, runs the
+//! command (`cli::execute_command`, which calls into `pcli2::actions`), and turns
+//! the outcome into an exit code (`pcli2::exit_codes`). The crate-level docs in
+//! `lib.rs` describe the layers.
 
 use configuration::ConfigurationError;
 use pcli2::error::CliError;

@@ -9,8 +9,8 @@ PCLI2 is a powerful command-line interface for the Physna public API, designed f
 Get up and running with PCLI2 in minutes:
 
 ```bash
-# 1. Authenticate with your Physna tenant
-pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+# 1. Authenticate with your Physna tenant (prompts for the client ID and secret)
+pcli2 auth login
 
 # 2. Verify your setup
 pcli2 auth get
@@ -71,7 +71,7 @@ pcli2 config validate --verbose
 - **Performance Optimizations** - Concurrent operations and caching for faster processing
 - **Structured Logging** - Debug with `--verbose`/`--quiet` flags or the `PCLI2_LOG_LEVEL` environment variable
 - **Progress Tracking** - Enhanced progress bars with throughput and ETA
-- **Dry Run Mode** - Preview deletes and uploads with `--dry-run` before making changes
+- **Dry Run Mode** - Preview changes with `--dry-run`: deletes (asset, folder, report, metadata field), uploads, `asset move`, `asset resolve-dependency` and `tenant metadata rename`
 - **Built for Scripts** - `--no-input` turns any prompt into an error, `--error-format json` makes every error on stderr a JSON object with the exit code, `--safe-csv` guards CSV cells against spreadsheet formulas
 - **Diagnostics** - `pcli2 doctor` checks the whole setup in one screen; `--stats` reports API requests, retries and token renewals at exit
 - **Automatic Retries** - Transient network and server errors retried with exponential backoff
@@ -134,14 +134,16 @@ Run PCLI2 in a container:
 # Build the Docker image
 docker build -t pcli2 .
 
-# Run PCLI2 commands
-docker run --rm -v $(pwd):/data -v ~/.config/pcli2:/home/pcli2/.config/pcli2 pcli2 --help
+# Keep the container's configuration and login in one host directory
+# (it is not your host's pcli2 configuration; the container has its own)
+mkdir -p ~/.pcli2-docker
+alias pcli2-docker='docker run --rm -it -v "$PWD:/data" -v "$HOME/.pcli2-docker:/config" -e PCLI2_CONFIG_DIR=/config pcli2'
 
-# Example: List folders
-docker run --rm -v $(pwd):/data -v ~/.config/pcli2:/home/pcli2/.config/pcli2 pcli2 folder list
+# Authenticate first; you are prompted for the client ID and secret
+pcli2-docker auth login
 
-# Authenticate first (credentials persist in mounted volume)
-docker run --rm -it -v ~/.config/pcli2:/home/pcli2/.config/pcli2 pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+# Then any command
+pcli2-docker folder list --format tree
 ```
 
 ### Verification
@@ -208,8 +210,8 @@ Securely authenticate with your Physna tenant:
 # with masked input so the secret never lands in your shell history
 pcli2 auth login
 
-# First-time login (non-interactive)
-pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+# First-time login (non-interactive, e.g. in CI): credentials from the environment
+PCLI2_CLIENT_ID=... PCLI2_CLIENT_SECRET=... pcli2 auth login
 
 # Subsequent logins (uses cached credentials)
 pcli2 auth login
@@ -225,8 +227,10 @@ Credentials (the client ID, client secret and the current access token) are
 stored in `dev_credentials.json` inside the configuration directory shown by
 `pcli2 config get path`. The file is created with owner-only permissions
 (`0600`) on macOS and Linux; on Windows it inherits the directory's ACLs.
-Treat it like any other secret file: do not commit it, and run `pcli2 auth
-logout` on a shared machine when you are done.
+The file is plain text, not encrypted. Treat it like any other secret file: do
+not commit it. `pcli2 auth logout` removes only the access token; to remove the
+client secret from a shared machine, delete the file. See
+[Credentials and Security](https://jchultarsky101.github.io/pcli2/security.html).
 
 ## 🛠️ Basic Usage
 
@@ -506,10 +510,10 @@ Choose the right format for your needs:
 
 ```bash
 # JSON for scripting
-pcli2 asset list --format json
+pcli2 asset list --folder-path "/Home/Models/" --format json
 
 # CSV for spreadsheets
-pcli2 asset list --format csv --headers
+pcli2 asset list --folder-path "/Home/Models/" --format csv --headers
 
 # Recursively list assets in subfolders
 pcli2 asset list --folder-path "/Home/Models/" --recursive --format csv --headers
@@ -520,24 +524,27 @@ pcli2 folder list --format tree
 
 ### 🔗 UNIX Pipeline Integration
 
-Chain commands with other tools:
+Chain commands with other tools. In JSON output, metadata values are strings
+(`"Weight": "12.5"`); convert them before comparing numbers.
 
 ```bash
 # Filter assets with grep
-pcli2 asset list --format csv | grep "bearing"
+pcli2 asset list --folder-path "/Home/Models/" --format csv | grep "bearing"
 
-# Process with jq
-pcli2 asset list --format json | jq '.[] | select(.size > 10000)'
+# Process with jq: paths of files over 10 kB
+pcli2 asset list --folder-path "/Home/Models/" --format json | jq -r '.[] | select((.file_size // 0) > 10000) | .path'
+
+# jq on metadata: assets weighing 5 or more
+pcli2 asset list --folder-path "/Home/Models/" --metadata --format json | jq -r '.[] | select((.metadata.Weight // "0" | tonumber) >= 5) | .path'
 
 # Count results
-pcli2 asset list --format csv | wc -l
+pcli2 asset list --folder-path "/Home/Models/" --format csv | wc -l
 
-# Advanced filtering with NuShell (nushell)
-# Filter assets by metadata values like weight in specific range
-pcli2 asset list --folder-path "/Home/MyFolder" --metadata --format json | nu -c 'from json | where ((metadata | get-or-null Weight) | default 0) >= 5.0 and ((metadata | get-or-null Weight) | default 0) <= 50.0 | select name path metadata.Material metadata.Weight'
+# NuShell: assets weighing between 5 and 50
+pcli2 asset list --folder-path "/Home/MyFolder" --metadata --format json | nu --stdin -c 'from json | where {|a| ($a.metadata.Weight? | default "0" | into float) >= 5.0 and ($a.metadata.Weight? | default "0" | into float) <= 50.0 } | select name path'
 
-# Group assets by material type using NuShell
-pcli2 asset list --folder-path "/Home/Inventory" --metadata --format json | nu -c 'from json | where metadata.Material != null | group-by metadata.Material | each {|it| {material: ($it | get 0).metadata.Material, count: ($it | length), avg_weight: ($it | get metadata.Weight | compact | math avg)}}'
+# NuShell: count and average weight per material
+pcli2 asset list --folder-path "/Home/Inventory" --metadata --format json | nu --stdin -c 'from json | where {|a| $a.metadata.Material? != null } | insert material {|a| $a.metadata.Material } | insert weight {|a| $a.metadata.Weight? | default "0" | into float } | group-by material --to-table | each {|g| {material: $g.material, count: ($g.items | length), avg_weight: ($g.items.weight | math avg)} }'
 ```
 
 ### 🤖 CI/CD Integration
@@ -565,7 +572,10 @@ jobs:
       - name: Install pcli2
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
       - name: Authenticate
-        run: pcli2 auth login --client-id "${{ secrets.PHYSNA_CLIENT_ID }}" --client-secret "${{ secrets.PHYSNA_CLIENT_SECRET }}"
+        run: pcli2 auth login
+        env:
+          PCLI2_CLIENT_ID: ${{ secrets.PHYSNA_CLIENT_ID }}
+          PCLI2_CLIENT_SECRET: ${{ secrets.PHYSNA_CLIENT_SECRET }}
       - name: Upload models
         run: |
           pcli2 tenant use --name my-tenant
@@ -623,7 +633,7 @@ pcli2 --quiet asset list --folder-path /Home/Models/   # errors only
 
 # Fine-grained control with environment variables
 PCLI2_LOG_LEVEL=debug pcli2 folder download --folder-path /Home/Models/
-RUST_LOG=pcli2=trace pcli2 asset get --uuid xxx
+RUST_LOG=pcli2=trace pcli2 asset get --uuid 123e4567-e89b-12d3-a456-426614174000
 ```
 
 The `--verbose`/`-v` and `--quiet` flags work on every command and take
@@ -636,7 +646,7 @@ precedence over the environment variables.
 | Issue | Solution |
 |-------|----------|
 | **API Rate Limiting** | Reduce concurrency with `--concurrent N` |
-| **Timeout Errors** | Operations now have 30-minute timeouts |
+| **Timeout Errors** | A request may take up to 30 minutes (`PCLI2_TIMEOUT` to change); one that receives nothing for 5 minutes is abandoned and retried |
 | **Authentication Expired** | Run `pcli2 auth login` |
 | **Large Folder Processing** | Use `--progress` for feedback |
 | **Memory Issues** | Reduce concurrency for limited RAM systems |
@@ -650,8 +660,8 @@ precedence over the environment variables.
 
 ### Exit Codes
 
-PCLI2 uses distinct exit codes (following BSD `sysexits.h` conventions where
-possible) so scripts can react to specific failure classes:
+PCLI2 uses distinct exit codes (the 64-78 range is modelled on BSD
+`sysexits.h`) so scripts can react to specific failure classes:
 
 | Code | Meaning |
 |------|---------|
@@ -719,6 +729,7 @@ credentials) and 68 when the API or auth server cannot be reached.
 | `PCLI2_NO_INPUT` | Never prompt; a command that would need an answer exits 64 instead (same as `--no-input`) |
 | `PCLI2_ERROR_FORMAT` | `text` (default) or `json`: errors on stderr as one JSON object per line (same as `--error-format`) |
 | `PCLI2_NO_UPDATE_CHECK`, `CI` | Disable the new-version hint |
+| `PCLI2_CLIENT_ID`, `PCLI2_CLIENT_SECRET` | Credentials for `auth login` without flags or a prompt (for CI); a secret in a variable stays out of shell history and process listings |
 
 ### Debugging Tips
 
@@ -1075,9 +1086,8 @@ Manage tenant-level operations.
 
 ```
 pcli2 tenant list           # List all tenants
-pcli2 tenant get            # Get tenant details
+pcli2 tenant get            # Get the active tenant (alias: current)
 pcli2 tenant use            # Set the active tenant
-pcli2 tenant current        # Get the active tenant
 pcli2 tenant clear          # Clear the active tenant
 pcli2 tenant state          # Get asset state counts for the current tenant
 pcli2 tenant failures       # List recent failures (assets, reports, part-finder reports), newest first
@@ -1339,7 +1349,7 @@ This project maintains high code quality standards:
 - **Clean Code**: All code passes Rust clippy with `-D warnings` (deny warnings)
 - **Formatted**: All code follows Rust fmt standards
 - **Well Tested**: Comprehensive unit and integration tests
-- **Documented**: Thorough documentation for all public APIs
+- **Documented**: Built-in help with examples for every command, plus the user guide at https://jchultarsky101.github.io/pcli2/
 
 ## 📄 License
 

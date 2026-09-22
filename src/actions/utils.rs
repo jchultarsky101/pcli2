@@ -243,14 +243,12 @@ pub async fn resolve_folder<'a>(
     } else if let Some(path) = path_param {
         let normalized_path = crate::model::normalize_path(path);
         if normalized_path == "/" {
-            // Handle root path specially
-            let folder_uuid =
-                super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;
-            let folder_response = api
-                .get_folder(&tenant.uuid, &folder_uuid)
-                .await
-                .map_err(CliError::PhysnaExtendedApiError)?;
-            Ok(folder_response)
+            // The root has no folder record to show or change. This branch used to
+            // look `/` up like any folder, which always failed as "folder not
+            // found".
+            Err(CliError::MissingRequiredArgument(
+                "'/' is the tenant's root, which has no folder record of its own; list its contents with 'pcli2 folder list' or 'pcli2 asset list --folder-path /'".to_string(),
+            ))
         } else {
             let folder_uuid =
                 super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;

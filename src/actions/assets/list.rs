@@ -7,9 +7,8 @@ use crate::{
     configuration::Configuration,
     error::CliError,
     format::OutputFormatter,
-    model::{normalize_path, AssetList},
+    model::normalize_path,
     param_utils::{get_format_parameter_value, get_tenant},
-    path_utils::find_similar_paths,
     physna_v3::{PhysnaApiClient, TryDefault},
 };
 use clap::ArgMatches;
@@ -86,29 +85,18 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
                         .await?;
 
                 if hierarchy.get_node_by_path(&path).is_none() {
-                    // Path not found - check for similar paths
-                    let suggestions = find_similar_paths(&hierarchy, &path);
-
-                    let suggestion_message = if suggestions.is_empty() {
-                        String::new()
-                    } else if suggestions.len() == 1 {
-                        format!("\n\nDid you mean: {}", suggestions[0])
-                    } else {
-                        format!(
-                            "\n\nDid you mean one of:\n  {}",
-                            suggestions
-                                .iter()
-                                .map(|s| format!("• {}", s))
-                                .collect::<Vec<_>>()
-                                .join("\n  ")
-                        )
-                    };
-
-                    return Err(CliError::FolderNotFound(path, suggestion_message));
+                    return Err(crate::actions::folders::folder_not_found(&hierarchy, &path));
                 }
             }
 
-            let all_assets = list_assets_recursively(&mut api, &tenant.uuid, &path).await?;
+            // Walks the subtree by folder UUID. The walk this replaced rebuilt each
+            // folder's path from a detached copy of the hierarchy, so below the top
+            // level it looked up `B/C` instead of `/A/B/C`: nested folders were
+            // reported missing, or a different top-level folder of the same name was
+            // listed. It also left out assets stored directly at the root.
+            let all_assets = api
+                .list_assets_by_parent_folder_path_recursive(&tenant.uuid, &path, |_, _, _| {})
+                .await?;
             crate::format::print_output(&all_assets.format(format)?);
         } else if path == "/" {
             // Root path - list assets at the root level (no parent folder)
@@ -123,25 +111,7 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
             // Check if the path exists (case-sensitive)
             if hierarchy.get_node_by_path(&path).is_none() {
-                // Path not found - check for similar paths
-                let suggestions = find_similar_paths(&hierarchy, &path);
-
-                let suggestion_message = if suggestions.is_empty() {
-                    String::new()
-                } else if suggestions.len() == 1 {
-                    format!("\n\nDid you mean: {}", suggestions[0])
-                } else {
-                    format!(
-                        "\n\nDid you mean one of:\n  {}",
-                        suggestions
-                            .iter()
-                            .map(|s| format!("• {}", s))
-                            .collect::<Vec<_>>()
-                            .join("\n  ")
-                    )
-                };
-
-                return Err(CliError::FolderNotFound(path, suggestion_message));
+                return Err(crate::actions::folders::folder_not_found(&hierarchy, &path));
             }
 
             let assets = api
@@ -158,69 +128,4 @@ pub async fn list_assets(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     Ok(())
-}
-
-/// List assets in a folder and all its subfolders using folder hierarchy
-///
-/// # Arguments
-///
-/// * `api` - The Physna API client
-/// * `tenant_id` - The tenant UUID
-/// * `folder_path` - The folder path to list assets from
-///
-/// # Returns
-///
-/// * `Ok(AssetList)` - The list of assets
-/// * `Err(CliError)` - If an error occurred during the listing
-async fn list_assets_recursively(
-    api: &mut PhysnaApiClient,
-    tenant_id: &Uuid,
-    folder_path: &str,
-) -> Result<AssetList, CliError> {
-    // Build the complete folder hierarchy for the tenant
-    let hierarchy =
-        crate::actions::utils::hierarchy_containing(api, tenant_id, folder_path).await?;
-
-    // Filter the hierarchy to only include the specified path and its subfolders
-    let filtered_hierarchy = hierarchy.filter_by_path(folder_path).ok_or_else(|| {
-        // Provide helpful suggestions
-        let suggestions = find_similar_paths(&hierarchy, folder_path);
-        let suggestion_message = if suggestions.is_empty() {
-            String::new()
-        } else if suggestions.len() == 1 {
-            format!("\n\nDid you mean: {}", suggestions[0])
-        } else {
-            format!(
-                "\n\nDid you mean one of:\n  {}",
-                suggestions
-                    .iter()
-                    .map(|s| format!("• {}", s))
-                    .collect::<Vec<_>>()
-                    .join("\n  ")
-            )
-        };
-        CliError::FolderNotFound(folder_path.to_string(), suggestion_message)
-    })?;
-
-    let mut all_assets = AssetList::empty();
-
-    // Process each folder in the filtered hierarchy to get its assets
-    for (folder_uuid, folder_node) in &filtered_hierarchy.nodes {
-        // Get the path for this folder from the hierarchy
-        let folder_path: String = filtered_hierarchy
-            .get_path_for_folder(folder_uuid)
-            .unwrap_or_else(|| folder_node.name().to_string());
-
-        // List assets in this specific folder
-        let folder_assets = api
-            .list_assets_by_parent_folder_path(tenant_id, &folder_path)
-            .await?;
-
-        // Add assets from this folder to the result
-        for asset in folder_assets.get_all_assets() {
-            all_assets.insert(asset.clone());
-        }
-    }
-
-    Ok(all_assets)
 }

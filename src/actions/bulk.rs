@@ -163,9 +163,31 @@ where
         progress: progress.clone(),
     };
 
+    // Items start in list order: the slot is taken here, before the task is
+    // spawned, rather than raced for by tasks that were all spawned at once (with
+    // `--concurrent 1` the third file could start before the first). A failing
+    // item raises `stop`, and without --continue-on-error nothing after it starts.
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stopped = |stop: &std::sync::atomic::AtomicBool| {
+        !options.continue_on_error && stop.load(std::sync::atomic::Ordering::SeqCst)
+    };
+    let mut not_started = 0;
     let mut tasks = Vec::with_capacity(total);
     for (label, item) in items {
-        let semaphore = semaphore.clone();
+        if stopped(&stop) {
+            not_started += 1;
+            continue;
+        }
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("semaphore is never closed");
+        if stopped(&stop) {
+            not_started += 1;
+            continue;
+        }
+        let stop = stop.clone();
         let work = work.clone();
         let context = context.clone();
         let overall = overall.clone();
@@ -173,10 +195,7 @@ where
         let spinner_parent = progress.clone().filter(|_| options.concurrency > 1);
         let verb = options.verb;
         tasks.push(tokio::spawn(async move {
-            let _permit = semaphore
-                .acquire()
-                .await
-                .expect("semaphore is never closed");
+            let _permit = permit;
             let spinner = spinner_parent.map(|parent| {
                 let spinner = parent.add(ProgressBar::new_spinner());
                 spinner.set_style(
@@ -188,6 +207,9 @@ where
                 spinner
             });
             let result = work(item, context).await;
+            if result.is_err() {
+                stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
             if let Some(spinner) = spinner {
                 spinner.finish_and_clear();
             }
@@ -202,6 +224,7 @@ where
     let abort_handles: Vec<_> = tasks.iter().map(|task| task.abort_handle()).collect();
     let mut report = BulkReport {
         total,
+        not_attempted: not_started,
         ..Default::default()
     };
     for task in tasks {

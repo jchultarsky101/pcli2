@@ -13,10 +13,10 @@ use crate::commands::params::{
     reference_identifier_group, reference_path_parameter, reference_uuid_parameter,
     restore_metadata_parameter, tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_COUNTS,
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES,
-    COMMAND_DEPENDENCY_DIFF, COMMAND_DOWNLOAD, COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_LIST,
-    COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_TEXT_MATCH,
-    COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_FUZZY,
-    PARAMETER_PROGRESS,
+    COMMAND_DEPENDENCY_DIFF, COMMAND_DIAGNOSE, COMMAND_DOWNLOAD, COMMAND_FULL_INVENTORY,
+    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS,
+    COMMAND_SIMILARITY, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV,
+    FORMAT_JSON, FORMAT_TREE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
 
@@ -280,11 +280,34 @@ pub fn asset_command() -> Command {
     )
     .subcommand(
         Command::new(COMMAND_REPROCESS)
-            .about("Reprocess an asset to refresh its analysis")
+            .about("Reprocess an asset to refresh its analysis (see 'asset diagnose' for why it failed)")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
             .arg(path_parameter())
             .group(asset_identifier_group()), // Use the standard asset identifier group to ensure either UUID or path is provided, but not both
+    )
+    .subcommand(
+        Command::new(COMMAND_DIAGNOSE)
+            .visible_alias("failure")
+            .visible_alias("why")
+            .about("Explain why an asset failed to process, from the server's failure diagnostics")
+            .long_about(
+                "Explain why an asset failed to process, from the server's failure diagnostics.\n\n\
+                 The server searches its ingestion logs on demand, so the answer is only as durable \
+                 as log retention. The STATUS is `found` when the failure was located, `not-found` \
+                 when the asset is not failed or the log entry has aged out (exit 0 either way), and \
+                 the command exits 68 when this deployment has no failure log search. A `user` KIND \
+                 carries a summary you can act on; an `internal` KIND carries a trace ID to quote to \
+                 support.",
+            )
+            .arg(tenant_parameter())
+            .arg(uuid_parameter())
+            .arg(path_parameter())
+            .group(asset_identifier_group())
+            .arg(format_with_headers_parameter())
+            .arg(format_with_metadata_parameter()) // Required by FormatParams::from_args; no effect on this output
+            .arg(format_pretty_parameter())
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])),
     )
     .subcommand(
         Command::new(COMMAND_COUNTS)

@@ -551,6 +551,10 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
             crate::error::CliError::CheckpointError(e) => {
                 CliActionError::BusinessLogicError(e.to_string())
             }
+            // Tenant resolution never raises this; mapped for exhaustiveness.
+            crate::error::CliError::FeatureUnavailable(msg) => {
+                CliActionError::BusinessLogicError(msg)
+            }
             crate::error::CliError::InputRequired(msg) => CliActionError::InputRequired(msg),
             crate::error::CliError::RemovedArgument(msg) => {
                 CliActionError::MissingRequiredArgument(msg)
@@ -566,6 +570,65 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
         let state_counts = api.get_asset_state_counts(&tenant.uuid).await?;
         crate::format::print_output(&state_counts.format(&format)?);
     }
+
+    Ok(())
+}
+
+/// List the tenant's recent failures (assets, reports, part-finder reports),
+/// newest first, for the `tenant failures` command.
+///
+/// `--kind` narrows the listing and `--limit` stops it early; the JSON output
+/// keeps the tenant-wide totals per kind either way.
+pub async fn list_recent_failures(sub_matches: &ArgMatches) -> Result<(), crate::error::CliError> {
+    trace!("Executing tenant failures command...");
+
+    // Format options built directly (mirroring `tenant state`): failures have no
+    // per-record metadata, and FormatParams would require a --metadata flag.
+    let format_str = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .cloned()
+        .unwrap_or_else(|| "json".to_string());
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
+
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata: false,
+        with_headers,
+        pretty,
+    };
+    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(crate::error::CliError::FormattingError)?;
+
+    let kinds: Vec<crate::model::FailureSource> = sub_matches
+        .get_many::<String>(crate::commands::params::PARAMETER_KIND)
+        .map(|values| {
+            values
+                .map(|v| match v.as_str() {
+                    "asset" => crate::model::FailureSource::Asset,
+                    "report" => crate::model::FailureSource::Report,
+                    // clap's value_parser only lets FailureSource::ALL through.
+                    _ => crate::model::FailureSource::PartFinderReport,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let limit = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
+        .copied();
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant_uuid = *ctx.tenant_uuid();
+
+    let progress = crate::terminal::spinner("Fetching recent failures...");
+    let failures = ctx
+        .api()
+        .list_recent_failures(&tenant_uuid, &kinds, limit)
+        .await;
+    progress.finish_and_clear();
+    let failures = failures.map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+
+    crate::format::print_output(&failures.format(format)?);
 
     Ok(())
 }

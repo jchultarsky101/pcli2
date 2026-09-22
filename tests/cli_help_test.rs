@@ -59,6 +59,7 @@ mod cli_help_tests {
             if subcommand == "tenant" {
                 assert!(help_output.contains("list"));
                 assert!(help_output.contains("get"));
+                assert!(help_output.contains("failures"));
             } else if subcommand == "folder" {
                 assert!(help_output.contains("list"));
                 assert!(help_output.contains("get"));
@@ -77,6 +78,7 @@ mod cli_help_tests {
                 assert!(help_output.contains("similarity"));
                 assert!(help_output.contains("metadata"));
                 assert!(help_output.contains("dependencies"));
+                assert!(help_output.contains("diagnose"));
             } else if subcommand == "auth" {
                 assert!(help_output.contains("login"));
                 assert!(help_output.contains("logout"));

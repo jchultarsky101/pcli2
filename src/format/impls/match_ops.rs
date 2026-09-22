@@ -802,24 +802,49 @@ impl CsvRecordProducer for AssetSimilarity {
             "FORWARD_MATCH_PERCENTAGE".to_string(),
             "REVERSE_MATCH_PERCENTAGE".to_string(),
             "VOLUMETRIC_MATCH_PERCENTAGE".to_string(),
+            "MISMATCH_VOLUME_TOTAL_MM3".to_string(),
+            "SOURCE_MISS_MM3".to_string(),
+            "TARGET_MISS_MM3".to_string(),
+            "SOURCE_HOLE_MISS_MM3".to_string(),
+            "TARGET_HOLE_MISS_MM3".to_string(),
+            "MATCHED_HOLE_CENTER_DISTANCE_TOTAL_MM".to_string(),
+            "SOURCE_HOLE_MISSES".to_string(),
+            "TARGET_HOLE_MISSES".to_string(),
             "REFERENCE_ASSET_UUID".to_string(),
             "CANDIDATE_ASSET_UUID".to_string(),
             "COMPARISON_URL".to_string(),
         ]
     }
 
-    /// Convert the AssetSimilarity into a single CSV record
+    /// Convert the AssetSimilarity into a single CSV record.
+    ///
+    /// Every volumetric cell is empty when the tenant has no volumetric scoring
+    /// (the block is absent) or when the API did not send that particular
+    /// field. An empty cell means "not reported", which is not the same as `0`.
+    /// The hole-miss columns carry the number of unmatched holes; the holes
+    /// themselves (centre, axis, radius) are only in the JSON output.
     fn as_csv_records(&self) -> Vec<Vec<String>> {
+        let volumetric = self.volumetric.as_ref();
+        let mismatch = volumetric.and_then(|v| v.mismatch_volume_mm3.as_ref());
+        let number = |value: Option<f64>| value.map(|n| format!("{}", n)).unwrap_or_default();
+        let count = |holes: Option<&Vec<crate::model::HoleDescriptor>>| {
+            holes.map(|h| h.len().to_string()).unwrap_or_default()
+        };
         vec![vec![
             self.reference_asset_path.clone(),
             self.candidate_asset_path.clone(),
             format!("{}", self.geometric.match_percentage),
             format!("{}", self.geometric.forward_match_percentage),
             format!("{}", self.geometric.reverse_match_percentage),
-            self.volumetric
-                .as_ref()
-                .map(|v| format!("{}", v.match_percentage))
-                .unwrap_or_default(),
+            number(volumetric.map(|v| v.match_percentage)),
+            number(mismatch.map(|m| m.total_mm3)),
+            number(mismatch.map(|m| m.source_miss_mm3)),
+            number(mismatch.map(|m| m.target_miss_mm3)),
+            number(mismatch.map(|m| m.source_hole_miss_mm3)),
+            number(mismatch.map(|m| m.target_hole_miss_mm3)),
+            number(volumetric.and_then(|v| v.matched_hole_center_distance_total_mm)),
+            count(volumetric.and_then(|v| v.source_hole_misses.as_ref())),
+            count(volumetric.and_then(|v| v.target_hole_misses.as_ref())),
             self.reference_asset_uuid.to_string(),
             self.candidate_asset_uuid.to_string(),
             self.comparison_url.clone().unwrap_or_default(),
@@ -857,9 +882,28 @@ impl OutputFormatter for AssetSimilarity {
 mod similarity_tests {
     use super::*;
     use crate::format::OutputFormatOptions;
-    use crate::model::{GeometricMatchScores, VolumetricMatchScores};
+    use crate::model::{
+        GeometricMatchScores, HoleDescriptor, MismatchVolume, Vector3, VolumetricMatchScores,
+    };
     use uuid::Uuid;
 
+    fn hole(radius_mm: f64) -> HoleDescriptor {
+        HoleDescriptor {
+            center_mm: Vector3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            },
+            axis: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            },
+            radius_mm,
+        }
+    }
+
+    /// A response with every volumetric field the API can send.
     fn sample() -> AssetSimilarity {
         AssetSimilarity {
             reference_asset_path: "/Root/a.stl".to_string(),
@@ -873,7 +917,16 @@ mod similarity_tests {
             },
             volumetric: Some(VolumetricMatchScores {
                 match_percentage: 74.2,
-                ..Default::default()
+                source_hole_misses: Some(vec![hole(2.5), hole(4.0)]),
+                target_hole_misses: Some(vec![hole(3.0)]),
+                matched_hole_center_distance_total_mm: Some(0.75),
+                mismatch_volume_mm3: Some(MismatchVolume {
+                    source_miss_mm3: 10.5,
+                    target_miss_mm3: 20.25,
+                    source_hole_miss_mm3: 1.5,
+                    target_hole_miss_mm3: 2.5,
+                    total_mm3: 34.75,
+                }),
             }),
             comparison_url: Some("https://example.com/compare".to_string()),
         }
@@ -889,6 +942,24 @@ mod similarity_tests {
         assert!(json.contains("\"matchPercentage\":87.5"));
         assert!(json.contains("\"forwardMatchPercentage\":92.1"));
         assert!(json.contains("\"volumetric\""));
+        // Every volumetric detail the API sends is in the JSON, under its API name.
+        assert!(json.contains("\"sourceHoleMisses\":[{\"centerMm\":{\"x\":1.0,\"y\":2.0,\"z\":3.0},\"axis\":{\"x\":0.0,\"y\":0.0,\"z\":1.0},\"radiusMm\":2.5}"));
+        assert!(json.contains("\"targetHoleMisses\":[{"));
+        assert!(json.contains("\"matchedHoleCenterDistanceTotalMm\":0.75"));
+        assert!(json.contains("\"mismatchVolumeMm3\":{\"sourceMissMm3\":10.5,\"targetMissMm3\":20.25,\"sourceHoleMissMm3\":1.5,\"targetHoleMissMm3\":2.5,\"totalMm3\":34.75}"));
+    }
+
+    #[test]
+    fn json_omits_volumetric_details_the_api_did_not_send() {
+        let mut s = sample();
+        s.volumetric = Some(VolumetricMatchScores {
+            match_percentage: 74.2,
+            ..Default::default()
+        });
+        let json = s
+            .format(OutputFormat::Json(OutputFormatOptions::default()))
+            .unwrap();
+        assert!(json.contains("\"volumetric\":{\"matchPercentage\":74.2}"));
     }
 
     #[test]
@@ -913,10 +984,14 @@ mod similarity_tests {
         let header = lines.next().unwrap();
         assert_eq!(
             header,
-            "REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,FORWARD_MATCH_PERCENTAGE,REVERSE_MATCH_PERCENTAGE,VOLUMETRIC_MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL"
+            "REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,FORWARD_MATCH_PERCENTAGE,REVERSE_MATCH_PERCENTAGE,VOLUMETRIC_MATCH_PERCENTAGE,MISMATCH_VOLUME_TOTAL_MM3,SOURCE_MISS_MM3,TARGET_MISS_MM3,SOURCE_HOLE_MISS_MM3,TARGET_HOLE_MISS_MM3,MATCHED_HOLE_CENTER_DISTANCE_TOTAL_MM,SOURCE_HOLE_MISSES,TARGET_HOLE_MISSES,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL"
         );
         let row = lines.next().unwrap();
-        assert!(row.starts_with("/Root/a.stl,/Root/b.stl,87.5,92.1,83,74.2,"));
+        assert_eq!(
+            row,
+            "/Root/a.stl,/Root/b.stl,87.5,92.1,83,74.2,34.75,10.5,20.25,1.5,2.5,0.75,2,1,00000000-0000-0000-0000-000000000000,00000000-0000-0000-0000-000000000000,https://example.com/compare"
+        );
+        assert_eq!(row.split(',').count(), header.split(',').count());
     }
 
     #[test]
@@ -929,7 +1004,24 @@ mod similarity_tests {
             pretty: false,
         };
         let csv = s.format(OutputFormat::Csv(opts)).unwrap();
-        // Columns: ...,REVERSE(83),VOLUMETRIC(empty),REF_UUID,...
-        assert!(csv.contains("83,,00000000-0000-0000-0000-000000000000"));
+        // Columns: ...,REVERSE(83),nine empty volumetric cells,REF_UUID,...
+        assert!(csv.contains("83,,,,,,,,,,00000000-0000-0000-0000-000000000000"));
+    }
+
+    #[test]
+    fn csv_volumetric_details_empty_when_only_the_percentage_was_sent() {
+        let mut s = sample();
+        s.volumetric = Some(VolumetricMatchScores {
+            match_percentage: 74.2,
+            ..Default::default()
+        });
+        let opts = OutputFormatOptions {
+            with_metadata: false,
+            with_headers: false,
+            pretty: false,
+        };
+        let csv = s.format(OutputFormat::Csv(opts)).unwrap();
+        // The percentage is there; the eight detail cells are empty, not 0.
+        assert!(csv.contains("83,74.2,,,,,,,,,00000000-0000-0000-0000-000000000000"));
     }
 }

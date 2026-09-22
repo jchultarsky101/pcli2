@@ -809,7 +809,7 @@ pcli2 asset create-batch     # Upload multiple files as assets using glob patter
 pcli2 asset list             # List assets in a folder with optional recursive listing (--recursive)
 pcli2 asset inventory        # List complete inventory of all assets in the tenant
 pcli2 asset counts           # Show asset health report with counts by state, type, and structure
-pcli2 asset get              # Get asset details
+pcli2 asset get              # Get asset details (--uuid may be repeated to fetch several in one request)
 pcli2 asset download         # Download an asset
 pcli2 asset delete           # Delete an asset
 pcli2 asset dependencies     # Get dependencies for an asset

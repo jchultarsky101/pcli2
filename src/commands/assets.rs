@@ -30,7 +30,11 @@ pub fn asset_command() -> Command {
                 .about("Get asset details")
                 .visible_alias("cat")
                 .arg(tenant_parameter())
-                .arg(uuid_parameter())
+                .arg(
+                    uuid_parameter()
+                        .action(ArgAction::Append)
+                        .help("Asset UUID; repeat it to fetch several assets in one request"),
+                )
                 .arg(path_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())

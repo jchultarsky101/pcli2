@@ -268,6 +268,11 @@ fn contracts() -> Vec<Contract> {
         contract!("get", "/tenants/{tenantId}/assets", AssetListResponse),
         contract!("post", "/tenants/{tenantId}/assets", AssetResponse),
         contract!(
+            "post",
+            "/tenants/{tenantId}/assets/batch",
+            AssetListResponse
+        ),
+        contract!(
             "put",
             "/tenants/{tenantId}/assets/{assetId}/file",
             AssetResponse

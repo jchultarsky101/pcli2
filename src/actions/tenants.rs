@@ -633,6 +633,265 @@ pub async fn list_recent_failures(sub_matches: &ArgMatches) -> Result<(), crate:
     Ok(())
 }
 
+/// The registered metadata field called `name`, with its id.
+///
+/// Names are matched exactly (the registry is case-sensitive). A miss lists
+/// the registered names so the user can copy one; a field the server sent
+/// without an id cannot be addressed and is reported as such.
+async fn resolve_metadata_field_by_name(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &uuid::Uuid,
+    name: &str,
+) -> Result<(crate::model::MetadataField, uuid::Uuid), crate::error::CliError> {
+    let fields = api
+        .get_metadata_fields(&tenant_uuid.to_string())
+        .await
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    match fields.metadata_fields.iter().find(|f| f.name == name) {
+        Some(field) => match field.id {
+            Some(id) => Ok((field.clone(), id)),
+            None => Err(crate::error::CliError::PhysnaExtendedApiError(
+                crate::physna_v3::ApiError::InvalidParameterError(format!(
+                    "the server sent no id for metadata field '{}', so it cannot be addressed",
+                    name
+                )),
+            )),
+        },
+        None => {
+            let mut known: Vec<&str> = fields
+                .metadata_fields
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect();
+            known.sort_unstable();
+            Err(crate::error::CliError::PhysnaExtendedApiError(
+                crate::physna_v3::ApiError::NotFoundError(format!(
+                    "metadata field '{}' not found. Registered fields: {}",
+                    name,
+                    if known.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        known.join(", ")
+                    }
+                )),
+            ))
+        }
+    }
+}
+
+/// Format options for a command with no metadata columns of its own.
+fn plain_format(
+    sub_matches: &ArgMatches,
+) -> Result<crate::format::OutputFormat, crate::error::CliError> {
+    let format_str = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
+        .cloned()
+        .unwrap_or_else(|| "json".to_string());
+    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
+    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
+    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
+    let format_options = crate::format::OutputFormatOptions {
+        with_metadata: false,
+        with_headers,
+        pretty,
+    };
+    crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
+        .map_err(crate::error::CliError::FormattingError)
+}
+
+/// `tenant metadata rename --name OLD --new-name NEW`. Silent on success.
+pub async fn rename_tenant_metadata_field(
+    sub_matches: &ArgMatches,
+) -> Result<(), crate::error::CliError> {
+    trace!("Executing tenant metadata rename command...");
+    let name = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_NAME)
+        .cloned()
+        .unwrap_or_default();
+    let new_name = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_NEW_NAME)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant_uuid = *ctx.tenant_uuid();
+    let (field, id) = resolve_metadata_field_by_name(ctx.api(), &tenant_uuid, &name).await?;
+
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        println!(
+            "Dry run: would rename metadata field '{}' ({}) to '{}'",
+            field.name, id, new_name
+        );
+        return Ok(());
+    }
+
+    ctx.api()
+        .rename_metadata_field(&tenant_uuid, &id, &new_name)
+        .await
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    Ok(())
+}
+
+/// `tenant metadata delete --name NAME [--force]`. Confirms unless `--yes`;
+/// silent on success.
+pub async fn delete_tenant_metadata_field(
+    sub_matches: &ArgMatches,
+) -> Result<(), crate::error::CliError> {
+    trace!("Executing tenant metadata delete command...");
+    let name = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_NAME)
+        .cloned()
+        .unwrap_or_default();
+    let force = sub_matches.get_flag("force");
+    let yes_flag = sub_matches.get_flag("yes");
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant_uuid = *ctx.tenant_uuid();
+    let (field, id) = resolve_metadata_field_by_name(ctx.api(), &tenant_uuid, &name).await?;
+
+    let consequence = if force {
+        " and remove its values from every asset"
+    } else {
+        ""
+    };
+    if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
+        println!(
+            "Dry run: would delete metadata field '{}' ({}){}",
+            field.name, id, consequence
+        );
+        return Ok(());
+    }
+    if !yes_flag
+        && !crate::terminal::confirm(
+            &format!("Delete metadata field '{}'{}?", field.name, consequence),
+            Some("This action cannot be undone"),
+        )?
+    {
+        eprintln!("Deletion cancelled.");
+        return Ok(());
+    }
+
+    ctx.api()
+        .delete_metadata_field(&tenant_uuid, &id, force)
+        .await
+        .map_err(|e| {
+            // Without --force the server refuses a field that is still in use;
+            // say what to do about it, keeping the error's class and exit code.
+            let hint = " The field is in use by assets; pass --force to delete it and remove its values from every asset.";
+            match e {
+                crate::physna_v3::ApiError::ConflictError(message) if !force => {
+                    crate::physna_v3::ApiError::ConflictError(format!("{}{}", message, hint))
+                }
+                crate::physna_v3::ApiError::HttpStatus { status, message }
+                    if !force && (400..500).contains(&status) =>
+                {
+                    crate::physna_v3::ApiError::HttpStatus {
+                        status,
+                        message: format!("{}{}", message, hint),
+                    }
+                }
+                other => other,
+            }
+        })
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    Ok(())
+}
+
+/// `tenant metadata assets --name NAME [--limit N]`: the assets with a value
+/// for the field, printed like `asset list`.
+pub async fn list_assets_using_tenant_metadata_field(
+    sub_matches: &ArgMatches,
+) -> Result<(), crate::error::CliError> {
+    trace!("Executing tenant metadata assets command...");
+    let name = sub_matches
+        .get_one::<String>(crate::commands::params::PARAMETER_NAME)
+        .cloned()
+        .unwrap_or_default();
+    let limit = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
+        .copied();
+    let format = crate::format_utils::FormatParams::from_args(sub_matches).format;
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant_uuid = *ctx.tenant_uuid();
+    let (_, id) = resolve_metadata_field_by_name(ctx.api(), &tenant_uuid, &name).await?;
+
+    let progress = crate::terminal::spinner("Fetching assets...");
+    let assets = ctx
+        .api()
+        .list_assets_using_metadata_field(&tenant_uuid, &id, limit)
+        .await;
+    progress.finish_and_clear();
+    let assets = assets.map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    crate::format::print_output(&assets.format(format)?);
+    Ok(())
+}
+
+/// `tenant metadata coverage`: how many assets carry any metadata at all.
+pub async fn tenant_metadata_coverage(
+    sub_matches: &ArgMatches,
+) -> Result<(), crate::error::CliError> {
+    trace!("Executing tenant metadata coverage command...");
+    let format = plain_format(sub_matches)?;
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant_uuid = *ctx.tenant_uuid();
+    let coverage: crate::model::MetadataCoverage = ctx
+        .api()
+        .get_metadata_coverage(&tenant_uuid)
+        .await
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?
+        .into();
+    crate::format::print_output(&coverage.format(format)?);
+    Ok(())
+}
+
+/// `tenant metadata missing [--folder-path P]* [--extension E]* [--limit N]`:
+/// the assets with no metadata at all, oldest first.
+pub async fn list_assets_without_metadata(
+    sub_matches: &ArgMatches,
+) -> Result<(), crate::error::CliError> {
+    trace!("Executing tenant metadata missing command...");
+    // The server keys folders by their stored path, without a leading slash
+    // and without the `/Home` alias.
+    let folders: Vec<String> = sub_matches
+        .get_many::<String>(crate::commands::params::PARAMETER_FOLDER_PATH)
+        .map(|values| {
+            values
+                .map(|p| {
+                    crate::model::normalize_path(p)
+                        .trim_start_matches('/')
+                        .to_string()
+                })
+                .filter(|p| !p.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let extensions: Vec<String> = sub_matches
+        .get_many::<String>(crate::commands::params::PARAMETER_EXTENSION)
+        .map(|values| {
+            values
+                .map(|e| e.trim_start_matches('.').to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let limit = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
+        .copied();
+    let format = crate::format_utils::FormatParams::from_args(sub_matches).format;
+
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant_uuid = *ctx.tenant_uuid();
+    let progress = crate::terminal::spinner("Fetching assets...");
+    let assets = ctx
+        .api()
+        .list_assets_without_metadata(&tenant_uuid, &folders, &extensions, limit)
+        .await;
+    progress.finish_and_clear();
+    let assets = assets.map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    crate::format::print_output(&assets.format(format)?);
+    Ok(())
+}
+
 /// List all metadata fields registered in the tenant, with their data types.
 ///
 /// This backs the `tenant metadata list` command. The CSV output deliberately

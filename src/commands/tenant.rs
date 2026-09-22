@@ -3,9 +3,11 @@
 //! This module defines CLI commands related to tenant management.
 
 use crate::commands::params::{
-    format_parameter, format_pretty_parameter, format_with_headers_parameter,
-    tenant_name_parameter, tenant_parameter, COMMAND_CLEAR, COMMAND_FAILURES, COMMAND_GET,
-    COMMAND_LIST, COMMAND_METADATA, COMMAND_TENANT, COMMAND_USE, PARAMETER_KIND, PARAMETER_LIMIT,
+    dry_run_parameter, format_parameter, format_pretty_parameter, format_with_headers_parameter,
+    format_with_metadata_parameter, tenant_name_parameter, tenant_parameter, COMMAND_CLEAR,
+    COMMAND_DELETE, COMMAND_FAILURES, COMMAND_GET, COMMAND_LIST, COMMAND_METADATA, COMMAND_TENANT,
+    COMMAND_USE, PARAMETER_EXTENSION, PARAMETER_FOLDER_PATH, PARAMETER_KIND, PARAMETER_LIMIT,
+    PARAMETER_NAME, PARAMETER_NEW_NAME,
 };
 use clap::{Arg, Command};
 
@@ -115,6 +117,107 @@ pub fn tenant_command() -> Command {
                         .arg(format_parameter().value_parser(["json", "csv", "tree"]))
                         .arg(format_pretty_parameter())
                         .arg(format_with_headers_parameter()),
+                )
+                .subcommand(
+                    Command::new("rename")
+                        .about("Rename a metadata field (its values on assets are kept)")
+                        .arg(tenant_parameter())
+                        .arg(metadata_field_name_parameter())
+                        .arg(
+                            Arg::new(PARAMETER_NEW_NAME)
+                                .long(PARAMETER_NEW_NAME)
+                                .num_args(1)
+                                .required(true)
+                                .help("The field's new name"),
+                        )
+                        .arg(dry_run_parameter()),
+                )
+                .subcommand(
+                    Command::new(COMMAND_DELETE)
+                        .visible_alias("rm")
+                        .about("Delete a metadata field; --force also removes its values from every asset")
+                        .long_about(
+                            "Delete a metadata field from the tenant's registry.\n\n\
+                             Without --force the server refuses a field that assets still use. With \
+                             --force the field is deleted and its value is removed from every asset \
+                             that had one. Asks for confirmation unless --yes is given.",
+                        )
+                        .arg(tenant_parameter())
+                        .arg(metadata_field_name_parameter())
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(clap::ArgAction::SetTrue)
+                                .help("Also remove the field's values from every asset that has one"),
+                        )
+                        .arg(dry_run_parameter()),
+                )
+                .subcommand(
+                    Command::new("assets")
+                        .about("List the assets that have a value for a metadata field")
+                        .arg(tenant_parameter())
+                        .arg(metadata_field_name_parameter())
+                        .arg(open_limit_parameter("Stop after this many assets (default: all)"))
+                        .arg(format_with_metadata_parameter())
+                        .arg(format_with_headers_parameter())
+                        .arg(format_pretty_parameter())
+                        .arg(format_parameter().value_parser(["json", "csv"])),
+                )
+                .subcommand(
+                    Command::new("coverage")
+                        .about("How many of the tenant's assets carry at least one metadata value")
+                        .arg(tenant_parameter())
+                        .arg(format_parameter().value_parser(["json", "csv"]))
+                        .arg(format_pretty_parameter())
+                        .arg(format_with_headers_parameter()),
+                )
+                .subcommand(
+                    Command::new("missing")
+                        .about("List the assets that have no metadata at all, oldest first")
+                        .long_about(
+                            "List the assets that have no metadata value at all, oldest first. \
+                             Demo assets uploaded by Physna are left out. Narrow the listing with \
+                             --folder-path and --extension (both repeatable).",
+                        )
+                        .arg(tenant_parameter())
+                        .arg(
+                            Arg::new(PARAMETER_FOLDER_PATH)
+                                .long(PARAMETER_FOLDER_PATH)
+                                .num_args(1)
+                                .action(clap::ArgAction::Append)
+                                .help("Only assets under this folder path (repeatable)"),
+                        )
+                        .arg(
+                            Arg::new(PARAMETER_EXTENSION)
+                                .long(PARAMETER_EXTENSION)
+                                .num_args(1)
+                                .action(clap::ArgAction::Append)
+                                .help("Only assets with this file extension, e.g. stl (repeatable)"),
+                        )
+                        .arg(open_limit_parameter("Stop after this many assets (default: all)"))
+                        .arg(format_with_metadata_parameter())
+                        .arg(format_with_headers_parameter())
+                        .arg(format_pretty_parameter())
+                        .arg(format_parameter().value_parser(["json", "csv"])),
                 ),
         )
+}
+
+/// `--name`: a metadata field, by its exact registered name.
+fn metadata_field_name_parameter() -> Arg {
+    Arg::new(PARAMETER_NAME)
+        .long(PARAMETER_NAME)
+        .num_args(1)
+        .required(true)
+        .help("The metadata field's name, exactly as 'tenant metadata list' shows it")
+}
+
+/// `--limit` without a default: the whole listing unless the user caps it.
+fn open_limit_parameter(help: &'static str) -> Arg {
+    Arg::new(PARAMETER_LIMIT)
+        .long(PARAMETER_LIMIT)
+        .num_args(1)
+        .required(false)
+        .value_parser(clap::value_parser!(usize))
+        .help(help)
 }

@@ -258,7 +258,10 @@ fn tenants() {
 #[test]
 fn metadata_fields() {
     let fields: MetadataFieldListResponse = from(json!({
-        "metadataFields": [{"name": "material", "type": "string"}, {"name": "weight", "type": "number"}],
+        "metadataFields": [
+            {"id": A1, "name": "material", "type": "string"},
+            {"name": "weight", "type": "number"}
+        ],
         "pageData": null
     }));
     shapes(
@@ -266,6 +269,11 @@ fn metadata_fields() {
         &fields,
         &[Fmt::Csv, Fmt::Json, Fmt::Tree],
     );
+
+    let coverage: MetadataCoverage = from(json!({
+        "coveredAssets": 16143, "totalAssets": 23580, "coveragePercent": 68.46
+    }));
+    shapes("MetadataCoverage", &coverage, &[Fmt::Csv, Fmt::Json]);
 }
 
 #[test]

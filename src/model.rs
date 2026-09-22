@@ -1897,6 +1897,10 @@ pub struct AssetSimilarity {
 /// Represents a metadata field definition
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetadataField {
+    /// The field's id, which rename and delete address it by. Optional so a
+    /// listing without ids (older responses, cached files) still reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
     /// The name of the metadata field
     pub name: String,
     /// The type of the metadata field (e.g., "text", "number", etc.)
@@ -2214,6 +2218,48 @@ impl AssetStateCounts {
 pub struct ExistingPathsResponse {
     #[serde(rename = "existingPaths")]
     pub existing_paths: Vec<String>,
+}
+
+/// How many of the tenant's assets carry at least one metadata value.
+///
+/// `GET /tenants/{tenantId}/metadata-coverage`; the spec types both counts as
+/// JSON numbers. Demo assets uploaded by Physna are excluded from both.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataCoverageResponse {
+    #[serde(rename = "coveredAssets")]
+    pub covered_assets: f64,
+    #[serde(rename = "totalAssets")]
+    pub total_assets: f64,
+}
+
+/// The `tenant metadata coverage` output: the counts as integers plus the
+/// percentage, so a script does not have to compute it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataCoverage {
+    #[serde(rename = "coveredAssets")]
+    pub covered_assets: u64,
+    #[serde(rename = "totalAssets")]
+    pub total_assets: u64,
+    /// `coveredAssets / totalAssets * 100`, or 0 for an empty tenant.
+    #[serde(rename = "coveragePercent")]
+    pub coverage_percent: f64,
+}
+
+impl From<MetadataCoverageResponse> for MetadataCoverage {
+    fn from(response: MetadataCoverageResponse) -> Self {
+        let covered_assets = response.covered_assets.max(0.0).round() as u64;
+        let total_assets = response.total_assets.max(0.0).round() as u64;
+        let coverage_percent = if total_assets == 0 {
+            0.0
+        } else {
+            covered_assets as f64 / total_assets as f64 * 100.0
+        };
+        MetadataCoverage {
+            covered_assets,
+            total_assets,
+            coverage_percent,
+        }
+    }
 }
 
 // ---- failure diagnostics ---------------------------------------------------

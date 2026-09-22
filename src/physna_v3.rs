@@ -3927,6 +3927,139 @@ impl PhysnaApiClient {
         Ok(response)
     }
 
+    /// Walk a paged asset listing, `perPage=1000` (the API maximum), until the
+    /// last page or `limit` assets. `url` carries the endpoint and any filter
+    /// query; the page parameters are appended.
+    async fn collect_asset_pages(
+        &mut self,
+        url: &str,
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        const PER_PAGE: usize = 1000;
+        let separator = if url.contains('?') { '&' } else { '?' };
+        let mut page = 1;
+        let mut assets: Vec<Asset> = Vec::new();
+        loop {
+            let per_page = match limit {
+                Some(limit) => PER_PAGE.min(limit.saturating_sub(assets.len()).max(1)),
+                None => PER_PAGE,
+            };
+            let page_url = format!("{url}{separator}page={page}&perPage={per_page}");
+            debug!("Asset listing request URL: {}", page_url);
+            let response: AssetListResponse = self.get(&page_url).await?;
+            let last_page = response.page_data.last_page;
+            assets.extend(response.assets.iter().map(Asset::from));
+            let enough = limit.is_some_and(|limit| assets.len() >= limit);
+            if enough || page >= last_page || page >= 1000 {
+                break;
+            }
+            page += 1;
+        }
+        if let Some(limit) = limit {
+            assets.truncate(limit);
+        }
+        Ok(AssetList::from(assets))
+    }
+
+    /// The assets that carry a value for a metadata field.
+    ///
+    /// `GET /tenants/{tenantId}/metadata-fields/{fieldId}/assets`, every page
+    /// unless `limit` stops it early.
+    pub async fn list_assets_using_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-fields/{}/assets",
+            self.base_url, tenant_uuid, field_id
+        );
+        self.collect_asset_pages(&url, limit).await
+    }
+
+    /// The assets that have no metadata value at all, oldest first.
+    ///
+    /// `GET /tenants/{tenantId}/assets/without-metadata`; `folders` and
+    /// `extensions` narrow it (comma-separated on the wire). Demo assets
+    /// uploaded by Physna are excluded by the server.
+    pub async fn list_assets_without_metadata(
+        &mut self,
+        tenant_uuid: &Uuid,
+        folders: &[String],
+        extensions: &[String],
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        let mut url = format!(
+            "{}/tenants/{}/assets/without-metadata",
+            self.base_url, tenant_uuid
+        );
+        let mut query: Vec<String> = Vec::new();
+        if !folders.is_empty() {
+            query.push(format!(
+                "folders={}",
+                urlencoding::encode(&folders.join(","))
+            ));
+        }
+        if !extensions.is_empty() {
+            query.push(format!(
+                "extensions={}",
+                urlencoding::encode(&extensions.join(","))
+            ));
+        }
+        if !query.is_empty() {
+            url.push('?');
+            url.push_str(&query.join("&"));
+        }
+        self.collect_asset_pages(&url, limit).await
+    }
+
+    /// How many of the tenant's assets carry at least one metadata value.
+    pub async fn get_metadata_coverage(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<crate::model::MetadataCoverageResponse, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-coverage",
+            self.base_url, tenant_uuid
+        );
+        self.get(&url).await
+    }
+
+    /// Rename a metadata field. `PATCH /tenants/{tenantId}/metadata-fields/{fieldId}`, 204.
+    pub async fn rename_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        new_name: &str,
+    ) -> Result<(), ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-fields/{}",
+            self.base_url, tenant_uuid, field_id
+        );
+        debug!("Renaming metadata field {} to '{}'", field_id, new_name);
+        self.patch_no_response(&url, &serde_json::json!({ "name": new_name }))
+            .await
+    }
+
+    /// Delete a metadata field. `DELETE /tenants/{tenantId}/metadata-fields/{fieldId}`, 204.
+    ///
+    /// Without `force` the server refuses a field that assets still use; with
+    /// it the field goes and its values are removed from every asset.
+    pub async fn delete_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        force: bool,
+    ) -> Result<(), ApiError> {
+        debug!("Deleting metadata field {} (force: {})", field_id, force);
+        self.delete(&format!(
+            "/tenants/{}/metadata-fields/{}?force={}",
+            tenant_uuid, field_id, force
+        ))
+        .await
+    }
+
     /// Link a missing dependency of an assembly to an existing asset.
     ///
     /// `POST /tenants/{tenantId}/assets/{assetId}/resolve-dependency` with

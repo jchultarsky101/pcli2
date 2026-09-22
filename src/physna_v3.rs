@@ -2452,6 +2452,15 @@ impl PhysnaApiClient {
             .await
     }
 
+    /// POST a JSON body to an endpoint whose success response has no body (204).
+    async fn post_no_response<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
+    where
+        B: serde::Serialize,
+    {
+        self.execute_request_no_response(|client| Ok(client.post(url).json(body)), false)
+            .await
+    }
+
     /// Generic method to build and execute DELETE requests that may have a request body and return empty responses
     ///
     /// This method is similar to the standard delete method but allows request bodies for DELETE operations.
@@ -3916,6 +3925,34 @@ impl PhysnaApiClient {
         );
 
         Ok(response)
+    }
+
+    /// Link a missing dependency of an assembly to an existing asset.
+    ///
+    /// `POST /tenants/{tenantId}/assets/{assetId}/resolve-dependency` with
+    /// `{"resolvedAssetId", "dependencyPath"}`; the assembly is re-indexed with
+    /// the resolved dependency. `dependency_path` is the path string the
+    /// dependency listing reports for the missing part. Answers 204.
+    pub async fn resolve_asset_dependency(
+        &mut self,
+        tenant_uuid: &Uuid,
+        assembly_uuid: &Uuid,
+        dependency_path: &str,
+        resolved_asset_uuid: &Uuid,
+    ) -> Result<(), ApiError> {
+        let url = format!(
+            "{}/tenants/{}/assets/{}/resolve-dependency",
+            self.base_url, tenant_uuid, assembly_uuid
+        );
+        let body = serde_json::json!({
+            "resolvedAssetId": resolved_asset_uuid.to_string(),
+            "dependencyPath": dependency_path,
+        });
+        debug!(
+            "Resolving dependency '{}' of assembly {} with asset {}",
+            dependency_path, assembly_uuid, resolved_asset_uuid
+        );
+        self.post_no_response(&url, &body).await
     }
 
     /// Move an asset to another folder, or to the root when `folder_uuid` is `None`.

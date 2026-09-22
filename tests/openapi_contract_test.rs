@@ -273,6 +273,11 @@ fn contracts() -> Vec<Contract> {
             AssetListResponse
         ),
         contract!(
+            "patch",
+            "/tenants/{tenantId}/assets/{assetId}/folder",
+            SingleAssetResponse
+        ),
+        contract!(
             "put",
             "/tenants/{tenantId}/assets/{assetId}/file",
             AssetResponse

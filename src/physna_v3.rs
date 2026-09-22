@@ -3918,6 +3918,33 @@ impl PhysnaApiClient {
         Ok(response)
     }
 
+    /// Move an asset to another folder, or to the root when `folder_uuid` is `None`.
+    ///
+    /// `PATCH /tenants/{tenantId}/assets/{assetId}/folder` with `{"folderId": ...}`
+    /// (`null` for the root). The asset keeps its UUID; its path changes. Returns
+    /// the asset as the server now sees it.
+    pub async fn move_asset(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+        folder_uuid: Option<Uuid>,
+    ) -> Result<Asset, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/assets/{}/folder",
+            self.base_url, tenant_uuid, asset_uuid
+        );
+        let body = serde_json::json!({ "folderId": folder_uuid.map(|id| id.to_string()) });
+        debug!(
+            "Moving asset {} to folder {}",
+            asset_uuid,
+            folder_uuid
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "root".to_string())
+        );
+        let response: crate::model::SingleAssetResponse = self.patch(&url, &body).await?;
+        Ok((&response.asset).into())
+    }
+
     /// Which of `paths` already hold an asset, as a set of the strings asked about.
     ///
     /// `POST /tenants/{tenantId}/assets/existing-paths`: a path matches when an

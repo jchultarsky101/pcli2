@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`asset move` puts an asset in another folder** (alias `mv`) - `--uuid` or `--path` names the asset, `--folder-uuid` or `--folder-path` the destination; `/` (or `/Home`) as the path is the root. The asset keeps its UUID and metadata; only its path changes. Silent on success, `--dry-run` names the asset and the destination. Uses `PATCH /tenants/{tenantId}/assets/{assetId}/folder`.
+
 ### Changed
 - **Dependencies are read by asset ID** - `asset dependencies`, `folder dependencies` and `asset dependency-diff` now use `GET /tenants/{tenantId}/assets/{assetId}/dependencies-by-id`, which looks the asset up by its stored path on the server, so the lookup keeps working after a folder is moved or renamed. The path-based `/assets/{assetPath}/dependencies` endpoint the commands used is deprecated in Physna's specification. Output is unchanged in every format. The client now also reads each dependency's `status` (`matched`, `resolved`, `missing`) and never asks the API about a missing dependency's children (it has no asset, so the only UUID to ask about was the nil one).
 

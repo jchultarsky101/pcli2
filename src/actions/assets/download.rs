@@ -70,39 +70,30 @@ pub async fn download_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
         path
     };
 
-    // If the asset is an assembly, the downloaded file is a ZIP file
-    // Add .zip extension to avoid conflict with extracted assembly file
-    let zip_file_path = if asset.is_assembly() {
-        let mut zip_path = output_file_path.clone();
-        // Add .zip extension to the existing filename (e.g., sample17.asm -> sample17.asm.zip)
-        let zip_extension = if let Some(ext) = output_file_path.extension() {
-            format!("{}.zip", ext.to_string_lossy())
-        } else {
-            "zip".to_string()
-        };
-        zip_path.set_extension(zip_extension);
-        zip_path
-    } else {
-        output_file_path.clone()
-    };
+    let tenant_id = tenant_uuid.to_string();
+    let asset_id = asset.uuid().to_string();
 
-    // Streamed straight to disk through a temporary file, so a multi-gigabyte
-    // assembly is never held in memory and an interrupted transfer never leaves a
-    // truncated file under the final name.
-    ctx.api()
-        .download_asset_to_file(
-            &tenant_uuid.to_string(),
-            &asset.uuid().to_string(),
-            Some(asset.name().as_str()),
-            &zip_file_path,
+    if asset.is_assembly() {
+        download_assembly(
+            ctx.api(),
+            &tenant_id,
+            &asset_id,
+            asset.name().as_str(),
+            &output_file_path,
         )
         .await?;
-
-    // If the asset is an assembly, extract the ZIP file and cleanup
-    if asset.is_assembly() {
-        // DEBUG: Log the ZIP file path
-        tracing::debug!("Downloaded ZIP file to: {:?}", zip_file_path);
-        extract_zip_and_cleanup(&zip_file_path)?;
+    } else {
+        // Streamed straight to disk through a temporary file, so a multi-gigabyte
+        // model is never held in memory and an interrupted transfer never leaves a
+        // truncated file under the final name.
+        ctx.api()
+            .download_asset_to_file(
+                &tenant_id,
+                &asset_id,
+                Some(asset.name().as_str()),
+                &output_file_path,
+            )
+            .await?;
     }
 
     Ok(())
@@ -387,6 +378,79 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
 
     Ok(())
+}
+
+/// What `download_assembly` left on disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssemblyDownload {
+    /// The server sent the dependency bundle: it was extracted next to
+    /// `archive` and the archive itself was removed.
+    Extracted { archive: PathBuf },
+    /// The server had no bundle for the assembly and sent the raw source file
+    /// instead. It is at `file`, under the asset's own name.
+    RawFile { file: PathBuf },
+}
+
+/// Download an assembly to `output_file_path`, coping with either body the API
+/// may send.
+///
+/// Physna serves an assembly as its dependency bundle (a ZIP holding the
+/// assembly and every part it references) when it has one, or as the raw
+/// source file when it does not, for example while the assembly is in the
+/// `missing-dependencies` state. The body is streamed to `<output>.zip`; a
+/// real archive is extracted next to it and removed, while anything else is
+/// renamed to `output_file_path` unchanged.
+pub async fn download_assembly(
+    api: &mut PhysnaApiClient,
+    tenant_id: &str,
+    asset_id: &str,
+    asset_name: &str,
+    output_file_path: &std::path::Path,
+) -> Result<AssemblyDownload, CliError> {
+    // Download under a .zip name so a bundle never collides with the assembly
+    // file it contains (sample17.asm -> sample17.asm.zip).
+    let mut zip_file_path = output_file_path.to_path_buf();
+    let zip_extension = if let Some(ext) = output_file_path.extension() {
+        format!("{}.zip", ext.to_string_lossy())
+    } else {
+        "zip".to_string()
+    };
+    zip_file_path.set_extension(zip_extension);
+
+    // Streamed straight to disk through a temporary file, so a multi-gigabyte
+    // assembly is never held in memory and an interrupted transfer never leaves a
+    // truncated file under the final name.
+    api.download_asset_to_file(tenant_id, asset_id, Some(asset_name), &zip_file_path)
+        .await?;
+
+    if is_zip_file(&zip_file_path).map_err(|e| CliError::ActionError(CliActionError::IoError(e)))? {
+        tracing::debug!("Downloaded ZIP file to: {:?}", zip_file_path);
+        extract_zip_and_cleanup(&zip_file_path)?;
+        Ok(AssemblyDownload::Extracted {
+            archive: zip_file_path,
+        })
+    } else {
+        tracing::debug!(
+            "No dependency bundle for assembly {}: keeping the raw source file as {:?}",
+            asset_id,
+            output_file_path
+        );
+        std::fs::rename(&zip_file_path, output_file_path)
+            .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
+        Ok(AssemblyDownload::RawFile {
+            file: output_file_path.to_path_buf(),
+        })
+    }
+}
+
+/// Whether the file starts with a ZIP signature: a local file header, or the
+/// end-of-central-directory record of an empty archive.
+fn is_zip_file(path: &std::path::Path) -> std::io::Result<bool> {
+    use std::io::Read;
+
+    let mut magic = Vec::with_capacity(4);
+    File::open(path)?.take(4).read_to_end(&mut magic)?;
+    Ok(magic == b"PK\x03\x04" || magic == b"PK\x05\x06")
 }
 
 /// Extract a ZIP file and clean up the archive.

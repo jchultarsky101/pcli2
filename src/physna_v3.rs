@@ -3927,6 +3927,106 @@ impl PhysnaApiClient {
         Ok(response)
     }
 
+    /// The tenant's reports, newest first as the API orders them.
+    ///
+    /// `GET /tenants/{tenantId}/reports?type&status&page&perPage`; every page
+    /// (`perPage=1000`, the maximum) unless `limit` stops it early.
+    pub async fn list_reports(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_type: Option<&str>,
+        status: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<crate::model::Report>, ApiError> {
+        const PER_PAGE: usize = 1000;
+        let mut filters = String::new();
+        if let Some(report_type) = report_type {
+            filters.push_str(&format!("&type={}", urlencoding::encode(report_type)));
+        }
+        if let Some(status) = status {
+            filters.push_str(&format!("&status={}", urlencoding::encode(status)));
+        }
+        let mut page = 1;
+        let mut reports = Vec::new();
+        loop {
+            let per_page = match limit {
+                Some(limit) => PER_PAGE.min(limit.saturating_sub(reports.len()).max(1)),
+                None => PER_PAGE,
+            };
+            let url = format!(
+                "{}/tenants/{}/reports?page={}&perPage={}{}",
+                self.base_url, tenant_uuid, page, per_page, filters
+            );
+            debug!("Reports request URL: {}", url);
+            let response: crate::model::ReportListResponse = self.get(&url).await?;
+            let last_page = response.page_data.last_page;
+            reports.extend(response.reports);
+            let enough = limit.is_some_and(|limit| reports.len() >= limit);
+            if enough || page >= last_page || page >= 1000 {
+                break;
+            }
+            page += 1;
+        }
+        if let Some(limit) = limit {
+            reports.truncate(limit);
+        }
+        Ok(reports)
+    }
+
+    /// One report. `GET /tenants/{tenantId}/reports/{id}`.
+    pub async fn get_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<crate::model::Report, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}",
+            self.base_url, tenant_uuid, report_id
+        );
+        let response: crate::model::SingleReportResponse = self.get(&url).await?;
+        Ok(response.report)
+    }
+
+    /// Delete a report. `DELETE /tenants/{tenantId}/reports/{id}`, 204.
+    pub async fn delete_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<(), ApiError> {
+        self.delete(&format!("/tenants/{}/reports/{}", tenant_uuid, report_id))
+            .await
+    }
+
+    /// Why a report failed, from the job service logs.
+    ///
+    /// `GET /tenants/{tenantId}/reports/{id}/failure-diagnostics`; same answer
+    /// shape as an asset's.
+    pub async fn get_report_failure_diagnostics(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<crate::model::FailureDiagnostics, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}/failure-diagnostics",
+            self.base_url, tenant_uuid, report_id
+        );
+        self.get(&url).await
+    }
+
+    /// Start a duplication report. `POST /tenants/{tenantId}/reports/duplication`, 201.
+    pub async fn create_duplication_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        request: &crate::model::CreateDuplicationReportRequest,
+    ) -> Result<crate::model::Report, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/duplication",
+            self.base_url, tenant_uuid
+        );
+        let response: crate::model::SingleReportResponse = self.post(&url, request).await?;
+        Ok(response.report)
+    }
+
     /// Walk a paged asset listing, `perPage=1000` (the API maximum), until the
     /// last page or `limit` assets. `url` carries the endpoint and any filter
     /// query; the page parameters are appended.
@@ -4508,10 +4608,47 @@ impl PhysnaApiClient {
         asset_name_opt: Option<&str>,
         dest: &std::path::Path,
     ) -> Result<u64, ApiError> {
+        let what = format!("asset {}", describe_asset(asset_id, asset_name_opt));
+        let url = format!(
+            "{}/tenants/{}/assets/{}/file",
+            self.base_url, tenant_id, asset_id
+        );
+        self.download_url_to_file(&url, &what, dest).await
+    }
+
+    /// Download a report's data as CSV or XLSX straight to disk.
+    ///
+    /// `GET /tenants/{tenantId}/reports/{id}/file?format=csv|xlsx`; the report
+    /// must be COMPLETED. Same temporary-file discipline as an asset download.
+    pub async fn download_report_to_file(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+        format: &str,
+        dest: &std::path::Path,
+    ) -> Result<u64, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}/file?format={}",
+            self.base_url, tenant_uuid, report_id, format
+        );
+        self.download_url_to_file(&url, &format!("report {}", report_id), dest)
+            .await
+    }
+
+    /// Stream a GET response body to `dest` through `<dest>.part`.
+    ///
+    /// `what` names the thing being downloaded in error messages. The part file
+    /// is removed on any failure; an empty body is a failure.
+    async fn download_url_to_file(
+        &mut self,
+        url: &str,
+        what: &str,
+        dest: &std::path::Path,
+    ) -> Result<u64, ApiError> {
         use futures::StreamExt;
         use tokio::io::AsyncWriteExt;
 
-        let asset_display = describe_asset(asset_id, asset_name_opt);
+        debug!("Download request URL: {}", url);
         if let Some(parent) = dest.parent() {
             if !parent.as_os_str().is_empty() {
                 tokio::fs::create_dir_all(parent).await?;
@@ -4525,9 +4662,11 @@ impl PhysnaApiClient {
         );
         let part_path = dest.with_file_name(part_name);
 
-        let mut stream = self
-            .download_asset_stream(tenant_id, asset_id, asset_name_opt)
-            .await?;
+        let response = self
+            .request_with_auth(|client| Ok(client.get(url)), true)
+            .await
+            .map_err(|e| e.about(what))?;
+        let mut stream = response.bytes_stream();
         let mut file = tokio::fs::File::create(&part_path).await?;
         let mut written: u64 = 0;
         let write_result: Result<(), ApiError> = async {
@@ -4550,17 +4689,14 @@ impl PhysnaApiClient {
             let _ = tokio::fs::remove_file(&part_path).await;
             return Err(ApiError::IoError(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!(
-                    "the server returned an empty file for asset {}",
-                    asset_display
-                ),
+                format!("the server returned an empty file for {}", what),
             )));
         }
         tokio::fs::rename(&part_path, dest).await?;
         debug!(
-            "Downloaded {} bytes for asset {} to {}",
+            "Downloaded {} bytes for {} to {}",
             written,
-            asset_display,
+            what,
             dest.display()
         );
         Ok(written)

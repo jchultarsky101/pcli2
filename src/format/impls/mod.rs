@@ -24,5 +24,6 @@ mod match_ops;
 mod metadata;
 mod metadata_coverage;
 mod metadata_field;
+mod report;
 mod state;
 mod tenant;

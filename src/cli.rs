@@ -1192,6 +1192,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
             println!("Wrote {} man page(s) to '{}'", count, output_dir.display());
             Ok(())
         }
+        Some(("report", sub_matches)) => {
+            trace!("Command: report");
+
+            pcli2::commands::report::execute_report_command(sub_matches).await?;
+            Ok(())
+        }
         Some(("user", sub_matches)) => {
             trace!("Command: user");
 

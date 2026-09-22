@@ -680,7 +680,7 @@ async fn resolve_metadata_field_by_name(
 }
 
 /// Format options for a command with no metadata columns of its own.
-fn plain_format(
+pub(crate) fn plain_format(
     sub_matches: &ArgMatches,
 ) -> Result<crate::format::OutputFormat, crate::error::CliError> {
     let format_str = sub_matches

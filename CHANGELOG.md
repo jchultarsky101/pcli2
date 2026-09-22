@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-22
+
 ### Added
 - **`asset move` puts an asset in another folder** (alias `mv`) - `--uuid` or `--path` names the asset, `--folder-uuid` or `--folder-path` the destination; `/` (or `/Home`) as the path is the root. The asset keeps its UUID and metadata; only its path changes. Silent on success, `--dry-run` names the asset and the destination. Uses `PATCH /tenants/{tenantId}/assets/{assetId}/folder`.
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-09-22
+
 ### Fixed
 - **`asset download` no longer fails on an assembly that has no dependency bundle** - Physna serves an assembly as a ZIP of the assembly and its parts when it has one, or as the raw source file when it does not (for example an assembly in the `missing-dependencies` state). The command assumed every assembly was a ZIP, so a raw file was saved as `<name>.zip` and then rejected with `ZIP error: invalid Zip archive: Could not find EOCD`. It now checks what actually arrived: a bundle is extracted next to the download and removed as before, and anything else is kept unchanged under the asset's own name (or the `-o` path). A bundle that is a ZIP but damaged still fails with the ZIP error.
 

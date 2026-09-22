@@ -4057,6 +4057,101 @@ impl PhysnaApiClient {
         Ok(response)
     }
 
+    /// Whether this deployment can look up why an asset failed.
+    ///
+    /// `GET /tenants/{tenantId}/failure-diagnostics/availability`. The tenant
+    /// only scopes authorisation: availability is a property of the deployment.
+    pub async fn get_failure_diagnostics_availability(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<crate::model::FailureDiagnosticsAvailability, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/failure-diagnostics/availability",
+            self.base_url, tenant_uuid
+        );
+        debug!("Failure diagnostics availability request URL: {}", url);
+        self.get(&url).await
+    }
+
+    /// Why an asset failed to process, from the ingestion service logs.
+    ///
+    /// `GET /tenants/{tenantId}/assets/{assetId}/failure-diagnostics`. The
+    /// lookup searches logs on demand and answers `not-found` for an asset that
+    /// is not failed or whose entry has aged out, and `unavailable` where log
+    /// search is not configured.
+    pub async fn get_asset_failure_diagnostics(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+    ) -> Result<crate::model::FailureDiagnostics, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/assets/{}/failure-diagnostics",
+            self.base_url, tenant_uuid, asset_uuid
+        );
+        debug!("Asset failure diagnostics request URL: {}", url);
+        self.get(&url).await
+    }
+
+    /// The failed assets, reports and part-finder reports of a tenant, newest
+    /// first, as `GET /tenants/{tenantId}/failures` lists them.
+    ///
+    /// `kinds` narrows the listing (empty means every kind). Pages are fetched
+    /// until `limit` failures are collected or the listing ends; the
+    /// tenant-wide totals come from the first page.
+    pub async fn list_recent_failures(
+        &mut self,
+        tenant_uuid: &Uuid,
+        kinds: &[crate::model::FailureSource],
+        limit: Option<usize>,
+    ) -> Result<crate::model::RecentFailuresList, ApiError> {
+        // The spec maximum for this endpoint.
+        const PER_PAGE: usize = 100;
+        let kinds_query = if kinds.is_empty() {
+            String::new()
+        } else {
+            let names: Vec<&str> = kinds.iter().map(|k| k.as_str()).collect();
+            format!("&kinds={}", names.join(","))
+        };
+
+        let mut page = 1;
+        let mut failures = Vec::new();
+        let mut counts_by_kind = None;
+        loop {
+            let per_page = match limit {
+                Some(limit) => PER_PAGE.min(limit.saturating_sub(failures.len()).max(1)),
+                None => PER_PAGE,
+            };
+            let url = format!(
+                "{}/tenants/{}/failures?page={}&perPage={}{}",
+                self.base_url, tenant_uuid, page, per_page, kinds_query
+            );
+            debug!("Recent failures request URL: {}", url);
+            let response: crate::model::RecentFailuresPage = self.get(&url).await?;
+            let last_page = response.page_data.last_page;
+            if counts_by_kind.is_none() {
+                counts_by_kind = Some(response.counts_by_kind);
+            }
+            failures.extend(response.failures);
+
+            let enough = limit.is_some_and(|limit| failures.len() >= limit);
+            if enough || page >= last_page || page >= 1000 {
+                break;
+            }
+            page += 1;
+        }
+        if let Some(limit) = limit {
+            failures.truncate(limit);
+        }
+        Ok(crate::model::RecentFailuresList {
+            failures,
+            counts_by_kind: counts_by_kind.unwrap_or(crate::model::FailureCountsByKind {
+                asset: 0.0,
+                report: 0.0,
+                part_finder_report: 0.0,
+            }),
+        })
+    }
+
     /// List assets by state from the Physna API
     ///
     /// This function retrieves a list of assets in a specific state (processing, ready, failed, deleted) for a specific tenant.

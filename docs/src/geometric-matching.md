@@ -390,6 +390,21 @@ pcli2 asset similarity \
     "forwardMatchPercentage": 86.58,
     "reverseMatchPercentage": 86.58
   },
+  "volumetric": {
+    "matchPercentage": 74.2,
+    "sourceHoleMisses": [
+      {"centerMm": {"x": 12.5, "y": 0.0, "z": 4.0}, "axis": {"x": 0.0, "y": 0.0, "z": 1.0}, "radiusMm": 2.5}
+    ],
+    "targetHoleMisses": [],
+    "matchedHoleCenterDistanceTotalMm": 0.75,
+    "mismatchVolumeMm3": {
+      "sourceMissMm3": 10.5,
+      "targetMissMm3": 20.25,
+      "sourceHoleMissMm3": 1.5,
+      "targetHoleMissMm3": 0.0,
+      "totalMm3": 32.25
+    }
+  },
   "comparisonUrl": "https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=tenant-uuid&tenant2Id=tenant-uuid&searchType=geometric&matchPercentage=90.21"
 }
 ```
@@ -400,19 +415,40 @@ The `geometric` scores describe how similar the two models are:
 - **forwardMatchPercentage**: How much of the reference asset's geometry exists in the candidate
 - **reverseMatchPercentage**: How much of the candidate asset's geometry exists in the reference
 
-A `volumetric` object (with its own `matchPercentage`) is included **only** when
-volumetric scoring is enabled for your tenant; otherwise it is omitted. Contact
-Physna sales to enable volumetric scoring.
+The `volumetric` object is included **only** when volumetric scoring is enabled
+for your tenant; otherwise it is omitted entirely. Contact Physna sales to
+enable it. Volumetric scores are cross-format and tessellation invariant, and
+carry everything the API reports:
+
+- **matchPercentage**: How much of the reference asset's volume is contained in the candidate
+- **mismatchVolumeMm3**: The volume the two do not share, in cubic millimetres, split
+  into `sourceMissMm3` / `targetMissMm3` (solid volume with no counterpart on the
+  other side), `sourceHoleMissMm3` / `targetHoleMissMm3` (the same for holes) and
+  `totalMm3`
+- **sourceHoleMisses** / **targetHoleMisses**: The holes found on one side with no
+  counterpart on the other, each with its aligned centre (`centerMm`), unit axis
+  and `radiusMm`
+- **matchedHoleCenterDistanceTotalMm**: The summed centre-to-centre distance of the
+  holes that did match
+
+Only `matchPercentage` is guaranteed inside `volumetric`; the API omits the other
+fields when it has nothing to report, and so does the JSON output.
 
 #### CSV Format
 
 ```csv
-REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,FORWARD_MATCH_PERCENTAGE,REVERSE_MATCH_PERCENTAGE,VOLUMETRIC_MATCH_PERCENTAGE,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL
-/Home/Folder/block1.stl,/Home/Folder/block2.stl,90.21,86.58,86.58,,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=tenant-uuid&tenant2Id=tenant-uuid&searchType=geometric&matchPercentage=90.21
+REFERENCE_ASSET_PATH,CANDIDATE_ASSET_PATH,MATCH_PERCENTAGE,FORWARD_MATCH_PERCENTAGE,REVERSE_MATCH_PERCENTAGE,VOLUMETRIC_MATCH_PERCENTAGE,MISMATCH_VOLUME_TOTAL_MM3,SOURCE_MISS_MM3,TARGET_MISS_MM3,SOURCE_HOLE_MISS_MM3,TARGET_HOLE_MISS_MM3,MATCHED_HOLE_CENTER_DISTANCE_TOTAL_MM,SOURCE_HOLE_MISSES,TARGET_HOLE_MISSES,REFERENCE_ASSET_UUID,CANDIDATE_ASSET_UUID,COMPARISON_URL
+/Home/Folder/block1.stl,/Home/Folder/block2.stl,90.21,86.58,86.58,74.2,32.25,10.5,20.25,1.5,0,0.75,1,0,123e4567-e89b-12d3-a456-426614174000,987fc321-fedc-ba98-7654-43210fedcba9,https://app.physna.com/tenants/demo-1/compare?asset1Id=123e4567-e89b-12d3-a456-426614174000&asset2Id=987fc321-fedc-ba98-7654-43210fedcba9&tenant1Id=tenant-uuid&tenant2Id=tenant-uuid&searchType=geometric&matchPercentage=90.21
 ```
 
-The `VOLUMETRIC_MATCH_PERCENTAGE` column is empty unless volumetric scoring is
-enabled for your tenant.
+The nine volumetric columns (`VOLUMETRIC_MATCH_PERCENTAGE` through
+`TARGET_HOLE_MISSES`) are empty unless volumetric scoring is enabled for your
+tenant, and any single one is empty when the API did not report that field. An
+empty cell means "not reported", not zero. `SOURCE_HOLE_MISSES` and
+`TARGET_HOLE_MISSES` are counts of unmatched holes; the holes themselves (centre,
+axis, radius) are only in the JSON output. Read CSV columns by header name: the
+volumetric columns were added in 2.1.0, which moved the UUID and URL columns to
+the right.
 
 ## Error Handling
 

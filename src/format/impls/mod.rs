@@ -12,10 +12,12 @@
 //! - `match_ops`: Search and match response formatting (part search, geometric search, etc.)
 //! - `dependencies`: Asset dependency and assembly tree formatting
 //! - `state`: Asset state counts formatting
+//! - `failures`: failure diagnostics (`asset diagnose`) and recent failures (`tenant failures`)
 
 mod asset;
 mod dependencies;
 mod dependency_diff;
+mod failures;
 mod folder;
 mod health;
 mod match_ops;

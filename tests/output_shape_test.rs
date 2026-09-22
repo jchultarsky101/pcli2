@@ -316,7 +316,13 @@ fn geometric_match_types() {
         "candidateAssetPath": "/Parts/housing.stl",
         "candidateAssetUuid": A2,
         "geometric": {"matchPercentage": 91.5, "forwardMatchPercentage": 90.0, "reverseMatchPercentage": 93.0},
-        "volumetric": {"matchPercentage": 88.0},
+        "volumetric": {
+            "matchPercentage": 88.0,
+            "sourceHoleMisses": [{"centerMm": {"x": 1.0, "y": 2.0, "z": 3.0}, "axis": {"x": 0.0, "y": 0.0, "z": 1.0}, "radiusMm": 2.5}],
+            "targetHoleMisses": [],
+            "matchedHoleCenterDistanceTotalMm": 0.5,
+            "mismatchVolumeMm3": {"sourceMissMm3": 1.0, "targetMissMm3": 2.0, "sourceHoleMissMm3": 0.5, "targetHoleMissMm3": 0.25, "totalMm3": 3.75}
+        },
         "comparisonUrl": "https://example.invalid/compare"
     }));
     shapes("AssetSimilarity", &similarity, &[Fmt::Csv, Fmt::Json]);
@@ -410,4 +416,49 @@ fn health_and_state_reports() {
         &state,
         &[Fmt::Csv, Fmt::Json, Fmt::Tree],
     );
+}
+
+#[test]
+fn failure_types() {
+    let diagnostics: AssetFailureDiagnostics = from(json!({
+        "assetPath": "/Parts/bracket.stl",
+        "assetUuid": A1,
+        "assetState": "failed",
+        "status": "found",
+        "kind": "user",
+        "summary": "The file format or version is not supported.",
+        "traceId": "6f2b1c40-9f3a-4a1e-9a1b-2c7d4e5f6a7b",
+        "occurredAt": "2026-08-26T19:03:16.000Z"
+    }));
+    shapes(
+        "AssetFailureDiagnostics",
+        &diagnostics,
+        &[Fmt::Csv, Fmt::Json],
+    );
+
+    let sparse: AssetFailureDiagnostics = from(json!({
+        "assetPath": "/Parts/bracket.stl",
+        "assetUuid": A1,
+        "status": "not-found"
+    }));
+    shapes(
+        "AssetFailureDiagnostics (not-found)",
+        &sparse,
+        &[Fmt::Csv, Fmt::Json],
+    );
+
+    let failures: RecentFailuresList = from(json!({
+        "failures": [
+            {"kind": "asset", "id": A1, "name": "bracket.stl", "failedAt": "2026-09-20T10:00:00.000Z"},
+            {"kind": "report", "id": A2, "name": "weekly", "failedAt": "2026-09-19T10:00:00.000Z"}
+        ],
+        "countsByKind": {"asset": 1, "report": 1, "part-finder-report": 0}
+    }));
+    shapes("RecentFailuresList", &failures, &[Fmt::Csv, Fmt::Json]);
+
+    let none: RecentFailuresList = from(json!({
+        "failures": [],
+        "countsByKind": {"asset": 0, "report": 0, "part-finder-report": 0}
+    }));
+    shapes_of_empty("RecentFailuresList (empty)", &none, &[Fmt::Csv, Fmt::Json]);
 }

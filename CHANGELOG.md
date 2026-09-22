@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`asset diagnose` explains why an asset failed to process** (aliases `failure`, `why`) - Physna added on-demand failure diagnostics: the server searches its ingestion logs for the asset and answers with a `status` (`found`, `not-found`, `unavailable`), a `kind` (`user`, with a summary you can act on, or `internal`, with a trace ID to quote to support), the summary, the trace ID and when it happened. The command takes `--uuid` or `--path`, prints JSON or CSV (`ASSET_PATH,ASSET_STATE,STATUS,KIND,SUMMARY,TRACE_ID,OCCURRED_AT,ASSET_UUID`), exits 0 for `found` and `not-found` (with a stderr note saying whether the asset is simply not failed or the log entry has aged out), and exits 68 on a deployment without failure log search. Until now a failed asset was only visible as the word `failed` in a `STATE` column.
+- **`tenant failures` lists what failed lately** - Assets, reports and part-finder reports in one listing, newest first, with `--kind` to narrow it (repeatable) and `--limit` to stop early. JSON output also carries the tenant-wide totals per kind; CSV is `KIND,NAME,ID,FAILED_AT`. The `ID` of an `asset` row is what `asset diagnose --uuid` takes.
+- **`pcli2 doctor` reports whether failure diagnostics are available** - A new `diagnostics` line asks the deployment up front, so a customer-managed or enclave stack without log search is visible before `asset diagnose` exits 68 there. It is a warning, never a failure.
+- **Exit code 68 (service unavailable) is documented** - It was defined but unused outside `doctor`; `asset diagnose` now uses it for a feature the deployment does not have.
+
+### Changed
+- **`asset similarity` CSV carries every volumetric field** - The API's volumetric block gained the mismatch-volume breakdown, the unmatched holes and the matched-hole distance in 2.0.2, but only the JSON output showed them. CSV now has `MISMATCH_VOLUME_TOTAL_MM3`, `SOURCE_MISS_MM3`, `TARGET_MISS_MM3`, `SOURCE_HOLE_MISS_MM3`, `TARGET_HOLE_MISS_MM3`, `MATCHED_HOLE_CENTER_DISTANCE_TOTAL_MM`, `SOURCE_HOLE_MISSES` and `TARGET_HOLE_MISSES` (the last two are counts; the holes themselves are JSON-only) after `VOLUMETRIC_MATCH_PERCENTAGE`. Every volumetric cell is empty, not `0`, when the tenant has no volumetric scoring or the API did not report that field. The `REFERENCE_ASSET_UUID`, `CANDIDATE_ASSET_UUID` and `COMPARISON_URL` columns moved right accordingly: read CSV columns by header name.
+- **The spec review found no drift** - The live OpenAPI specification is identical to the snapshot refreshed in 2.0.2, so no existing command changed. The three failure endpoints (`failure-diagnostics`, `failure-diagnostics/availability`, `failures`) and their enumerations are now covered by the contract tests and the weekly drift check.
+
 ## [2.0.2] - 2026-09-21
 
 ### Fixed

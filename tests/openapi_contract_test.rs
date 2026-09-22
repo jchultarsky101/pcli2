@@ -309,6 +309,17 @@ fn contracts() -> Vec<Contract> {
             "/tenants/{tenantId}/assets/{assetPath}/dependencies",
             AssetDependenciesResponse
         ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/assets/{assetId}/failure-diagnostics",
+            FailureDiagnostics
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/failure-diagnostics/availability",
+            FailureDiagnosticsAvailability
+        ),
+        contract!("get", "/tenants/{tenantId}/failures", RecentFailuresPage),
         contract!("get", "/tenants/{tenantId}/users", UserListResponse),
         contract!(
             "get",
@@ -467,6 +478,44 @@ fn hard_coded_enumerations_match_the_spec() {
         values("DependencyStatus"),
         ["matched", "resolved", "missing"]
     );
+
+    // Failure diagnostics: the statuses `asset diagnose` branches on and the
+    // kinds it prints, and the sources `tenant failures --kind` accepts. These
+    // are inline enums on the response schemas rather than named ones.
+    let property_values = |schema: &str, property: &str| -> Vec<String> {
+        spec["components"]["schemas"][schema]["properties"][property]["enum"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{schema}.{property} is not an enum"))
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(
+        property_values("FailureDiagnosticsResponse", "status"),
+        ["found", "not-found", "unavailable"]
+    );
+    assert_eq!(
+        property_values("FailureDiagnosticsResponse", "kind"),
+        ["user", "internal"]
+    );
+    assert_eq!(
+        property_values("RecentFailureItem", "kind"),
+        pcli2::model::FailureSource::ALL
+    );
+    let mut counts: Vec<String> = spec["components"]["schemas"]["ListRecentFailuresResponse"]
+        ["properties"]["countsByKind"]["required"]
+        .as_array()
+        .expect("countsByKind lists its required kinds")
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    counts.sort();
+    let mut ours = pcli2::model::FailureSource::ALL.to_vec();
+    ours.sort();
+    assert_eq!(
+        counts, ours,
+        "countsByKind has a kind the client does not read"
+    );
 }
 
 #[test]
@@ -480,6 +529,7 @@ fn page_sizes_the_client_uses_are_within_the_spec_maximum() {
         ("/tenants/{tenantId}/metadata-fields", 1000),
         ("/tenants/{tenantId}/assets/{assetPath}/dependencies", 1000),
         ("/tenants/{tenantId}/users", 100),
+        ("/tenants/{tenantId}/failures", 100),
     ] {
         let parameters = spec["paths"][path]["get"]["parameters"]
             .as_array()

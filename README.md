@@ -297,6 +297,12 @@ pcli2 asset reprocess --path "/Home/Models/model.stl"
 # or
 pcli2 asset reprocess --uuid 550e8400-e29b-41d4-a716-446655440000
 
+# Ask the server why an asset failed to process (alias: asset why)
+pcli2 asset diagnose --path "/Home/Models/model.stl"
+
+# List what failed lately, newest first (assets, reports, part-finder reports)
+pcli2 tenant failures --format csv --headers
+
 # Download asset thumbnail
 pcli2 asset thumbnail --path "/Home/Models/model.stl"
 # or
@@ -642,6 +648,7 @@ possible) so scripts can react to specific failure classes:
 | 65 | Data format error |
 | 66 | Cannot open input file |
 | 67 | Resource not found |
+| 68 | Service unavailable (a feature this deployment does not have, or `doctor` could not reach a server) |
 | 69 | Temporary failure |
 | 70 | Internal software error |
 | 71 | Operating system error |
@@ -670,7 +677,8 @@ esac
 ```bash
 # One screen with everything support would ask for: binary and PATH, config file,
 # environment, credentials backend, token expiry, active tenant, cache ages,
-# API and auth-server reachability, and whether a newer release exists.
+# API and auth-server reachability, whether 'asset diagnose' is available on
+# this deployment, and whether a newer release exists.
 pcli2 doctor
 pcli2 doctor --format json
 
@@ -762,6 +770,7 @@ Quick reference for all available command aliases:
 | `pcli2 asset visual-match` | `pcli2 asset visual-search` |
 | `pcli2 asset text-match` | `pcli2 asset text-search` |
 | `pcli2 asset similarity` | `pcli2 asset match-scores` |
+| `pcli2 asset diagnose` | `pcli2 asset failure`, `pcli2 asset why` |
 | `pcli2 asset metadata create` | `pcli2 asset metadata update` |
 | `pcli2 asset metadata create-batch` | `pcli2 asset metadata update-batch` |
 | `pcli2 asset metadata delete` | `pcli2 asset metadata rm` |
@@ -810,6 +819,7 @@ pcli2 asset visual-match     # Find visually similar assets (--limit N, default 
 pcli2 asset text-match       # Find assets using text search (--limit N, default 1000; warns on stderr when more matches exist)
 pcli2 asset similarity       # Match scores between two specific assets (--reference-* and --candidate-*)
 pcli2 asset reprocess        # Reprocess an asset to refresh its analysis
+pcli2 asset diagnose         # Explain why an asset failed to process (server-side failure diagnostics)
 pcli2 asset thumbnail        # Download asset thumbnail
 pcli2 asset metadata         # Manage asset metadata (get, create, create-batch, delete, inference)
 ```
@@ -1044,6 +1054,7 @@ pcli2 tenant use            # Set the active tenant
 pcli2 tenant current        # Get the active tenant
 pcli2 tenant clear          # Clear the active tenant
 pcli2 tenant state          # Get asset state counts for the current tenant
+pcli2 tenant failures       # List recent failures (assets, reports, part-finder reports), newest first
 pcli2 tenant metadata list  # List the tenant's registered metadata fields with their types
 ```
 
@@ -1052,6 +1063,45 @@ The `tenant metadata list` output (CSV) uses the same header as the classic `cre
 ```bash
 pcli2 tenant metadata list --format csv --headers > fields.csv
 ```
+
+#### Finding Out Why an Asset Failed
+
+`tenant state` and `asset counts` say *how many* assets failed; `tenant failures`
+says *which* (newest first, with the tenant-wide totals in the JSON output), and
+`asset diagnose` asks the server *why*. The server searches its ingestion logs
+on demand, so the answer is only as durable as log retention.
+
+```bash
+# The failed assets, newest first (--kind report / part-finder-report for the others)
+pcli2 tenant failures --kind asset --format csv --headers
+
+# Why one of them failed, by UUID from that listing or by path
+pcli2 asset diagnose --uuid 5db69606-661e-4019-a9b4-a4d122fc0f9e
+```
+
+```json
+{
+  "assetPath": "/Home/Rail/04_Automatic_drain_cock_module.step",
+  "assetUuid": "5db69606-661e-4019-a9b4-a4d122fc0f9e",
+  "assetState": "failed",
+  "status": "found",
+  "kind": "internal",
+  "summary": "Processing failed inside Physna.",
+  "traceId": "d55c845b-80f1-44fb-95df-256aebf7bf3c",
+  "occurredAt": "2026-09-07T14:02:02.356Z"
+}
+```
+
+- `kind: user` means the failure is yours to fix and `summary` says what
+  (an unsupported format, for example). `kind: internal` means it failed on
+  Physna's side: quote the `traceId` to support.
+- `status: not-found` (exit 0) means the asset is not failed, or the log entry
+  has aged out; a note on stderr says which. Reprocessing produces a fresh entry
+  if the asset fails again.
+- On a deployment without failure log search the command exits 68. `pcli2 doctor`
+  has a `diagnostics` line that says up front whether the lookup is available.
+
+CSV columns: `ASSET_PATH,ASSET_STATE,STATUS,KIND,SUMMARY,TRACE_ID,OCCURRED_AT,ASSET_UUID`.
 
 ### Authentication Commands
 

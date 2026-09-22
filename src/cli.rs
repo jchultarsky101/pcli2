@@ -19,7 +19,7 @@ use pcli2::{
         assets::{
             asset_similarity, compare_asset_dependencies, count_assets, create_asset,
             create_asset_batch, create_asset_metadata_batch, delete_asset, delete_asset_metadata,
-            download_asset, download_asset_thumbnail, geometric_match_asset,
+            diagnose_asset, download_asset, download_asset_thumbnail, geometric_match_asset,
             geometric_match_folder, inventory, list_assets, metadata_inference, part_match_asset,
             part_match_folder, print_asset, print_asset_dependencies, print_asset_metadata,
             print_folder_dependencies, reprocess_asset, text_match, update_asset_metadata,
@@ -32,20 +32,20 @@ use pcli2::{
             upload_folder,
         },
         tenants::{
-            clear_active_tenant, list_all_tenants, print_active_tenant_name_with_format,
-            set_active_tenant,
+            clear_active_tenant, list_all_tenants, list_recent_failures,
+            print_active_tenant_name_with_format, set_active_tenant,
         },
     },
     commands::params::{
         COMMAND_ASSET, COMMAND_AUTH, COMMAND_CLEAR, COMMAND_CLEAR_TOKEN, COMMAND_CONFIG,
         COMMAND_COUNTS, COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_CURRENT, COMMAND_DELETE,
-        COMMAND_DEPENDENCIES, COMMAND_DEPENDENCY_DIFF, COMMAND_DOWNLOAD, COMMAND_EXPORT,
-        COMMAND_FOLDER, COMMAND_FULL_INVENTORY, COMMAND_GET, COMMAND_IMPORT, COMMAND_INFERENCE,
-        COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT, COMMAND_MATCH, COMMAND_METADATA,
-        COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY, COMMAND_STATE, COMMAND_TENANT,
-        COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD, COMMAND_USE, COMMAND_VISUAL_MATCH,
-        PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET, PARAMETER_FORMAT, PARAMETER_HEADERS,
-        PARAMETER_INPUT, PARAMETER_OUTPUT, PARAMETER_PRETTY,
+        COMMAND_DEPENDENCIES, COMMAND_DEPENDENCY_DIFF, COMMAND_DIAGNOSE, COMMAND_DOWNLOAD,
+        COMMAND_EXPORT, COMMAND_FAILURES, COMMAND_FOLDER, COMMAND_FULL_INVENTORY, COMMAND_GET,
+        COMMAND_IMPORT, COMMAND_INFERENCE, COMMAND_LIST, COMMAND_LOGIN, COMMAND_LOGOUT,
+        COMMAND_MATCH, COMMAND_METADATA, COMMAND_PART_MATCH, COMMAND_REPROCESS, COMMAND_SIMILARITY,
+        COMMAND_STATE, COMMAND_TENANT, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_UPLOAD,
+        COMMAND_USE, COMMAND_VISUAL_MATCH, PARAMETER_CLIENT_ID, PARAMETER_CLIENT_SECRET,
+        PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_INPUT, PARAMETER_OUTPUT, PARAMETER_PRETTY,
     },
     format::{Formattable, FormattingError, OutputFormat, OutputFormatOptions},
     physna_v3::TryDefault,
@@ -207,6 +207,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     trace!("Command: {} {}", COMMAND_TENANT, COMMAND_STATE);
 
                     pcli2::actions::tenants::get_tenant_state_counts(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_FAILURES, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_TENANT, COMMAND_FAILURES);
+
+                    list_recent_failures(sub_matches).await?;
                     Ok(())
                 }
                 Some((COMMAND_METADATA, sub_matches)) => {
@@ -471,6 +477,11 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                 Some((COMMAND_REPROCESS, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_ASSET, COMMAND_REPROCESS);
                     reprocess_asset(sub_matches).await?;
+                    Ok(())
+                }
+                Some((COMMAND_DIAGNOSE, sub_matches)) => {
+                    trace!("Command: {} {}", COMMAND_ASSET, COMMAND_DIAGNOSE);
+                    diagnose_asset(sub_matches).await?;
                     Ok(())
                 }
                 _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(

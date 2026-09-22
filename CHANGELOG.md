@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Dependencies are read by asset ID** - `asset dependencies`, `folder dependencies` and `asset dependency-diff` now use `GET /tenants/{tenantId}/assets/{assetId}/dependencies-by-id`, which looks the asset up by its stored path on the server, so the lookup keeps working after a folder is moved or renamed. The path-based `/assets/{assetPath}/dependencies` endpoint the commands used is deprecated in Physna's specification. Output is unchanged in every format. The client now also reads each dependency's `status` (`matched`, `resolved`, `missing`) and never asks the API about a missing dependency's children (it has no asset, so the only UUID to ask about was the nil one).
 
+- **`--skip-existing` asks the server instead of listing the folder** - `asset create-batch --skip-existing` and `folder upload` (which checks for existing names in both modes) now send the target paths to `POST /tenants/{tenantId}/assets/existing-paths`, one request per 1000 files, instead of paging through the whole destination folder. Which files are skipped, the `Skipping existing asset: ...` lines, the counts and the "Asset already exists" error are unchanged.
+
 ### Fixed
 - **`folder dependencies` lists assemblies in a stable order** - The JSON and tree output listed a folder's assemblies in a different order on every run (the folder listing is a map). They are now sorted by path, as the CSV rows already were.
 

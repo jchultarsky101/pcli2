@@ -1839,25 +1839,28 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // Create a delay duration if delay is specified
     let delay_duration = std::time::Duration::from_secs(delay_param as u64);
 
-    // Names already in the destination folder, fetched once. Each task used to
-    // list the whole folder for itself - N files times every page of the listing -
-    // and treated a failed listing as "does not exist", so --skip-existing could
-    // re-upload on a transient error. Now a failed listing fails the run.
-    let existing_names: std::sync::Arc<std::collections::HashSet<String>> = {
-        let parent = if folder_uuid.is_nil() {
-            None
-        } else {
-            Some(&folder_uuid)
-        };
-        let listing = api
-            .list_assets_by_parent_folder_uuid(&tenant.uuid, parent)
-            .await?;
+    // Which of the files already exist in the destination, asked once. Each task
+    // used to list the whole folder for itself - N files times every page of the
+    // listing - and treated a failed listing as "does not exist", so
+    // --skip-existing could re-upload on a transient error. The server is now
+    // asked about the exact target paths (one request per 1000 files) and a
+    // failed check fails the run. The set holds the paths as they were asked
+    // about; each task rebuilds its own path the same way to test membership.
+    let existing_paths: std::sync::Arc<std::collections::HashSet<String>> = {
+        let requested: Vec<String> = entries
+            .iter()
+            .filter(|entry| entry.path().is_file())
+            .filter_map(|entry| {
+                entry
+                    .path()
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+            })
+            .map(|name| crate::actions::utils::asset_path_for(&original_folder_path, &name))
+            .collect();
         std::sync::Arc::new(
-            listing
-                .get_all_assets()
-                .iter()
-                .map(|asset| asset.name().to_string())
-                .collect(),
+            api.find_existing_asset_paths(&tenant.uuid, &requested)
+                .await?,
         )
     };
 
@@ -1887,7 +1890,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
 
         let tenant_clone = tenant.clone();
         let mut api_task = api.clone();
-        let existing_names = existing_names.clone();
+        let existing_paths = existing_paths.clone();
         let semaphore = semaphore.clone();
         let progress_bar_clone = progress_bar.clone();
         let multi_progress_clone = multi_progress.clone();
@@ -1926,7 +1929,10 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
                 tokio::time::sleep(delay_duration_clone).await;
             }
 
-            let asset_exists = existing_names.contains(&file_name_str);
+            let asset_exists = existing_paths.contains(&crate::actions::utils::asset_path_for(
+                &original_folder_path_clone,
+                &file_name_str,
+            ));
 
             if asset_exists {
                 if skip_existing_clone {

@@ -320,6 +320,11 @@ fn contracts() -> Vec<Contract> {
             FailureDiagnosticsAvailability
         ),
         contract!("get", "/tenants/{tenantId}/failures", RecentFailuresPage),
+        contract!(
+            "post",
+            "/tenants/{tenantId}/assets/existing-paths",
+            ExistingPathsResponse
+        ),
         contract!("get", "/tenants/{tenantId}/users", UserListResponse),
         contract!(
             "get",

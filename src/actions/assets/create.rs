@@ -340,29 +340,29 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         .map_err(CliError::PhysnaExtendedApiError)?;
     let total_matched = paths.len();
 
-    // --skip-existing is what makes an interrupted batch re-runnable: the folder
-    // is listed once and every file whose name is already there is left out.
+    // --skip-existing is what makes an interrupted batch re-runnable: the server
+    // is asked once which of the target paths already hold an asset, and every
+    // such file is left out. (This used to list the whole folder; the check is
+    // now one request per 1000 files and does not read the folder at all.)
     let skip_existing = sub_matches.get_flag(crate::commands::params::PARAMETER_SKIP_EXISTING);
     let mut skipped = 0usize;
     if skip_existing && !paths.is_empty() {
-        let parent = if folder_uuid.is_nil() {
-            None
-        } else {
-            Some(&folder_uuid)
-        };
-        let existing: std::collections::HashSet<String> = api
-            .list_assets_by_parent_folder_uuid(&tenant.uuid, parent)
-            .await?
-            .get_all_assets()
-            .iter()
-            .map(|asset| asset.name().to_string())
-            .collect();
-        paths.retain(|path| {
-            let name = path
-                .file_name()
+        let file_name_of = |path: &std::path::Path| {
+            path.file_name()
                 .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let keep = !existing.contains(&name);
+                .unwrap_or_default()
+        };
+        let requested: Vec<String> = paths
+            .iter()
+            .map(|path| crate::actions::utils::asset_path_for(&folder_path, &file_name_of(path)))
+            .collect();
+        let existing = api
+            .find_existing_asset_paths(&tenant.uuid, &requested)
+            .await?;
+        paths.retain(|path| {
+            let name = file_name_of(path);
+            let keep =
+                !existing.contains(&crate::actions::utils::asset_path_for(&folder_path, &name));
             if !keep {
                 skipped += 1;
                 eprintln!("Skipping existing asset: {}", name);

@@ -1915,6 +1915,32 @@ pub struct MetadataFieldListResponse {
     pub page_data: Option<PageData>,
 }
 
+/// How a dependency of an assembly stands, as the API reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DependencyStatus {
+    /// The referenced file was found by its path.
+    Matched,
+    /// The reference was linked to an existing asset by hand (`asset resolve-dependency`).
+    Resolved,
+    /// No asset stands in for the reference; the assembly cannot be fully indexed.
+    Missing,
+}
+
+impl DependencyStatus {
+    /// Every status, as the API spells them.
+    pub const ALL: [&'static str; 3] = ["matched", "resolved", "missing"];
+
+    /// The value as the API spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DependencyStatus::Matched => "matched",
+            DependencyStatus::Resolved => "resolved",
+            DependencyStatus::Missing => "missing",
+        }
+    }
+}
+
 /// Represents a dependency relationship for an asset from the API
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetDependencyApiResponse {
@@ -1928,6 +1954,18 @@ pub struct AssetDependencyApiResponse {
     /// Whether the dependency has its own dependencies
     #[serde(rename = "hasDependencies")]
     pub has_dependencies: bool,
+    /// Matched, resolved or missing. Older responses may omit it, in which case
+    /// a dependency without an asset is taken to be missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<DependencyStatus>,
+}
+
+impl AssetDependencyApiResponse {
+    /// True when no asset stands in for this dependency: the API says so, or
+    /// it sent no asset details (the only signal older responses carry).
+    pub fn is_missing(&self) -> bool {
+        matches!(self.status, Some(DependencyStatus::Missing)) || self.asset.is_none()
+    }
 }
 
 /// Represents a dependency relationship for an asset with assembly path information
@@ -1953,6 +1991,8 @@ pub struct AssetDependency {
 
 impl From<AssetDependencyApiResponse> for AssetDependency {
     fn from(api_dep: AssetDependencyApiResponse) -> Self {
+        // `status` is deliberately not carried over: this type is the CSV/JSON
+        // shape of `asset dependencies`, which must not change under scripts.
         AssetDependency {
             path: api_dep.path,
             asset: api_dep.asset,

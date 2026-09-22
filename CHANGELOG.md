@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Dependencies are read by asset ID** - `asset dependencies`, `folder dependencies` and `asset dependency-diff` now use `GET /tenants/{tenantId}/assets/{assetId}/dependencies-by-id`, which looks the asset up by its stored path on the server, so the lookup keeps working after a folder is moved or renamed. The path-based `/assets/{assetPath}/dependencies` endpoint the commands used is deprecated in Physna's specification. Output is unchanged in every format. The client now also reads each dependency's `status` (`matched`, `resolved`, `missing`) and never asks the API about a missing dependency's children (it has no asset, so the only UUID to ask about was the nil one).
+
+### Fixed
+- **`folder dependencies` lists assemblies in a stable order** - The JSON and tree output listed a folder's assemblies in a different order on every run (the folder listing is a map). They are now sorted by path, as the CSV rows already were.
+
+### Removed
+- **Four path-based dependency methods of the client library** - `get_asset_dependencies_by_path`, `get_asset_dependencies_by_path_with_pagination`, `populate_asset_dependencies_recursive_by_path` and the unused `populate_asset_dependencies_recursive`. Every command that used them holds the asset's UUID already and calls `get_asset_dependencies_by_uuid`.
+
 ## [2.1.0] - 2026-09-22
 
 ### Added

@@ -65,11 +65,11 @@ pub async fn compare_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), 
     // Fetch the full recursive dependency trees for both assets.
     let reference_tree = ctx
         .api()
-        .get_asset_dependencies_by_path(&tenant_uuid, reference_asset.path().as_str())
+        .get_asset_dependencies_by_uuid(&tenant_uuid, &reference_asset.uuid())
         .await?;
     let candidate_tree = ctx
         .api()
-        .get_asset_dependencies_by_path(&tenant_uuid, candidate_asset.path().as_str())
+        .get_asset_dependencies_by_uuid(&tenant_uuid, &candidate_asset.uuid())
         .await?;
 
     // Compute the structural diff and print it in the requested format.

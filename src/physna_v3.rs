@@ -3580,65 +3580,12 @@ impl PhysnaApiClient {
         })
     }
 
-    // Original function that works with path (for backward compatibility)
-    async fn get_asset_dependencies_by_path_with_pagination<S: AsRef<str>>(
-        &mut self,
-        tenant_uuid: &Uuid,
-        physna_path: S,
-        page: usize,
-        per_page: usize,
-    ) -> Result<AssetDependenciesResponse, ApiError> {
-        let physna_path = physna_path.as_ref();
-
-        debug!(
-            "Getting asset dependencies by path for tenant UUID: {}, physna path: {}",
-            tenant_uuid, physna_path
-        );
-
-        // URL encode the asset path to handle special characters properly
-        let encoded_asset_path = urlencoding::encode(physna_path);
-
-        let url = format!(
-            "{}/tenants/{}/assets/{}/dependencies?page={}&perPage={}",
-            self.base_url, tenant_uuid, encoded_asset_path, page, per_page
-        );
-        debug!("Dependencies request URL: {}", url);
-
-        // Execute the GET request using the generic method
-        // Handle the case where an asset has no dependencies (which may return 404)
-        // The API returns 404 when no dependencies exist, which we now handle as a NotFoundError
-        match self.get(&url).await {
-            Ok(response) => Ok(response),
-            Err(ApiError::NotFoundError(error_msg)) => {
-                // Check if this is a "no dependencies found" error which is a valid response
-                if error_msg.contains("No dependencies found for asset") {
-                    debug!("Asset has no dependencies (404 with 'No dependencies found' message), returning empty response");
-                    Ok(AssetDependenciesResponse {
-                        dependencies: vec![],
-                        page_data: crate::model::PageData {
-                            current_page: page,
-                            per_page,
-                            total: 0,
-                            last_page: 1,
-                            start_index: 0,
-                            end_index: 0,
-                        },
-                        original_asset_path: physna_path.to_string(),
-                    })
-                } else {
-                    // Re-raise the original error if it's not related to missing dependencies
-                    Err(ApiError::NotFoundError(error_msg))
-                }
-            }
-            // A genuine 404 (e.g. the asset itself no longer exists) and auth
-            // errors propagate as errors. They must NOT be swallowed into an
-            // empty dependency list: only the explicit "No dependencies found"
-            // response above means "this asset has no dependencies".
-            Err(e) => Err(e),
-        }
-    }
-
-    // New function that works with UUIDs (updated API endpoint)
+    /// One page of an asset's direct dependencies.
+    ///
+    /// Uses `GET /tenants/{tenantId}/assets/{assetId}/dependencies-by-id`, which
+    /// looks the asset up by its stored path internally, so it keeps working after
+    /// folders are moved or renamed. (The older `/assets/{assetPath}/dependencies`
+    /// is deprecated in the API specification.)
     async fn get_asset_dependencies_by_uuid_with_pagination(
         &mut self,
         tenant_uuid: &Uuid,
@@ -3652,7 +3599,7 @@ impl PhysnaApiClient {
         );
 
         let url = format!(
-            "{}/tenants/{}/assets/{}/dependencies?page={}&perPage={}",
+            "{}/tenants/{}/assets/{}/dependencies-by-id?page={}&perPage={}",
             self.base_url, tenant_uuid, asset_uuid, page, per_page
         );
         debug!("Dependencies request URL: {}", url);
@@ -3758,75 +3705,6 @@ impl PhysnaApiClient {
         })
     }
 
-    #[allow(dead_code)]
-    async fn populate_asset_dependencies_recursive(
-        &mut self,
-        tenant_uuid: &Uuid,
-        root: &mut AssemblyNode,
-    ) -> Result<(), ApiError> {
-        let mut page: usize = 1;
-        let per_page: usize = 1000; // the API maximum for this endpoint
-
-        // Get the asset to determine its UUID for the new API endpoint
-        let root_uuid = root.asset().uuid();
-
-        loop {
-            let response = self
-                .get_asset_dependencies_by_uuid_with_pagination(
-                    tenant_uuid,
-                    &root_uuid,
-                    page,
-                    per_page,
-                )
-                .await?;
-
-            for dependency in response.dependencies {
-                // Convert dependency asset once, but only if it exists
-                let child_asset: Asset = if let Some(asset_response) = dependency.asset {
-                    asset_response.into()
-                } else {
-                    // Create a minimal Asset when full details are not available
-                    // Use the path to extract a name
-                    let name = dependency
-                        .path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&dependency.path)
-                        .to_string();
-                    Asset::new(
-                        Uuid::nil(), // Use nil UUID when not available
-                        name,
-                        dependency.path.clone(),
-                        None,                        // file_size
-                        None,                        // file_type
-                        Some("missing".to_string()), // processing_status
-                        None,                        // created_at
-                        None,                        // updated_at
-                        None,                        // metadata
-                        false, // is_assembly - default to false for missing dependencies
-                    )
-                };
-
-                // Insert into tree and get a mutable reference to the stored node
-                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset);
-
-                // Recurse on the stored child node if it has dependencies
-                if dependency.has_dependencies {
-                    Box::pin(self.populate_asset_dependencies_recursive(tenant_uuid, child_node))
-                        .await?;
-                }
-            }
-
-            // Pagination: stop when we've reached the last page
-            if page >= response.page_data.last_page {
-                break;
-            }
-            page += 1;
-        }
-
-        Ok(())
-    }
-
     async fn populate_asset_dependencies_recursive_by_uuid(
         &mut self,
         tenant_uuid: &Uuid,
@@ -3848,6 +3726,9 @@ impl PhysnaApiClient {
                 .await?;
 
             for dependency in response.dependencies {
+                // Decided before `dependency.asset` is moved below.
+                let missing = dependency.is_missing();
+
                 // Convert dependency asset once, but only if it exists
                 let child_asset: Asset = if let Some(asset_response) = dependency.asset {
                     asset_response.into()
@@ -3877,8 +3758,10 @@ impl PhysnaApiClient {
                 // Insert into tree and get a mutable reference to the stored node
                 let child_node: &mut AssemblyNode = root.add_child_mut(child_asset.clone()); // Clone the asset to avoid moving it
 
-                // Recurse on the stored child node if it has dependencies
-                if dependency.has_dependencies {
+                // Recurse on the stored child node if it has dependencies. A
+                // missing dependency has no asset, so there is nothing to ask
+                // the API about (and asking about the nil UUID would be a 404).
+                if dependency.has_dependencies && !missing {
                     Box::pin(self.populate_asset_dependencies_recursive_by_uuid(
                         tenant_uuid,
                         child_node,
@@ -3896,96 +3779,6 @@ impl PhysnaApiClient {
         }
 
         Ok(())
-    }
-
-    async fn populate_asset_dependencies_recursive_by_path(
-        &mut self,
-        tenant_uuid: &Uuid,
-        root: &mut AssemblyNode,
-        root_path: &str,
-    ) -> Result<(), ApiError> {
-        let mut page: usize = 1;
-        let per_page: usize = 1000; // the API maximum for this endpoint
-
-        loop {
-            // Use the path-based pagination method
-            let response = self
-                .get_asset_dependencies_by_path_with_pagination(
-                    tenant_uuid,
-                    root_path,
-                    page,
-                    per_page,
-                )
-                .await?;
-
-            for dependency in response.dependencies {
-                // Convert dependency asset once, but only if it exists
-                let child_asset: Asset = if let Some(asset_response) = dependency.asset {
-                    asset_response.into()
-                } else {
-                    // Create a minimal Asset when full details are not available
-                    // Use the path to extract a name
-                    let name = dependency
-                        .path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&dependency.path)
-                        .to_string();
-                    Asset::new(
-                        Uuid::nil(), // Use nil UUID when not available
-                        name,
-                        dependency.path.clone(),
-                        None,                        // file_size
-                        None,                        // file_type
-                        Some("missing".to_string()), // processing_status
-                        None,                        // created_at
-                        None,                        // updated_at
-                        None,                        // metadata
-                        false, // is_assembly - default to false for missing dependencies
-                    )
-                };
-
-                // Insert into tree and get a mutable reference to the stored node
-                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset.clone()); // Clone the asset to avoid moving it
-
-                // Recurse on the stored child node if it has dependencies
-                if dependency.has_dependencies {
-                    Box::pin(self.populate_asset_dependencies_recursive_by_path(
-                        tenant_uuid,
-                        child_node,
-                        &dependency.path, // Use the dependency's path for recursion
-                    ))
-                    .await?;
-                }
-            }
-
-            // Pagination: stop when we've reached the last page
-            if page >= response.page_data.last_page {
-                break;
-            }
-            page += 1;
-        }
-
-        Ok(())
-    }
-
-    pub async fn get_asset_dependencies_by_path<S: AsRef<str>>(
-        &mut self,
-        tenant_uuid: &Uuid,
-        asset_path: S,
-    ) -> Result<AssemblyTree, ApiError> {
-        let asset_path = asset_path.as_ref();
-        let asset = self.get_asset_by_path(tenant_uuid, asset_path).await?;
-
-        let mut tree = AssemblyTree::new(asset);
-        // Use the path-based recursive function to populate dependencies
-        Box::pin(self.populate_asset_dependencies_recursive_by_path(
-            tenant_uuid,
-            tree.root_mut(),
-            asset_path,
-        ))
-        .await?;
-        Ok(tree)
     }
 
     /// Get asset dependencies by UUID

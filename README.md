@@ -1067,7 +1067,12 @@ pcli2 tenant current        # Get the active tenant
 pcli2 tenant clear          # Clear the active tenant
 pcli2 tenant state          # Get asset state counts for the current tenant
 pcli2 tenant failures       # List recent failures (assets, reports, part-finder reports), newest first
-pcli2 tenant metadata list  # List the tenant's registered metadata fields with their types
+pcli2 tenant metadata list      # List the tenant's registered metadata fields with their types
+pcli2 tenant metadata rename    # Rename a field (--name OLD --new-name NEW); values on assets are kept
+pcli2 tenant metadata delete    # Delete a field (--name NAME); --force also removes its values from every asset
+pcli2 tenant metadata assets    # List the assets that have a value for a field (--name NAME, --limit N)
+pcli2 tenant metadata coverage  # How many assets carry any metadata at all (counts and percentage)
+pcli2 tenant metadata missing   # List the assets with no metadata at all (--folder-path, --extension, --limit)
 ```
 
 The `tenant metadata list` output (CSV) uses the same header as the classic `create-batch` input (`ASSET_PATH,NAME,VALUE,TYPE`) with `NAME` and `TYPE` filled from the registry and `ASSET_PATH`/`VALUE` blank, so it can be saved and turned into a batch-upload template:

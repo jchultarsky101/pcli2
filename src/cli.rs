@@ -233,6 +233,42 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                 .await?;
                             Ok(())
                         }
+                        Some(("rename", sub_matches)) => {
+                            trace!("Command: {} {} rename", COMMAND_TENANT, COMMAND_METADATA);
+                            pcli2::actions::tenants::rename_tenant_metadata_field(sub_matches)
+                                .await?;
+                            Ok(())
+                        }
+                        Some((COMMAND_DELETE, sub_matches)) => {
+                            trace!(
+                                "Command: {} {} {}",
+                                COMMAND_TENANT,
+                                COMMAND_METADATA,
+                                COMMAND_DELETE
+                            );
+                            pcli2::actions::tenants::delete_tenant_metadata_field(sub_matches)
+                                .await?;
+                            Ok(())
+                        }
+                        Some(("assets", sub_matches)) => {
+                            trace!("Command: {} {} assets", COMMAND_TENANT, COMMAND_METADATA);
+                            pcli2::actions::tenants::list_assets_using_tenant_metadata_field(
+                                sub_matches,
+                            )
+                            .await?;
+                            Ok(())
+                        }
+                        Some(("coverage", sub_matches)) => {
+                            trace!("Command: {} {} coverage", COMMAND_TENANT, COMMAND_METADATA);
+                            pcli2::actions::tenants::tenant_metadata_coverage(sub_matches).await?;
+                            Ok(())
+                        }
+                        Some(("missing", sub_matches)) => {
+                            trace!("Command: {} {} missing", COMMAND_TENANT, COMMAND_METADATA);
+                            pcli2::actions::tenants::list_assets_without_metadata(sub_matches)
+                                .await?;
+                            Ok(())
+                        }
                         _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
                             sub_matches,
                         ))),

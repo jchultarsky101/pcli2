@@ -178,6 +178,45 @@ need to touch the `TYPE` column for fields that already exist.
 pcli2 tenant metadata list --format csv --headers > fields.csv
 ```
 
+## Managing the Registry
+
+The same command group renames and deletes fields, and reports how they are
+used. Fields are addressed by their exact registered name; an unknown name
+lists the registered ones.
+
+```bash
+# Rename a field; the values already on assets are kept
+pcli2 tenant metadata rename --name "Unit Price ($)" --new-name "Unit Price (USD)"
+
+# Delete a field nobody uses any more (asks for confirmation; --yes skips it)
+pcli2 tenant metadata delete --name "Old Field"
+
+# A field that assets still use is refused unless --force, which also removes
+# its value from every asset that had one
+pcli2 tenant metadata delete --name "Old Field" --force --yes
+
+# See what would happen first
+pcli2 tenant metadata delete --name "Old Field" --force --dry-run
+
+# Which assets have a value for a field (same columns as `asset list`)
+pcli2 tenant metadata assets --name "Supplier Link" --format csv --headers
+
+# How much of the tenant is covered by metadata at all
+pcli2 tenant metadata coverage --format csv --headers
+
+# The assets with no metadata at all, oldest first, narrowed by folder and type
+pcli2 tenant metadata missing --folder-path /Home/Parts --extension stl --limit 50 --format csv --headers
+```
+
+`coverage` prints the counts and the percentage:
+
+```csv
+COVERED_ASSETS,TOTAL_ASSETS,COVERAGE_PERCENT
+16143,23580,68.5
+```
+
+Demo assets uploaded by Physna are excluded from both `coverage` and `missing`.
+
 ## Advanced Metadata Workflow: Export, Modify, Reimport
 
 One of the most powerful features of PCLI2 is the ability to export metadata, modify it externally, and reimport it:

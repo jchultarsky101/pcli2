@@ -184,6 +184,12 @@ mod cli_help_tests {
             ("asset", "metadata", "delete"),
             ("asset", "metadata", "inference"),
             ("asset", "metadata", "create-batch"),
+            ("tenant", "metadata", "list"),
+            ("tenant", "metadata", "rename"),
+            ("tenant", "metadata", "delete"),
+            ("tenant", "metadata", "assets"),
+            ("tenant", "metadata", "coverage"),
+            ("tenant", "metadata", "missing"),
         ];
 
         for (parent_cmd, sub_cmd, sub_sub_cmd) in deeply_nested_commands {

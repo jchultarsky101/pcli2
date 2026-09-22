@@ -299,6 +299,21 @@ fn contracts() -> Vec<Contract> {
             MetadataFieldListResponse
         ),
         contract!(
+            "get",
+            "/tenants/{tenantId}/metadata-fields/{fieldId}/assets",
+            AssetListResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/assets/without-metadata",
+            AssetListResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/metadata-coverage",
+            MetadataCoverageResponse
+        ),
+        contract!(
             "post",
             "/tenants/{tenantId}/assets/{assetId}/geometric-search",
             GeometricSearchResponse
@@ -364,6 +379,8 @@ const OTHER_ENDPOINTS: &[(&str, &str)] = &[
         "/tenants/{tenantId}/assets/{assetId}/resolve-dependency",
     ),
     ("post", "/tenants/{tenantId}/metadata-fields"),
+    ("patch", "/tenants/{tenantId}/metadata-fields/{fieldId}"),
+    ("delete", "/tenants/{tenantId}/metadata-fields/{fieldId}"),
 ];
 
 /// Every endpoint above, for the drift check.
@@ -557,6 +574,8 @@ fn page_sizes_the_client_uses_are_within_the_spec_maximum() {
         ),
         ("/tenants/{tenantId}/users", 100),
         ("/tenants/{tenantId}/failures", 100),
+        ("/tenants/{tenantId}/metadata-fields/{fieldId}/assets", 1000),
+        ("/tenants/{tenantId}/assets/without-metadata", 1000),
     ] {
         let parameters = spec["paths"][path]["get"]["parameters"]
             .as_array()

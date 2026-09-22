@@ -101,14 +101,17 @@ mod tests {
         MetadataFieldListResponse {
             metadata_fields: vec![
                 MetadataField {
+                    id: None,
                     name: "Unit Price ($)".to_string(),
                     field_type: "number".to_string(),
                 },
                 MetadataField {
+                    id: None,
                     name: "Description".to_string(),
                     field_type: "text".to_string(),
                 },
                 MetadataField {
+                    id: None,
                     name: "Supplier Link".to_string(),
                     field_type: "url".to_string(),
                 },

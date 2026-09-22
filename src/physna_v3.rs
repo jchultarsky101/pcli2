@@ -2452,6 +2452,15 @@ impl PhysnaApiClient {
             .await
     }
 
+    /// POST a JSON body to an endpoint whose success response has no body (204).
+    async fn post_no_response<B>(&mut self, url: &str, body: &B) -> Result<(), ApiError>
+    where
+        B: serde::Serialize,
+    {
+        self.execute_request_no_response(|client| Ok(client.post(url).json(body)), false)
+            .await
+    }
+
     /// Generic method to build and execute DELETE requests that may have a request body and return empty responses
     ///
     /// This method is similar to the standard delete method but allows request bodies for DELETE operations.
@@ -2649,6 +2658,73 @@ impl PhysnaApiClient {
             .map_err(map_upload_error)?;
         let text: String = response.text().await?;
         debug!("Raw asset creation response: {}", text);
+        parse_created_asset(&text)
+    }
+
+    /// Replace the file of an existing asset, keeping its ID, path and metadata.
+    ///
+    /// `PUT /tenants/{tenantId}/assets/{assetId}/file`: the asset is re-indexed
+    /// with the new content and comes back in the `indexing` state. The API
+    /// requires the new file's extension to match the asset's path; the caller
+    /// checks that before calling, since a mismatch is better refused locally
+    /// than reported as a server error after the upload. A 409 is passed on as
+    /// the server phrased it (it does not mean "already exists" here).
+    pub async fn replace_asset_file(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+        file_path: &Path,
+    ) -> Result<crate::model::Asset, ApiError> {
+        trace!("Replacing the file of asset {}...", asset_uuid);
+
+        let url = format!(
+            "{}/tenants/{}/assets/{}/file",
+            self.base_url, tenant_uuid, asset_uuid
+        );
+
+        if !file_path.exists() || !file_path.is_file() {
+            return Err(ApiError::PathNotFound(
+                file_path.to_string_lossy().into_owned(),
+            ));
+        }
+
+        let file_name = file_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(); // Safe to unwrap: the file was just confirmed to exist
+
+        let mime_type = mime_guess::from_path(file_path)
+            .first_or_octet_stream()
+            .to_string();
+        let build = |client: &reqwest::Client| -> Result<reqwest::RequestBuilder, ApiError> {
+            // Opened afresh for every attempt: a retry after a token renewal or a
+            // transient 5xx has to stream the file from the start again.
+            let file = std::fs::File::open(file_path).map_err(ApiError::IoError)?;
+            let file_part = reqwest::multipart::Part::stream(tokio::fs::File::from_std(file))
+                .file_name(file_name.clone())
+                .mime_str(&mime_type)
+                .map_err(|e| {
+                    ApiError::InvalidParameterError(format!(
+                        "invalid MIME type '{}' for upload: {}",
+                        mime_type, e
+                    ))
+                })?;
+            let form = reqwest::multipart::Form::new().part("file", file_part);
+            Ok(client.put(&url).multipart(form))
+        };
+
+        debug!(
+            "Replacing the file of asset {} with {}",
+            asset_uuid, file_name
+        );
+
+        let response = self
+            .request_with_auth(build, false)
+            .await
+            .map_err(map_file_error)?;
+        let text: String = response.text().await?;
+        debug!("Raw asset replacement response: {}", text);
         parse_created_asset(&text)
     }
 
@@ -3405,8 +3481,9 @@ impl PhysnaApiClient {
 
         // Every task works on a clone of this client. A clone shares the token slot,
         // the renewal lock and the connection pool, so an expiry mid-batch costs one
-        // renewal between all tasks instead of one per file.
-        let client_template = self.clone();
+        // renewal between all tasks instead of one per file. The upload variant
+        // carries the upload timeout when one is configured.
+        let client_template = self.for_upload_operations();
         let folder_path = folder_path.map(|s| s.to_string());
 
         debug!(
@@ -3580,65 +3657,12 @@ impl PhysnaApiClient {
         })
     }
 
-    // Original function that works with path (for backward compatibility)
-    async fn get_asset_dependencies_by_path_with_pagination<S: AsRef<str>>(
-        &mut self,
-        tenant_uuid: &Uuid,
-        physna_path: S,
-        page: usize,
-        per_page: usize,
-    ) -> Result<AssetDependenciesResponse, ApiError> {
-        let physna_path = physna_path.as_ref();
-
-        debug!(
-            "Getting asset dependencies by path for tenant UUID: {}, physna path: {}",
-            tenant_uuid, physna_path
-        );
-
-        // URL encode the asset path to handle special characters properly
-        let encoded_asset_path = urlencoding::encode(physna_path);
-
-        let url = format!(
-            "{}/tenants/{}/assets/{}/dependencies?page={}&perPage={}",
-            self.base_url, tenant_uuid, encoded_asset_path, page, per_page
-        );
-        debug!("Dependencies request URL: {}", url);
-
-        // Execute the GET request using the generic method
-        // Handle the case where an asset has no dependencies (which may return 404)
-        // The API returns 404 when no dependencies exist, which we now handle as a NotFoundError
-        match self.get(&url).await {
-            Ok(response) => Ok(response),
-            Err(ApiError::NotFoundError(error_msg)) => {
-                // Check if this is a "no dependencies found" error which is a valid response
-                if error_msg.contains("No dependencies found for asset") {
-                    debug!("Asset has no dependencies (404 with 'No dependencies found' message), returning empty response");
-                    Ok(AssetDependenciesResponse {
-                        dependencies: vec![],
-                        page_data: crate::model::PageData {
-                            current_page: page,
-                            per_page,
-                            total: 0,
-                            last_page: 1,
-                            start_index: 0,
-                            end_index: 0,
-                        },
-                        original_asset_path: physna_path.to_string(),
-                    })
-                } else {
-                    // Re-raise the original error if it's not related to missing dependencies
-                    Err(ApiError::NotFoundError(error_msg))
-                }
-            }
-            // A genuine 404 (e.g. the asset itself no longer exists) and auth
-            // errors propagate as errors. They must NOT be swallowed into an
-            // empty dependency list: only the explicit "No dependencies found"
-            // response above means "this asset has no dependencies".
-            Err(e) => Err(e),
-        }
-    }
-
-    // New function that works with UUIDs (updated API endpoint)
+    /// One page of an asset's direct dependencies.
+    ///
+    /// Uses `GET /tenants/{tenantId}/assets/{assetId}/dependencies-by-id`, which
+    /// looks the asset up by its stored path internally, so it keeps working after
+    /// folders are moved or renamed. (The older `/assets/{assetPath}/dependencies`
+    /// is deprecated in the API specification.)
     async fn get_asset_dependencies_by_uuid_with_pagination(
         &mut self,
         tenant_uuid: &Uuid,
@@ -3652,7 +3676,7 @@ impl PhysnaApiClient {
         );
 
         let url = format!(
-            "{}/tenants/{}/assets/{}/dependencies?page={}&perPage={}",
+            "{}/tenants/{}/assets/{}/dependencies-by-id?page={}&perPage={}",
             self.base_url, tenant_uuid, asset_uuid, page, per_page
         );
         debug!("Dependencies request URL: {}", url);
@@ -3758,75 +3782,6 @@ impl PhysnaApiClient {
         })
     }
 
-    #[allow(dead_code)]
-    async fn populate_asset_dependencies_recursive(
-        &mut self,
-        tenant_uuid: &Uuid,
-        root: &mut AssemblyNode,
-    ) -> Result<(), ApiError> {
-        let mut page: usize = 1;
-        let per_page: usize = 1000; // the API maximum for this endpoint
-
-        // Get the asset to determine its UUID for the new API endpoint
-        let root_uuid = root.asset().uuid();
-
-        loop {
-            let response = self
-                .get_asset_dependencies_by_uuid_with_pagination(
-                    tenant_uuid,
-                    &root_uuid,
-                    page,
-                    per_page,
-                )
-                .await?;
-
-            for dependency in response.dependencies {
-                // Convert dependency asset once, but only if it exists
-                let child_asset: Asset = if let Some(asset_response) = dependency.asset {
-                    asset_response.into()
-                } else {
-                    // Create a minimal Asset when full details are not available
-                    // Use the path to extract a name
-                    let name = dependency
-                        .path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&dependency.path)
-                        .to_string();
-                    Asset::new(
-                        Uuid::nil(), // Use nil UUID when not available
-                        name,
-                        dependency.path.clone(),
-                        None,                        // file_size
-                        None,                        // file_type
-                        Some("missing".to_string()), // processing_status
-                        None,                        // created_at
-                        None,                        // updated_at
-                        None,                        // metadata
-                        false, // is_assembly - default to false for missing dependencies
-                    )
-                };
-
-                // Insert into tree and get a mutable reference to the stored node
-                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset);
-
-                // Recurse on the stored child node if it has dependencies
-                if dependency.has_dependencies {
-                    Box::pin(self.populate_asset_dependencies_recursive(tenant_uuid, child_node))
-                        .await?;
-                }
-            }
-
-            // Pagination: stop when we've reached the last page
-            if page >= response.page_data.last_page {
-                break;
-            }
-            page += 1;
-        }
-
-        Ok(())
-    }
-
     async fn populate_asset_dependencies_recursive_by_uuid(
         &mut self,
         tenant_uuid: &Uuid,
@@ -3848,6 +3803,9 @@ impl PhysnaApiClient {
                 .await?;
 
             for dependency in response.dependencies {
+                // Decided before `dependency.asset` is moved below.
+                let missing = dependency.is_missing();
+
                 // Convert dependency asset once, but only if it exists
                 let child_asset: Asset = if let Some(asset_response) = dependency.asset {
                     asset_response.into()
@@ -3877,8 +3835,10 @@ impl PhysnaApiClient {
                 // Insert into tree and get a mutable reference to the stored node
                 let child_node: &mut AssemblyNode = root.add_child_mut(child_asset.clone()); // Clone the asset to avoid moving it
 
-                // Recurse on the stored child node if it has dependencies
-                if dependency.has_dependencies {
+                // Recurse on the stored child node if it has dependencies. A
+                // missing dependency has no asset, so there is nothing to ask
+                // the API about (and asking about the nil UUID would be a 404).
+                if dependency.has_dependencies && !missing {
                     Box::pin(self.populate_asset_dependencies_recursive_by_uuid(
                         tenant_uuid,
                         child_node,
@@ -3896,96 +3856,6 @@ impl PhysnaApiClient {
         }
 
         Ok(())
-    }
-
-    async fn populate_asset_dependencies_recursive_by_path(
-        &mut self,
-        tenant_uuid: &Uuid,
-        root: &mut AssemblyNode,
-        root_path: &str,
-    ) -> Result<(), ApiError> {
-        let mut page: usize = 1;
-        let per_page: usize = 1000; // the API maximum for this endpoint
-
-        loop {
-            // Use the path-based pagination method
-            let response = self
-                .get_asset_dependencies_by_path_with_pagination(
-                    tenant_uuid,
-                    root_path,
-                    page,
-                    per_page,
-                )
-                .await?;
-
-            for dependency in response.dependencies {
-                // Convert dependency asset once, but only if it exists
-                let child_asset: Asset = if let Some(asset_response) = dependency.asset {
-                    asset_response.into()
-                } else {
-                    // Create a minimal Asset when full details are not available
-                    // Use the path to extract a name
-                    let name = dependency
-                        .path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&dependency.path)
-                        .to_string();
-                    Asset::new(
-                        Uuid::nil(), // Use nil UUID when not available
-                        name,
-                        dependency.path.clone(),
-                        None,                        // file_size
-                        None,                        // file_type
-                        Some("missing".to_string()), // processing_status
-                        None,                        // created_at
-                        None,                        // updated_at
-                        None,                        // metadata
-                        false, // is_assembly - default to false for missing dependencies
-                    )
-                };
-
-                // Insert into tree and get a mutable reference to the stored node
-                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset.clone()); // Clone the asset to avoid moving it
-
-                // Recurse on the stored child node if it has dependencies
-                if dependency.has_dependencies {
-                    Box::pin(self.populate_asset_dependencies_recursive_by_path(
-                        tenant_uuid,
-                        child_node,
-                        &dependency.path, // Use the dependency's path for recursion
-                    ))
-                    .await?;
-                }
-            }
-
-            // Pagination: stop when we've reached the last page
-            if page >= response.page_data.last_page {
-                break;
-            }
-            page += 1;
-        }
-
-        Ok(())
-    }
-
-    pub async fn get_asset_dependencies_by_path<S: AsRef<str>>(
-        &mut self,
-        tenant_uuid: &Uuid,
-        asset_path: S,
-    ) -> Result<AssemblyTree, ApiError> {
-        let asset_path = asset_path.as_ref();
-        let asset = self.get_asset_by_path(tenant_uuid, asset_path).await?;
-
-        let mut tree = AssemblyTree::new(asset);
-        // Use the path-based recursive function to populate dependencies
-        Box::pin(self.populate_asset_dependencies_recursive_by_path(
-            tenant_uuid,
-            tree.root_mut(),
-            asset_path,
-        ))
-        .await?;
-        Ok(tree)
     }
 
     /// Get asset dependencies by UUID
@@ -4055,6 +3925,328 @@ impl PhysnaApiClient {
         );
 
         Ok(response)
+    }
+
+    /// The tenant's reports, newest first as the API orders them.
+    ///
+    /// `GET /tenants/{tenantId}/reports?type&status&page&perPage`; every page
+    /// (`perPage=1000`, the maximum) unless `limit` stops it early.
+    pub async fn list_reports(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_type: Option<&str>,
+        status: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<crate::model::Report>, ApiError> {
+        const PER_PAGE: usize = 1000;
+        let mut filters = String::new();
+        if let Some(report_type) = report_type {
+            filters.push_str(&format!("&type={}", urlencoding::encode(report_type)));
+        }
+        if let Some(status) = status {
+            filters.push_str(&format!("&status={}", urlencoding::encode(status)));
+        }
+        let mut page = 1;
+        let mut reports = Vec::new();
+        loop {
+            let per_page = match limit {
+                Some(limit) => PER_PAGE.min(limit.saturating_sub(reports.len()).max(1)),
+                None => PER_PAGE,
+            };
+            let url = format!(
+                "{}/tenants/{}/reports?page={}&perPage={}{}",
+                self.base_url, tenant_uuid, page, per_page, filters
+            );
+            debug!("Reports request URL: {}", url);
+            let response: crate::model::ReportListResponse = self.get(&url).await?;
+            let last_page = response.page_data.last_page;
+            reports.extend(response.reports);
+            let enough = limit.is_some_and(|limit| reports.len() >= limit);
+            if enough || page >= last_page || page >= 1000 {
+                break;
+            }
+            page += 1;
+        }
+        if let Some(limit) = limit {
+            reports.truncate(limit);
+        }
+        Ok(reports)
+    }
+
+    /// One report. `GET /tenants/{tenantId}/reports/{id}`.
+    pub async fn get_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<crate::model::Report, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}",
+            self.base_url, tenant_uuid, report_id
+        );
+        let response: crate::model::SingleReportResponse = self.get(&url).await?;
+        Ok(response.report)
+    }
+
+    /// Delete a report. `DELETE /tenants/{tenantId}/reports/{id}`, 204.
+    pub async fn delete_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<(), ApiError> {
+        self.delete(&format!("/tenants/{}/reports/{}", tenant_uuid, report_id))
+            .await
+    }
+
+    /// Why a report failed, from the job service logs.
+    ///
+    /// `GET /tenants/{tenantId}/reports/{id}/failure-diagnostics`; same answer
+    /// shape as an asset's.
+    pub async fn get_report_failure_diagnostics(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+    ) -> Result<crate::model::FailureDiagnostics, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}/failure-diagnostics",
+            self.base_url, tenant_uuid, report_id
+        );
+        self.get(&url).await
+    }
+
+    /// Start a duplication report. `POST /tenants/{tenantId}/reports/duplication`, 201.
+    pub async fn create_duplication_report(
+        &mut self,
+        tenant_uuid: &Uuid,
+        request: &crate::model::CreateDuplicationReportRequest,
+    ) -> Result<crate::model::Report, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/duplication",
+            self.base_url, tenant_uuid
+        );
+        let response: crate::model::SingleReportResponse = self.post(&url, request).await?;
+        Ok(response.report)
+    }
+
+    /// Walk a paged asset listing, `perPage=1000` (the API maximum), until the
+    /// last page or `limit` assets. `url` carries the endpoint and any filter
+    /// query; the page parameters are appended.
+    async fn collect_asset_pages(
+        &mut self,
+        url: &str,
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        const PER_PAGE: usize = 1000;
+        let separator = if url.contains('?') { '&' } else { '?' };
+        let mut page = 1;
+        let mut assets: Vec<Asset> = Vec::new();
+        loop {
+            let per_page = match limit {
+                Some(limit) => PER_PAGE.min(limit.saturating_sub(assets.len()).max(1)),
+                None => PER_PAGE,
+            };
+            let page_url = format!("{url}{separator}page={page}&perPage={per_page}");
+            debug!("Asset listing request URL: {}", page_url);
+            let response: AssetListResponse = self.get(&page_url).await?;
+            let last_page = response.page_data.last_page;
+            assets.extend(response.assets.iter().map(Asset::from));
+            let enough = limit.is_some_and(|limit| assets.len() >= limit);
+            if enough || page >= last_page || page >= 1000 {
+                break;
+            }
+            page += 1;
+        }
+        if let Some(limit) = limit {
+            assets.truncate(limit);
+        }
+        Ok(AssetList::from(assets))
+    }
+
+    /// The assets that carry a value for a metadata field.
+    ///
+    /// `GET /tenants/{tenantId}/metadata-fields/{fieldId}/assets`, every page
+    /// unless `limit` stops it early.
+    pub async fn list_assets_using_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-fields/{}/assets",
+            self.base_url, tenant_uuid, field_id
+        );
+        self.collect_asset_pages(&url, limit).await
+    }
+
+    /// The assets that have no metadata value at all, oldest first.
+    ///
+    /// `GET /tenants/{tenantId}/assets/without-metadata`; `folders` and
+    /// `extensions` narrow it (comma-separated on the wire). Demo assets
+    /// uploaded by Physna are excluded by the server.
+    pub async fn list_assets_without_metadata(
+        &mut self,
+        tenant_uuid: &Uuid,
+        folders: &[String],
+        extensions: &[String],
+        limit: Option<usize>,
+    ) -> Result<AssetList, ApiError> {
+        let mut url = format!(
+            "{}/tenants/{}/assets/without-metadata",
+            self.base_url, tenant_uuid
+        );
+        let mut query: Vec<String> = Vec::new();
+        if !folders.is_empty() {
+            query.push(format!(
+                "folders={}",
+                urlencoding::encode(&folders.join(","))
+            ));
+        }
+        if !extensions.is_empty() {
+            query.push(format!(
+                "extensions={}",
+                urlencoding::encode(&extensions.join(","))
+            ));
+        }
+        if !query.is_empty() {
+            url.push('?');
+            url.push_str(&query.join("&"));
+        }
+        self.collect_asset_pages(&url, limit).await
+    }
+
+    /// How many of the tenant's assets carry at least one metadata value.
+    pub async fn get_metadata_coverage(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<crate::model::MetadataCoverageResponse, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-coverage",
+            self.base_url, tenant_uuid
+        );
+        self.get(&url).await
+    }
+
+    /// Rename a metadata field. `PATCH /tenants/{tenantId}/metadata-fields/{fieldId}`, 204.
+    pub async fn rename_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        new_name: &str,
+    ) -> Result<(), ApiError> {
+        let url = format!(
+            "{}/tenants/{}/metadata-fields/{}",
+            self.base_url, tenant_uuid, field_id
+        );
+        debug!("Renaming metadata field {} to '{}'", field_id, new_name);
+        self.patch_no_response(&url, &serde_json::json!({ "name": new_name }))
+            .await
+    }
+
+    /// Delete a metadata field. `DELETE /tenants/{tenantId}/metadata-fields/{fieldId}`, 204.
+    ///
+    /// Without `force` the server refuses a field that assets still use; with
+    /// it the field goes and its values are removed from every asset.
+    pub async fn delete_metadata_field(
+        &mut self,
+        tenant_uuid: &Uuid,
+        field_id: &Uuid,
+        force: bool,
+    ) -> Result<(), ApiError> {
+        debug!("Deleting metadata field {} (force: {})", field_id, force);
+        self.delete(&format!(
+            "/tenants/{}/metadata-fields/{}?force={}",
+            tenant_uuid, field_id, force
+        ))
+        .await
+    }
+
+    /// Link a missing dependency of an assembly to an existing asset.
+    ///
+    /// `POST /tenants/{tenantId}/assets/{assetId}/resolve-dependency` with
+    /// `{"resolvedAssetId", "dependencyPath"}`; the assembly is re-indexed with
+    /// the resolved dependency. `dependency_path` is the path string the
+    /// dependency listing reports for the missing part. Answers 204.
+    pub async fn resolve_asset_dependency(
+        &mut self,
+        tenant_uuid: &Uuid,
+        assembly_uuid: &Uuid,
+        dependency_path: &str,
+        resolved_asset_uuid: &Uuid,
+    ) -> Result<(), ApiError> {
+        let url = format!(
+            "{}/tenants/{}/assets/{}/resolve-dependency",
+            self.base_url, tenant_uuid, assembly_uuid
+        );
+        let body = serde_json::json!({
+            "resolvedAssetId": resolved_asset_uuid.to_string(),
+            "dependencyPath": dependency_path,
+        });
+        debug!(
+            "Resolving dependency '{}' of assembly {} with asset {}",
+            dependency_path, assembly_uuid, resolved_asset_uuid
+        );
+        self.post_no_response(&url, &body).await
+    }
+
+    /// Move an asset to another folder, or to the root when `folder_uuid` is `None`.
+    ///
+    /// `PATCH /tenants/{tenantId}/assets/{assetId}/folder` with `{"folderId": ...}`
+    /// (`null` for the root). The asset keeps its UUID; its path changes. Returns
+    /// the asset as the server now sees it.
+    pub async fn move_asset(
+        &mut self,
+        tenant_uuid: &Uuid,
+        asset_uuid: &Uuid,
+        folder_uuid: Option<Uuid>,
+    ) -> Result<Asset, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/assets/{}/folder",
+            self.base_url, tenant_uuid, asset_uuid
+        );
+        let body = serde_json::json!({ "folderId": folder_uuid.map(|id| id.to_string()) });
+        debug!(
+            "Moving asset {} to folder {}",
+            asset_uuid,
+            folder_uuid
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "root".to_string())
+        );
+        let response: crate::model::SingleAssetResponse = self.patch(&url, &body).await?;
+        Ok((&response.asset).into())
+    }
+
+    /// Which of `paths` already hold an asset, as a set of the strings asked about.
+    ///
+    /// `POST /tenants/{tenantId}/assets/existing-paths`: a path matches when an
+    /// asset with the same file name exists in the same folder (case-sensitive,
+    /// with or without a leading slash); paths in folders that do not exist are
+    /// never returned. The server echoes each matching path exactly as it was
+    /// sent, so the caller tests membership with the string it built. Requests
+    /// carry at most 1000 paths (the specification's maximum), so a larger batch
+    /// is sent in chunks; an empty batch makes no request.
+    pub async fn find_existing_asset_paths(
+        &mut self,
+        tenant_uuid: &Uuid,
+        paths: &[String],
+    ) -> Result<std::collections::HashSet<String>, ApiError> {
+        const MAX_PATHS_PER_REQUEST: usize = 1000;
+        let url = format!(
+            "{}/tenants/{}/assets/existing-paths",
+            self.base_url, tenant_uuid
+        );
+        let mut existing = std::collections::HashSet::new();
+        for chunk in paths.chunks(MAX_PATHS_PER_REQUEST) {
+            debug!(
+                "Checking {} path(s) for existing assets in tenant {}",
+                chunk.len(),
+                tenant_uuid
+            );
+            let response: crate::model::ExistingPathsResponse = self
+                .post(&url, &serde_json::json!({ "paths": chunk }))
+                .await?;
+            existing.extend(response.existing_paths);
+        }
+        Ok(existing)
     }
 
     /// Whether this deployment can look up why an asset failed.
@@ -4416,10 +4608,47 @@ impl PhysnaApiClient {
         asset_name_opt: Option<&str>,
         dest: &std::path::Path,
     ) -> Result<u64, ApiError> {
+        let what = format!("asset {}", describe_asset(asset_id, asset_name_opt));
+        let url = format!(
+            "{}/tenants/{}/assets/{}/file",
+            self.base_url, tenant_id, asset_id
+        );
+        self.download_url_to_file(&url, &what, dest).await
+    }
+
+    /// Download a report's data as CSV or XLSX straight to disk.
+    ///
+    /// `GET /tenants/{tenantId}/reports/{id}/file?format=csv|xlsx`; the report
+    /// must be COMPLETED. Same temporary-file discipline as an asset download.
+    pub async fn download_report_to_file(
+        &mut self,
+        tenant_uuid: &Uuid,
+        report_id: &Uuid,
+        format: &str,
+        dest: &std::path::Path,
+    ) -> Result<u64, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/reports/{}/file?format={}",
+            self.base_url, tenant_uuid, report_id, format
+        );
+        self.download_url_to_file(&url, &format!("report {}", report_id), dest)
+            .await
+    }
+
+    /// Stream a GET response body to `dest` through `<dest>.part`.
+    ///
+    /// `what` names the thing being downloaded in error messages. The part file
+    /// is removed on any failure; an empty body is a failure.
+    async fn download_url_to_file(
+        &mut self,
+        url: &str,
+        what: &str,
+        dest: &std::path::Path,
+    ) -> Result<u64, ApiError> {
         use futures::StreamExt;
         use tokio::io::AsyncWriteExt;
 
-        let asset_display = describe_asset(asset_id, asset_name_opt);
+        debug!("Download request URL: {}", url);
         if let Some(parent) = dest.parent() {
             if !parent.as_os_str().is_empty() {
                 tokio::fs::create_dir_all(parent).await?;
@@ -4433,9 +4662,11 @@ impl PhysnaApiClient {
         );
         let part_path = dest.with_file_name(part_name);
 
-        let mut stream = self
-            .download_asset_stream(tenant_id, asset_id, asset_name_opt)
-            .await?;
+        let response = self
+            .request_with_auth(|client| Ok(client.get(url)), true)
+            .await
+            .map_err(|e| e.about(what))?;
+        let mut stream = response.bytes_stream();
         let mut file = tokio::fs::File::create(&part_path).await?;
         let mut written: u64 = 0;
         let write_result: Result<(), ApiError> = async {
@@ -4458,17 +4689,14 @@ impl PhysnaApiClient {
             let _ = tokio::fs::remove_file(&part_path).await;
             return Err(ApiError::IoError(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!(
-                    "the server returned an empty file for asset {}",
-                    asset_display
-                ),
+                format!("the server returned an empty file for {}", what),
             )));
         }
         tokio::fs::rename(&part_path, dest).await?;
         debug!(
-            "Downloaded {} bytes for asset {} to {}",
+            "Downloaded {} bytes for {} to {}",
             written,
-            asset_display,
+            what,
             dest.display()
         );
         Ok(written)
@@ -4525,13 +4753,21 @@ impl PhysnaApiClient {
         Ok(bytes.to_vec())
     }
 
-    /// Create a specialized client for upload operations with appropriate timeout
+    /// Create a specialized client for upload operations with appropriate timeout.
+    ///
+    /// The clone shares the token slot and the renewal lock with `self`, so a
+    /// renewal in either is seen by both. When no separate upload timeout is
+    /// configured (the default today) the plain clone is returned, so the
+    /// connection pool is shared too.
     pub fn for_upload_operations(&self) -> Self {
         let timeout = self
             .http_client
             .config()
             .upload_timeout
             .unwrap_or(self.http_client.config().timeout);
+        if timeout == self.http_client.config().timeout {
+            return self.clone();
+        }
         let http_client_with_upload_timeout =
             match crate::http_utils::HttpClient::new_with_timeout(timeout) {
                 Ok(client) => client,
@@ -4597,42 +4833,43 @@ impl PhysnaApiClient {
         }
     }
 
-    /// Retrieve multiple assets by their UUIDs concurrently with controlled parallelism
-    /// This is more efficient than sequential API calls for multiple assets
+    /// The assets with the given UUIDs, in the order they were asked for.
+    ///
+    /// `POST /tenants/{tenantId}/assets/batch`, at most 1000 ids per request
+    /// (the specification's maximum), so a longer list goes out in chunks.
+    /// Duplicate ids are asked about once. An id the tenant does not have is
+    /// simply absent from the result: use [`missing_asset_ids`] to find out
+    /// which. An empty list makes no request.
     pub async fn get_assets_batch(
         &mut self,
         tenant_uuid: &Uuid,
         asset_uuids: &[Uuid],
     ) -> Result<Vec<Asset>, ApiError> {
-        use futures::stream;
-        use futures::stream::StreamExt;
-
-        // Process assets concurrently but with limited parallelism to avoid overwhelming the API
-        const MAX_CONCURRENT_REQUESTS: usize = 10;
-
-        let results: Vec<Result<Asset, ApiError>> = stream::iter(asset_uuids)
-            .map(|asset_uuid| {
-                let mut client = self.clone(); // Clone client for the async operation
-                let tenant_uuid = *tenant_uuid;
-                let asset_uuid = *asset_uuid;
-
-                async move { client.get_asset_by_uuid(&tenant_uuid, &asset_uuid).await }
-            })
-            .buffer_unordered(MAX_CONCURRENT_REQUESTS)
-            .collect()
-            .await;
-
-        // Collect all successful results, ignoring errors for now
-        // In a more robust implementation, we might want to handle individual errors differently
-        let mut assets = Vec::new();
-        for result in results {
-            match result {
-                Ok(asset) => assets.push(asset),
-                Err(e) => return Err(e), // Return first error encountered
+        const MAX_IDS_PER_REQUEST: usize = 1000;
+        let mut wanted: Vec<Uuid> = Vec::with_capacity(asset_uuids.len());
+        for id in asset_uuids {
+            if !wanted.contains(id) {
+                wanted.push(*id);
             }
         }
-
-        Ok(assets)
+        let url = format!("{}/tenants/{}/assets/batch", self.base_url, tenant_uuid);
+        let mut found: std::collections::HashMap<Uuid, Asset> =
+            std::collections::HashMap::with_capacity(wanted.len());
+        for chunk in wanted.chunks(MAX_IDS_PER_REQUEST) {
+            debug!(
+                "Fetching {} asset(s) by id from tenant {}",
+                chunk.len(),
+                tenant_uuid
+            );
+            let response: crate::model::AssetListResponse = self
+                .post(&url, &serde_json::json!({ "assetIds": chunk }))
+                .await?;
+            for asset in &response.assets {
+                let asset: Asset = asset.into();
+                found.insert(asset.uuid(), asset);
+            }
+        }
+        Ok(wanted.iter().filter_map(|id| found.remove(id)).collect())
     }
 
     /// Reprocess a single asset by its UUID
@@ -5100,13 +5337,26 @@ fn describe_asset(asset_id: &str, asset_name: Option<&str>) -> String {
 ///
 /// Applied to whichever attempt failed, so a file with an unsupported extension
 /// gets the same explanation whether or not the first try also hit an expired token.
+/// Errors of a new upload. A 409 here means the path is taken.
 fn map_upload_error(error: ApiError) -> ApiError {
     match error {
         ApiError::ConflictError(_) => ApiError::ConflictError(
             "Asset already exists. Please use a different filename or delete the existing asset first."
                 .to_string(),
         ),
-        ApiError::HttpStatus { status: 422, message } => ApiError::HttpStatus {
+        other => map_file_error(other),
+    }
+}
+
+/// Errors any file transfer to the API can produce, worded for the user. A
+/// 409 is left as the server phrased it: for a replacement it does not mean
+/// "the path is taken".
+fn map_file_error(error: ApiError) -> ApiError {
+    match error {
+        ApiError::HttpStatus {
+            status: 422,
+            message,
+        } => ApiError::HttpStatus {
             status: 422,
             message: format!(
                 "Invalid request data. Please check your input and try again. ({})",
@@ -5148,6 +5398,18 @@ fn parse_created_asset(text: &str) -> Result<Asset, ApiError> {
             }
         },
     }
+}
+
+/// Which of `requested` have no asset in `found`, in request order, once each.
+pub fn missing_asset_ids(requested: &[Uuid], found: &[Asset]) -> Vec<Uuid> {
+    let present: std::collections::HashSet<Uuid> = found.iter().map(|a| a.uuid()).collect();
+    let mut missing = Vec::new();
+    for id in requested {
+        if !present.contains(id) && !missing.contains(id) {
+            missing.push(*id);
+        }
+    }
+    missing
 }
 
 /// Helper function to extract file extension from error message

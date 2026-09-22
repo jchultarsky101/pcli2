@@ -11,6 +11,7 @@ built for scripts (JSON, CSV, Excel) as much as for people.
 - [Geometric Matching](geometric-matching.md) - Finding similar assets, for one asset or a whole folder
 - [Metadata Operations](metadata-operations.md) - Reading, writing and bulk-loading metadata
 - [Metadata Inference](metadata-inference.md) - Propagating metadata to geometrically similar assets
+- [Reports](reports.md) - Listing, downloading, explaining and starting the server-side reports
 - [Scripting and Automation](scripting.md) - Machine-friendly output, JSON errors, exit codes, prompts, resumable runs, retries, CI
 - [Cross-Platform Configuration](cross_platform.md) - Environment variables and file locations
 - [Documentation Deployment](documentation_deployment.md) - How this site is built
@@ -25,7 +26,11 @@ built for scripts (JSON, CSV, Excel) as much as for people.
 - Folder tree listing, creation, renaming, moving, bulk upload and download
 - Geometric, part and visual matching, single-asset or folder-wide, with CSV and
   Excel reports
-- Metadata fields: create, read, delete, bulk-load from CSV, infer from matches
+- Metadata fields: create, read, delete, bulk-load from CSV, infer from matches;
+  rename and delete registered fields, see which assets use them and how many
+  have none
+- Reports: list, download (CSV/XLSX), explain a failed one, start a duplication
+  report and wait for it
 - Resumable runs: downloads skip files already on disk, uploads skip assets
   already in the folder, folder matches continue from a checkpoint file
 - Retries with backoff for transient failures, and exit codes that say what

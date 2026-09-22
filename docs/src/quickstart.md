@@ -87,11 +87,12 @@ The `asset create` command uploads individual files to your Physna tenant, placi
 # Upload a single asset
 pcli2 asset create --input path/to/my/model.stl --folder-path /Home/MyFolder/
 
-# Replace an existing asset (deletes the old one first)
+# Replace an existing asset's file in place (same UUID, path and metadata; re-indexed)
 pcli2 asset create --input path/to/my/model.stl --folder-path /Home/MyFolder/ --override
 
-# Replace an existing asset and keep its metadata
-pcli2 asset create --input path/to/my/model.stl --folder-path /Home/MyFolder/ --override --restore-metadata
+# A file with a different extension is deleted and uploaded again instead;
+# --restore-metadata re-applies the old asset's metadata in that case
+pcli2 asset create --input path/to/my/model.step --folder-path /Home/MyFolder/ --override --restore-metadata
 ```
 
 For bulk operations, `asset create-batch` allows you to upload multiple files at once using glob patterns:
@@ -111,6 +112,9 @@ pcli2 asset get --path /Home/MyFolder/model.stl
 
 # Delete an asset
 pcli2 asset delete --path /Home/MyFolder/model.stl
+
+# Move an asset to another folder (it keeps its UUID and metadata)
+pcli2 asset move --path /Home/MyFolder/model.stl --folder-path /Home/Archive
 
 # See what failed to process lately, then ask the server why
 pcli2 tenant failures --kind asset --format csv --headers

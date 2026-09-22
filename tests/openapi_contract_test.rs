@@ -268,6 +268,21 @@ fn contracts() -> Vec<Contract> {
         contract!("get", "/tenants/{tenantId}/assets", AssetListResponse),
         contract!("post", "/tenants/{tenantId}/assets", AssetResponse),
         contract!(
+            "post",
+            "/tenants/{tenantId}/assets/batch",
+            AssetListResponse
+        ),
+        contract!(
+            "patch",
+            "/tenants/{tenantId}/assets/{assetId}/folder",
+            SingleAssetResponse
+        ),
+        contract!(
+            "put",
+            "/tenants/{tenantId}/assets/{assetId}/file",
+            AssetResponse
+        ),
+        contract!(
             "get",
             "/tenants/{tenantId}/assets/{assetId}",
             SingleAssetResponse
@@ -282,6 +297,21 @@ fn contracts() -> Vec<Contract> {
             "get",
             "/tenants/{tenantId}/metadata-fields",
             MetadataFieldListResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/metadata-fields/{fieldId}/assets",
+            AssetListResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/assets/without-metadata",
+            AssetListResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/metadata-coverage",
+            MetadataCoverageResponse
         ),
         contract!(
             "post",
@@ -306,7 +336,7 @@ fn contracts() -> Vec<Contract> {
         ),
         contract!(
             "get",
-            "/tenants/{tenantId}/assets/{assetPath}/dependencies",
+            "/tenants/{tenantId}/assets/{assetId}/dependencies-by-id",
             AssetDependenciesResponse
         ),
         contract!(
@@ -320,6 +350,27 @@ fn contracts() -> Vec<Contract> {
             FailureDiagnosticsAvailability
         ),
         contract!("get", "/tenants/{tenantId}/failures", RecentFailuresPage),
+        contract!("get", "/tenants/{tenantId}/reports", ReportListResponse),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/reports/{id}",
+            SingleReportResponse
+        ),
+        contract!(
+            "post",
+            "/tenants/{tenantId}/reports/duplication",
+            SingleReportResponse
+        ),
+        contract!(
+            "get",
+            "/tenants/{tenantId}/reports/{id}/failure-diagnostics",
+            FailureDiagnostics
+        ),
+        contract!(
+            "post",
+            "/tenants/{tenantId}/assets/existing-paths",
+            ExistingPathsResponse
+        ),
         contract!("get", "/tenants/{tenantId}/users", UserListResponse),
         contract!(
             "get",
@@ -339,7 +390,15 @@ const OTHER_ENDPOINTS: &[(&str, &str)] = &[
     ("get", "/tenants/{tenantId}/assets/{assetId}/file"),
     ("get", "/tenants/{tenantId}/assets/{assetId}/thumbnail.png"),
     ("post", "/tenants/{tenantId}/assets/{assetId}/reprocess"),
+    (
+        "post",
+        "/tenants/{tenantId}/assets/{assetId}/resolve-dependency",
+    ),
     ("post", "/tenants/{tenantId}/metadata-fields"),
+    ("patch", "/tenants/{tenantId}/metadata-fields/{fieldId}"),
+    ("delete", "/tenants/{tenantId}/metadata-fields/{fieldId}"),
+    ("delete", "/tenants/{tenantId}/reports/{id}"),
+    ("get", "/tenants/{tenantId}/reports/{id}/file"),
 ];
 
 /// Every endpoint above, for the drift check.
@@ -473,10 +532,10 @@ fn hard_coded_enumerations_match_the_spec() {
     );
     // The role the 403 hint tells the user to ask for.
     assert!(values("TenantRole").iter().any(|r| r == "author"));
-    // Dependency statuses the diff and print commands know about.
+    // Dependency statuses: `resolve-dependency` and the tree builder branch on them.
     assert_eq!(
         values("DependencyStatus"),
-        ["matched", "resolved", "missing"]
+        pcli2::model::DependencyStatus::ALL
     );
 
     // Failure diagnostics: the statuses `asset diagnose` branches on and the
@@ -502,6 +561,10 @@ fn hard_coded_enumerations_match_the_spec() {
         property_values("RecentFailureItem", "kind"),
         pcli2::model::FailureSource::ALL
     );
+    // Reports: the statuses `report create --wait` stops on and the types
+    // `report list --type` accepts.
+    assert_eq!(values("JobStatus"), pcli2::model::JobStatus::ALL);
+    assert_eq!(values("ReportType"), pcli2::model::ReportType::ALL);
     let mut counts: Vec<String> = spec["components"]["schemas"]["ListRecentFailuresResponse"]
         ["properties"]["countsByKind"]["required"]
         .as_array()
@@ -527,9 +590,15 @@ fn page_sizes_the_client_uses_are_within_the_spec_maximum() {
         ("/tenants/{tenantId}/folders/{folderId}/contents", 1000),
         ("/tenants/{tenantId}/assets", 1000),
         ("/tenants/{tenantId}/metadata-fields", 1000),
-        ("/tenants/{tenantId}/assets/{assetPath}/dependencies", 1000),
+        (
+            "/tenants/{tenantId}/assets/{assetId}/dependencies-by-id",
+            1000,
+        ),
         ("/tenants/{tenantId}/users", 100),
         ("/tenants/{tenantId}/failures", 100),
+        ("/tenants/{tenantId}/metadata-fields/{fieldId}/assets", 1000),
+        ("/tenants/{tenantId}/assets/without-metadata", 1000),
+        ("/tenants/{tenantId}/reports", 1000),
     ] {
         let parameters = spec["paths"][path]["get"]["parameters"]
             .as_array()

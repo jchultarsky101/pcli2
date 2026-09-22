@@ -20,8 +20,10 @@ pub mod list;
 pub mod match_ops;
 pub mod metadata;
 pub mod metadata_batch_csv;
+pub mod move_asset;
 pub mod print;
 pub mod reprocess;
+pub mod resolve_dependency;
 pub mod similarity;
 
 pub use create::{
@@ -38,8 +40,10 @@ pub use match_ops::{
     visual_match_asset, visual_match_folder,
 };
 pub use metadata::metadata_inference;
+pub use move_asset::move_asset;
 pub use print::{
     print_asset, print_asset_dependencies, print_asset_metadata, print_folder_dependencies,
 };
 pub use reprocess::reprocess_asset;
+pub use resolve_dependency::resolve_asset_dependency;
 pub use similarity::asset_similarity;

@@ -6,17 +6,19 @@
 use crate::commands::metadata::metadata_command;
 use crate::commands::params::{
     asset_identifier_group, asset_identifier_multiple_group, candidate_identifier_group,
-    candidate_path_parameter, candidate_uuid_parameter, dry_run_parameter, folder_identifier_group,
-    folder_path_parameter, folder_uuid_parameter, format_parameter, format_pretty_parameter,
-    format_with_headers_parameter, format_with_metadata_parameter, input_parameter,
-    limit_parameter, output_file_parameter, override_parameter, path_parameter,
+    candidate_path_parameter, candidate_uuid_parameter, dependency_parameter, dry_run_parameter,
+    folder_identifier_group, folder_path_parameter, folder_uuid_parameter, format_parameter,
+    format_pretty_parameter, format_with_headers_parameter, format_with_metadata_parameter,
+    input_parameter, limit_parameter, output_file_parameter, override_parameter, path_parameter,
     reference_identifier_group, reference_path_parameter, reference_uuid_parameter,
-    restore_metadata_parameter, tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_COUNTS,
+    restore_metadata_parameter, target_identifier_group, target_path_parameter,
+    target_uuid_parameter, tenant_parameter, uuid_parameter, COMMAND_ASSET, COMMAND_COUNTS,
     COMMAND_CREATE, COMMAND_CREATE_BATCH, COMMAND_DELETE, COMMAND_DEPENDENCIES,
     COMMAND_DEPENDENCY_DIFF, COMMAND_DIAGNOSE, COMMAND_DOWNLOAD, COMMAND_FULL_INVENTORY,
-    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_PART_MATCH, COMMAND_REPROCESS,
-    COMMAND_SIMILARITY, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL, COMMAND_VISUAL_MATCH, FORMAT_CSV,
-    FORMAT_JSON, FORMAT_TREE, PARAMETER_FUZZY, PARAMETER_PROGRESS,
+    COMMAND_GET, COMMAND_LIST, COMMAND_MATCH, COMMAND_MOVE, COMMAND_PART_MATCH, COMMAND_REPROCESS,
+    COMMAND_RESOLVE_DEPENDENCY, COMMAND_SIMILARITY, COMMAND_TEXT_MATCH, COMMAND_THUMBNAIL,
+    COMMAND_VISUAL_MATCH, FORMAT_CSV, FORMAT_JSON, FORMAT_TREE, PARAMETER_FUZZY,
+    PARAMETER_PROGRESS,
 };
 use clap::{Arg, ArgAction, Command};
 
@@ -30,7 +32,11 @@ pub fn asset_command() -> Command {
                 .about("Get asset details")
                 .visible_alias("cat")
                 .arg(tenant_parameter())
-                .arg(uuid_parameter())
+                .arg(
+                    uuid_parameter()
+                        .action(ArgAction::Append)
+                        .help("Asset UUID; repeat it to fetch several assets in one request"),
+                )
                 .arg(path_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
@@ -285,6 +291,46 @@ pub fn asset_command() -> Command {
             .arg(uuid_parameter())
             .arg(path_parameter())
             .group(asset_identifier_group()), // Use the standard asset identifier group to ensure either UUID or path is provided, but not both
+    )
+    .subcommand(
+        Command::new(COMMAND_RESOLVE_DEPENDENCY)
+            .visible_alias("resolve-dep")
+            .about("Link a missing dependency of an assembly to an existing asset")
+            .long_about(
+                "Link a missing dependency of an assembly to an existing asset.\n\n\
+                 An assembly whose referenced part was not found stays in the \
+                 `missing-dependencies` state. Pick the missing path from 'asset dependencies' \
+                 and name the asset that should stand in for it; the server re-indexes the \
+                 assembly with that part. The dependency must be one of the assembly's missing \
+                 ones, or the command stops and lists them.",
+            )
+            .arg(tenant_parameter())
+            .arg(uuid_parameter().help("UUID of the assembly"))
+            .arg(path_parameter().help("Path of the assembly (e.g., /Root/Child/top.asm)"))
+            .group(asset_identifier_group())
+            .arg(dependency_parameter())
+            .arg(target_uuid_parameter())
+            .arg(target_path_parameter())
+            .group(target_identifier_group())
+            .arg(dry_run_parameter()),
+    )
+    .subcommand(
+        Command::new(COMMAND_MOVE)
+            .visible_alias("mv")
+            .about("Move an asset to another folder (or to the root with --folder-path /)")
+            .arg(tenant_parameter())
+            .arg(uuid_parameter())
+            .arg(path_parameter())
+            .group(asset_identifier_group())
+            .arg(folder_uuid_parameter())
+            // `-p` belongs to --path here; the destination has no short form.
+            .arg(
+                folder_path_parameter()
+                    .short(None)
+                    .help("Destination folder path; '/' or '/Home' is the root"),
+            )
+            .group(folder_identifier_group())
+            .arg(dry_run_parameter()),
     )
     .subcommand(
         Command::new(COMMAND_DIAGNOSE)

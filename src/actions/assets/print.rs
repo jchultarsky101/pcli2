@@ -36,18 +36,49 @@ pub async fn print_asset(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let format = format_params.format;
     let with_metadata = format_params.format_options.with_metadata;
 
-    let asset_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_UUID);
+    let asset_uuids: Vec<Uuid> = sub_matches
+        .get_many::<Uuid>(PARAMETER_UUID)
+        .map(|uuids| uuids.copied().collect())
+        .unwrap_or_default();
     let asset_path_param = sub_matches.get_one::<String>(PARAMETER_PATH);
 
     // Extract tenant UUID before calling resolve_asset to avoid borrowing conflicts
     let tenant_uuid = *ctx.tenant_uuid();
+
+    // Several UUIDs: one batch request, printed as a list. Every id must be
+    // found, or nothing is printed and the missing ones are named.
+    if asset_uuids.len() > 1 {
+        if asset_path_param.is_some() {
+            crate::error_utils::report_warning(
+                &"--path is ignored when several --uuid values are given",
+            );
+        }
+        let progress = crate::terminal::spinner("Fetching assets...");
+        let assets = ctx.api().get_assets_batch(&tenant_uuid, &asset_uuids).await;
+        progress.finish_and_clear();
+        let assets = assets?;
+        let missing = crate::physna_v3::missing_asset_ids(&asset_uuids, &assets);
+        if !missing.is_empty() {
+            let ids: Vec<String> = missing.iter().map(|id| id.to_string()).collect();
+            return Err(crate::physna_v3::ApiError::NotFoundError(format!(
+                "{} of {} asset(s) not found: {}",
+                missing.len(),
+                asset_uuids.len(),
+                ids.join(", ")
+            ))
+            .into());
+        }
+        let list = crate::model::AssetList::from(assets);
+        crate::format::print_output(&list.format(format)?);
+        return Ok(());
+    }
 
     // Resolve asset ID from either UUID parameter or path using the helper function
     let progress = crate::terminal::spinner("Fetching asset...");
     let asset = crate::actions::utils::resolve_asset(
         ctx.api(),
         &tenant_uuid,
-        asset_uuid_param,
+        asset_uuids.first(),
         asset_path_param,
     )
     .await;
@@ -100,7 +131,7 @@ pub async fn print_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), Cl
     // Get the full assembly tree with all recursive dependencies
     let assembly_tree = ctx
         .api()
-        .get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str())
+        .get_asset_dependencies_by_uuid(&tenant_uuid, &asset.uuid())
         .await?;
 
     // For tree and JSON formats, output the assembly tree directly to preserve hierarchy
@@ -238,12 +269,16 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
             .list_assets_by_parent_folder_path(&tenant_uuid, folder_path)
             .await?;
 
-        // Count total assemblies in this folder for progress tracking
-        let assemblies: Vec<_> = assets_response
+        // Count total assemblies in this folder for progress tracking. The
+        // listing is a map, so it is sorted by path here: otherwise the JSON
+        // and tree output listed the assemblies in a different order on every
+        // run (the CSV path sorts its rows itself).
+        let mut assemblies: Vec<_> = assets_response
             .get_all_assets()
             .into_iter()
             .filter(|asset| asset.is_assembly())
             .collect();
+        assemblies.sort_by_key(|a| a.path());
 
         // Create individual progress bar for this folder if progress is enabled
         let folder_progress = if let Some((ref mp, _)) = multi_progress {
@@ -277,7 +312,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
             // Get the full assembly tree with all recursive dependencies for this asset
             let assembly_tree = ctx
                 .api()
-                .get_asset_dependencies_by_path(&tenant_uuid, asset.path().as_str())
+                .get_asset_dependencies_by_uuid(&tenant_uuid, &asset.uuid())
                 .await?;
 
             // For tree and JSON formats, we'll collect the assembly trees to preserve hierarchy

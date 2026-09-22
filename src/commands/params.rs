@@ -28,8 +28,15 @@ pub const COMMAND_TEXT_MATCH: &str = "text-match"; // Allow non snake case since
 pub const COMMAND_SIMILARITY: &str = "similarity";
 pub const COMMAND_REPROCESS: &str = "reprocess";
 pub const COMMAND_DIAGNOSE: &str = "diagnose";
+pub const COMMAND_MOVE: &str = "move";
+pub const COMMAND_RESOLVE_DEPENDENCY: &str = "resolve-dependency";
+pub const PARAMETER_DEPENDENCY: &str = "dependency";
+pub const PARAMETER_TARGET_UUID: &str = "target-uuid";
+pub const PARAMETER_TARGET_PATH: &str = "target-path";
 pub const COMMAND_FAILURES: &str = "failures";
 pub const PARAMETER_KIND: &str = "kind";
+pub const PARAMETER_NEW_NAME: &str = "new-name";
+pub const PARAMETER_EXTENSION: &str = "extension";
 pub const COMMAND_COUNTS: &str = "counts";
 pub const COMMAND_FULL_INVENTORY: &str = "inventory";
 pub const PARAMETER_FUZZY: &str = "fuzzy";
@@ -417,6 +424,42 @@ pub fn candidate_identifier_group() -> ArgGroup {
         .args([PARAMETER_CANDIDATE_UUID, PARAMETER_CANDIDATE_PATH])
         .multiple(false)
         .required(true)
+}
+
+/// The UUID of the asset a missing dependency is resolved with.
+pub fn target_uuid_parameter() -> Arg {
+    Arg::new(PARAMETER_TARGET_UUID)
+        .long(PARAMETER_TARGET_UUID)
+        .num_args(1)
+        .required(false) // used in a group with --target-path
+        .value_parser(clap::value_parser!(Uuid))
+        .help("UUID of the existing asset to stand in for the missing dependency")
+}
+
+/// The path of the asset a missing dependency is resolved with.
+pub fn target_path_parameter() -> Arg {
+    Arg::new(PARAMETER_TARGET_PATH)
+        .long(PARAMETER_TARGET_PATH)
+        .num_args(1)
+        .required(false) // used in a group with --target-uuid
+        .help("Path of the existing asset to stand in for the missing dependency (e.g., /Root/Child/part.stl)")
+}
+
+/// Target asset identifier group: exactly one of --target-uuid or --target-path.
+pub fn target_identifier_group() -> ArgGroup {
+    ArgGroup::new("target-identifier")
+        .args([PARAMETER_TARGET_UUID, PARAMETER_TARGET_PATH])
+        .multiple(false)
+        .required(true)
+}
+
+/// The dependency path as `asset dependencies` prints it.
+pub fn dependency_parameter() -> Arg {
+    Arg::new(PARAMETER_DEPENDENCY)
+        .long(PARAMETER_DEPENDENCY)
+        .num_args(1)
+        .required(true)
+        .help("The missing dependency's path, exactly as 'asset dependencies' lists it")
 }
 
 /// Create the name parameter.

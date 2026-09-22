@@ -6,6 +6,7 @@ pub mod completions;
 pub mod doctor;
 pub mod folders;
 pub mod man;
+pub mod reports;
 pub mod tenants;
 pub mod users;
 pub mod utils;

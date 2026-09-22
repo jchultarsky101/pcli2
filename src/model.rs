@@ -819,6 +819,24 @@ impl FolderResponse {
     }
 }
 
+/// Serialize a map with its keys in sorted order.
+///
+/// `HashMap` iterates in a different order on every run, so metadata in JSON output
+/// came out shuffled and two runs over the same data were never byte-identical,
+/// although the folder match help promises exactly that. Stored as a `HashMap`,
+/// written as if it were a `BTreeMap`.
+pub(crate) fn serialize_sorted<S, V>(
+    map: &HashMap<String, V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+    V: Serialize,
+{
+    let sorted: std::collections::BTreeMap<&String, &V> = map.iter().collect();
+    sorted.serialize(serializer)
+}
+
 // Asset models for Physna V3 API
 
 /// Represents an asset response from the Physna V3 API
@@ -852,7 +870,7 @@ pub struct AssetResponse {
     pub is_assembly: bool,
     /// Metadata associated with the asset. Defaulted so one item without the field
     /// does not fail a whole page of two hundred.
-    #[serde(rename = "metadata", default)]
+    #[serde(rename = "metadata", default, serialize_with = "serialize_sorted")]
     pub metadata: std::collections::HashMap<String, serde_json::Value>,
     /// The ID of the parent folder, if any
     #[serde(rename = "parentFolderId", skip_serializing_if = "Option::is_none")]
@@ -994,6 +1012,7 @@ impl Default for PageData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct AssetMetadata {
+    #[serde(serialize_with = "serialize_sorted")]
     meta: HashMap<String, String>,
 }
 
@@ -1445,8 +1464,12 @@ impl AssetList {
     ///
     /// # Returns
     /// A vector containing all assets in the AssetList
+    /// Every asset, ordered by path (then UUID), so whatever is built from the list
+    /// comes out the same way on every run.
     pub fn get_all_assets(&self) -> Vec<&Asset> {
-        self.assets.values().collect()
+        let mut assets: Vec<&Asset> = self.assets.values().collect();
+        assets.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.uuid.cmp(&b.uuid)));
+        assets
     }
 }
 
@@ -1657,6 +1680,7 @@ pub struct FilterData {
     /// Folders filter information
     pub folders: Vec<FilterCount>,
     /// Metadata filter information
+    #[serde(serialize_with = "serialize_sorted")]
     pub metadata: std::collections::HashMap<String, serde_json::Value>,
 }
 
@@ -2053,6 +2077,14 @@ impl From<AssetDependenciesResponse> for AssetDependencyList {
 pub struct AssemblyNode {
     asset: Asset,
     children: Option<Vec<AssemblyNode>>,
+    /// How many times the parent assembly uses this part (a bolt used four times
+    /// is one dependency with four occurrences).
+    #[serde(default = "one_occurrence")]
+    occurrences: u32,
+}
+
+fn one_occurrence() -> u32 {
+    1
 }
 
 impl AssemblyNode {
@@ -2060,7 +2092,20 @@ impl AssemblyNode {
         Self {
             asset,
             children: None,
+            occurrences: 1,
         }
+    }
+
+    /// How many times the parent assembly uses this node's asset.
+    pub fn occurrences(&self) -> u32 {
+        self.occurrences
+    }
+
+    /// Add a dependency used `occurrences` times, returning the stored node.
+    pub fn add_dependency_mut(&mut self, asset: Asset, occurrences: u32) -> &mut AssemblyNode {
+        let child = self.add_child_mut(asset);
+        child.occurrences = occurrences;
+        child
     }
 
     pub fn asset(&self) -> &Asset {
@@ -2732,7 +2777,13 @@ pub struct AssetHealthReport {
     pub missing_dependencies: u32,
     pub assemblies: u32,
     pub parts: u32,
+    #[serde(serialize_with = "serialize_sorted")]
     pub file_types: HashMap<String, u32>,
+    /// Assets in a state none of the counters above covers (a state added to the
+    /// API later, or none at all). Without it the counters did not add up to
+    /// `total`, with nothing to explain the gap.
+    #[serde(default)]
+    pub other: u32,
 }
 
 impl AssetHealthReport {
@@ -2748,6 +2799,7 @@ impl AssetHealthReport {
             assemblies: 0,
             parts: 0,
             file_types: HashMap::new(),
+            other: 0,
         };
 
         for asset in assets.iter() {
@@ -2760,7 +2812,7 @@ impl AssetHealthReport {
                 Some("unsupported") => report.unsupported += 1,
                 Some("no-3d-data") => report.no_3d_data += 1,
                 Some("missing-dependencies") => report.missing_dependencies += 1,
-                _ => {}
+                _ => report.other += 1,
             }
 
             if asset.is_assembly() {
@@ -3195,5 +3247,46 @@ mod unknown_enum_value_tests {
             !JobStatus::Unknown.is_terminal(),
             "keep polling an unknown status"
         );
+    }
+}
+
+#[cfg(test)]
+mod deterministic_output_tests {
+    use super::*;
+
+    #[test]
+    fn metadata_is_written_in_key_order() {
+        let meta: HashMap<String, serde_json::Value> =
+            ["Weight", "Material", "b", "A", "Finish", "material"]
+                .iter()
+                .map(|k| (k.to_string(), serde_json::json!(k)))
+                .collect();
+        let asset = AssetResponse {
+            uuid: Uuid::nil(),
+            tenant_id: Uuid::nil(),
+            path: "/a.stl".into(),
+            folder_id: None,
+            asset_type: String::new(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            state: String::new(),
+            is_assembly: false,
+            metadata: meta,
+            parent_folder_id: None,
+            owner_id: None,
+        };
+        let json = serde_json::to_string(&asset).unwrap();
+        let keys: Vec<&str> = [
+            "\"A\"",
+            "\"Finish\"",
+            "\"Material\"",
+            "\"Weight\"",
+            "\"b\"",
+            "\"material\"",
+        ]
+        .into_iter()
+        .collect();
+        let positions: Vec<usize> = keys.iter().map(|k| json.find(k).unwrap()).collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{json}");
     }
 }

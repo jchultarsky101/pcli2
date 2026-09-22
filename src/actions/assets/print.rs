@@ -455,7 +455,7 @@ fn collect_dependencies_recursive(
         let asset_dependency = crate::model::AssetDependency {
             path: child.asset().path(),
             asset: Some(asset_response),
-            occurrences: 1, // Default occurrence count
+            occurrences: child.occurrences(),
             has_dependencies: child.has_children(),
             assembly_path: current_assembly_path.clone(), // Clone to use in both places
             original_asset_path: None, // This will be set when processing folder dependencies

@@ -224,7 +224,7 @@ pcli2 folder geometric-match --folder-path /Home/FolderA/ --folder-path /Home/Fo
 Control how many simultaneous operations are performed (range: 1-10, default: 1):
 
 ```bash
-# Use 8 concurrent operations (default is 1, maximum is 10)
+# Use 8 concurrent operations (default is 4, maximum is 10)
 pcli2 folder geometric-match --folder-path /Home/SearchFolder/ --concurrent 8
 
 # Use the default (1 concurrent operation)

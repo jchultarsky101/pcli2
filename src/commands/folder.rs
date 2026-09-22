@@ -139,7 +139,7 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during download"),
                 )
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent downloads (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent downloads (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
@@ -218,7 +218,7 @@ pub fn folder_command() -> Command {
                     "Output file path, used with --format xls (default: match_report.xlsx)",
                 ))
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
@@ -262,7 +262,7 @@ pub fn folder_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
@@ -307,7 +307,7 @@ pub fn folder_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
@@ -348,7 +348,7 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during upload"),
                 )
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent uploads (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent uploads (range: 1-10)"),
                 )
                 .arg(crate::commands::params::delay_parameter("Delay in seconds between uploads (range: 0-180)"))
                 .arg(
@@ -379,7 +379,7 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during download"),
                 )
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent downloads (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent downloads (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)

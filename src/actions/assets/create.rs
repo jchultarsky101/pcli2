@@ -577,7 +577,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     // One listing per distinct parent folder, and one registry fetch, for the
     // whole run. Both used to happen once per row: a 5,000-row batch into a
     // 10,000-asset folder was a quarter of a million requests.
-    let mut folder_listings: std::collections::HashMap<String, crate::model::AssetList> =
+    let mut folder_listings: std::collections::HashMap<String, Option<crate::model::AssetList>> =
         std::collections::HashMap::new();
     let mut field_registry = api.fetch_metadata_field_types(&tenant.uuid).await?;
     let mut auth_failure_occurred = false;
@@ -1123,18 +1123,29 @@ async fn asset_by_path_cached(
     api: &mut PhysnaApiClient,
     tenant_uuid: &uuid::Uuid,
     asset_path: &str,
-    listings: &mut std::collections::HashMap<String, crate::model::AssetList>,
+    listings: &mut std::collections::HashMap<String, Option<crate::model::AssetList>>,
 ) -> Result<crate::model::Asset, ApiError> {
     let parent = PhysnaApiClient::get_parent_folder_path(asset_path)?;
     if !listings.contains_key(&parent) {
-        let listing = api
+        // A folder that does not exist is remembered as such (`None`). Each lookup
+        // under it used to re-download the tenant's whole folder tree, so five
+        // hundred rows under a mistyped folder meant five hundred full refreshes.
+        let listing = match api
             .list_assets_by_parent_folder_path(tenant_uuid, &parent)
-            .await?;
+            .await
+        {
+            Ok(listing) => Some(listing),
+            Err(ApiError::FolderNotFound(_)) | Err(ApiError::PathNotFound(_)) => None,
+            Err(e) => return Err(e),
+        };
         listings.insert(parent.clone(), listing);
     }
+    let listing = listings[&parent]
+        .as_ref()
+        .ok_or_else(|| ApiError::FolderNotFound(parent.clone()))?;
     let name = PhysnaApiClient::asset_name_from_path(asset_path)
         .ok_or_else(|| ApiError::InvalidAssetPath(asset_path.to_string()))?;
-    listings[&parent]
+    listing
         .find_by_name(&name)
         .cloned()
         .ok_or_else(|| ApiError::PathNotFound(asset_path.to_string()))

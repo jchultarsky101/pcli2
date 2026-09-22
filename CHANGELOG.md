@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`asset get` takes several `--uuid` values** - They are fetched with one `POST /tenants/{tenantId}/assets/batch` request (up to 1000 per request) and printed as an asset list, in the same JSON and CSV shapes as `asset list`. Every id must exist: otherwise nothing is printed and the missing ids are named (exit 67). With one `--uuid` or `--path` the output is unchanged. The client's batch method, which nothing used, now calls that endpoint instead of one request per asset.
 
 ### Fixed
+- **`asset download` no longer fails on an assembly that has no dependency bundle** - Physna serves an assembly as a ZIP of the assembly and its parts when it has one, or as the raw source file when it does not (for example an assembly in the `missing-dependencies` state). The command assumed every assembly was a ZIP, so a raw file was saved as `<name>.zip` and then rejected with `ZIP error: invalid Zip archive: Could not find EOCD`. It now checks what actually arrived: a bundle is extracted next to the download and removed as before, and anything else is kept unchanged under the asset's own name (or the `-o` path). A bundle that is a ZIP but damaged still fails with the ZIP error.
 - **`folder dependencies` lists assemblies in a stable order** - The JSON and tree output listed a folder's assemblies in a different order on every run (the folder listing is a map). They are now sorted by path, as the CSV rows already were.
 
 ### Removed

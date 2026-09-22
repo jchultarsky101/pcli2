@@ -19,6 +19,15 @@ use uuid::Uuid;
 /// # Returns
 /// * `Ok(Tenant)` - The resolved tenant
 /// * `Err(CliError)` - If the tenant cannot be found
+/// Whether `identifier` names this tenant: its UUID, or its exact short name.
+///
+/// The one rule `--tenant` and `tenant use --name` share. `tenant use` used to
+/// accept only the short name, so a UUID that worked with `--tenant` failed there.
+pub fn tenant_matches(tenant: &crate::model::TenantSetting, identifier: &str) -> bool {
+    tenant.tenant_short_name == identifier
+        || Uuid::parse_str(identifier).is_ok_and(|uuid| uuid == tenant.tenant_uuid)
+}
+
 async fn resolve_tenant_by_name(
     client: &mut PhysnaApiClient,
     tenant_name: &String,
@@ -29,7 +38,7 @@ async fn resolve_tenant_by_name(
     // since the cache was written is the common reason for a miss.
     for refresh in [false, true] {
         let tenants = crate::tenant_cache::TenantCache::get_all_tenants(client, refresh).await?;
-        if let Some(tenant) = tenants.iter().find(|t| t.tenant_short_name.eq(tenant_name)) {
+        if let Some(tenant) = tenants.iter().find(|t| tenant_matches(t, tenant_name)) {
             return Ok(tenant.try_into()?);
         }
     }

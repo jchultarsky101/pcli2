@@ -151,11 +151,21 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
 
     // If no name was provided, show interactive selection
     let selected_tenant = if let Some(name) = name {
-        // Find tenant by name (existing logic)
-        tenants
+        // By short name or UUID, as `--tenant` accepts. On a miss the list is
+        // fetched once more: a tenant granted since the cache was written is the
+        // usual reason, and it used to take `--refresh` to find it.
+        match tenants
             .iter()
-            .find(|t| t.tenant_short_name == *name)
-            .cloned()
+            .find(|t| crate::param_utils::tenant_matches(t, name))
+        {
+            Some(tenant) => Some(tenant.clone()),
+            None if !refresh => crate::tenant_cache::TenantCache::get_all_tenants(&mut api, true)
+                .await
+                .map_err(CliActionError::ApiError)?
+                .into_iter()
+                .find(|t| crate::param_utils::tenant_matches(t, name)),
+            None => None,
+        }
     } else {
         // Interactive selection using TUI
         if tenants.is_empty() {

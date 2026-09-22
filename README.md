@@ -301,6 +301,10 @@ pcli2 asset reprocess --uuid 550e8400-e29b-41d4-a716-446655440000
 # Move an asset to another folder (keeps its UUID and metadata); '/' is the root
 pcli2 asset move --path "/Home/Models/model.stl" --folder-path "/Home/Archive"
 
+# An assembly with a missing part: see which, then link the part that should stand in for it
+pcli2 asset dependencies --path "/Home/Models/top.asm" --format csv --headers
+pcli2 asset resolve-dependency --path "/Home/Models/top.asm" --dependency "Models/Body01.par" --target-path "/Home/Parts/Body01.par"
+
 # Ask the server why an asset failed to process (alias: asset why)
 pcli2 asset diagnose --path "/Home/Models/model.stl"
 
@@ -776,6 +780,7 @@ Quick reference for all available command aliases:
 | `pcli2 asset similarity` | `pcli2 asset match-scores` |
 | `pcli2 asset diagnose` | `pcli2 asset failure`, `pcli2 asset why` |
 | `pcli2 asset move` | `pcli2 asset mv` |
+| `pcli2 asset resolve-dependency` | `pcli2 asset resolve-dep` |
 | `pcli2 asset metadata create` | `pcli2 asset metadata update` |
 | `pcli2 asset metadata create-batch` | `pcli2 asset metadata update-batch` |
 | `pcli2 asset metadata delete` | `pcli2 asset metadata rm` |
@@ -819,6 +824,7 @@ pcli2 asset delete           # Delete an asset
 pcli2 asset move             # Move an asset to another folder, or to the root (--folder-path /)
 pcli2 asset dependencies     # Get dependencies for an asset
 pcli2 asset dependency-diff  # Diff the dependency trees of two assets
+pcli2 asset resolve-dependency  # Link a missing dependency of an assembly to an existing asset
 pcli2 asset geometric-match  # Find geometrically similar assets
 pcli2 asset part-match       # Find part matches for an asset
 pcli2 asset visual-match     # Find visually similar assets (--limit N, default 100; --threshold N size filter, default 80)

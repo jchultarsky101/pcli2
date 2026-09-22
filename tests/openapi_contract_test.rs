@@ -359,6 +359,10 @@ const OTHER_ENDPOINTS: &[(&str, &str)] = &[
     ("get", "/tenants/{tenantId}/assets/{assetId}/file"),
     ("get", "/tenants/{tenantId}/assets/{assetId}/thumbnail.png"),
     ("post", "/tenants/{tenantId}/assets/{assetId}/reprocess"),
+    (
+        "post",
+        "/tenants/{tenantId}/assets/{assetId}/resolve-dependency",
+    ),
     ("post", "/tenants/{tenantId}/metadata-fields"),
 ];
 

@@ -140,6 +140,7 @@ mod cli_help_tests {
             ("folder", "visual-match"),
             ("asset", "dependencies"),
             ("asset", "move"),
+            ("asset", "resolve-dependency"),
             ("asset", "diagnose"),
             ("tenant", "failures"),
             ("auth", "login"),

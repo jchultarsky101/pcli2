@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-22
+
 ### Added
 - **`asset diagnose` explains why an asset failed to process** (aliases `failure`, `why`) - Physna added on-demand failure diagnostics: the server searches its ingestion logs for the asset and answers with a `status` (`found`, `not-found`, `unavailable`), a `kind` (`user`, with a summary you can act on, or `internal`, with a trace ID to quote to support), the summary, the trace ID and when it happened. The command takes `--uuid` or `--path`, prints JSON or CSV (`ASSET_PATH,ASSET_STATE,STATUS,KIND,SUMMARY,TRACE_ID,OCCURRED_AT,ASSET_UUID`), exits 0 for `found` and `not-found` (with a stderr note saying whether the asset is simply not failed or the log entry has aged out), and exits 68 on a deployment without failure log search. Until now a failed asset was only visible as the word `failed` in a `STATE` column.
 - **`tenant failures` lists what failed lately** - Assets, reports and part-finder reports in one listing, newest first, with `--kind` to narrow it (repeatable) and `--limit` to stop early. JSON output also carries the tenant-wide totals per kind; CSV is `KIND,NAME,ID,FAILED_AT`. The `ID` of an `asset` row is what `asset diagnose --uuid` takes.

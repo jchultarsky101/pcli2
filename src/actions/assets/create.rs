@@ -355,7 +355,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         .clone();
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
     let concurrent = *concurrent_param;
-    let show_progress = sub_matches.get_flag("progress");
+    let show_progress = crate::terminal::show_progress(sub_matches);
 
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
@@ -524,7 +524,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         .get_one::<std::path::PathBuf>(PARAMETER_INPUT)
         .ok_or(CliError::MissingRequiredArgument("--input".to_string()))?;
 
-    let show_progress = sub_matches.get_flag("progress");
+    let show_progress = crate::terminal::show_progress(sub_matches);
     let continue_on_error = sub_matches.get_flag(PARAMETER_CONTINUE_ON_ERROR);
     let delete_if_empty = sub_matches.get_flag(PARAMETER_DELETE_IF_EMPTY);
     let requested_format = sub_matches

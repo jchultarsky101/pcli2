@@ -58,6 +58,8 @@ const EXAMPLES_COLORED: &str = color_print::cstr!(
   PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
   PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
   PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)
+  PCLI2_TENANT             Tenant for this command only (like --tenant)
+  PCLI2_ENV                Environment for this command only (like --env)
   PCLI2_CLIENT_ID          Client ID for 'auth login' (instead of --client-id)
   PCLI2_CLIENT_SECRET      Client secret for 'auth login' (keeps it out of shell history)"
 );
@@ -98,6 +100,8 @@ Environment variables:
   PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
   PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
   PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)
+  PCLI2_TENANT             Tenant for this command only (like --tenant)
+  PCLI2_ENV                Environment for this command only (like --env)
   PCLI2_CLIENT_ID          Client ID for 'auth login' (instead of --client-id)
   PCLI2_CLIENT_SECRET      Client secret for 'auth login' (keeps it out of shell history)";
 
@@ -244,6 +248,24 @@ pub fn create_full_command() -> Command {
             clap::ColorChoice::Never
         })
         // Add global arguments
+        .arg(
+            clap::Arg::new("no-progress")
+                .long("no-progress")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .help_heading("Global Options")
+                .help("Never draw progress bars (they are shown by default when stderr is a terminal)"),
+        )
+        .arg(
+            clap::Arg::new("env")
+                .short('e')
+                .long("env")
+                .env("PCLI2_ENV")
+                .num_args(1)
+                .global(true)
+                .help_heading("Global Options")
+                .help("Environment to use for this command only (default: the one chosen with 'pcli2 env use')"),
+        )
         .arg(
             clap::Arg::new("no-color")
                 .long("no-color")

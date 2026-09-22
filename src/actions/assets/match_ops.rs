@@ -1241,9 +1241,12 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // metadata (the metadata diff is the whole point), so force it on for xls.
     // Read from the resolved format, so `PCLI2_FORMAT=xls` works as `--format xls`
     // does (it used to fall back to JSON).
+    // `xlsx` is accepted too: it is what the file is, and what `report download`
+    // calls it.
     let is_xls = format_params
         .format_str
-        .eq_ignore_ascii_case(crate::commands::params::FORMAT_XLS);
+        .eq_ignore_ascii_case(crate::commands::params::FORMAT_XLS)
+        || format_params.format_str.eq_ignore_ascii_case("xlsx");
     let with_metadata = format_params.format_options.with_metadata || is_xls;
 
     // Get exclusive flag
@@ -1254,7 +1257,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // clap's parser already holds --concurrent to 1-10.
     let concurrent = concurrent_param.unwrap_or(1);
 
-    let show_progress = sub_matches.get_flag("progress");
+    let show_progress = crate::terminal::show_progress(sub_matches);
 
     let recursive = sub_matches.get_flag(crate::commands::params::PARAMETER_RECURSIVE);
 
@@ -1820,7 +1823,7 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     // clap's parser already holds --concurrent to 1-10.
     let concurrent = concurrent_param.unwrap_or(1);
 
-    let show_progress = sub_matches.get_flag("progress");
+    let show_progress = crate::terminal::show_progress(sub_matches);
 
     let recursive = sub_matches.get_flag(crate::commands::params::PARAMETER_RECURSIVE);
 
@@ -2419,7 +2422,7 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
     // clap's parser already holds --concurrent to 1-10.
     let concurrent = concurrent_param.unwrap_or(1);
 
-    let show_progress = sub_matches.get_flag("progress");
+    let show_progress = crate::terminal::show_progress(sub_matches);
 
     let recursive = sub_matches.get_flag(crate::commands::params::PARAMETER_RECURSIVE);
 

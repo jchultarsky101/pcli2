@@ -442,3 +442,28 @@ mod tests {
         progress.finish();
     }
 }
+
+/// Whether to draw progress bars for this command.
+///
+/// Shown by default when stderr is a terminal, so an interactive user sees a
+/// long run moving without having to know about `--progress`. Never shown when
+/// stderr is redirected, in CI, with `--quiet`, with `--error-format json` (whose
+/// stderr is for machines), or with `--no-progress`. `--progress` still forces
+/// them on.
+pub fn show_progress(sub_matches: &clap::ArgMatches) -> bool {
+    let flag = |id: &str| {
+        sub_matches
+            .try_get_one::<bool>(id)
+            .ok()
+            .flatten()
+            .copied()
+            .unwrap_or(false)
+    };
+    if flag("no-progress") || flag("quiet") || crate::error_utils::json_errors() {
+        return false;
+    }
+    if flag(crate::commands::params::PARAMETER_PROGRESS) {
+        return true;
+    }
+    std::io::stderr().is_terminal() && std::env::var_os("CI").is_none()
+}

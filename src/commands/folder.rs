@@ -190,7 +190,7 @@ pub fn folder_command() -> Command {
         )
         .subcommand(
             Command::new(COMMAND_MATCH)
-                .visible_alias("geometric-search") // Add alias for geometric-search
+                .visible_aliases(["geometric-search", "gm"])
                 .about("Find geometrically similar assets for all assets in one or more folders")
                 .after_help(
                     "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
@@ -219,7 +219,7 @@ pub fn folder_command() -> Command {
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_XLS]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_XLS, "xlsx"]))
                 .arg(output_file_parameter().help(
                     "Output file path, used with --format xls (default: match_report.xlsx)",
                 ))
@@ -237,7 +237,7 @@ pub fn folder_command() -> Command {
         )
         .subcommand(
             Command::new(COMMAND_PART_MATCH)
-                .visible_alias("part-search") // Add alias for part-search
+                .visible_aliases(["part-search", "pm"])
                 .about("Find part matches for all assets in one or more folders")
                 .after_help(
                     "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID). Two runs over unchanged data produce identical output.",
@@ -281,7 +281,7 @@ pub fn folder_command() -> Command {
         )
         .subcommand(
             Command::new(COMMAND_VISUAL_MATCH)
-                .visible_alias("visual-search") // Add alias for visual-search
+                .visible_aliases(["visual-search", "vm"])
                 .about("Find visually similar assets for all assets in one or more folders")
                 .after_help(
                     "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID). Two runs over unchanged data produce identical output.",

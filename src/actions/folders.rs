@@ -1889,7 +1889,8 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             .to_string(); // Clone to move into async closure
 
         let tenant_clone = tenant.clone();
-        let mut api_task = api.clone();
+        // The upload variant shares the token and renewal state with `api`.
+        let mut api_task = api.for_upload_operations();
         let existing_paths = existing_paths.clone();
         let semaphore = semaphore.clone();
         let progress_bar_clone = progress_bar.clone();

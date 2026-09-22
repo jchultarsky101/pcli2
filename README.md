@@ -274,11 +274,12 @@ Upload, download, and manage assets:
 # Upload a single asset
 pcli2 asset create --input path/to/model.stl --folder-path "/Home/Models/"
 
-# Replace an existing asset (delete + re-upload)
+# Replace an existing asset's file in place (same UUID, path and metadata; re-indexed)
 pcli2 asset create --input path/to/model.stl --folder-path "/Home/Models/" --override
 
-# Replace an existing asset and preserve its metadata
-pcli2 asset create --input path/to/model.stl --folder-path "/Home/Models/" --override --restore-metadata
+# A file with a different extension cannot be replaced in place: the asset is
+# deleted and uploaded again; --restore-metadata re-applies its metadata
+pcli2 asset create --input path/to/model.step --folder-path "/Home/Models/" --override --restore-metadata
 
 # List assets in a folder
 pcli2 asset list --folder-path "/Home/Models/" --format json

@@ -4,7 +4,6 @@
 
 use crate::{
     actions::CliActionError,
-    commands::params::{PARAMETER_FORMAT, PARAMETER_HEADERS, PARAMETER_PRETTY},
     configuration::Configuration,
     error::CliError,
     param_utils::get_tenant,
@@ -53,29 +52,18 @@ pub async fn metadata_inference(sub_matches: &ArgMatches) -> Result<(), CliError
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
 
-    // Get format parameters
-    let format_str = sub_matches
-        .get_one::<String>(PARAMETER_FORMAT)
-        .map(|s| s.as_str())
-        .unwrap_or("json");
-
-    let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
-    crate::format_utils::warn_about_noop_format_flags(sub_matches, format_str);
-
+    // --format, then PCLI2_FORMAT, then json. The inference result carries no
+    // per-asset metadata columns, so that option is always off here.
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
     let format_options = crate::format::OutputFormatOptions {
         with_metadata: false,
-        with_headers,
-        pretty,
+        ..format_params.format_options
     };
-
-    let format =
-        crate::format::OutputFormat::from_string_with_options(format_str, format_options.clone())
-            .map_err(|e| {
-            CliActionError::FormattingError(crate::format::FormattingError::FormatFailure {
-                cause: Box::new(e),
-            })
-        })?;
+    let format = crate::format::OutputFormat::from_string_with_options_safe(
+        &format_params.format_str,
+        format_options.clone(),
+    )
+    .unwrap_or_else(|_| crate::format::OutputFormat::Json(format_options.clone()));
 
     // Get the reference asset
     let reference_asset = api.get_asset_by_path(&tenant.uuid, asset_path).await?;

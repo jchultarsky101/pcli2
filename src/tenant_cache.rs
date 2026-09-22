@@ -179,19 +179,6 @@ impl TenantCache {
         Ok(tenants)
     }
 
-    /// Get cached tenants if available and not expired
-    ///
-    /// # Returns
-    /// * `Some(Vec<TenantSetting>)` - If tenants are cached and not expired
-    /// * `None` - If tenants are not cached or are expired
-    pub fn get_cached_tenants(&self) -> Option<Vec<TenantSetting>> {
-        if !self.tenants.is_empty() && !self.is_expired() {
-            Some(self.tenants.clone())
-        } else {
-            None
-        }
-    }
-
     /// Invalidate cache for all tenants
     ///
     /// This method clears the cached tenant list for EVERY environment.

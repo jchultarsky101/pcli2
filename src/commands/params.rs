@@ -13,17 +13,13 @@ pub const COMMAND_CREATE: &str = "create";
 pub const COMMAND_CREATE_BATCH: &str = "create-batch";
 pub const COMMAND_GET: &str = "get";
 pub const COMMAND_LIST: &str = "list";
-pub const COMMAND_UPDATE: &str = "update";
 pub const COMMAND_DELETE: &str = "delete";
 
 // Asset commands
 pub const COMMAND_ASSET: &str = "asset";
 pub const COMMAND_MATCH: &str = "geometric-match";
-pub const COMMAND_MATCH_FOLDER: &str = "geometric-match-folder";
 pub const COMMAND_PART_MATCH: &str = "part-match"; // Allow non snake case since it's used as a command name
-pub const COMMAND_PART_MATCH_FOLDER: &str = "part-match-folder"; // Allow non snake case since it's used as a command name
 pub const COMMAND_VISUAL_MATCH: &str = "visual-match"; // Allow non snake case since it's used as a command name
-pub const COMMAND_VISUAL_MATCH_FOLDER: &str = "visual-match-folder"; // Allow non snake case since it's used as a command name
 pub const COMMAND_TEXT_MATCH: &str = "text-match"; // Allow non snake case since it's used as a command name
 pub const COMMAND_SIMILARITY: &str = "similarity";
 pub const COMMAND_REPROCESS: &str = "reprocess";
@@ -45,7 +41,6 @@ pub const COMMAND_INFERENCE: &str = "inference"; // Allow non snake case since i
 pub const COMMAND_DEPENDENCIES: &str = "dependencies";
 pub const COMMAND_DEPENDENCY_DIFF: &str = "dependency-diff";
 pub const COMMAND_DOWNLOAD: &str = "download";
-pub const COMMAND_DOWNLOAD_FOLDER: &str = "download-folder";
 
 // Auth commands
 pub const COMMAND_AUTH: &str = "auth";
@@ -59,19 +54,16 @@ pub const COMMAND_TENANT: &str = "tenant";
 
 // Folder commands
 pub const COMMAND_FOLDER: &str = "folder";
-pub const COMMAND_FILE: &str = "file";
 pub const COMMAND_THUMBNAIL: &str = "thumbnail";
 pub const COMMAND_UPLOAD: &str = "upload";
 
 // Context commands have been moved to tenant command
-pub const COMMAND_SET: &str = "set";
 pub const COMMAND_CLEAR: &str = "clear";
 
 // Config commands
 pub const COMMAND_CONFIG: &str = "config";
 pub const COMMAND_EXPORT: &str = "export";
 pub const COMMAND_IMPORT: &str = "import";
-pub const COMMAND_ENVIRONMENT: &str = "environment";
 pub const COMMAND_ADD: &str = "add";
 pub const COMMAND_USE: &str = "use";
 pub const COMMAND_REMOVE: &str = "remove";
@@ -95,16 +87,13 @@ pub const PARAMETER_METADATA: &str = "metadata";
 pub const PARAMETER_PRETTY: &str = "pretty";
 pub const PARAMETER_HEADERS: &str = "headers";
 pub const PARAMETER_OUTPUT: &str = "output";
-pub const PARAMETER_FILE: &str = "file";
 pub const PARAMETER_INPUT: &str = "input";
 pub const PARAMETER_CLIENT_ID: &str = "client-id";
 pub const PARAMETER_CLIENT_SECRET: &str = "client-secret";
 pub const PARAMETER_UUID: &str = "uuid";
 pub const PARAMETER_NAME: &str = "name";
 pub const PARAMETER_TENANT_NAME: &str = PARAMETER_NAME;
-pub const PARAMETER_TENANT_ID: &str = "id";
 pub const PARAMETER_TENANT: &str = "tenant";
-pub const PARAMETER_TENANT_UUID: &str = "tenant-uuid";
 pub const PARAMETER_FOLDER_UUID: &str = "folder-uuid";
 pub const PARAMETER_FOLDER_PATH: &str = "folder-path";
 pub const PARAMETER_PARENT_FOLDER_UUID: &str = "parent-folder-uuid";
@@ -121,7 +110,6 @@ pub const PARAMETER_CONCURRENT: &str = "concurrent";
 pub const PARAMETER_THRESHOLD: &str = "threshold";
 pub const PARAMETER_PROGRESS: &str = "progress";
 pub const PARAMETER_LIMIT: &str = "limit";
-pub const PARAMETER_FOLDER_PATHS: &str = "folder-paths";
 pub const PARAMETER_CONTINUE_ON_ERROR: &str = "continue-on-error";
 pub const PARAMETER_DELETE_IF_EMPTY: &str = "delete-if-empty";
 pub const PARAMETER_DELAY: &str = "delay";
@@ -481,25 +469,6 @@ pub fn tenant_name_parameter() -> Arg {
         .help("Tenant short name (as shown in tenant list)")
 }
 
-/// Create the name parameter.
-pub fn tenant_id_parameter() -> Arg {
-    Arg::new(PARAMETER_TENANT_ID)
-        .long(PARAMETER_TENANT_ID)
-        .num_args(1)
-        .required(false)
-        .help("Tenant UUID")
-}
-
-/// Create the tenant UUID parameter.
-pub fn tenant_uuid_parameter() -> Arg {
-    Arg::new(PARAMETER_TENANT_UUID)
-        .long(PARAMETER_TENANT_UUID)
-        .num_args(1)
-        .required(false)
-        .value_parser(clap::value_parser!(uuid::Uuid))
-        .help("Tenant UUID")
-}
-
 /// Create the tenant parameter.
 pub fn tenant_parameter() -> Arg {
     Arg::new(PARAMETER_TENANT)
@@ -522,14 +491,6 @@ pub fn folder_identifier_group() -> ArgGroup {
 pub fn parent_folder_identifier_group() -> ArgGroup {
     ArgGroup::new("parent-folder-identifier")
         .args([PARAMETER_PARENT_FOLDER_UUID, PARAMETER_PARENT_FOLDER_PATH])
-        .multiple(false)
-        .required(true)
-}
-
-/// Create tenant identifier group: it must be either --tenant-uuid or --tenant-name
-pub fn tenant_identifier_group() -> ArgGroup {
-    ArgGroup::new("tenant-identifier")
-        .args([PARAMETER_TENANT_UUID, PARAMETER_TENANT_NAME]) // Using PARAMETER_TENANT_UUID for UUID and PARAMETER_TENANT_NAME for name
         .multiple(false)
         .required(true)
 }

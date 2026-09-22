@@ -247,28 +247,6 @@ impl FolderCache {
         Ok(())
     }
 
-    /// Clean expired cache files
-    ///
-    /// This method removes all expired cache files from the cache directory
-    pub fn clean_expired() -> Result<(), Box<dyn std::error::Error>> {
-        let cache_dir = Self::get_cache_dir();
-        if !cache_dir.exists() {
-            return Ok(());
-        }
-
-        for entry in fs::read_dir(cache_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|ext| ext == "json") {
-                let _ = fs::remove_file(&path);
-                tracing::debug!("Removed expired cache file: {:?}", path);
-            }
-        }
-
-        Ok(())
-    }
-
     /// Purge all cached data
     ///
     /// This method removes all cache files from the cache directory,

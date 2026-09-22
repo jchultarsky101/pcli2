@@ -89,11 +89,6 @@ impl BaseCache {
         Self::default()
     }
 
-    /// Create a new BaseCache with custom configuration
-    pub fn with_config(config: CacheConfig) -> Self {
-        Self { config }
-    }
-
     /// Get the default cache directory path
     ///
     /// In a test environment (when PCLI2_TEST_CACHE_DIR is set), it uses that directory.

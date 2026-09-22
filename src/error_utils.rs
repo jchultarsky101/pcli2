@@ -4,7 +4,6 @@
 //! across the application to ensure uniform user experience.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use thiserror::Error;
 
 static JSON_ERRORS: AtomicBool = AtomicBool::new(false);
 
@@ -164,46 +163,6 @@ fn http_status_of(error: &crate::error::CliError) -> Option<u16> {
     }
 }
 
-/// Common error types used throughout the application
-#[derive(Debug, Error)]
-pub enum CommonError {
-    /// Error when required arguments are missing
-    #[error("Missing required argument: {arg}")]
-    MissingArgument { arg: String },
-
-    /// Error when API calls fail
-    #[error("API error: {message}")]
-    ApiError { message: String },
-
-    /// Error when authentication fails
-    #[error("Authentication error: {message}")]
-    AuthError { message: String },
-
-    /// Error when resource is not found
-    #[error("Resource not found: {resource}")]
-    NotFound { resource: String },
-
-    /// Error when cache operations fail
-    #[error("Cache error: {message}")]
-    CacheError { message: String },
-
-    /// Error when configuration operations fail
-    #[error("Configuration error: {message}")]
-    ConfigError { message: String },
-
-    /// Error when file operations fail
-    #[error("File error: {message}")]
-    FileError { message: String },
-
-    /// Error when data formatting fails
-    #[error("Formatting error: {message}")]
-    FormatError { message: String },
-
-    /// Generic error with custom message
-    #[error("Error: {message}")]
-    Generic { message: String },
-}
-
 /// Report an error consistently with user-facing output.
 ///
 /// This function displays errors in a user-friendly format without internal logging.
@@ -213,47 +172,6 @@ pub fn report_error<E: std::fmt::Display>(error: &E) {
         return;
     }
     eprintln!("❌ Error: {}", error);
-}
-
-/// Report an error with detailed information including technical details and user guidance.
-///
-/// This function provides a comprehensive error message that includes:
-/// - A clear error title
-/// - Technical details about what went wrong
-/// - Actionable steps the user can take to resolve the issue
-/// - Relevant command examples when applicable
-pub fn report_detailed_error<E: std::fmt::Display>(error: &E, context: Option<&str>) {
-    let error_str = error.to_string();
-    if json_errors() {
-        let mut object = serde_json::json!({"level": "ERROR", "message": error_str});
-        if let Some(hint) = oauth_hint(&error_str) {
-            object["hint"] = serde_json::Value::String(hint.to_string());
-        }
-        if let Some(ctx) = context.filter(|c| !c.trim().is_empty()) {
-            object["context"] = serde_json::Value::String(ctx.to_string());
-        }
-        emit_json(&object);
-        return;
-    }
-    let user_friendly_msg = create_user_friendly_error(&error_str);
-
-    // Print the main error message
-    eprintln!("❌ Error: {}", user_friendly_msg);
-
-    // Add context if provided and meaningful (not generic messages)
-    if let Some(ctx) = context {
-        // Skip generic context messages that don't add value
-        if !ctx.trim().is_empty() && ctx != "Command execution failed" {
-            eprintln!("📋 Context: {}", ctx);
-        }
-    }
-
-    // Log the technical details for debugging (only in debug/trace mode)
-    tracing::debug!(
-        "Technical error details: {} (context: {:?})",
-        error,
-        context
-    );
 }
 
 /// Report an error with suggested remediation steps.
@@ -369,16 +287,6 @@ fn hint_for(error: &crate::error::CliError) -> Option<&'static str> {
         PcliExitCode::TempFail => Some("The failure looks transient; retry the command."),
         _ => None,
     }
-}
-
-/// Report an error with a user-friendly message based on error content
-pub fn report_error_with_user_friendly_message<E: std::fmt::Display>(error: E) {
-    if json_errors() {
-        report_detailed_error(&error, None);
-        return;
-    }
-    let user_message = create_user_friendly_error(error);
-    eprintln!("❌ Error: {}", user_message);
 }
 
 /// Check if an error is retryable and user should try again

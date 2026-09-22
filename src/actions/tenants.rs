@@ -139,32 +139,6 @@ pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionE
     Ok(())
 }
 
-pub async fn print_active_tenant_name() -> Result<(), CliActionError> {
-    trace!("Executing 'context get' command");
-
-    let configuration = Configuration::load_default()?;
-
-    if let Some(active_tenant_uuid) = configuration.active_tenant_uuid() {
-        let mut api = PhysnaApiClient::try_default()?;
-        let tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await?;
-        let active_tenant = tenants
-            .into_iter()
-            .find(|t| t.tenant_uuid.eq(active_tenant_uuid));
-        match active_tenant {
-            Some(active_tenant) => {
-                println!("{}", active_tenant.tenant_short_name);
-            }
-            None => {
-                println!("No active tenant selected");
-            }
-        }
-    } else {
-        println!("No active tenant selected");
-    }
-
-    Ok(())
-}
-
 pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
     // This command prints nothing structured, so the format flags it accepts
     // for uniformity change nothing.
@@ -289,77 +263,6 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
     Ok(())
 }
 
-pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
-    let tenant_uuid_param =
-        sub_matches.get_one::<uuid::Uuid>(crate::commands::params::PARAMETER_TENANT_UUID);
-    let tenant_name_param =
-        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_TENANT_NAME);
-
-    let mut api = PhysnaApiClient::try_default()?;
-
-    // Get all tenants to search through
-    let all_tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await?;
-
-    // Find the specific tenant based on either UUID or name
-    let tenant_setting = if let Some(uuid) = tenant_uuid_param {
-        all_tenants.iter().find(|t| &t.tenant_uuid == uuid)
-    } else if let Some(name) = tenant_name_param {
-        all_tenants.iter().find(|t| &t.tenant_short_name == name)
-    } else {
-        return Err(CliActionError::MissingRequiredArgument(
-            "Either tenant UUID (--id) or tenant name (--tenant-name) must be provided".to_string(),
-        ));
-    };
-
-    match tenant_setting {
-        Some(tenant_setting) => {
-            // Convert to Tenant for formatting
-            let tenant: Tenant = tenant_setting.try_into()?;
-
-            // Get format parameters directly from sub_matches
-            let format_str = sub_matches
-                .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-                .cloned()
-                .unwrap_or_else(|| "json".to_string());
-
-            let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-            let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-            crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
-
-            // Create format options (no metadata for tenants)
-            let format_options = crate::format::OutputFormatOptions {
-                with_metadata: false, // No metadata for tenants
-                with_headers,
-                pretty,
-            };
-
-            let format =
-                crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-                    .map_err(CliActionError::FormattingError)?;
-
-            crate::format::print_output(&tenant.format(&format)?);
-        }
-        None => {
-            if let Some(uuid) = tenant_uuid_param {
-                return Err(CliActionError::TenantNotFound {
-                    identifier: uuid.to_string(),
-                });
-            } else if let Some(name) = tenant_name_param {
-                return Err(CliActionError::TenantNotFound {
-                    identifier: name.clone(),
-                });
-            }
-            // This shouldn't happen due to the argument group validation, but just in case
-            return Err(CliActionError::MissingRequiredArgument(
-                "Either tenant UUID (--id) or tenant name (--tenant-name) must be provided"
-                    .to_string(),
-            ));
-        }
-    }
-
-    Ok(())
-}
-
 pub async fn print_active_tenant_name_with_format(
     sub_matches: &ArgMatches,
 ) -> Result<(), CliActionError> {
@@ -447,18 +350,6 @@ pub async fn clear_active_tenant() -> Result<(), CliActionError> {
             Err(CliActionError::ConfigurationError(e))
         }
     }
-}
-
-pub async fn print_current_context(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
-    trace!("Executing 'context get' command");
-
-    let format = crate::param_utils::get_format_parameter_value(sub_matches).await;
-    let configuration = Configuration::load_default()?;
-    let context_info = ContextInfo::from_configuration(&configuration).await?;
-
-    crate::format::print_output(&context_info.format(&format)?);
-
-    Ok(())
 }
 
 pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), CliActionError> {

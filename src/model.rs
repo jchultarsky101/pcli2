@@ -14,7 +14,6 @@
 //! All models implement serialization/deserialization with serde and appropriate error handling.
 
 use crate::format::{CsvRecordProducer, FormattingError, OutputFormat, OutputFormatter};
-use crate::physna_v3::PhysnaApiClient;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -739,36 +738,7 @@ pub struct CurrentUserResponse {
     pub user: User,
 }
 
-impl CurrentUserResponse {
-    /// Get a tenant setting by name (display name or short name)
-    ///
-    /// # Arguments
-    /// * `name` - The name of the tenant to find
-    ///
-    /// # Returns
-    /// * `Some(&TenantSetting)` - If a tenant with the specified name exists
-    /// * `None` - If no tenant with the specified name exists
-    pub fn get_tenant_by_name(&self, name: &str) -> Option<&TenantSetting> {
-        self.user.settings.iter().find(|setting| {
-            setting.tenant_display_name == name || setting.tenant_short_name == name
-        })
-    }
-
-    /// Get a tenant setting by ID
-    ///
-    /// # Arguments
-    /// * `uuid` - The UUID of the tenant to find
-    ///
-    /// # Returns
-    /// * `Some(&TenantSetting)` - If a tenant with the specified UUID exists
-    /// * `None` - If no tenant with the specified ID exists
-    pub fn get_tenant_by_uuid(&self, uuid: &Uuid) -> Option<&TenantSetting> {
-        self.user
-            .settings
-            .iter()
-            .find(|setting| setting.tenant_uuid.eq(uuid))
-    }
-}
+impl CurrentUserResponse {}
 
 // Folder models for Physna V3 API
 
@@ -1248,11 +1218,6 @@ impl Asset {
             self.uuid()
         )
     }
-
-    /// Generate the thumbnail URL for this asset using an API client
-    pub fn thumbnail_url_from_api(&self, api_client: &PhysnaApiClient, tenant_id: &str) -> String {
-        api_client.generate_asset_thumbnail_url(tenant_id, &self.uuid().to_string())
-    }
 }
 
 /// Asset with thumbnail URL
@@ -1439,23 +1404,6 @@ impl AssetList {
 
         match result {
             Some((_key, folder)) => Some(folder),
-            None => None,
-        }
-    }
-
-    /// Find an asset in the AssetList by path
-    ///
-    /// # Arguments
-    /// * `path` - The path of the asset to find
-    ///
-    /// # Returns
-    /// * `Some(&Asset)` - If an asset with the specified path exists
-    /// * `None` - If no asset with the specified path exists
-    pub fn find_by_path(&self, path: &str) -> Option<&Asset> {
-        let result = self.assets.iter().find(|(_, a)| a.path().eq(path));
-
-        match result {
-            Some((_key, asset)) => Some(asset),
             None => None,
         }
     }
@@ -2143,67 +2091,6 @@ impl From<Asset> for AssemblyNode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssemblyTree {
     root: AssemblyNode,
-}
-
-// Separate struct to handle lazy computation of expensive operations
-pub struct AssemblyTreeWithCache {
-    tree: AssemblyTree,
-    /// Cached total asset count, computed lazily to avoid repeated expensive traversals
-    cached_asset_count: std::cell::RefCell<Option<usize>>,
-}
-
-impl From<AssemblyTree> for AssemblyTreeWithCache {
-    fn from(tree: AssemblyTree) -> Self {
-        Self {
-            tree,
-            cached_asset_count: std::cell::RefCell::new(None),
-        }
-    }
-}
-
-impl AssemblyTreeWithCache {
-    /// Get the total count of assets in the assembly tree (including root and all descendants)
-    /// This computation is cached to avoid repeated expensive tree traversals
-    pub fn asset_count(&self) -> usize {
-        let mut cached_count = self.cached_asset_count.borrow_mut();
-        if let Some(count) = *cached_count {
-            return count;
-        }
-
-        // Compute the count by traversing the tree
-        let count = self.count_assets_recursive(&self.tree.root);
-        *cached_count = Some(count);
-        count
-    }
-
-    /// Helper function to recursively count assets in the tree
-    fn count_assets_recursive(&self, node: &AssemblyNode) -> usize {
-        let mut count = 1; // Count this node
-
-        if let Some(children) = &node.children {
-            for child in children {
-                count += self.count_assets_recursive(child);
-            }
-        }
-
-        count
-    }
-
-    /// Clear the cached asset count (useful when the tree structure changes)
-    pub fn clear_asset_count_cache(&mut self) {
-        let mut cached_count = self.cached_asset_count.borrow_mut();
-        *cached_count = None;
-    }
-
-    /// Get a reference to the underlying tree
-    pub fn tree(&self) -> &AssemblyTree {
-        &self.tree
-    }
-
-    /// Get a mutable reference to the underlying tree
-    pub fn tree_mut(&mut self) -> &mut AssemblyTree {
-        &mut self.tree
-    }
 }
 
 impl AssemblyTree {

@@ -1,0 +1,68 @@
+[
+  {
+    "referenceAsset": {
+      "id": "01010101-0101-0101-0101-010101010101",
+      "tenantId": "22222222-2222-2222-2222-222222222222",
+      "path": "/Parts/a.stl",
+      "type": "file",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "state": "finished",
+      "isAssembly": false,
+      "metadata": {
+        "Material": "Steel",
+        "Weight": "12.5"
+      }
+    },
+    "candidateAsset": {
+      "id": "02020202-0202-0202-0202-020202020202",
+      "tenantId": "22222222-2222-2222-2222-222222222222",
+      "path": "/Parts/b.stl",
+      "type": "file",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "state": "finished",
+      "isAssembly": false,
+      "metadata": {
+        "Material": "Steel"
+      }
+    },
+    "forwardMatchPercentage": 99.5,
+    "reverseMatchPercentage": 98.25,
+    "transformation": null,
+    "comparisonUrl": "https://app.example.test/tenants/mock/compare?asset1Id=01010101-0101-0101-0101-010101010101&asset2Id=02020202-0202-0202-0202-020202020202&tenant1Id=22222222-2222-2222-2222-222222222222&tenant2Id=22222222-2222-2222-2222-222222222222&searchType=part&forwardMatch=99.50&reverseMatch=98.25"
+  },
+  {
+    "referenceAsset": {
+      "id": "02020202-0202-0202-0202-020202020202",
+      "tenantId": "22222222-2222-2222-2222-222222222222",
+      "path": "/Parts/b.stl",
+      "type": "file",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "state": "finished",
+      "isAssembly": false,
+      "metadata": {
+        "Material": "Steel",
+        "Weight": "12.7"
+      }
+    },
+    "candidateAsset": {
+      "id": "03030303-0303-0303-0303-030303030303",
+      "tenantId": "22222222-2222-2222-2222-222222222222",
+      "path": "/Parts/c.stl",
+      "type": "file",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "state": "finished",
+      "isAssembly": false,
+      "metadata": {
+        "Material": "Brass"
+      }
+    },
+    "forwardMatchPercentage": 91.0,
+    "reverseMatchPercentage": 88.5,
+    "transformation": null,
+    "comparisonUrl": "https://app.example.test/tenants/mock/compare?asset1Id=02020202-0202-0202-0202-020202020202&asset2Id=03030303-0303-0303-0303-030303030303&tenant1Id=22222222-2222-2222-2222-222222222222&tenant2Id=22222222-2222-2222-2222-222222222222&searchType=part&forwardMatch=91.00&reverseMatch=88.50"
+  }
+]

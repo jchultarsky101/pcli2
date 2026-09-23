@@ -88,7 +88,7 @@ jobs:
       # seconds and a later manual re-run succeeded).
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         continue-on-error: true
 
       - name: Wait before retrying
@@ -98,4 +98,4 @@ jobs:
       - name: Retry deployment after transient Pages failure
         id: deployment_retry
         if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

@@ -39,7 +39,11 @@ fn parts_folder(cli: &mut MockCli) -> Vec<mockito::Mock> {
 
 fn candidate(uuid: Uuid, path: &str) -> serde_json::Value {
     let mut asset = asset_json(uuid, path, "finished", false);
-    let material = if path.ends_with("c.stl") { "Brass" } else { "Steel" };
+    let material = if path.ends_with("c.stl") {
+        "Brass"
+    } else {
+        "Steel"
+    };
     asset["metadata"] = serde_json::json!({"Material": material});
     asset
 }
@@ -56,7 +60,10 @@ fn page(matches: Vec<serde_json::Value>) -> String {
 fn neighbours(n: u8) -> Vec<(Uuid, &'static str, f64, f64)> {
     match n {
         1 => vec![(id(2), "/Parts/b.stl", 99.5, 98.25)],
-        2 => vec![(id(1), "/Parts/a.stl", 99.5, 98.75), (id(3), "/Parts/c.stl", 91.0, 88.5)],
+        2 => vec![
+            (id(1), "/Parts/a.stl", 99.5, 98.75),
+            (id(3), "/Parts/c.stl", 91.0, 88.5),
+        ],
         _ => vec![(id(2), "/Parts/b.stl", 91.0, 89.0)],
     }
 }
@@ -98,7 +105,16 @@ fn check(name: &str, command: &str, kind: &str, extra: &[&str]) {
     let mut cli = MockCli::new();
     let _folder = parts_folder(&mut cli);
     let _searches = search_mocks(&mut cli, kind);
-    let mut args = vec!["folder", command, "--folder-path", "/Parts", "--threshold", "80", "--concurrent", "1"];
+    let mut args = vec![
+        "folder",
+        command,
+        "--folder-path",
+        "/Parts",
+        "--threshold",
+        "80",
+        "--concurrent",
+        "1",
+    ];
     args.extend_from_slice(extra);
     let output = cli.cmd().args(&args).output().unwrap();
     assert!(
@@ -129,13 +145,21 @@ const SHAPES: &[(&str, &[&str])] = &[
     ("json_metadata", &["--format", "json", "--metadata"]),
     ("csv", &["--format", "csv"]),
     ("csv_headers", &["--format", "csv", "--headers"]),
-    ("csv_headers_metadata", &["--format", "csv", "--headers", "--metadata"]),
+    (
+        "csv_headers_metadata",
+        &["--format", "csv", "--headers", "--metadata"],
+    ),
 ];
 
 #[test]
 fn geometric_match_reports_are_unchanged() {
     for (shape, extra) in SHAPES {
-        check(&format!("geometric_{shape}"), "geometric-match", "geometric", extra);
+        check(
+            &format!("geometric_{shape}"),
+            "geometric-match",
+            "geometric",
+            extra,
+        );
     }
 }
 

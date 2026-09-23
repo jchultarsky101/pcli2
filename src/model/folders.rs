@@ -44,6 +44,9 @@ pub struct Folder {
     /// Number of subfolders in the folder
     #[serde(rename = "foldersCount")]
     folders_count: u32,
+    /// The folder's description; absent when it has none
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
 }
 
 impl Folder {
@@ -68,6 +71,7 @@ impl Folder {
             path,
             assets_count,
             folders_count,
+            description: None,
         }
     }
 
@@ -83,6 +87,7 @@ impl Folder {
             path,
             assets_count: folder_response.assets_count,
             folders_count: folder_response.folders_count,
+            description: folder_response.description,
         }
     }
 
@@ -121,6 +126,11 @@ impl Folder {
         self.path = path;
     }
 
+    /// The folder's description, if it has one
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
     /// Create a new FolderBuilder for constructing Folder instances
     pub fn builder() -> FolderBuilder {
         FolderBuilder::new()
@@ -135,6 +145,7 @@ impl From<FolderResponse> for Folder {
             path: "".to_string(),
             assets_count: fr.assets_count,
             folders_count: fr.folders_count,
+            description: fr.description,
         }
     }
 }
@@ -147,6 +158,7 @@ impl From<SingleFolderResponse> for Folder {
             path: "".to_string(),
             assets_count: fr.folder.assets_count,
             folders_count: fr.folder.folders_count,
+            description: fr.folder.description,
         }
     }
 }
@@ -572,6 +584,9 @@ pub struct FolderResponse {
     /// The ID of the owner, if any
     #[serde(rename = "ownerId", skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
+    /// The folder's description; the API leaves the field out when there is none
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl FolderResponse {
@@ -586,6 +601,42 @@ impl FolderResponse {
             folders_count: 0,
             parent_folder_uuid: None,
             owner_id: None,
+            description: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod folder_description_model_tests {
+    use super::*;
+
+    const WITH: &str = r#"{"folder":{"id":"b6ca24cc-eb90-4d30-807a-2a5b62084b1c","name":"Rail","description":"Rail parts","tenantId":"68555ebf-f09c-4861-96b1-692d2ec10de7","createdAt":"2026-09-23T21:55:09.848Z","updatedAt":"2026-09-23T21:55:10.313Z","assetsCount":0,"foldersCount":0}}"#;
+
+    #[test]
+    fn the_description_is_read_when_the_api_sends_one() {
+        let folder: Folder = serde_json::from_str::<SingleFolderResponse>(WITH)
+            .unwrap()
+            .into();
+        assert_eq!(folder.description(), Some("Rail parts"));
+        let json = serde_json::to_value(&folder).unwrap();
+        assert_eq!(json["description"], "Rail parts");
+    }
+
+    #[test]
+    fn a_folder_without_one_serializes_as_before() {
+        let without = WITH.replace(r#""description":"Rail parts","#, "");
+        let folder: Folder = serde_json::from_str::<SingleFolderResponse>(&without)
+            .unwrap()
+            .into();
+        assert_eq!(folder.description(), None);
+        // No `description` key: JSON output for such folders is unchanged, and a
+        // folder cache written by an older pcli2 still loads.
+        let json = serde_json::to_string(&folder).unwrap();
+        assert!(!json.contains("description"), "{json}");
+        let cached: Folder = serde_json::from_str(
+            r#"{"id":"b6ca24cc-eb90-4d30-807a-2a5b62084b1c","name":"Rail","path":"/Rail","assetsCount":0,"foldersCount":0}"#,
+        )
+        .unwrap();
+        assert_eq!(cached.description(), None);
     }
 }

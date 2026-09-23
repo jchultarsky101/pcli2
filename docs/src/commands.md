@@ -26,6 +26,7 @@ Quick reference for all available command aliases:
 | `pcli2 folder move` | `pcli2 folder mv` |
 | `pcli2 folder rename` | `pcli2 folder ren` |
 | `pcli2 folder resolve` | `pcli2 folder res` |
+| `pcli2 folder description clear` | `pcli2 folder description rm` |
 | `pcli2 folder download` | `pcli2 folder dl` |
 | `pcli2 folder geometric-match` | `pcli2 folder geometric-search`, `pcli2 folder gm` |
 | `pcli2 folder part-match` | `pcli2 folder part-search`, `pcli2 folder pm` |
@@ -273,7 +274,8 @@ Manage folder structures and bulk operations.
 
 ```
 pcli2 folder list             # List folder structure (defaults to root path if no path/UUID specified)
-pcli2 folder create           # Create a new folder
+pcli2 folder create           # Create a new folder (--description TEXT, optional)
+pcli2 folder description      # Show, set or clear a folder's description (get / set --text / clear)
 pcli2 folder get              # Get folder details
 pcli2 folder delete           # Delete a folder
 pcli2 folder rename           # Rename a folder
@@ -289,6 +291,32 @@ pcli2 folder thumbnail        # Download thumbnails for all assets in a folder
 ```
 
 **Important Note**: Folder paths are **case-insensitive**. You can use any capitalization when specifying folder paths (e.g., `/Home/Models`, `/home/models`, `/HOME/MODELS` all refer to the same folder). This matches the behavior of Windows file systems and provides a more user-friendly experience.
+
+#### Folder Descriptions
+
+A folder can carry an optional description of up to 255 characters, the one
+the web app shows. `folder get` and `folder list` include it as `description`
+in their JSON output when a folder has one; their CSV columns are unchanged.
+`folder list` reads the cached folder tree, so a description changed in the web app
+shows there once the cache refreshes (or at once with `--reload`); `set` and `clear`
+refresh it themselves.
+
+```bash
+# Set or replace a description (surrounding spaces are dropped)
+pcli2 folder description set --folder-path /Projects/Rail --text "Rail car parts, 2026 program"
+
+# Print it, alone on a line (nothing when the folder has none)
+pcli2 folder description get --folder-path /Projects/Rail
+
+# Remove it
+pcli2 folder description clear --folder-path /Projects/Rail
+
+# Give a new folder a description when creating it
+pcli2 folder create --name Rail --parent-folder-path /Projects --description "Rail car parts"
+```
+
+`set` and `clear` print nothing on success. An empty description or one over
+255 characters is refused with exit code 64 before anything is sent.
 
 #### Folder Resolve Command
 

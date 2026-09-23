@@ -254,6 +254,11 @@ fn contracts() -> Vec<Contract> {
             SingleFolderResponse
         ),
         contract!(
+            "patch",
+            "/tenants/{tenantId}/folders/{folderId}/description",
+            SingleFolderResponse
+        ),
+        contract!(
             "get",
             "/tenants/{tenantId}/folders/{folderId}/contents",
             AssetListResponse,
@@ -390,6 +395,10 @@ fn contracts() -> Vec<Contract> {
 /// return nothing). They still have to exist.
 const OTHER_ENDPOINTS: &[(&str, &str)] = &[
     ("delete", "/tenants/{tenantId}/folders/{folderId}"),
+    (
+        "delete",
+        "/tenants/{tenantId}/folders/{folderId}/description",
+    ),
     ("delete", "/tenants/{tenantId}/assets/{assetId}"),
     ("patch", "/tenants/{tenantId}/assets/{assetId}"),
     ("delete", "/tenants/{tenantId}/assets/{assetId}/metadata"),

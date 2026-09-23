@@ -624,6 +624,7 @@ mod tests {
             folders_count: 0,
             parent_folder_uuid: None,
             owner_id: None,
+            description: None,
         };
 
         let root_uuid = root_folder.uuid;
@@ -666,6 +667,7 @@ mod tests {
             folders_count: 1,
             parent_folder_uuid: None,
             owner_id: None,
+            description: None,
         };
 
         let parent_uuid = parent_folder.uuid;
@@ -680,6 +682,7 @@ mod tests {
             folders_count: 0,
             parent_folder_uuid: Some(parent_uuid),
             owner_id: None,
+            description: None,
         };
 
         let child_uuid = child_folder.uuid;
@@ -724,6 +727,7 @@ mod tests {
             folders_count: 0,
             parent_folder_uuid: parent,
             owner_id: None,
+            description: None,
         }
     }
 

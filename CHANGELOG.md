@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`config.yml` is read and written with serde_norway** - serde_yaml, which pcli2 used for its configuration file, is deprecated upstream. serde_norway is its maintained drop-in fork: the same files load, and a saved file is byte-for-byte what pcli2 wrote before (checked against real and hand-edited configurations; the format is now pinned by tests).
+
 ## [2.4.2] - 2026-09-23
 
 ### Fixed

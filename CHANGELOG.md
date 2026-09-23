@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-09-23
+
 ### Added
 - **Folder descriptions** - `pcli2 folder description get | set | clear` shows, sets or removes a folder's description (the optional text of up to 255 characters the web app shows), by `--folder-path` or `--folder-uuid`. `get` prints the text alone, so a script can read it; `set` drops surrounding spaces; an empty or over-long description is refused with exit 64 before anything is sent. `folder create --description TEXT` gives a new folder one, and without the flag nothing changes. `folder get` and `folder list` include a folder's `description` in their JSON output when it has one; their CSV columns are unchanged.
 

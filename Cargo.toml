@@ -34,7 +34,7 @@ reqwest = { version = "0.12.23", features = ["json", "multipart", "stream"] }
 serde_urlencoded = "0.7.1"
 strum = { version = "0.26.2", features = ["strum_macros", "derive"] }
 serde_json = "1.0.143"
-keyring = { version = "2.3.3", optional = true }
+keyring = { version = "4.2.0", optional = true }
 base64 = "0.22.1"
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1.37.0", features = ["full"] }

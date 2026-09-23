@@ -96,9 +96,10 @@ impl FolderHierarchy {
         let mut hierarchy = Self::new();
 
         // Fetch all folders using the API maximum page size
-        let mut page = 1;
+        let mut pager = crate::paging::Pager::new("folder listing");
         let per_page = 1000;
         loop {
+            let page = pager.page();
             trace!(
                 "Fetching folder page {} for tenant {} ({} folders so far)",
                 page,
@@ -106,7 +107,7 @@ impl FolderHierarchy {
                 hierarchy.nodes.len()
             );
             let response = client
-                .list_folders(tenant_uuid, Some(page), Some(per_page))
+                .list_folders(tenant_uuid, Some(page as u32), Some(per_page))
                 .await?;
 
             let folders_on_page = response.folders.len();
@@ -140,9 +141,13 @@ impl FolderHierarchy {
                 }
             }
 
-            // Check if we've reached the last page
-            // The API uses 1-based indexing for pages
-            if response.page_data.current_page >= response.page_data.last_page {
+            // A server that repeats a page number would otherwise be asked for the
+            // same page forever, adding its folders again each time.
+            if !pager.advance(
+                response.page_data.current_page,
+                response.page_data.last_page,
+                hierarchy.nodes.len(),
+            ) {
                 trace!(
                     "Reached last page of folders for tenant {} after {} pages",
                     tenant_uuid,
@@ -150,8 +155,6 @@ impl FolderHierarchy {
                 );
                 break;
             }
-
-            page += 1;
         }
 
         // Second pass to add children to parents that might have been processed after their children

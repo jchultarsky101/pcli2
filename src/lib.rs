@@ -43,6 +43,7 @@ pub mod http_utils;
 pub mod keyring;
 pub mod metadata;
 pub mod model;
+pub mod paging;
 pub mod param_utils;
 pub mod path_utils;
 pub mod physna_v3;

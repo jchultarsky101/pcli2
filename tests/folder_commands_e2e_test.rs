@@ -192,3 +192,49 @@ fn folder_download_resume_skips_a_complete_assembly_bundle() {
     // The second run found the assembly complete and did not download it again.
     file.assert();
 }
+
+#[test]
+fn folder_download_of_a_nested_folder_keeps_the_subfolder_layout() {
+    // /A holds a.stl and the subfolder B with b.stl; the decoy /Other is not
+    // downloaded. The subtree now comes from the folder tree.
+    let mut cli = MockCli::new();
+    let (a, b, other) = (id(1), id(2), id(3));
+    let _folders = cli.folders(&[(a, "A", None), (b, "B", Some(a)), (other, "Other", None)]);
+    let _folder_a = cli
+        .server
+        .mock(
+            "GET",
+            format!("/tenants/{}/folders/{}", cli.tenant, a).as_str(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::json!({ "folder": common::folder_json(a, "A", None) }).to_string())
+        .create();
+    let _in_a = cli.assets_in(
+        Some(a),
+        &[asset_json(id(10), "/A/a.stl", "finished", false)],
+    );
+    let _in_b = cli.assets_in(
+        Some(b),
+        &[asset_json(id(11), "/A/B/b.stl", "finished", false)],
+    );
+    let other_listing = cli.assets_in(Some(other), &[]).expect(0);
+    let _a_file = cli.file(id(10), b"a");
+    let _b_file = cli.file(id(11), b"b");
+
+    let out = cli.dir.path().join("out");
+    let output = cli
+        .cmd()
+        .args(["folder", "download", "--folder-path", "/A", "-o"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(std::fs::read(out.join("a.stl")).unwrap(), b"a");
+    assert_eq!(std::fs::read(out.join("B").join("b.stl")).unwrap(), b"b");
+    other_listing.assert();
+}

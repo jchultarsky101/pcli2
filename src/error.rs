@@ -27,6 +27,10 @@ pub enum CliError {
     /// (`--no-input`, or stdin/stderr is not a terminal).
     #[error("{0}")]
     InputRequired(String),
+    /// Arguments that parse on their own but do not make sense together
+    /// (for example a date range that ends before it starts).
+    #[error("{0}")]
+    InvalidArgument(String),
     /// A flag or positional argument that no longer exists was given.
     #[error("{0}")]
     RemovedArgument(String),
@@ -109,6 +113,7 @@ impl CliError {
             CliError::UnsupportedSubcommand(_)
             | CliError::MissingRequiredArgument(_)
             | CliError::InputRequired(_)
+            | CliError::InvalidArgument(_)
             | CliError::RemovedArgument(_) => PcliExitCode::UsageError,
             CliError::ConfigurationError(
                 crate::configuration::ConfigurationError::EnvironmentNotFound(_),

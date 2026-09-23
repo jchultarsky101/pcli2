@@ -129,3 +129,139 @@ fn user_list_accepts_a_tenant_for_one_run() {
     );
     users.assert();
 }
+
+const ACTIVITY: &str = r#"{"searches":3,"compares":1,"downloads":0,"uploads":2,"reports":0,
+    "activeUsers":2,"internalActiveUsers":1,
+    "searchesByType":{"text":1,"visual":0,"geometric":2,"part":0,"composite":0,"metadata":0},
+    "reportsByType":{"DUPLICATION":0,"SIMPLIFICATION":0,"CUSTOM":0},
+    "featureUsage":{"compare":1,"upload":2},
+    "daily":[{"date":"2026-09-01","searches":3,"compares":1,"downloads":0,"uploads":0,"reports":0,"activeUsers":2},
+             {"date":"2026-09-02","searches":0,"compares":0,"downloads":0,"uploads":2,"reports":0,"activeUsers":1}]}"#;
+
+fn activity_mock(cli: &mut MockCli, from: &str, to: &str) -> mockito::Mock {
+    cli.server
+        .mock(
+            "GET",
+            format!("/tenants/{TENANT}/activity-metrics").as_str(),
+        )
+        .match_query(mockito::Matcher::AllOf(vec![
+            mockito::Matcher::UrlEncoded("from".into(), from.into()),
+            mockito::Matcher::UrlEncoded("to".into(), to.into()),
+        ]))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(ACTIVITY)
+        .create()
+}
+
+#[test]
+fn tenant_usage_prints_one_row_per_count_including_asset_types() {
+    let mut cli = MockCli::new();
+    let activity = activity_mock(&mut cli, "2026-09-01", "2026-09-02");
+    let types = cli
+        .server
+        .mock(
+            "GET",
+            format!("/tenants/{TENANT}/assets/type-counts").as_str(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"model":10,"image":2}"#)
+        .create();
+    let output = cli
+        .cmd()
+        .args([
+            "tenant",
+            "usage",
+            "--from",
+            "2026-09-01",
+            "--to",
+            "2026-09-02",
+            "--format",
+            "csv",
+            "--headers",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.starts_with("CATEGORY,NAME,COUNT\nactivity,searches,3\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\nsearches,geometric,2\n"), "{stdout}");
+    assert!(stdout.contains("\nfeatures,upload,2\n"), "{stdout}");
+    assert!(
+        stdout.ends_with("assets,model,10\nassets,image,2\n"),
+        "{stdout}"
+    );
+    activity.assert();
+    types.assert();
+}
+
+#[test]
+fn tenant_usage_daily_needs_no_asset_counts() {
+    let mut cli = MockCli::new();
+    let activity = activity_mock(&mut cli, "2026-08-27", "2026-09-02");
+    let types = cli
+        .server
+        .mock(
+            "GET",
+            format!("/tenants/{TENANT}/assets/type-counts").as_str(),
+        )
+        .expect(0)
+        .create();
+    let output = cli
+        .cmd()
+        .args([
+            "tenant",
+            "usage",
+            "--to",
+            "2026-09-02",
+            "--days",
+            "7",
+            "--daily",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let days: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(days[1]["date"], "2026-09-02");
+    assert_eq!(days[1]["uploads"], 2);
+    activity.assert();
+    types.assert();
+}
+
+#[test]
+fn tenant_usage_rejects_a_bad_period_before_calling_the_api() {
+    let mut cli = MockCli::new();
+    let activity = cli
+        .server
+        .mock("GET", mockito::Matcher::Regex("activity-metrics".into()))
+        .expect(0)
+        .create();
+    for args in [
+        vec!["--from", "2026-09-10", "--to", "2026-09-01"],
+        vec!["--from", "2025-01-01", "--to", "2026-01-02"],
+        vec!["--from", "yesterday"],
+    ] {
+        let output = cli
+            .cmd()
+            .args(["tenant", "usage"])
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(64), "{args:?}: {output:?}");
+    }
+    activity.assert();
+}

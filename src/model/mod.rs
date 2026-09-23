@@ -207,6 +207,7 @@ mod folders;
 mod reports;
 mod search;
 mod text_search;
+mod usage;
 
 pub use assets::*;
 pub use dependencies::*;
@@ -214,6 +215,7 @@ pub use folders::*;
 pub use reports::*;
 pub use search::*;
 pub use text_search::*;
+pub use usage::*;
 
 #[cfg(test)]
 mod unknown_enum_value_tests {

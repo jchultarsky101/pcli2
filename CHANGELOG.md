@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-23
+
+### Added
+- **`pcli2 tenant usage` reports how much the tenant used Physna** - Searches (by type), compares, downloads, uploads, reports (by type), distinct active users and per-feature counts over a period of UTC days, plus how many assets of each type the tenant holds. The last 30 days by default; `--days`, `--from` and `--to` choose another period of up to 366 days, and `--daily` prints one row per day. CSV and table output have one `CATEGORY,NAME,COUNT` row per number, so a count Physna adds later is a new row rather than a new column. Needs the tenant admin role.
+
+### Changed
+- **Dependencies** - clap 4.6.7, clap_complete 4.6.11, uuid 1.26.1, rust_xlsxwriter 0.99.1, dirs 7.0.0, ptree 0.5.2, clap_mangen 0.3.3 and strum 0.28.0. Configuration, cache and credential file locations are unchanged, and so is the output of every command. Dependabot now proposes minor and patch updates monthly, grouped into one pull request; major versions are upgraded by hand.
+
 ## [2.3.0] - 2026-09-23
 
 ### Added

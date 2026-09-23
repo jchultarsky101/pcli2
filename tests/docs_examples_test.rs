@@ -168,3 +168,60 @@ fn every_documented_example_parses() {
         failures.join("\n")
     );
 }
+
+/// Links to the documentation site point at pages that exist. The user guide is
+/// published under `/pcli2/book/`; the site root only has the landing page
+/// (the README), the changelog and the downloads, so a root-level
+/// `/pcli2/<page>.html` link is a 404 (it was, for the whole README list).
+#[test]
+fn documentation_site_links_point_at_existing_pages() {
+    const SITE: &str = "jchultarsky101.github.io/pcli2/";
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut broken = Vec::new();
+    for file in doc_files() {
+        let text = std::fs::read_to_string(&file).unwrap();
+        for (at, _) in text.match_indices(SITE) {
+            let rest = &text[at + SITE.len()..];
+            let end = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || "_-./".contains(c)))
+                .unwrap_or(rest.len());
+            let page = &rest[..end];
+            let ok = match page {
+                "" | "changelog/" | "artifacts/" | "book/" => true,
+                _ => page
+                    .strip_prefix("book/")
+                    .and_then(|p| p.strip_suffix(".html"))
+                    .is_some_and(|name| root.join("docs/src").join(format!("{name}.md")).is_file()),
+            };
+            if !ok {
+                broken.push(format!("{}: {SITE}{page}", file.display()));
+            }
+        }
+    }
+    assert!(
+        broken.is_empty(),
+        "links to missing pages:\n{}",
+        broken.join("\n")
+    );
+}
+
+/// The README is also the documentation site's landing page, where a link
+/// relative to the repository (`CONTRIBUTING.md`) is a 404. Links in it are
+/// absolute or in-page anchors.
+#[test]
+fn readme_links_work_on_github_and_on_the_site() {
+    let readme =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md")).unwrap();
+    let relative: Vec<&str> = readme
+        .match_indices("](")
+        .map(|(at, _)| {
+            let target = &readme[at + 2..];
+            &target[..target.find(')').unwrap_or(target.len())]
+        })
+        .filter(|target| !target.starts_with("http") && !target.starts_with('#'))
+        .collect();
+    assert!(
+        relative.is_empty(),
+        "relative links in README.md: {relative:?}"
+    );
+}

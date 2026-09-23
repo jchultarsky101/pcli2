@@ -346,6 +346,7 @@ pcli2 tenant use            # Set the active tenant
 pcli2 tenant clear          # Clear the active tenant
 pcli2 tenant state          # Get asset state counts for the current tenant
 pcli2 tenant failures       # List recent failures (assets, reports, part-finder reports), newest first
+pcli2 tenant usage          # Searches, downloads, active users, ... over a period, plus asset counts by type
 pcli2 tenant metadata list      # List the tenant's registered metadata fields with their types
 pcli2 tenant metadata rename    # Rename a field (--name OLD --new-name NEW); values on assets are kept
 pcli2 tenant metadata delete    # Delete a field (--name NAME); --force also removes its values from every asset
@@ -358,6 +359,33 @@ The `tenant metadata list` output (CSV) uses the same header as the classic `cre
 
 ```bash
 pcli2 tenant metadata list --format csv --headers > fields.csv
+```
+
+#### Tenant Usage
+
+`tenant usage` reports how much the tenant used Physna over a period of UTC
+days: searches (by type), compares, downloads, uploads, reports (by type),
+distinct active users and per-feature counts, plus how many assets of each type
+the tenant holds now (demo assets uploaded by Physna are not counted). It needs
+the tenant admin role.
+
+The period is the last 30 days unless `--days N`, `--from` or `--to`
+(`YYYY-MM-DD`) say otherwise, up to 366 days. The CSV and table output has one
+`CATEGORY,NAME,COUNT` row per number, so a count Physna adds later arrives as a
+new row, not a new column; `--daily` prints one row per day instead.
+
+```bash
+# The last 30 days
+pcli2 tenant usage
+
+# A quarter, as JSON (the API's fields plus from, to and assetTypes)
+pcli2 tenant usage --from 2026-07-01 --to 2026-09-30 --format json
+
+# Active users per day over the last week
+pcli2 tenant usage --days 7 --daily --format csv --headers --columns DATE,ACTIVE_USERS
+
+# One number in a script: searches in the last 30 days
+pcli2 tenant usage --format csv | awk -F, '$1=="activity" && $2=="searches" {print $3}'
 ```
 
 #### Finding Out Why an Asset Failed

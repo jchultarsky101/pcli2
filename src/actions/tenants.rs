@@ -393,6 +393,8 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
                 CliActionError::BusinessLogicError(msg)
             }
             crate::error::CliError::InputRequired(msg) => CliActionError::InputRequired(msg),
+            // Tenant resolution never raises this; mapped for exhaustiveness.
+            crate::error::CliError::InvalidArgument(msg) => CliActionError::BusinessLogicError(msg),
             crate::error::CliError::RemovedArgument(msg) => {
                 CliActionError::MissingRequiredArgument(msg)
             }
@@ -653,6 +655,81 @@ pub async fn tenant_metadata_coverage(
     Ok(())
 }
 
+/// `tenant usage [--from D] [--to D | --days N] [--daily]`: activity over a
+/// period of UTC days, plus the tenant's asset counts by type.
+pub async fn tenant_usage(sub_matches: &ArgMatches) -> Result<(), crate::error::CliError> {
+    trace!("Executing tenant usage command...");
+    let (from, to) = usage_period(
+        sub_matches.get_one::<chrono::NaiveDate>("from").copied(),
+        sub_matches.get_one::<chrono::NaiveDate>("to").copied(),
+        sub_matches.get_one::<u32>("days").copied(),
+        chrono::Utc::now().date_naive(),
+    )?;
+    let format = plain_format(sub_matches)?;
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant_uuid = *ctx.tenant_uuid();
+    let activity = ctx
+        .api()
+        .get_activity_metrics(&tenant_uuid, from, to)
+        .await
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+
+    if sub_matches.get_flag("daily") {
+        let daily = crate::model::DailyUsage(activity.daily);
+        crate::format::print_output(&daily.format(format)?);
+        return Ok(());
+    }
+
+    let asset_types = ctx
+        .api()
+        .get_asset_type_counts(&tenant_uuid)
+        .await
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    let usage = crate::model::TenantUsage {
+        from: from.to_string(),
+        to: to.to_string(),
+        activity,
+        asset_types,
+    };
+    crate::format::print_output(&usage.format(format)?);
+    Ok(())
+}
+
+/// The most days one activity request may cover, both ends included.
+const MAX_USAGE_DAYS: i64 = 366;
+/// The period when neither `--from` nor `--days` is given.
+const DEFAULT_USAGE_DAYS: u32 = 30;
+
+/// Resolve `--from`, `--to` and `--days` into a period of UTC days, checked
+/// the way the server checks it so a mistake is a usage error (exit 64)
+/// rather than an HTTP 400.
+fn usage_period(
+    from: Option<chrono::NaiveDate>,
+    to: Option<chrono::NaiveDate>,
+    days: Option<u32>,
+    today: chrono::NaiveDate,
+) -> Result<(chrono::NaiveDate, chrono::NaiveDate), crate::error::CliError> {
+    let to = to.unwrap_or(today);
+    let from = from.unwrap_or_else(|| {
+        let days = days.unwrap_or(DEFAULT_USAGE_DAYS);
+        to - chrono::Duration::days(i64::from(days) - 1)
+    });
+    if from > to {
+        return Err(crate::error::CliError::InvalidArgument(format!(
+            "--from {} is after --to {}",
+            from, to
+        )));
+    }
+    let days = (to - from).num_days() + 1;
+    if days > MAX_USAGE_DAYS {
+        return Err(crate::error::CliError::InvalidArgument(format!(
+            "{} to {} is {} days; the period can be at most {} days",
+            from, to, days, MAX_USAGE_DAYS
+        )));
+    }
+    Ok((from, to))
+}
+
 /// `tenant metadata missing [--folder-path P]* [--extension E]* [--limit N]`:
 /// the assets with no metadata at all, oldest first.
 pub async fn list_assets_without_metadata(
@@ -726,4 +803,77 @@ pub async fn list_tenant_metadata_fields(
     crate::format::print_output(&fields.format(format)?);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod usage_period_tests {
+    use super::usage_period;
+    use chrono::NaiveDate;
+
+    fn day(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    #[test]
+    fn the_default_is_the_30_days_ending_today() {
+        let today = day("2026-09-23");
+        assert_eq!(
+            usage_period(None, None, None, today).unwrap(),
+            (day("2026-08-25"), today)
+        );
+        assert_eq!(
+            usage_period(None, None, Some(1), today).unwrap(),
+            (today, today)
+        );
+        assert_eq!(
+            usage_period(None, Some(day("2026-01-31")), Some(7), today).unwrap(),
+            (day("2026-01-25"), day("2026-01-31"))
+        );
+    }
+
+    #[test]
+    fn from_and_to_are_taken_as_given() {
+        assert_eq!(
+            usage_period(
+                Some(day("2026-07-01")),
+                Some(day("2026-09-30")),
+                None,
+                day("2026-09-23")
+            )
+            .unwrap(),
+            (day("2026-07-01"), day("2026-09-30"))
+        );
+    }
+
+    #[test]
+    fn a_reversed_or_too_long_period_is_a_usage_error() {
+        let today = day("2026-09-23");
+        let reversed = usage_period(
+            Some(day("2026-09-10")),
+            Some(day("2026-09-01")),
+            None,
+            today,
+        );
+        assert!(reversed.unwrap_err().to_string().contains("is after"));
+        // The server's limit, measured live: 366 days counting both ends.
+        assert!(usage_period(
+            Some(day("2025-01-01")),
+            Some(day("2026-01-01")),
+            None,
+            today
+        )
+        .is_ok());
+        let too_long = usage_period(
+            Some(day("2025-01-01")),
+            Some(day("2026-01-02")),
+            None,
+            today,
+        )
+        .unwrap_err();
+        assert_eq!(
+            too_long.exit_code(),
+            crate::exit_codes::PcliExitCode::UsageError
+        );
+        assert!(usage_period(None, None, Some(366), today).is_ok());
+    }
 }

@@ -32,7 +32,7 @@ pub use create::{
 pub use delete::{delete_asset, delete_asset_metadata};
 pub use dependency_diff::compare_asset_dependencies;
 pub use diagnose::diagnose_asset;
-pub use download::{download_asset, download_asset_thumbnail, download_folder};
+pub use download::{download_asset, download_asset_thumbnail};
 pub use full_inventory::{count_assets, inventory};
 pub use list::list_assets;
 pub use match_ops::{

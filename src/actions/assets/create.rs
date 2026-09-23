@@ -4,7 +4,9 @@
 //! including batch operations and metadata management.
 
 use crate::{
-    actions::assets::metadata_batch_csv::{parse_batch_csv, BatchAssetRef, BatchCsvFormat},
+    actions::assets::metadata_batch_csv::{
+        parse_batch_csv, BatchAssetRef, BatchCsvFormat, BatchEntry,
+    },
     actions::CliActionError,
     commands::params::{
         PARAMETER_CONTINUE_ON_ERROR, PARAMETER_DELETE_IF_EMPTY, PARAMETER_FOLDER_PATH,
@@ -355,7 +357,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         .clone();
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").unwrap_or(&5);
     let concurrent = *concurrent_param;
-    let show_progress = sub_matches.get_flag("progress");
+    let show_progress = crate::terminal::show_progress(sub_matches);
 
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;
@@ -442,7 +444,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     let succeeded = outcome.assets.len();
     let failed = outcome.failures.len();
     if succeeded > 0 {
-        println!("{}", AssetList::from(outcome.assets).format(format)?);
+        crate::format::print_output(&AssetList::from(outcome.assets).format(format)?);
     }
     if skipped > 0 {
         eprintln!(
@@ -470,6 +472,103 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     Ok(())
 }
 
+/// Run an API call again when it fails for authentication, up to the threshold the
+/// folder match commands use.
+///
+/// The client renews the token on a 401 by itself; what reaches here is a failed
+/// renewal, and `refresh_token` reports every cause of that - a 503 or a rate limit
+/// at the token endpoint as much as a revoked credential - as the same error. One of
+/// those used to stop a ten-thousand-row batch on the spot. The call is simply made
+/// again (each attempt tries a fresh renewal); a credential that is really dead fails
+/// every attempt and the caller stops the run as before.
+macro_rules! retry_on_auth_failure {
+    ($call:expr) => {{
+        let mut attempt: usize = 1;
+        loop {
+            match $call {
+                Err(e)
+                    if e.is_credential_failure()
+                        && attempt
+                            < crate::actions::assets::match_ops::CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP =>
+                {
+                    debug!(
+                        "Authentication failed ({}); retrying (attempt {} of {})",
+                        e,
+                        attempt + 1,
+                        crate::actions::assets::match_ops::CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(attempt as u64)).await;
+                    attempt += 1;
+                }
+                other => break other,
+            }
+        }
+    }};
+}
+
+/// Which write of a batch row failed.
+enum BatchWriteStage {
+    Delete,
+    Update,
+}
+
+/// A row's metadata split into the fields to delete (empty values, present only
+/// with --delete-if-empty) and the fields to set. Values stay JSON strings; the
+/// coercion to each field's registered type happens in the client.
+fn split_batch_metadata(
+    raw_metadata: &HashMap<String, String>,
+) -> (Vec<String>, HashMap<String, serde_json::Value>) {
+    let mut fields_to_delete: Vec<String> = Vec::new();
+    let mut typed_metadata: HashMap<String, serde_json::Value> = HashMap::new();
+    for (field_name, raw_value) in raw_metadata {
+        let json_value = convert_string_to_json_type(raw_value, None);
+        if json_value.is_null() {
+            fields_to_delete.push(field_name.clone());
+        } else {
+            typed_metadata.insert(field_name.clone(), json_value);
+        }
+    }
+    fields_to_delete.sort();
+    (fields_to_delete, typed_metadata)
+}
+
+/// Write one batch row: delete its emptied fields, then set the others.
+async fn write_batch_row(
+    api: &mut PhysnaApiClient,
+    tenant_uuid: &uuid::Uuid,
+    entry: &BatchEntry,
+    asset: &crate::model::Asset,
+    field_registry: &mut HashMap<String, String>,
+) -> Result<(), (BatchWriteStage, ApiError)> {
+    let (fields_to_delete, typed_metadata) = split_batch_metadata(&entry.metadata);
+    if !fields_to_delete.is_empty() {
+        let keys: Vec<&str> = fields_to_delete.iter().map(|s| s.as_str()).collect();
+        retry_on_auth_failure!(
+            api.delete_asset_metadata(
+                &tenant_uuid.to_string(),
+                &asset.uuid().to_string(),
+                keys.clone()
+            )
+            .await
+        )
+        .map_err(|e| (BatchWriteStage::Delete, e))?;
+    }
+    if !typed_metadata.is_empty() {
+        retry_on_auth_failure!(
+            api.update_asset_metadata_with_registry(
+                tenant_uuid,
+                &asset.uuid(),
+                &typed_metadata,
+                Some(&entry.types),
+                field_registry,
+            )
+            .await
+        )
+        .map_err(|e| (BatchWriteStage::Update, e))?;
+    }
+    Ok(())
+}
+
 /// Create metadata for multiple assets from a CSV file.
 ///
 /// This function handles the "asset metadata create-batch" command, which creates or updates
@@ -490,7 +589,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         .get_one::<std::path::PathBuf>(PARAMETER_INPUT)
         .ok_or(CliError::MissingRequiredArgument("--input".to_string()))?;
 
-    let show_progress = sub_matches.get_flag("progress");
+    let show_progress = crate::terminal::show_progress(sub_matches);
     let continue_on_error = sub_matches.get_flag(PARAMETER_CONTINUE_ON_ERROR);
     let delete_if_empty = sub_matches.get_flag(PARAMETER_DELETE_IF_EMPTY);
     let requested_format = sub_matches
@@ -501,8 +600,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     // Parse and validate the whole CSV file (classic vertical or UI
     // horizontal layout) before authenticating or making any API calls, so a
     // malformed file fails fast instead of half-applying.
-    let file = std::fs::File::open(csv_file_path)
-        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
+    let file = std::fs::File::open(csv_file_path)?;
     let parsed =
         parse_batch_csv(file, requested_format, delete_if_empty).map_err(CliError::ActionError)?;
 
@@ -544,7 +642,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     // One listing per distinct parent folder, and one registry fetch, for the
     // whole run. Both used to happen once per row: a 5,000-row batch into a
     // 10,000-asset folder was a quarter of a million requests.
-    let mut folder_listings: std::collections::HashMap<String, crate::model::AssetList> =
+    let mut folder_listings: std::collections::HashMap<String, Option<crate::model::AssetList>> =
         std::collections::HashMap::new();
     let mut field_registry = api.fetch_metadata_field_types(&tenant.uuid).await?;
     let mut auth_failure_occurred = false;
@@ -588,16 +686,38 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         None => error_utils::report_warning(&msg),
     };
 
-    for entry in &entries {
-        // Display key for progress, caching, and error messages: the asset
-        // path, or the UUID when the row identified the asset by UUID.
-        let asset_display = entry.asset.display();
-        let raw_metadata = &entry.metadata;
-
-        if let Some(pb) = progress_bar.as_ref() {
-            pb.set_message(asset_display.clone());
-            pb.inc(1);
+    // UUID rows are looked up a thousand at a time before the rows are walked;
+    // one request per row used to double the requests of a UUID-keyed batch. A
+    // UUID the batch lookup does not return is looked up on its own below, which
+    // reports it exactly as before.
+    let batch_uuids: Vec<uuid::Uuid> = entries
+        .iter()
+        .filter_map(|entry| match &entry.asset {
+            BatchAssetRef::Uuid(uuid) => Some(*uuid),
+            BatchAssetRef::Path(_) => None,
+        })
+        .collect();
+    if !batch_uuids.is_empty() {
+        match api.get_assets_batch(&tenant.uuid, &batch_uuids).await {
+            Ok(assets) => {
+                for asset in assets {
+                    asset_cache.insert(asset.uuid().to_string(), asset);
+                }
+            }
+            Err(e) => debug!(
+                "Batch asset lookup failed; looking assets up one by one: {}",
+                e
+            ),
         }
+    }
+
+    // Phase 1: resolve every row's asset. Nothing is written until the rows to
+    // write are known, so a row that cannot be resolved (without
+    // --continue-on-error) stops the batch before its first write instead of
+    // halfway through it.
+    let mut to_write: Vec<(&BatchEntry, crate::model::Asset)> = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let asset_display = entry.asset.display();
 
         // Proactively refresh token if expiring soon
         const TOKEN_REFRESH_THRESHOLD_SECONDS: u64 = 120;
@@ -612,13 +732,13 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         let asset = match asset_cache.get(&asset_display) {
             Some(cached) => cached.clone(),
             None => {
-                let lookup_result = match &entry.asset {
+                let lookup_result = retry_on_auth_failure!(match &entry.asset {
                     BatchAssetRef::Uuid(uuid) => api.get_asset_by_uuid(&tenant.uuid, uuid).await,
                     BatchAssetRef::Path(path) => {
                         asset_by_path_cached(&mut api, &tenant.uuid, path, &mut folder_listings)
                             .await
                     }
-                };
+                });
                 match lookup_result {
                     Ok(asset) => {
                         // Cache the asset for potential reuse
@@ -666,6 +786,9 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                                     "Skipped '{}' — lookup failed: {}",
                                     asset_display, e
                                 ));
+                            }
+                            if let Some(pb) = progress_bar.as_ref() {
+                                pb.inc(1);
                             }
                             continue;
                         }
@@ -715,32 +838,62 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
             }
         };
 
-        // Split into fields to delete (empty value, only present when the file
-        // was parsed with --delete-if-empty) and fields to update (non-empty
-        // value). Values are kept as JSON strings here; the actual coercion to
-        // each field's type (registered type wins, else the declared TYPE
-        // column) happens in update_asset_metadata_with_registration, which is
-        // the only layer that knows the tenant's field-type registry.
-        let mut fields_to_delete: Vec<String> = Vec::new();
-        let mut typed_metadata: HashMap<String, serde_json::Value> = HashMap::new();
+        to_write.push((entry, asset));
+    }
 
-        for (field_name, raw_value) in raw_metadata {
-            let json_value = convert_string_to_json_type(raw_value, None);
-            if json_value.is_null() {
-                fields_to_delete.push(field_name.clone());
-            } else {
-                typed_metadata.insert(field_name.clone(), json_value);
+    // Phase 2: register the fields no asset has yet, once each and in row order,
+    // as the first row using each field used to. The writes below run
+    // concurrently and must not race to create the same field.
+    if !auth_failure_occurred {
+        for (entry, _) in &to_write {
+            let (_, typed_metadata) = split_batch_metadata(&entry.metadata);
+            if !typed_metadata.is_empty() {
+                api.register_missing_metadata_fields(
+                    &tenant.uuid,
+                    &typed_metadata,
+                    Some(&entry.types),
+                    &mut field_registry,
+                )
+                .await;
             }
         }
-        let declared_types = &entry.types;
+    }
 
-        // Delete fields with empty values
-        if !fields_to_delete.is_empty() {
-            let keys: Vec<&str> = fields_to_delete.iter().map(|s| s.as_str()).collect();
-            if let Err(e) = api
-                .delete_asset_metadata(&tenant.uuid.to_string(), &asset.uuid().to_string(), keys)
-                .await
-            {
+    // Phase 3: write, `--concurrent` rows at a time. Results are taken in row
+    // order, so messages, skips and stops read as they always did; a stop
+    // cancels the writes still in flight.
+    let concurrency = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT)
+        .copied()
+        .unwrap_or(1)
+        .max(1);
+    let tenant_uuid = tenant.uuid;
+    let rows_to_write = if auth_failure_occurred {
+        Vec::new()
+    } else {
+        std::mem::take(&mut to_write)
+    };
+    use futures::StreamExt;
+    let mut writes = futures::stream::iter(rows_to_write.into_iter().map(|(entry, asset)| {
+        let mut api = api.clone();
+        let mut registry = field_registry.clone();
+        async move {
+            let result =
+                write_batch_row(&mut api, &tenant_uuid, entry, &asset, &mut registry).await;
+            (entry, result)
+        }
+    }))
+    .buffered(concurrency);
+
+    while let Some((entry, result)) = writes.next().await {
+        let asset_display = entry.asset.display();
+        if let Some(pb) = progress_bar.as_ref() {
+            pb.set_message(asset_display.clone());
+            pb.inc(1);
+        }
+        match result {
+            Ok(()) => success_count += 1,
+            Err((BatchWriteStage::Delete, e)) => {
                 // Authenticated, but not permitted. Physna has no per-asset
                 // permissions - an account may write every asset or none - so this
                 // will fail identically for everything left in the batch. Stopping
@@ -828,20 +981,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 );
                 return Err(CliError::PhysnaExtendedApiError(e));
             }
-        }
-
-        // Update fields with non-empty values
-        if !typed_metadata.is_empty() {
-            if let Err(e) = api
-                .update_asset_metadata_with_registry(
-                    &tenant.uuid,
-                    &asset.uuid(),
-                    &typed_metadata,
-                    Some(declared_types),
-                    &mut field_registry,
-                )
-                .await
-            {
+            Err((BatchWriteStage::Update, e)) => {
                 // Authenticated, but not permitted. Physna has no per-asset
                 // permissions - an account may write every asset or none - so this
                 // will fail identically for everything left in the batch. Stopping
@@ -949,8 +1089,6 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                 return Err(CliError::PhysnaExtendedApiError(e));
             }
         }
-
-        success_count += 1;
     }
 
     if let Some(pb) = progress_bar.as_ref() {
@@ -1086,18 +1224,29 @@ async fn asset_by_path_cached(
     api: &mut PhysnaApiClient,
     tenant_uuid: &uuid::Uuid,
     asset_path: &str,
-    listings: &mut std::collections::HashMap<String, crate::model::AssetList>,
+    listings: &mut std::collections::HashMap<String, Option<crate::model::AssetList>>,
 ) -> Result<crate::model::Asset, ApiError> {
     let parent = PhysnaApiClient::get_parent_folder_path(asset_path)?;
     if !listings.contains_key(&parent) {
-        let listing = api
+        // A folder that does not exist is remembered as such (`None`). Each lookup
+        // under it used to re-download the tenant's whole folder tree, so five
+        // hundred rows under a mistyped folder meant five hundred full refreshes.
+        let listing = match api
             .list_assets_by_parent_folder_path(tenant_uuid, &parent)
-            .await?;
+            .await
+        {
+            Ok(listing) => Some(listing),
+            Err(ApiError::FolderNotFound(_)) | Err(ApiError::PathNotFound(_)) => None,
+            Err(e) => return Err(e),
+        };
         listings.insert(parent.clone(), listing);
     }
+    let listing = listings[&parent]
+        .as_ref()
+        .ok_or_else(|| ApiError::FolderNotFound(parent.clone()))?;
     let name = PhysnaApiClient::asset_name_from_path(asset_path)
         .ok_or_else(|| ApiError::InvalidAssetPath(asset_path.to_string()))?;
-    listings[&parent]
+    listing
         .find_by_name(&name)
         .cloned()
         .ok_or_else(|| ApiError::PathNotFound(asset_path.to_string()))

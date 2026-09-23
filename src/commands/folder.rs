@@ -44,6 +44,10 @@ pub fn folder_command() -> Command {
         .subcommand(
             Command::new(COMMAND_LIST)
                 .about("List all folders")
+                .after_help(crate::commands::examples(&[
+                    ("The folder tree", "pcli2 folder list --format tree"),
+                    ("One folder's subfolders as CSV", "pcli2 folder list --folder-path /Home/Parts --format csv --headers"),
+                ]))
                 .visible_alias("ls")
                 .arg(tenant_parameter())
                 .arg(format_with_metadata_parameter())
@@ -100,8 +104,10 @@ pub fn folder_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
-                .arg(parent_folder_uuid_parameter())
-                .arg(parent_folder_path_parameter())
+                .arg(parent_folder_uuid_parameter().help("UUID of the folder to move it into"))
+                .arg(parent_folder_path_parameter().help(
+                    "Path of the folder to move it into; / for the root (e.g., /Home/Projects)",
+                ))
                 .group(folder_identifier_group())
                 .group(parent_folder_identifier_group()),
         )
@@ -139,7 +145,7 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during download"),
                 )
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent downloads (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent downloads (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
@@ -148,22 +154,7 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Continue downloading other assets if one fails"),
                 )
-                .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
-                        .long(crate::commands::params::PARAMETER_DELAY)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("0")
-                        .help("Delay in seconds between downloads (range: 0-180)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if val > 180 {
-                                Err("Value must be between 0 and 180".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
-                )
+                .arg(crate::commands::params::delay_parameter("Delay in seconds between downloads (range: 0-180)"))
                 .arg(
                     crate::commands::params::resume_parameter()
                 )
@@ -188,6 +179,7 @@ pub fn folder_command() -> Command {
                     crate::commands::params::FORMAT_JSON,
                     crate::commands::params::FORMAT_CSV,
                     crate::commands::params::FORMAT_TREE,
+                    "table",
                 ]))
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_PROGRESS)
@@ -199,7 +191,7 @@ pub fn folder_command() -> Command {
         )
         .subcommand(
             Command::new(COMMAND_MATCH)
-                .visible_alias("geometric-search") // Add alias for geometric-search
+                .visible_aliases(["geometric-search", "gm"])
                 .about("Find geometrically similar assets for all assets in one or more folders")
                 .after_help(
                     "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
@@ -225,15 +217,21 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Only show matches where both assets belong to the specified paths"),
                 )
+                .arg(
+                    clap::Arg::new("groups")
+                        .long("groups")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Group assets that match each other (directly or through a chain of matches): adds GROUP_ID and GROUP_SIZE as the last columns (groupId and groupSize in JSON)"),
+                )
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_XLS]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_XLS, "xlsx"]))
                 .arg(output_file_parameter().help(
                     "Output file path, used with --format xls (default: match_report.xlsx)",
                 ))
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
@@ -246,10 +244,10 @@ pub fn folder_command() -> Command {
         )
         .subcommand(
             Command::new(COMMAND_PART_MATCH)
-                .visible_alias("part-search") // Add alias for part-search
+                .visible_aliases(["part-search", "pm"])
                 .about("Find part matches for all assets in one or more folders")
                 .after_help(
-                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
+                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID). Two runs over unchanged data produce identical output.",
                 )
                 .arg(tenant_parameter())
                 .arg(
@@ -277,7 +275,7 @@ pub fn folder_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
@@ -290,10 +288,10 @@ pub fn folder_command() -> Command {
         )
         .subcommand(
             Command::new(COMMAND_VISUAL_MATCH)
-                .visible_alias("visual-search") // Add alias for visual-search
+                .visible_aliases(["visual-search", "vm"])
                 .about("Find visually similar assets for all assets in one or more folders")
                 .after_help(
-                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
+                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID). Two runs over unchanged data produce identical output.",
                 )
                 .arg(tenant_parameter())
                 .arg(limit_parameter())
@@ -322,7 +320,7 @@ pub fn folder_command() -> Command {
                 .arg(format_pretty_parameter())
                 .arg(format_parameter().value_parser([crate::commands::params::FORMAT_JSON, crate::commands::params::FORMAT_CSV]))
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent operations (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent operations (range: 1-10)"),
                 )
                 .arg(crate::commands::params::checkpoint_parameter())
                 .arg(
@@ -363,24 +361,9 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during upload"),
                 )
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent uploads (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent uploads (range: 1-10)"),
                 )
-                .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
-                        .long(crate::commands::params::PARAMETER_DELAY)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("0")
-                        .help("Delay in seconds between uploads (range: 0-180)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if val > 180 {
-                                Err("Value must be between 0 and 180".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
-                )
+                .arg(crate::commands::params::delay_parameter("Delay in seconds between uploads (range: 0-180)"))
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
                         .long(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
@@ -409,7 +392,7 @@ pub fn folder_command() -> Command {
                         .help("Display progress bar during download"),
                 )
                 .arg(
-                    crate::commands::params::concurrent_parameter("1", "Maximum number of concurrent downloads (range: 1-10)"),
+                    crate::commands::params::concurrent_parameter("4", "Maximum number of concurrent downloads (range: 1-10)"),
                 )
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR)
@@ -418,21 +401,6 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Continue downloading other thumbnails if one fails"),
                 )
-                .arg(
-                    clap::Arg::new(crate::commands::params::PARAMETER_DELAY)
-                        .long(crate::commands::params::PARAMETER_DELAY)
-                        .num_args(1)
-                        .required(false)
-                        .default_value("0")
-                        .help("Delay in seconds between downloads (range: 0-180)")
-                        .value_parser(|s: &str| -> Result<usize, String> {
-                            let val: usize = s.parse().map_err(|_| "Must be a number".to_string())?;
-                            if val > 180 {
-                                Err("Value must be between 0 and 180".to_string())
-                            } else {
-                                Ok(val)
-                            }
-                        }),
-                )
+                .arg(crate::commands::params::delay_parameter("Delay in seconds between downloads (range: 0-180)"))
         )
 }

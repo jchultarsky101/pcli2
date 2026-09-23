@@ -101,6 +101,20 @@ pub fn safe_relative_path(relative: &str) -> Option<std::path::PathBuf> {
     }
 }
 
+/// A single file or directory name the server sent, checked before it is used as a
+/// default local path.
+///
+/// `PathBuf::push` replaces the whole path when given an absolute one, and on
+/// Windows `\` separates directories, so an asset named `/etc/x` or `..\x` would
+/// otherwise be written somewhere the user never chose. `None` when the name is not
+/// one plain path segment.
+pub fn safe_file_name(name: &str) -> Option<std::path::PathBuf> {
+    if name.contains('/') {
+        return None;
+    }
+    safe_relative_path(name)
+}
+
 /// Expand repeatable list arguments that the help text promises accept
 /// comma-separated values (`--name a,b` as well as `--name a --name b`).
 ///
@@ -229,14 +243,12 @@ pub async fn resolve_folder<'a>(
     } else if let Some(path) = path_param {
         let normalized_path = crate::model::normalize_path(path);
         if normalized_path == "/" {
-            // Handle root path specially
-            let folder_uuid =
-                super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;
-            let folder_response = api
-                .get_folder(&tenant.uuid, &folder_uuid)
-                .await
-                .map_err(CliError::PhysnaExtendedApiError)?;
-            Ok(folder_response)
+            // The root has no folder record to show or change. This branch used to
+            // look `/` up like any folder, which always failed as "folder not
+            // found".
+            Err(CliError::MissingRequiredArgument(
+                "'/' is the tenant's root, which has no folder record of its own; list its contents with 'pcli2 folder list' or 'pcli2 asset list --folder-path /'".to_string(),
+            ))
         } else {
             let folder_uuid =
                 super::folders::resolve_folder_uuid_by_path(api, tenant, path).await?;
@@ -257,6 +269,25 @@ pub async fn resolve_folder<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::safe_file_name;
+
+    #[test]
+    fn a_server_name_is_only_a_default_path_when_it_is_one_plain_segment() {
+        assert!(safe_file_name("bracket.stl").is_some());
+        assert!(safe_file_name("Part 1 (copy).SLDPRT").is_some());
+        for bad in [
+            "",
+            ".",
+            "..",
+            "/etc/passwd",
+            "../x.stl",
+            "a/b.stl",
+            "..\\x.stl",
+        ] {
+            assert!(safe_file_name(bad).is_none(), "{bad:?} must be refused");
+        }
+    }
+
     #[test]
     fn test_resolve_asset_neither_provided() {
         // This test verifies that the function correctly returns an error when neither parameter is provided

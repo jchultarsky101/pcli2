@@ -234,7 +234,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
     let tenant_uuid = *ctx.tenant_uuid();
 
     // Check if progress should be displayed
-    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
+    let show_progress = crate::terminal::show_progress(sub_matches);
 
     // Create progress bars if requested
     let multi_progress = if show_progress {
@@ -455,7 +455,7 @@ fn collect_dependencies_recursive(
         let asset_dependency = crate::model::AssetDependency {
             path: child.asset().path(),
             asset: Some(asset_response),
-            occurrences: 1, // Default occurrence count
+            occurrences: child.occurrences(),
             has_dependencies: child.has_children(),
             assembly_path: current_assembly_path.clone(), // Clone to use in both places
             original_asset_path: None, // This will be set when processing folder dependencies

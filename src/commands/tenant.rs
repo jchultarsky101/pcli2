@@ -20,7 +20,7 @@ pub fn tenant_command() -> Command {
             Command::new(COMMAND_LIST)
                 .about("List all tenants")
                 .visible_alias("ls")
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -36,7 +36,7 @@ pub fn tenant_command() -> Command {
                         .value_parser(["indexing", "finished", "failed", "unsupported", "no-3d-data", "missing-dependencies"])
                         .help("Filter assets by state: indexing, finished, failed, unsupported, no-3d-data, or missing-dependencies"),
                 )
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -66,17 +66,21 @@ pub fn tenant_command() -> Command {
                         .value_parser(clap::value_parser!(usize))
                         .help("Stop after this many failures (default: all of them)"),
                 )
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
         .subcommand(
             Command::new(COMMAND_USE)
                 .about("Set the active tenant")
+                .after_help(crate::commands::examples(&[
+                    ("Pick from a list", "pcli2 tenant use"),
+                    ("By short name, in a script", "pcli2 tenant use --name acme"),
+                ]))
                 .visible_alias("select")
                 .arg(tenant_name_parameter()) // --name (tenant short name)
                 .arg(crate::commands::params::refresh_parameter()) // --refresh flag to force refresh tenant list
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -84,7 +88,7 @@ pub fn tenant_command() -> Command {
             Command::new(COMMAND_GET)
                 .visible_alias("current")
                 .about("Get the active tenant")
-                .arg(format_parameter().value_parser(["json", "csv", "tree"]))
+                .arg(format_parameter().value_parser(["json", "csv", "tree", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -114,7 +118,7 @@ pub fn tenant_command() -> Command {
                             pcli2 tenant metadata list --format csv --headers > fields.csv",
                         )
                         .arg(tenant_parameter())
-                        .arg(format_parameter().value_parser(["json", "csv", "tree"]))
+                        .arg(format_parameter().value_parser(["json", "csv", "tree", "table"]))
                         .arg(format_pretty_parameter())
                         .arg(format_with_headers_parameter()),
                 )
@@ -161,13 +165,13 @@ pub fn tenant_command() -> Command {
                         .arg(format_with_metadata_parameter())
                         .arg(format_with_headers_parameter())
                         .arg(format_pretty_parameter())
-                        .arg(format_parameter().value_parser(["json", "csv"])),
+                        .arg(format_parameter().value_parser(["json", "csv", "table"])),
                 )
                 .subcommand(
                     Command::new("coverage")
                         .about("How many of the tenant's assets carry at least one metadata value")
                         .arg(tenant_parameter())
-                        .arg(format_parameter().value_parser(["json", "csv"]))
+                        .arg(format_parameter().value_parser(["json", "csv", "table"]))
                         .arg(format_pretty_parameter())
                         .arg(format_with_headers_parameter()),
                 )
@@ -198,7 +202,7 @@ pub fn tenant_command() -> Command {
                         .arg(format_with_metadata_parameter())
                         .arg(format_with_headers_parameter())
                         .arg(format_pretty_parameter())
-                        .arg(format_parameter().value_parser(["json", "csv"])),
+                        .arg(format_parameter().value_parser(["json", "csv", "table"])),
                 ),
         )
 }

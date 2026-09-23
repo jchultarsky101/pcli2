@@ -53,30 +53,12 @@ impl TenantCache {
     /// * `Ok(PathBuf)` - The path to the tenant cache file
     /// * `Err` - If there was an error getting the cache directory
     fn get_cache_file_path() -> Result<PathBuf, CacheError> {
-        // Load configuration to get the active environment name
-        let configuration = crate::configuration::Configuration::load_or_create_default()
-            .map_err(|e| CacheError::Other(format!("Could not load configuration: {}", e)))?;
-
-        let environment_name = configuration
-            .get_active_environment()
-            .unwrap_or_else(|| "default".to_string());
-
-        // Sanitize environment name to be a valid filename
-        let sanitized_env_name =
-            environment_name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
-
-        // Check for PCLI2_CACHE_DIR environment variable first
-        if let Ok(cache_dir_str) = std::env::var("PCLI2_CACHE_DIR") {
-            let mut cache_path = PathBuf::from(cache_dir_str);
-            cache_path.push(format!("tenant_cache_{}.json", sanitized_env_name));
-            return Ok(cache_path);
-        }
-
-        let mut path = dirs::cache_dir()
-            .ok_or_else(|| CacheError::Other("Could not determine cache directory".to_string()))?;
-        path.push("pcli2");
-        path.push(format!("tenant_cache_{}.json", sanitized_env_name));
-        Ok(path)
+        // The same directory and environment key as the other caches, so it
+        // follows PCLI2_TEST_CACHE_DIR too.
+        Ok(crate::cache::BaseCache::get_cache_dir().join(format!(
+            "tenant_cache_{}.json",
+            crate::cache::BaseCache::environment_key()
+        )))
     }
 
     /// Load cache from file
@@ -118,7 +100,7 @@ impl TenantCache {
         };
 
         let data = serde_json::to_string_pretty(&cache_to_save)?;
-        crate::folder_cache::write_atomically(&path, data.as_bytes())?;
+        crate::fs_utils::write_atomically(&path, data.as_bytes())?;
         debug!("Saved tenant cache to file");
         Ok(())
     }
@@ -177,19 +159,6 @@ impl TenantCache {
         }
 
         Ok(tenants)
-    }
-
-    /// Get cached tenants if available and not expired
-    ///
-    /// # Returns
-    /// * `Some(Vec<TenantSetting>)` - If tenants are cached and not expired
-    /// * `None` - If tenants are not cached or are expired
-    pub fn get_cached_tenants(&self) -> Option<Vec<TenantSetting>> {
-        if !self.tenants.is_empty() && !self.is_expired() {
-            Some(self.tenants.clone())
-        } else {
-            None
-        }
     }
 
     /// Invalidate cache for all tenants

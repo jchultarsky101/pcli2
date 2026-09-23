@@ -4,7 +4,6 @@
 //! command definition module. It handles the execution of all supported commands
 //! including tenant, folder, asset, authentication, context, and configuration operations.
 
-use base64::Engine;
 use chrono::{DateTime, Local, Utc};
 use clap::ArgMatches;
 use pcli2::auth::AuthClient;
@@ -63,36 +62,8 @@ struct TokenExpirationInfo {
 }
 
 fn decode_jwt_expiration(token: &str) -> Result<TokenExpirationInfo, Box<dyn std::error::Error>> {
-    // Split the JWT token into its three parts: header.payload.signature
-    let parts: Vec<&str> = token.split('.').collect();
-
-    if parts.len() != 3 {
-        return Err("Invalid JWT format: token must have exactly 3 parts separated by dots".into());
-    }
-
-    // Decode the payload (the middle part)
-    let payload = parts[1];
-
-    // Add padding if necessary (JWTs use base64url encoding without padding)
-    let mut padded_payload = payload.to_string();
-    match payload.len() % 4 {
-        2 => padded_payload.push_str("=="),
-        3 => padded_payload.push('='),
-        _ => {} // 0 remainder means no padding needed, 1 remainder is invalid
-    }
-
-    // Decode the base64url-encoded payload
-    let decoded_bytes = base64::engine::general_purpose::URL_SAFE.decode(&padded_payload)?;
-    let payload_str = String::from_utf8(decoded_bytes)?;
-
-    // Parse the JSON payload
-    let payload_json: serde_json::Value = serde_json::from_str(&payload_str)?;
-
-    // Extract the 'exp' claim (expiration time)
-    let exp = payload_json
-        .get("exp")
-        .and_then(|v| v.as_i64())
-        .ok_or("Token does not contain an 'exp' (expiration) claim")?;
+    // The client already decodes the `exp` claim for its own renewal decisions.
+    let exp = pcli2::physna_v3::PhysnaApiClient::decode_token_expiration(token)?;
 
     // Calculate time remaining
     let current_time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
@@ -607,33 +578,36 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                         &configuration,
                     );
 
-                    // Store the client credentials so they're available for token refresh
-                    let client_id_result = keyring.put(
-                        &environment_name,
-                        "client-id".to_string(),
-                        client_id.clone(),
-                    );
-                    let client_secret_result = keyring.put(
-                        &environment_name,
-                        "client-secret".to_string(),
-                        client_secret.clone(),
-                    );
-
-                    if client_id_result.is_err() || client_secret_result.is_err() {
-                        error_utils::report_error_with_remediation(
-                            &CliError::SecurityError(String::from(
-                                "Failed to store client credentials",
-                            )),
-                            &[
-                                "Check that your system's keyring service is running",
-                                "Try logging in again with 'pcli2 auth login'",
-                            ],
-                        );
-                        return Err(CliError::AlreadyReported(PcliExitCode::AuthError));
-                    }
-
+                    // The credentials are only stored once the auth server has accepted
+                    // them. They used to be written first, so a mistyped secret replaced a
+                    // working one even though the login then failed.
                     match auth_client.get_access_token().await {
                         Ok(token) => {
+                            // Store the client credentials so they're available for token refresh
+                            let client_id_result = keyring.put(
+                                &environment_name,
+                                "client-id".to_string(),
+                                client_id.clone(),
+                            );
+                            let client_secret_result = keyring.put(
+                                &environment_name,
+                                "client-secret".to_string(),
+                                client_secret.clone(),
+                            );
+
+                            if client_id_result.is_err() || client_secret_result.is_err() {
+                                error_utils::report_error_with_remediation(
+                                    &CliError::SecurityError(String::from(
+                                        "Failed to store client credentials",
+                                    )),
+                                    &[
+                                        "Check that your system's keyring service is running",
+                                        "Try logging in again with 'pcli2 auth login'",
+                                    ],
+                                );
+                                return Err(CliError::AlreadyReported(PcliExitCode::AuthError));
+                            }
+
                             // Store the access token
                             let token_result =
                                 keyring.put(&environment_name, "access-token".to_string(), token);
@@ -747,7 +721,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                         serde_json::to_string(&token_response)
                                     };
                                     match json_output {
-                                        Ok(json) => println!("{}", json),
+                                        Ok(json) => pcli2::format::print_output(&json),
                                         Err(e) => {
                                             return Err(CliError::FormattingError(
                                                 FormattingError::JsonSerializationError(e),
@@ -801,9 +775,9 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                             error_utils::report_error_with_remediation(
                                 &"No access token found. Please login first.",
                                 &[
-                                    "Log in with 'pcli2 auth login --client-id <id> --client-secret <secret>'",
-                                    "Verify your credentials are correct"
-                                ]
+                                    "Log in with 'pcli2 auth login'",
+                                    "Verify your credentials are correct",
+                                ],
                             );
                             Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }
@@ -908,9 +882,9 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                             error_utils::report_error_with_remediation(
                                 &"No access token found. Please login first.",
                                 &[
-                                    "Log in with 'pcli2 auth login --client-id <id> --client-secret <secret>'",
-                                    "Verify your credentials are correct"
-                                ]
+                                    "Log in with 'pcli2 auth login'",
+                                    "Verify your credentials are correct",
+                                ],
                             );
                             Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }
@@ -1161,6 +1135,10 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     sub_matches,
                 ))),
             }
+        }
+        Some(("api", sub_matches)) => {
+            trace!("Command: api");
+            pcli2::actions::api::run(sub_matches).await
         }
         Some(("doctor", sub_matches)) => {
             trace!("Command: doctor");

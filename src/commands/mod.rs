@@ -7,6 +7,7 @@
 use clap::{ArgMatches, Command};
 
 // Import all submodules
+pub mod api;
 pub mod assets;
 pub mod auth;
 pub mod cache;
@@ -25,25 +26,25 @@ pub mod user;
 const EXAMPLES_COLORED: &str = color_print::cstr!(
     "<bold>Examples:</bold>
   <cyan># Authenticate with your Physna tenant</cyan>
-  <green>pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET</green>
+  <green>pcli2 auth login                # prompts for the client ID and secret</green>
 
   <cyan># List folders in tree format</cyan>
   <green>pcli2 folder list --format tree</green>
 
   <cyan># Upload an asset to a folder</cyan>
-  <green>pcli2 asset create --input model.stl --folder-path /Root/Models/</green>
+  <green>pcli2 asset create --input model.stl --folder-path /Home/Models/</green>
 
   <cyan># Find geometrically similar assets</cyan>
-  <green>pcli2 asset geometric-match --path /Root/Models/part.stl --threshold 85.0</green>
+  <green>pcli2 asset geometric-match --path /Home/Models/part.stl --threshold 85.0</green>
 
   <cyan># Download all assets from a folder</cyan>
-  <green>pcli2 folder download --folder-path /Root/Models/ --output ./downloads --progress</green>
+  <green>pcli2 folder download --folder-path /Home/Models/ --output ./downloads --progress</green>
 
   <cyan># Use short aliases for common commands</cyan>
-  <green>pcli2 folder ls          # List folders</green>
-  <green>pcli2 asset ls           # List assets</green>
-  <green>pcli2 auth in            # Login</green>
-  <green>pcli2 env list           # List environments</green>
+  <green>pcli2 folder ls                            # List folders</green>
+  <green>pcli2 asset ls --folder-path /Home/Parts   # List assets</green>
+  <green>pcli2 auth in                              # Login</green>
+  <green>pcli2 env list                             # List environments</green>
 
 <bold>Environment variables:</bold>
   PCLI2_CONFIG_DIR         Directory holding config.yml and the credentials file
@@ -57,31 +58,35 @@ const EXAMPLES_COLORED: &str = color_print::cstr!(
   PCLI2_SAFE_CSV           Guard CSV cells against spreadsheet formula injection
   PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
   PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
-  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)"
+  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)
+  PCLI2_TENANT             Tenant for this command only (like --tenant)
+  PCLI2_ENV                Environment for this command only (like --env)
+  PCLI2_CLIENT_ID          Client ID for 'auth login' (instead of --client-id)
+  PCLI2_CLIENT_SECRET      Client secret for 'auth login' (keeps it out of shell history)"
 );
 
 /// Usage examples appended to the top-level help output, without ANSI colors.
 const EXAMPLES_PLAIN: &str = "Examples:
   # Authenticate with your Physna tenant
-  pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+  pcli2 auth login                # prompts for the client ID and secret
 
   # List folders in tree format
   pcli2 folder list --format tree
 
   # Upload an asset to a folder
-  pcli2 asset create --input model.stl --folder-path /Root/Models/
+  pcli2 asset create --input model.stl --folder-path /Home/Models/
 
   # Find geometrically similar assets
-  pcli2 asset geometric-match --path /Root/Models/part.stl --threshold 85.0
+  pcli2 asset geometric-match --path /Home/Models/part.stl --threshold 85.0
 
   # Download all assets from a folder
-  pcli2 folder download --folder-path /Root/Models/ --output ./downloads --progress
+  pcli2 folder download --folder-path /Home/Models/ --output ./downloads --progress
 
   # Use short aliases for common commands
-  pcli2 folder ls          # List folders
-  pcli2 asset ls           # List assets
-  pcli2 auth in            # Login
-  pcli2 env list           # List environments
+  pcli2 folder ls                            # List folders
+  pcli2 asset ls --folder-path /Home/Parts   # List assets
+  pcli2 auth in                              # Login
+  pcli2 env list                             # List environments
 
 Environment variables:
   PCLI2_CONFIG_DIR         Directory holding config.yml and the credentials file
@@ -95,7 +100,11 @@ Environment variables:
   PCLI2_SAFE_CSV           Guard CSV cells against spreadsheet formula injection
   PCLI2_NO_INPUT           Never prompt; fail with exit 64 instead
   PCLI2_ERROR_FORMAT       text (default) or json for errors on stderr
-  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)";
+  PCLI2_NO_UPDATE_CHECK    Disable the new-version hint (CI is respected too)
+  PCLI2_TENANT             Tenant for this command only (like --tenant)
+  PCLI2_ENV                Environment for this command only (like --env)
+  PCLI2_CLIENT_ID          Client ID for 'auth login' (instead of --client-id)
+  PCLI2_CLIENT_SECRET      Client secret for 'auth login' (keeps it out of shell history)";
 
 /// Select the examples text for the top-level help based on terminal capabilities.
 fn examples_after_help() -> &'static str {
@@ -115,6 +124,40 @@ fn examples_after_help() -> &'static str {
 /// # Returns
 ///
 /// An `ArgMatches` instance containing the parsed command-line arguments.
+/// An "Examples:" section for a command's help, from (comment, command) pairs.
+///
+/// Every example is parsed by a test against the real command tree, so a flag
+/// renamed later breaks the build rather than the documentation.
+pub fn examples(items: &[(&str, &str)]) -> String {
+    let mut text = String::from("Examples:");
+    for (comment, command) in items {
+        text.push_str(&format!("\n  # {}\n  {}\n", comment, command));
+    }
+    text.trim_end().to_string()
+}
+
+/// Whether the command that was run offers `--format table`.
+pub fn command_offers_table(matches: &ArgMatches) -> bool {
+    let mut command = create_full_command();
+    let mut current = matches;
+    while let Some((name, sub)) = current.subcommand() {
+        match command.find_subcommand(name) {
+            Some(sub_command) => command = sub_command.clone(),
+            None => return false,
+        }
+        current = sub;
+    }
+    let offers = command
+        .get_arguments()
+        .find(|arg| arg.get_id() == params::PARAMETER_FORMAT)
+        .is_some_and(|arg| {
+            arg.get_possible_values()
+                .iter()
+                .any(|value| value.get_name() == crate::format::TABLE)
+        });
+    offers
+}
+
 pub fn create_cli_commands() -> ArgMatches {
     create_full_command().get_matches()
 }
@@ -229,10 +272,37 @@ pub fn create_full_command() -> Command {
         })
         // Add global arguments
         .arg(
+            clap::Arg::new("columns")
+                .long("columns")
+                .num_args(1)
+                .global(true)
+                .help_heading("Global Options")
+                .help("Only these columns in CSV and table output, by header name, comma-separated (e.g. --columns path,uuid)"),
+        )
+        .arg(
+            clap::Arg::new("no-progress")
+                .long("no-progress")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .help_heading("Global Options")
+                .help("Never draw progress bars (they are shown by default when stderr is a terminal)"),
+        )
+        .arg(
+            clap::Arg::new("env")
+                .short('e')
+                .long("env")
+                .env("PCLI2_ENV")
+                .num_args(1)
+                .global(true)
+                .help_heading("Global Options")
+                .help("Environment to use for this command only (default: the one chosen with 'pcli2 env use')"),
+        )
+        .arg(
             clap::Arg::new("no-color")
                 .long("no-color")
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
+                .help_heading("Global Options")
                 .env("PCLI2_NO_COLOR")
                 .value_parser(clap::builder::FalseyValueParser::new())
                 .help("Disable color output (PCLI2_NO_COLOR: empty, 0, false, no, off mean enabled; anything else disables)"),
@@ -243,6 +313,7 @@ pub fn create_full_command() -> Command {
                 .short('y')
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
+                .help_heading("Global Options")
                 .help("Automatically answer yes to confirmation prompts"),
         )
         .arg(
@@ -251,6 +322,7 @@ pub fn create_full_command() -> Command {
                 .short('v')
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
+                .help_heading("Global Options")
                 .conflicts_with("quiet")
                 .help("Enable verbose output (debug-level logging)"),
         )
@@ -260,6 +332,7 @@ pub fn create_full_command() -> Command {
                 .short('q')
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
+                .help_heading("Global Options")
                 .help("Suppress diagnostic output (error-level logging only)"),
         )
         .arg(
@@ -267,6 +340,7 @@ pub fn create_full_command() -> Command {
                 .long("stats")
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
+                .help_heading("Global Options")
                 .help("Print request statistics (API requests, retries, token renewals, elapsed time) on stderr at exit"),
         )
         .arg(
@@ -274,6 +348,7 @@ pub fn create_full_command() -> Command {
                 .long("safe-csv")
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
+                .help_heading("Global Options")
                 .env("PCLI2_SAFE_CSV")
                 .value_parser(clap::builder::FalseyValueParser::new())
                 .help("Guard CSV output against spreadsheet formula injection: a text cell starting with =, +, -, @, tab or carriage return is prefixed with a single quote (numbers are left alone)"),
@@ -283,6 +358,7 @@ pub fn create_full_command() -> Command {
                 .long("no-input")
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
+                .help_heading("Global Options")
                 .env("PCLI2_NO_INPUT")
                 .value_parser(clap::builder::FalseyValueParser::new())
                 .help("Never prompt: a command that would need an answer fails with exit 64 instead (pass --yes to confirm, or name the tenant or environment)"),
@@ -294,6 +370,7 @@ pub fn create_full_command() -> Command {
                 .value_parser(["text", "json"])
                 .default_value("text")
                 .global(true)
+                .help_heading("Global Options")
                 .env("PCLI2_ERROR_FORMAT")
                 .help("How errors are written to stderr: text, or json (one object per line; the last one carries the exit code)"),
         )
@@ -311,6 +388,7 @@ pub fn create_full_command() -> Command {
         .subcommand(completions::completions_command())
         .subcommand(man::man_command())
         .subcommand(cache::cache_command())
+        .subcommand(api::api_command())
         .subcommand(
             Command::new("doctor")
                 .about("Check the local setup: binary, configuration, credentials, token, tenant, caches, and connectivity")

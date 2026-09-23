@@ -89,11 +89,6 @@ impl BaseCache {
         Self::default()
     }
 
-    /// Create a new BaseCache with custom configuration
-    pub fn with_config(config: CacheConfig) -> Self {
-        Self { config }
-    }
-
     /// Get the default cache directory path
     ///
     /// In a test environment (when PCLI2_TEST_CACHE_DIR is set), it uses that directory.
@@ -110,6 +105,20 @@ impl BaseCache {
                 .unwrap_or_else(std::env::temp_dir)
                 .join("pcli2")
         }
+    }
+
+    /// The active environment's name, made safe for a file name.
+    ///
+    /// Caches are kept per environment, since a staging tenant does not exist in
+    /// production. Every cache names its file with this, so they all agree on
+    /// which environment is active; the tenant cache used to work it out itself,
+    /// and could create `config.yml` as a side effect of doing so.
+    pub fn environment_key() -> String {
+        let name = crate::configuration::Configuration::load_default()
+            .ok()
+            .and_then(|c| c.get_active_environment())
+            .unwrap_or_else(|| "default".to_string());
+        name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_")
     }
 
     /// Check if a cache file is expired based on file modification time

@@ -36,6 +36,46 @@ The same rules apply to diagnostics on stderr: warnings and `--verbose`
 logs captured with `2> warnings.log` are plain text with no ANSI escape
 codes, so they can be grepped and parsed directly.
 
+### Tables and Columns
+
+In a terminal, a command that can print CSV shows a table when you do not ask
+for a format; the moment its output goes to a pipe or a file it is JSON, exactly
+as before. Ask for either explicitly with `--format table` or `--format json`.
+
+`--columns` keeps only the named CSV or table columns, in the order given
+(matched by header name, in any letter case). An unknown name is an error
+(exit 64) that lists the available columns:
+
+```bash
+pcli2 asset list --folder-path /Home/Parts --format csv --columns path,uuid
+pcli2 asset list --folder-path /Home/Parts --format table --columns name,state
+```
+
+### Pipelines: grep, jq and NuShell
+
+Chain commands with other tools. In JSON output, metadata values are strings
+(`"Weight": "12.5"`); convert them before comparing numbers.
+
+```bash
+# Filter assets with grep
+pcli2 asset list --folder-path "/Home/Models/" --format csv | grep "bearing"
+
+# Process with jq: paths of files over 10 kB
+pcli2 asset list --folder-path "/Home/Models/" --format json | jq -r '.[] | select((.file_size // 0) > 10000) | .path'
+
+# jq on metadata: assets weighing 5 or more
+pcli2 asset list --folder-path "/Home/Models/" --metadata --format json | jq -r '.[] | select((.metadata.Weight // "0" | tonumber) >= 5) | .path'
+
+# Count results
+pcli2 asset list --folder-path "/Home/Models/" --format csv | wc -l
+
+# NuShell: assets weighing between 5 and 50
+pcli2 asset list --folder-path "/Home/MyFolder" --metadata --format json | nu --stdin -c 'from json | where {|a| ($a.metadata.Weight? | default "0" | into float) >= 5.0 and ($a.metadata.Weight? | default "0" | into float) <= 50.0 } | select name path'
+
+# NuShell: count and average weight per material
+pcli2 asset list --folder-path "/Home/Inventory" --metadata --format json | nu --stdin -c 'from json | where {|a| $a.metadata.Material? != null } | insert material {|a| $a.metadata.Material } | insert weight {|a| $a.metadata.Weight? | default "0" | into float } | group-by material --to-table | each {|g| {material: $g.material, count: ($g.items | length), avg_weight: ($g.items.weight | math avg)} }'
+```
+
 ### Safe CSV for Spreadsheets
 
 A CSV cell that starts with `=`, `+`, `-` or `@` is evaluated as a formula by
@@ -104,17 +144,60 @@ command that would have to ask exits 64 and says which flag to pass instead.
 showing a menu nobody can answer. Set `PCLI2_NO_INPUT=1` in CI so a forgotten
 `--yes` fails fast rather than hanging on a prompt.
 
-Authentication credentials can be passed as flags for non-interactive use:
+For a non-interactive login, put the credentials in `PCLI2_CLIENT_ID` and
+`PCLI2_CLIENT_SECRET` (your CI system's secret store is the right source).
+`--client-id` and `--client-secret` work too, but a secret on the command line
+ends up in shell history and in process listings:
 
 ```bash
-pcli2 auth login --client-id "$PHYSNA_CLIENT_ID" --client-secret "$PHYSNA_CLIENT_SECRET"
+export PCLI2_CLIENT_ID="$PHYSNA_CLIENT_ID"
+export PCLI2_CLIENT_SECRET="$PHYSNA_CLIENT_SECRET"
+pcli2 auth login
 ```
+
+## Choosing the Tenant and Environment per Command
+
+`--tenant` (or `PCLI2_TENANT`) and `--env` (or `PCLI2_ENV`) apply to one
+command and change nothing on disk, unlike `pcli2 tenant use` and
+`pcli2 env use`. Scripts that run side by side against different tenants or
+environments should use them instead of switching the saved defaults:
+
+```bash
+PCLI2_ENV=staging pcli2 asset list --folder-path /Home/Parts --format csv
+pcli2 --env production asset list --folder-path /Home/Parts --tenant acme --format csv
+```
+
+## Calling Any API Endpoint
+
+`pcli2 api` sends a request to any endpoint of the Physna API, including the
+ones no pcli2 command covers yet, with pcli2's login, token renewal, retries and
+tenant. `{tenantId}` in the path is replaced with the active tenant (or the one
+named with `--tenant`):
+
+```bash
+# The first page of the active tenant's folders
+pcli2 api /tenants/{tenantId}/folders
+
+# Every page, merged into one list
+pcli2 api /tenants/{tenantId}/folders --paginate
+
+# A POST: -F adds a JSON field (read as JSON when it parses), -f a string field
+pcli2 api /tenants/{tenantId}/assets/existing-paths -F paths='["/Home/a.stl"]'
+
+# A body from a file (or - for standard input), with an explicit method
+pcli2 api /tenants/{tenantId}/reports/duplication -X POST --input request.json
+```
+
+The response body is printed as it came (pretty-printed in a terminal). A
+non-2xx answer is an error with the server's message and the usual exit code.
 
 ## Dry Run Mode
 
 Preview destructive or bulk operations without changing anything on the
-server. Supported by `asset delete`, `folder delete`, `asset create`,
-`asset create-batch`, and `folder upload`:
+server. Supported by `asset delete`, `folder delete`, `report delete`,
+`tenant metadata delete`, `tenant metadata rename`, `asset create`,
+`asset create-batch`, `folder upload`, `asset move` and
+`asset resolve-dependency`:
 
 ```bash
 # List exactly which files a batch upload would send, and where
@@ -126,8 +209,8 @@ pcli2 folder delete --folder-path "/Home/Old Projects/" --force --dry-run
 
 ## Exit Codes
 
-PCLI2 uses distinct exit codes (following BSD `sysexits.h` conventions
-where possible) so scripts can react to specific failure classes:
+PCLI2 uses distinct exit codes (the 64-78 range is modelled on BSD
+`sysexits.h`) so scripts can react to specific failure classes:
 
 | Code | Meaning |
 |------|---------|
@@ -147,7 +230,9 @@ where possible) so scripts can react to specific failure classes:
 
 A usage error rejected by the argument parser also exits 64. Batch commands that
 finished with some items failed, and folder matches whose report would be
-incomplete, exit 69. `asset diagnose` exits 68 on a deployment without failure
+incomplete, exit 69, as does a request the server kept rejecting with 429 (rate
+limited) or a 5xx after every retry: try again later. A closed output pipe
+(`pcli2 ... | head`) is not an error and exits 0. `asset diagnose` exits 68 on a deployment without failure
 log search (`pcli2 doctor` shows that up front on its `diagnostics` line); a
 `not-found` answer is printed and exits 0, since it is an answer.
 
@@ -261,7 +346,10 @@ jobs:
       - name: Install pcli2
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
       - name: Authenticate
-        run: pcli2 auth login --client-id "${{ secrets.PHYSNA_CLIENT_ID }}" --client-secret "${{ secrets.PHYSNA_CLIENT_SECRET }}"
+        run: pcli2 auth login
+        env:
+          PCLI2_CLIENT_ID: ${{ secrets.PHYSNA_CLIENT_ID }}
+          PCLI2_CLIENT_SECRET: ${{ secrets.PHYSNA_CLIENT_SECRET }}
       - name: Upload models
         run: |
           pcli2 tenant use --name my-tenant

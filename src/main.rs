@@ -1,17 +1,9 @@
 //! Main entry point for the Physna CLI client.
 //!
-//! This module contains the main function that serves as the entry point
-//! for the CLI application. It handles initialization, configuration loading,
-//! command parsing, and error handling.
-//!
-//! The application follows a layered architecture pattern:
-//! - main.rs: Entry point and application initialization
-//! - cli.rs: Command execution logic
-//! - commands.rs: Command definitions and parsing
-//! - physna_v3.rs: API client and communication layer
-//! - model.rs: Data models and structures
-//! - auth.rs: Authentication handling
-//! - configuration.rs: Configuration management
+//! Parses the command line (`pcli2::commands`), sets up logging, runs the
+//! command (`cli::execute_command`, which calls into `pcli2::actions`), and turns
+//! the outcome into an exit code (`pcli2::exit_codes`). The crate-level docs in
+//! `lib.rs` describe the layers.
 
 use configuration::ConfigurationError;
 use pcli2::error::CliError;
@@ -98,6 +90,15 @@ fn init_logging(matches: &clap::ArgMatches) {
         .init();
 }
 
+/// Whether the help being shown is `pcli2`'s own (`pcli2 --help`, `pcli2 help`),
+/// not a subcommand's.
+fn is_top_level_help() -> bool {
+    env::args()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-'))
+        .all(|arg| arg == "help")
+}
+
 /// Main entry point for the Physna CLI client application.
 ///
 /// This function performs the following steps:
@@ -123,6 +124,7 @@ async fn main() {
     // Started first so the (cached, usually instant) lookup overlaps with the
     // command instead of being awaited on the way out.
     pcli2::stats::start();
+    error_utils::install_panic_hook();
     // Read straight from argv/env so a usage error clap reports before parsing
     // is finished can already be JSON; the parsed flag takes over below.
     error_utils::set_json_errors(error_utils::json_errors_requested());
@@ -134,7 +136,9 @@ async fn main() {
             // The banner goes above help output only. It used to be printed whenever
             // any argument equalled "help", which put ASCII art on stdout ahead of the
             // JSON of `env list --name help` or `asset text-match --text help`.
-            if e.kind() == clap::error::ErrorKind::DisplayHelp {
+            // Only above the top-level help: on `pcli2 asset get --help` thirteen
+            // lines of art pushed the usage line off a small screen.
+            if e.kind() == clap::error::ErrorKind::DisplayHelp && is_top_level_help() {
                 banner::print_banner();
             }
             // A removed flag next to a now-missing required one: clap reports
@@ -177,6 +181,39 @@ async fn main() {
     pcli2::terminal::set_no_color(matches.get_flag("no-color"));
     pcli2::format::set_safe_csv(matches.get_flag("safe-csv"));
 
+    if let Some(columns) = matches.get_one::<String>("columns") {
+        pcli2::format::set_columns(
+            columns
+                .split(',')
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty())
+                .collect(),
+        );
+    }
+    // A table instead of JSON when a person is reading: stdout is a terminal and
+    // the command can print one. Piped output keeps JSON, the scripting contract.
+    {
+        use std::io::IsTerminal;
+        pcli2::format_utils::set_table_by_default(
+            std::io::stdout().is_terminal() && pcli2::commands::command_offers_table(&matches),
+        );
+    }
+
+    // --env / PCLI2_ENV: this run's environment, checked before anything uses it.
+    if let Some(name) = matches.get_one::<String>("env") {
+        let known = configuration::Configuration::load_default()
+            .map(|c| c.has_environment(name))
+            .unwrap_or(false);
+        if !known {
+            let error = pcli2::error::CliError::ConfigurationError(
+                ConfigurationError::EnvironmentNotFound(name.clone()),
+            );
+            error_utils::report_cli_error(&error);
+            process::exit(error.exit_code().code());
+        }
+        configuration::set_environment_override(name.clone());
+    }
+
     // A flag that no longer exists is refused before anything else happens,
     // with its replacement named. Clap alone would say "unexpected argument".
     if let Some(message) = pcli2::commands::removed_argument_used(&matches) {
@@ -206,6 +243,10 @@ async fn main() {
             process::exit(0);
         }
         Err(e) => {
+            // The reader of our output went away (`| head`): that is not a failure.
+            if error_utils::is_broken_pipe(&e) {
+                process::exit(0);
+            }
             if !e.is_already_reported() {
                 error_utils::report_cli_error(&e);
             }

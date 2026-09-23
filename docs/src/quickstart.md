@@ -2,14 +2,17 @@
 
 This guide will help you get started with PCLI2 quickly by walking through common tasks.
 
+Install PCLI2 first: see [Installation](installation.md).
+
 ## Table of Contents
-- [Installation](#installation)
 - [Authentication](#authentication)
+- [Choosing a Tenant](#choosing-a-tenant)
 - [Basic Navigation](#basic-navigation)
 - [Working with Assets](#working-with-assets)
 - [Geometric Matching](#geometric-matching)
+- [Metadata Operations](#metadata-operations)
 - [Configuration](#configuration)
-- [Choosing a Tenant](#choosing-a-tenant)
+- [Multi-Environment Configuration](#multi-environment-configuration)
 - [Next Steps](#next-steps)
 - [Getting Help](#getting-help)
 
@@ -50,11 +53,31 @@ Once you have your credentials, you can authenticate with PCLI2:
 # masked input so the secret never lands in your shell history)
 pcli2 auth login
 
-# Login with client credentials
-pcli2 auth login --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
+# Login without a prompt (scripts, CI): credentials from the environment
+PCLI2_CLIENT_ID=... PCLI2_CLIENT_SECRET=... pcli2 auth login
 
 # Verify authentication
 pcli2 auth get
+```
+
+## Choosing a Tenant
+
+Most commands act on the active tenant. Pick it once; `--tenant` overrides it for
+a single command.
+
+```bash
+# List the tenants your credentials can reach
+pcli2 tenant list
+
+# Make one active, by short name or by UUID
+pcli2 tenant use --name demo
+pcli2 tenant use --name 123e4567-e89b-12d3-a456-426614174000
+
+# Show the active tenant
+pcli2 tenant get
+
+# Clear it
+pcli2 tenant clear
 ```
 
 ## Basic Navigation
@@ -147,7 +170,7 @@ The `metadata create` command adds or updates a single metadata field on an asse
 # Add or update a single metadata field on an asset
 pcli2 asset metadata create --path "/Home/Folder/Model.stl" --name "Material" --value "Steel" --type "text"
 
-# Add or update multiple metadata fields on an asset
+# A number field (run once per field)
 pcli2 asset metadata create --path "/Home/Folder/Model.stl" --name "Weight" --value "15.5" --type "number"
 ```
 
@@ -180,9 +203,7 @@ Metadata inference automatically applies metadata from a reference asset to geom
 # Apply specific metadata fields from a reference asset to similar assets
 pcli2 asset metadata inference --path /Home/Folder/ReferenceModel.stl --name "Material,Cost" --threshold 85.0
 
-# Apply metadata recursively to create chains of similar assets
-
-# Apply multiple metadata fields with different thresholds
+# Several fields, repeating --name, with a looser threshold
 pcli2 asset metadata inference --path /Home/Folder/ReferenceModel.stl --name "Material" --name "Finish" --name "Supplier" --threshold 80.0
 ```
 
@@ -241,26 +262,6 @@ Each environment can have its own:
 - API base URL (for API calls)
 - UI base URL (for comparison viewer links)
 - Authentication URL (for OAuth2 token requests)
-
-## Choosing a Tenant
-
-Most commands act on the active tenant. Pick it once; `--tenant` overrides it for
-a single command.
-
-```bash
-# List the tenants your credentials can reach
-pcli2 tenant list
-
-# Make one active, by short name or by UUID
-pcli2 tenant use --name demo
-pcli2 tenant use --name 123e4567-e89b-12d3-a456-426614174000
-
-# Show the active tenant
-pcli2 tenant get
-
-# Clear it
-pcli2 tenant clear
-```
 
 ## Next Steps
 

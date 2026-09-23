@@ -105,25 +105,7 @@ impl Formattable for ContextInfo {
 }
 
 pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
-    // Get format parameters directly from sub_matches
-    let format_str = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .cloned()
-        .unwrap_or_else(|| "json".to_string());
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
-
-    // Create format options with metadata set to false since tenants don't have metadata
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata: false,
-        with_headers,
-        pretty,
-    };
-
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    let format = crate::format_utils::FormatParams::from_args(sub_matches).format;
 
     let mut api = PhysnaApiClient::try_default()?;
 
@@ -131,44 +113,11 @@ pub async fn list_all_tenants(sub_matches: &ArgMatches) -> Result<(), CliActionE
     let tenants_result = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await;
     progress.finish_and_clear();
 
-    match tenants_result {
-        Ok(tenant_settings) => {
-            // Convert to a format that can be handled by the Formattable trait
-            let tenant_list = crate::model::TenantList::from(tenant_settings);
-
-            crate::format::print_output(&tenant_list.format(format)?);
-            Ok(())
-        }
-        Err(e) => {
-            error_utils::report_error(&e);
-            Ok(())
-        }
-    }
-}
-
-pub async fn print_active_tenant_name() -> Result<(), CliActionError> {
-    trace!("Executing 'context get' command");
-
-    let configuration = Configuration::load_default()?;
-
-    if let Some(active_tenant_uuid) = configuration.active_tenant_uuid() {
-        let mut api = PhysnaApiClient::try_default()?;
-        let tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await?;
-        let active_tenant = tenants
-            .into_iter()
-            .find(|t| t.tenant_uuid.eq(active_tenant_uuid));
-        match active_tenant {
-            Some(active_tenant) => {
-                println!("{}", active_tenant.tenant_short_name);
-            }
-            None => {
-                println!("No active tenant selected");
-            }
-        }
-    } else {
-        println!("No active tenant selected");
-    }
-
+    // A failure is returned, not just printed: it used to be reported and then
+    // exit 0, so a script saw an empty tenant list as success.
+    let tenant_settings = tenants_result?;
+    let tenant_list = crate::model::TenantList::from(tenant_settings);
+    crate::format::print_output(&tenant_list.format(format)?);
     Ok(())
 }
 
@@ -202,11 +151,21 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
 
     // If no name was provided, show interactive selection
     let selected_tenant = if let Some(name) = name {
-        // Find tenant by name (existing logic)
-        tenants
+        // By short name or UUID, as `--tenant` accepts. On a miss the list is
+        // fetched once more: a tenant granted since the cache was written is the
+        // usual reason, and it used to take `--refresh` to find it.
+        match tenants
             .iter()
-            .find(|t| t.tenant_short_name == *name)
-            .cloned()
+            .find(|t| crate::param_utils::tenant_matches(t, name))
+        {
+            Some(tenant) => Some(tenant.clone()),
+            None if !refresh => crate::tenant_cache::TenantCache::get_all_tenants(&mut api, true)
+                .await
+                .map_err(CliActionError::ApiError)?
+                .into_iter()
+                .find(|t| crate::param_utils::tenant_matches(t, name)),
+            None => None,
+        }
     } else {
         // Interactive selection using TUI
         if tenants.is_empty() {
@@ -296,104 +255,12 @@ pub async fn set_active_tenant(sub_matches: &ArgMatches) -> Result<(), CliAction
     Ok(())
 }
 
-pub async fn get_tenant_details(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
-    let tenant_uuid_param =
-        sub_matches.get_one::<uuid::Uuid>(crate::commands::params::PARAMETER_TENANT_UUID);
-    let tenant_name_param =
-        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_TENANT_NAME);
-
-    let mut api = PhysnaApiClient::try_default()?;
-
-    // Get all tenants to search through
-    let all_tenants = crate::tenant_cache::TenantCache::get_all_tenants(&mut api, false).await?;
-
-    // Find the specific tenant based on either UUID or name
-    let tenant_setting = if let Some(uuid) = tenant_uuid_param {
-        all_tenants.iter().find(|t| &t.tenant_uuid == uuid)
-    } else if let Some(name) = tenant_name_param {
-        all_tenants.iter().find(|t| &t.tenant_short_name == name)
-    } else {
-        return Err(CliActionError::MissingRequiredArgument(
-            "Either tenant UUID (--id) or tenant name (--tenant-name) must be provided".to_string(),
-        ));
-    };
-
-    match tenant_setting {
-        Some(tenant_setting) => {
-            // Convert to Tenant for formatting
-            let tenant: Tenant = tenant_setting.try_into()?;
-
-            // Get format parameters directly from sub_matches
-            let format_str = sub_matches
-                .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-                .cloned()
-                .unwrap_or_else(|| "json".to_string());
-
-            let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-            let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-            crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
-
-            // Create format options (no metadata for tenants)
-            let format_options = crate::format::OutputFormatOptions {
-                with_metadata: false, // No metadata for tenants
-                with_headers,
-                pretty,
-            };
-
-            let format =
-                crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-                    .map_err(CliActionError::FormattingError)?;
-
-            crate::format::print_output(&tenant.format(&format)?);
-        }
-        None => {
-            if let Some(uuid) = tenant_uuid_param {
-                return Err(CliActionError::TenantNotFound {
-                    identifier: uuid.to_string(),
-                });
-            } else if let Some(name) = tenant_name_param {
-                return Err(CliActionError::TenantNotFound {
-                    identifier: name.clone(),
-                });
-            }
-            // This shouldn't happen due to the argument group validation, but just in case
-            return Err(CliActionError::MissingRequiredArgument(
-                "Either tenant UUID (--id) or tenant name (--tenant-name) must be provided"
-                    .to_string(),
-            ));
-        }
-    }
-
-    Ok(())
-}
-
 pub async fn print_active_tenant_name_with_format(
     sub_matches: &ArgMatches,
 ) -> Result<(), CliActionError> {
     trace!("Executing 'context get tenant' with format options");
 
-    // Get format parameters directly from sub_matches since context commands don't have all format flags
-    let format_str_owned = if let Some(format_val) =
-        sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-    {
-        format_val.clone()
-    } else {
-        "json".to_string()
-    };
-    let format_str = &format_str_owned;
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    crate::format_utils::warn_about_noop_format_flags(sub_matches, format_str);
-    // Note: context commands don't have metadata flag for tenant
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata: false, // No metadata for context tenant
-        with_headers,
-        pretty,
-    };
-
-    let format = crate::format::OutputFormat::from_string_with_options(format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    let format = crate::format_utils::FormatParams::from_args(sub_matches).format;
 
     let configuration = Configuration::load_default()?;
 
@@ -456,43 +323,13 @@ pub async fn clear_active_tenant() -> Result<(), CliActionError> {
     }
 }
 
-pub async fn print_current_context(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
-    trace!("Executing 'context get' command");
-
-    let format = crate::param_utils::get_format_parameter_value(sub_matches).await;
-    let configuration = Configuration::load_default()?;
-    let context_info = ContextInfo::from_configuration(&configuration).await?;
-
-    crate::format::print_output(&context_info.format(&format)?);
-
-    Ok(())
-}
-
 pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), CliActionError> {
     trace!("Executing tenant state command...");
 
     // Check if the --type parameter was provided
     let state_type = sub_matches.get_one::<String>("type");
 
-    // Get format parameters directly from sub_matches
-    let format_str = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .cloned()
-        .unwrap_or_else(|| "json".to_string());
-
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
-
-    // Create format options with metadata set to false since tenant state counts don't have metadata
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata: false,
-        with_headers,
-        pretty,
-    };
-
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    let format = crate::format_utils::FormatParams::from_args(sub_matches).format;
 
     let configuration =
         Configuration::load_default().map_err(CliActionError::ConfigurationError)?;
@@ -582,23 +419,7 @@ pub async fn get_tenant_state_counts(sub_matches: &ArgMatches) -> Result<(), Cli
 pub async fn list_recent_failures(sub_matches: &ArgMatches) -> Result<(), crate::error::CliError> {
     trace!("Executing tenant failures command...");
 
-    // Format options built directly (mirroring `tenant state`): failures have no
-    // per-record metadata, and FormatParams would require a --metadata flag.
-    let format_str = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .cloned()
-        .unwrap_or_else(|| "json".to_string());
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata: false,
-        with_headers,
-        pretty,
-    };
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(crate::error::CliError::FormattingError)?;
+    let format = crate::format_utils::FormatParams::from_args(sub_matches).format;
 
     let kinds: Vec<crate::model::FailureSource> = sub_matches
         .get_many::<String>(crate::commands::params::PARAMETER_KIND)
@@ -683,20 +504,7 @@ async fn resolve_metadata_field_by_name(
 pub(crate) fn plain_format(
     sub_matches: &ArgMatches,
 ) -> Result<crate::format::OutputFormat, crate::error::CliError> {
-    let format_str = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .cloned()
-        .unwrap_or_else(|| "json".to_string());
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata: false,
-        with_headers,
-        pretty,
-    };
-    crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(crate::error::CliError::FormattingError)
+    Ok(crate::format_utils::FormatParams::from_args(sub_matches).format)
 }
 
 /// `tenant metadata rename --name OLD --new-name NEW`. Silent on success.
@@ -904,24 +712,7 @@ pub async fn list_tenant_metadata_fields(
 ) -> Result<(), crate::error::CliError> {
     trace!("Executing tenant metadata list command...");
 
-    // Build format options directly (mirroring `tenant state`) rather than via
-    // FormatParams, which requires a --with-metadata flag this command does not
-    // define. Metadata fields have no per-record metadata of their own.
-    let format_str = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .cloned()
-        .unwrap_or_else(|| "json".to_string());
-    let with_headers = sub_matches.get_flag(crate::commands::params::PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(crate::commands::params::PARAMETER_PRETTY);
-    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata: false,
-        with_headers,
-        pretty,
-    };
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(crate::error::CliError::FormattingError)?;
+    let format = crate::format_utils::FormatParams::from_args(sub_matches).format;
 
     let configuration = Configuration::load_or_create_default()?;
     let mut api = PhysnaApiClient::try_default()?;

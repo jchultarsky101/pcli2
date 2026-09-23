@@ -5,9 +5,8 @@
 
 /// Custom exit codes for PCLI2
 ///
-/// These codes follow the BSD sysexits.h conventions where possible:
 /// - 0: Success
-/// - 64-78: Standard exit codes from sysexits.h
+/// - 64-78: modelled on BSD sysexits.h (68 and 69 are used differently)
 /// - 100+: Custom application-specific codes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PcliExitCode {
@@ -26,10 +25,12 @@ pub enum PcliExitCode {
     /// Addressee unknown (67) - User or resource not found
     NotFound = 67,
 
-    /// Host name unknown (68) - Server or service not found
+    /// Unavailable (68) - The deployment lacks a feature the command needs (for
+    /// example failure log search), or `doctor` could not reach a server
     Unavailable = 68,
 
-    /// Service unavailable (69) - Temporary service error
+    /// Temporary failure (69) - Try again later: rate limited or a server error
+    /// that outlasted the retries, a batch with failed items, a report still running
     TempFail = 69,
 
     /// Internal software error (70) - Unexpected application error

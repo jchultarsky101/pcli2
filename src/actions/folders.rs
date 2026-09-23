@@ -1,16 +1,11 @@
 use crate::physna_v3::ApiError;
 use clap::ArgMatches;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
-use tokio::time::sleep;
 use tracing::trace;
 use uuid::Uuid;
 
+use crate::actions::bulk::{ItemFailure, ItemOutcome};
 use crate::{
     commands::params::{
         PARAMETER_FOLDER_PATH, PARAMETER_FOLDER_UUID, PARAMETER_NAME, PARAMETER_PARENT_FOLDER_PATH,
@@ -24,6 +19,70 @@ use crate::{
     path_utils::find_similar_paths,
     physna_v3::{PhysnaApiClient, TryDefault},
 };
+
+/// A folder a command works on: the tenant's root, which has no folder record and
+/// no UUID, or an ordinary folder.
+///
+/// `resolve_folder_uuid_by_path` cannot answer for the root, and several commands
+/// that called it had a "root" branch that could therefore never run: `folder
+/// download --folder-path /` failed with "folder not found". Resolving to this type
+/// makes every caller decide what the root means for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderTarget {
+    Root,
+    Folder(Uuid),
+}
+
+impl FolderTarget {
+    /// The folder's UUID, `None` for the root (which is how the listing endpoints
+    /// spell "no parent folder").
+    pub fn uuid(&self) -> Option<Uuid> {
+        match self {
+            FolderTarget::Root => None,
+            FolderTarget::Folder(uuid) => Some(*uuid),
+        }
+    }
+}
+
+/// Resolve `--folder-uuid` / `--folder-path` to a [`FolderTarget`]. `/` and `/Home`
+/// are the root.
+pub async fn resolve_folder_target(
+    api: &mut PhysnaApiClient,
+    tenant: &Tenant,
+    folder_uuid: Option<&Uuid>,
+    folder_path: Option<&String>,
+) -> Result<FolderTarget, CliError> {
+    match (folder_uuid, folder_path) {
+        (Some(uuid), _) => Ok(FolderTarget::Folder(*uuid)),
+        (None, Some(path)) if normalize_path(path) == "/" => Ok(FolderTarget::Root),
+        (None, Some(path)) => Ok(FolderTarget::Folder(
+            resolve_folder_uuid_by_path(api, tenant, path).await?,
+        )),
+        (None, None) => Err(CliError::MissingRequiredArgument(
+            "Either folder UUID or path must be provided".to_string(),
+        )),
+    }
+}
+
+/// "Folder not found", with the closest existing paths as suggestions.
+pub fn folder_not_found(
+    hierarchy: &crate::folder_hierarchy::FolderHierarchy,
+    path: &str,
+) -> CliError {
+    let suggestions = find_similar_paths(hierarchy, path);
+    let suggestion_message = match suggestions.as_slice() {
+        [] => String::new(),
+        [only] => format!("\n\nDid you mean: {}", only),
+        many => format!(
+            "\n\nDid you mean one of:\n  {}",
+            many.iter()
+                .map(|s| format!("• {}", s))
+                .collect::<Vec<_>>()
+                .join("\n  ")
+        ),
+    };
+    CliError::FolderNotFound(path.to_string(), suggestion_message)
+}
 
 pub async fn resolve_folder_uuid_by_path(
     api: &mut PhysnaApiClient,
@@ -40,27 +99,7 @@ pub async fn resolve_folder_uuid_by_path(
             // just missed refreshed the cache, so this is the current hierarchy.
             let hierarchy =
                 crate::folder_cache::FolderCache::get_or_fetch(api, &tenant.uuid).await?;
-            let suggestions = find_similar_paths(&hierarchy, path);
-
-            let suggestion_message = if suggestions.is_empty() {
-                String::new()
-            } else if suggestions.len() == 1 {
-                format!("\n\nDid you mean: {}", suggestions[0])
-            } else {
-                format!(
-                    "\n\nDid you mean one of:\n  {}",
-                    suggestions
-                        .iter()
-                        .map(|s| format!("• {}", s))
-                        .collect::<Vec<_>>()
-                        .join("\n  ")
-                )
-            };
-
-            Err(CliError::FolderNotFound(
-                path.to_string(),
-                suggestion_message,
-            ))
+            Err(folder_not_found(&hierarchy, path))
         }
         Err(api_error) => {
             // Propagate API errors (like authentication errors) instead of converting them to FolderNotFound
@@ -173,6 +212,15 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ))?
         .clone();
 
+    // Checked before anything is resolved: the root cannot be resolved to a
+    // folder, so checked afterwards this message was never reached.
+    // Check if trying to rename the root folder
+    if folder_path_param.is_some_and(|p| crate::model::normalize_path(p) == "/") {
+        return Err(CliError::MissingRequiredArgument(
+            "Cannot rename the root folder".to_string(),
+        ));
+    }
+
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     // Extract tenant before calling resolve_folder to avoid borrowing conflicts
@@ -186,13 +234,6 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         folder_path_param,
     )
     .await?;
-
-    // Check if trying to rename the root folder
-    if folder_path_param.is_some_and(|p| crate::model::normalize_path(p) == "/") {
-        return Err(CliError::MissingRequiredArgument(
-            "Cannot rename the root folder".to_string(),
-        ));
-    }
 
     // Extract tenant UUID before calling rename_folder to avoid borrowing conflicts
     let tenant_uuid = tenant.uuid;
@@ -519,18 +560,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let folder_path_param =
         sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        // Resolve folder UUID by path
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
+    // `/` (or `/Home`) is the tenant's root: every asset in the tenant.
+    let target =
+        resolve_folder_target(&mut api, &tenant, folder_uuid_param, folder_path_param).await?;
 
     // Get the output file path
     let output_file_path = if let Some(output_path) =
@@ -540,38 +572,35 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     } else {
         // Use the folder name as the default output file name
         // Determine the folder name from the provided path or get it from the folder details
-        let folder_name = if let Some(path) = folder_path_param {
-            // If the folder was specified by path, extract the folder name from the path
-            // Special handling for root folder "/"
-            if path.trim() == "/" {
-                // Use tenant name for root folder
-                tenant.name.clone()
-            } else {
-                let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-                if path_segments.is_empty() {
-                    "untitled".to_string()
+        let folder_name = match (target, folder_path_param) {
+            // The root has no folder record; it is named after the tenant.
+            (FolderTarget::Root, _) => tenant.name.clone(),
+            (FolderTarget::Folder(_), Some(path)) => path
+                .split('/')
+                .rfind(|s| !s.is_empty())
+                .unwrap_or("untitled")
+                .to_string(),
+            (FolderTarget::Folder(folder_uuid), None) => {
+                // The folder record carries its name; its `path` field is always
+                // empty here, which is why this used to produce a directory called
+                // "untitled".
+                let name = api.get_folder(&tenant.uuid, &folder_uuid).await?.name();
+                if name.trim().is_empty() {
+                    tenant.name.clone()
                 } else {
-                    path_segments.last().unwrap().to_string()
+                    name
                 }
-            }
-        } else {
-            // If the folder was specified by UUID, get the folder details to determine the name
-            let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-            let folder: crate::model::Folder = folder;
-
-            // The folder record carries its name; its `path` field is always empty
-            // here, which is why this used to produce a directory called "untitled".
-            let name = folder.name();
-            if name.trim().is_empty() {
-                tenant.name.clone()
-            } else {
-                name
             }
         };
 
-        let mut path = std::path::PathBuf::new();
-        path.push(folder_name);
-        path
+        // The folder's name comes from the server; it must be one plain name before
+        // it becomes the default download directory.
+        crate::actions::utils::safe_file_name(&folder_name).ok_or_else(|| {
+            CliError::from(crate::actions::CliActionError::BusinessLogicError(format!(
+                "The folder's name '{}' is not a safe local directory name; choose one with -o/--output",
+                folder_name
+            )))
+        })?
     };
 
     // Use the destination directory directly instead of a temporary directory to avoid cross-device issues
@@ -585,163 +614,55 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         // If output is a directory, use it directly
         output_file_path.clone()
     };
-    std::fs::create_dir_all(&dest_dir)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    std::fs::create_dir_all(&dest_dir)?;
 
-    // Use BFS to collect all folders in the hierarchy and their assets
+    let root_folder_path = match target {
+        FolderTarget::Root => "/".to_string(),
+        // Also confirms the folder exists before anything else is fetched.
+        FolderTarget::Folder(folder_uuid) => {
+            api.get_folder(&tenant.uuid, &folder_uuid).await?.path()
+        }
+    };
+
     let mut all_assets_with_paths = Vec::new();
-    let mut folder_queue = std::collections::VecDeque::new();
-
-    // Get the root folder details to determine its path
-    let root_folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let root_folder: crate::model::Folder = root_folder;
-    let root_folder_path = root_folder.path();
-
-    // Start BFS with the specified folder
-    folder_queue.push_back((folder_uuid, root_folder_path.clone()));
-
-    while let Some((current_folder_uuid, current_folder_path)) = folder_queue.pop_front() {
-        // Get all assets in the current folder
-        let assets_response = api
-            .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid))
-            .await?;
-        let asset_list: crate::model::AssetList = assets_response;
-
-        // Add assets with their relative paths
-        for asset in asset_list.get_all_assets() {
-            // Only include assets with "finished" state in the download queue
-            if asset.normalized_processing_status() != "finished" {
-                continue;
-            }
-
-            // Calculate the relative path from the root folder
-            let mut asset_name_for_path = asset.name().to_string();
-
-            // If the asset is an assembly, change the extension to .zip since assemblies download as ZIP files
-            if asset.is_assembly() {
-                let path = std::path::Path::new(&asset_name_for_path);
-                let stem = path
-                    .file_stem()
-                    .unwrap_or(std::ffi::OsStr::new(&asset_name_for_path));
-                if let Some(stem_str) = stem.to_str() {
-                    asset_name_for_path = format!("{}.zip", stem_str);
-                }
-            }
-
-            let relative_path = if current_folder_path == root_folder_path {
-                // If it's the root folder, just use the asset name (with .zip extension if assembly)
-                asset_name_for_path
-            } else {
-                // Otherwise, create a subfolder path by removing the root folder path prefix
-                // For example, if root is "/Julian/sub1" and current is "/Julian/sub1/sub2",
-                // the relative path becomes "sub2/asset_name"
-                let relative_folder_path = current_folder_path
-                    .strip_prefix(&root_folder_path)
-                    .unwrap_or(&current_folder_path) // fallback if strip_prefix fails
-                    .trim_start_matches('/') // remove leading slash
-                    .trim_end_matches('/'); // remove trailing slash
-
-                if relative_folder_path.is_empty() {
-                    asset_name_for_path
-                } else {
-                    format!("{}/{}", relative_folder_path, asset_name_for_path)
-                }
-            };
-
-            // Use the asset's original path as the physna_path
-            let physna_path = asset.path().clone();
-
-            all_assets_with_paths.push((asset.clone(), relative_path, physna_path));
+    // Assets left out because they have no downloadable result yet (still
+    // indexing) or processing failed: (Physna path, state). They used to be dropped
+    // without a word, missing from the totals, and the run still exited 0.
+    let mut not_downloadable: Vec<(String, String)> = Vec::new();
+    for (asset, directory) in collect_folder_assets(&mut api, &tenant, target).await? {
+        // `finished` assets, and assemblies waiting for a missing part
+        // (`missing-dependencies`): both have a file to download, and
+        // `download_assembly` copes with an assembly that has no bundle yet.
+        let state = asset
+            .processing_status()
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
+        if state != "finished" && state != "missing-dependencies" {
+            not_downloadable.push((asset.path().clone(), state));
+            continue;
         }
-
-        // Get subfolders of current folder to process next. Walks every page
-        // so folders with more direct subfolders than one page still have
-        // their full subtree processed.
-        let subfolders_response = api
-            .list_all_subfolders(&tenant.uuid, Some(&current_folder_uuid))
-            .await?;
-        for folder in subfolders_response.folders() {
-            // The listing already carries the name; fetching each folder again cost
-            // one request per subfolder before the first byte was downloaded.
-            let folder_path = if current_folder_path.ends_with('/') {
-                format!("{}{}", current_folder_path, folder.name())
-            } else {
-                format!("{}/{}", current_folder_path, folder.name())
-            };
-
-            // Add to queue to process this subfolder
-            folder_queue.push_back((*folder.uuid(), folder_path));
-        }
+        // Files keep the asset's own name; an assembly's bundle is unpacked next
+        // to it (see `download_assembly`).
+        let relative_path = join_relative(&directory, &asset.name());
+        let physna_path = asset.path().clone();
+        all_assets_with_paths.push((asset, relative_path, physna_path));
     }
 
     if all_assets_with_paths.is_empty() {
         crate::error_utils::report_warning(&format!(
-            "No finished assets found in folder {} or its subfolders; nothing to download",
-            folder_uuid
+            "No downloadable assets found in folder {} or its subfolders ({} not processed yet or failed processing); nothing to download",
+            root_folder_path,
+            not_downloadable.len()
         ));
         return Ok(());
     }
 
-    // Get the new parameters
-    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
-    let concurrent_param = sub_matches
-        .get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT)
-        .copied()
-        .unwrap_or(1);
-    let continue_on_error =
-        sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
-    let delay_param = sub_matches
-        .get_one::<usize>(crate::commands::params::PARAMETER_DELAY)
-        .copied()
-        .unwrap_or(0);
+    let options = bulk_options(sub_matches, "Downloading");
     let resume_flag = sub_matches.get_flag(crate::commands::params::PARAMETER_RESUME);
 
-    // Validate concurrent parameter
-    if !(1..=10).contains(&concurrent_param) {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-            concurrent_param
-        )));
-    }
-
-    // Validate delay parameter
-    if delay_param > 180 {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--delay': must be between 0 and 180, got {}",
-            delay_param
-        )));
-    }
-
-    // Use a semaphore to limit concurrent operations
-    let semaphore = Arc::new(Semaphore::new(concurrent_param));
-
-    // Create progress bars if requested
-    let (progress_bar, multi_progress) = if show_progress {
-        let mp = MultiProgress::new();
-        let pb = mp.add(ProgressBar::new(all_assets_with_paths.len() as u64));
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
-            .unwrap()
-            .progress_chars("#>-"));
-        (Some(pb), Some(mp))
-    } else {
-        (None, None)
-    };
-
-    // Track errors if continue-on-error is enabled
-    let mut error_count = 0;
-    let mut success_count = 0;
-    let total_assets = all_assets_with_paths.len(); // Store the length before moving the vector
-    let mut first_error: Option<CliError> = None; // Track the first error if not continuing
-    let mut error_messages: Vec<String> = Vec::new(); // Collect error messages to print later
-
-    // Download each asset to the appropriate subdirectory in the temp directory
-    let mut tasks = Vec::new();
-
+    // Every destination is checked before anything is downloaded.
+    let mut items = Vec::with_capacity(all_assets_with_paths.len());
     for (asset, relative_path, physna_path) in all_assets_with_paths {
-        let tenant_id = tenant.uuid.to_string();
-        let asset_id = asset.uuid().to_string();
-        let asset_name = asset.name().to_string();
         let asset_file_path = match crate::actions::utils::safe_relative_path(&relative_path) {
             Some(safe) => dest_dir.join(safe),
             None => {
@@ -753,262 +674,213 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 ))
             }
         };
-        let is_assembly = asset.is_assembly();
-        let mut api_task = api.clone();
-        let semaphore = semaphore.clone();
-        let progress_bar_clone = progress_bar.clone();
-        let multi_progress_clone = multi_progress.clone();
-        let delay_duration = Duration::from_secs(delay_param as u64);
-        let continue_on_error_clone = continue_on_error;
-        let concurrent_param_clone = concurrent_param;
-
-        // Spawn a task for each download
-        let task = tokio::spawn(async move {
-            // Acquire a permit from the semaphore to limit concurrency
-            let _permit = semaphore.acquire().await.unwrap();
-
-            // Create individual progress bar for this download if concurrent > 1 and progress is enabled
-            let individual_pb = if concurrent_param_clone > 1 && progress_bar_clone.is_some() {
-                if let Some(ref mp) = multi_progress_clone {
-                    let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
-                    individual_pb.set_style(
-                        ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
-                            .unwrap(),
-                    );
-                    individual_pb.set_message(format!("Downloading: {}", asset_name));
-                    Some(individual_pb)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            // Check if resume flag is set and the asset already exists on disk.
-            // Assemblies download as a ZIP that is extracted and then deleted,
-            // so the on-disk marker for an assembly is the extracted assembly
-            // file (its original name), not the transient .zip path.
-            let resume_marker = if is_assembly {
-                asset_file_path.with_file_name(&asset_name)
-            } else {
-                asset_file_path.clone()
-            };
-            if resume_flag && resume_marker.exists() {
-                tracing::debug!("Skipping existing file: {}", resume_marker.display());
-
-                // Update overall progress bar if present
-                if let Some(ref pb) = progress_bar_clone {
-                    pb.inc(1);
-                }
-
-                return Ok(Ok((asset_name, true)));
-            }
-
-            // Add delay if specified (only when actually downloading, not when skipping)
-            if delay_param > 0 {
-                sleep(delay_duration).await;
-            }
-
-            // Streamed to disk through a temporary file (see download_asset_to_file);
-            // the client handles renewal and transient retries itself.
-            let downloaded = api_task
-                .download_asset_to_file(&tenant_id, &asset_id, Some(&asset_name), &asset_file_path)
-                .await;
-
-            match downloaded {
-                Ok(_bytes) => {
-                    // Update individual progress bar
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Downloaded: {}", asset_name));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual download
-                    }
-
-                    // If the asset is an assembly, extract the ZIP file contents and delete the original ZIP
-                    if asset.is_assembly() {
-                        match extract_zip_and_cleanup(&asset_file_path) {
-                            Ok(_) => {
-                                tracing::debug!(
-                                    "Successfully extracted assembly ZIP file: {}",
-                                    asset_file_path.display()
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "Failed to extract assembly ZIP file: {}: {}",
-                                    asset_file_path.display(),
-                                    e
-                                );
-                                if continue_on_error_clone {
-                                    return Ok(Err((
-                                        asset_name,
-                                        physna_path,
-                                        ApiError::IoError(std::io::Error::other(format!(
-                                            "Failed to extract ZIP file: {}",
-                                            e
-                                        ))),
-                                        true,
-                                    )));
-                                } else {
-                                    return Err(CliError::ActionError(
-                                        crate::actions::CliActionError::IoError(
-                                            std::io::Error::other(format!(
-                                                "Failed to extract ZIP file: {}",
-                                                e
-                                            )),
-                                        ),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-
-                    // Update overall progress bar if present
-                    if let Some(ref pb) = progress_bar_clone {
-                        pb.inc(1);
-                    }
-
-                    Ok(Ok((asset_name, false)))
-                }
-                Err(e) => {
-                    // Update individual progress bar for error
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Failed: {} - {}", asset_name, e));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual download
-                    }
-
-                    // Don't log errors here - they will be collected and printed at the end
-                    // to avoid corrupting the progress bar display
-
-                    // Always return error through Ok path so it can be collected
-                    Ok(Err((asset_name, physna_path, e, continue_on_error_clone)))
-                }
-            }
-        });
-
-        tasks.push(task);
-    }
-
-    // Track how many assets were skipped because they already existed
-    let mut skipped_count = 0;
-    let mut not_attempted = 0;
-
-    // Without --continue-on-error the first failure stops the run: every task
-    // still queued is aborted rather than left to fail (or succeed) on its own.
-    // Aborting a task that has already finished is a no-op.
-    let abort_handles: Vec<_> = tasks.iter().map(|t| t.abort_handle()).collect();
-    let stop_remaining = || {
-        for handle in &abort_handles {
-            handle.abort();
-        }
-    };
-
-    for task in tasks {
-        match task.await {
-            Ok(task_result) => {
-                match task_result {
-                    Ok(asset_result) => match asset_result {
-                        Ok((_asset_name, was_skipped)) => {
-                            if was_skipped {
-                                skipped_count += 1;
-                            } else {
-                                success_count += 1;
-                            }
-                        }
-                        Err((asset_name, physna_path, error, _is_recoverable)) => {
-                            error_count += 1;
-                            // Collect error message to print later (after clearing progress bars)
-                            // Always show the actual API error so users understand what went wrong
-                            error_messages.push(format!(
-                                "⚠️  Failed to download asset '{}' (Physna path: {}): {}",
-                                asset_name, physna_path, error
-                            ));
-                            // Track the first error if we're not continuing on error
-                            if !continue_on_error && first_error.is_none() {
-                                first_error = Some(CliError::PhysnaExtendedApiError(error));
-                                stop_remaining();
-                            }
-                        }
-                    },
-                    Err(cli_error) => {
-                        error_count += 1;
-                        error_messages.push(format!(
-                            "⚠️  Failed to download asset due to CLI error: {}",
-                            cli_error
-                        ));
-                        // Track the first error if we're not continuing on error
-                        if !continue_on_error && first_error.is_none() {
-                            first_error = Some(cli_error);
-                            stop_remaining();
-                        }
-                    }
-                }
-            }
-            Err(join_error) if join_error.is_cancelled() => {
-                not_attempted += 1;
-            }
-            Err(join_error) => {
-                error_count += 1;
-                error_messages.push(format!("⚠️  Task failed to execute: {}", join_error));
-                // Track the first error if we're not continuing on error
-                if !continue_on_error && first_error.is_none() {
-                    first_error = Some(CliError::ActionError(
-                        crate::actions::CliActionError::IoError(std::io::Error::other(
-                            join_error.to_string(),
-                        )),
-                    ));
-                    stop_remaining();
-                }
-            }
-        }
-    }
-
-    // Finish progress bars before printing summary and errors
-    if let Some(pb) = progress_bar {
-        pb.finish_and_clear();
-    }
-    if let Some(mp) = multi_progress {
-        mp.clear().ok();
-    }
-
-    // Report summary with nice statistics - print this FIRST so errors appear above it
-    print_download_summary(
-        success_count,
-        skipped_count,
-        error_count,
-        not_attempted,
-        total_assets,
-        &dest_dir,
-    );
-
-    // Print collected error messages AFTER the stats so they remain visible on screen
-    if !error_messages.is_empty() {
-        eprintln!();
-        eprintln!("📋 Detailed Error List:");
-        eprintln!("======================");
-        for error_msg in &error_messages {
-            eprintln!("{}", error_msg);
-        }
-    }
-
-    // A run with failures exits non-zero whether or not it was allowed to continue;
-    // --continue-on-error only decides whether the remaining assets were attempted.
-    if let Some(error) = first_error {
-        if !continue_on_error {
-            return Err(error);
-        }
-    }
-    if error_count > 0 {
-        return Err(CliError::ActionError(
-            crate::actions::CliActionError::PartialFailure {
-                failed: error_count,
-                total: total_assets,
-                what: "download(s)".to_string(),
-            },
+        items.push((
+            asset.name().to_string(),
+            (asset, asset_file_path, physna_path),
         ));
     }
 
-    Ok(())
+    let tenant_id = tenant.uuid.to_string();
+    let report = crate::actions::bulk::run_bulk(
+        items,
+        &options,
+        move |(asset, asset_file_path, physna_path), context| {
+            let mut api = api.clone();
+            let tenant_id = tenant_id.clone();
+            async move {
+                // With --resume a file already on disk is not downloaded again. For
+                // an assembly that is the assembly file itself, which
+                // `download_assembly` writes only after all of its parts.
+                if resume_flag && asset_file_path.exists() {
+                    tracing::debug!("Skipping existing file: {}", asset_file_path.display());
+                    return Ok(ItemOutcome::Skipped);
+                }
+                context.pace().await;
+
+                let asset_name = asset.name().to_string();
+                let asset_id = asset.uuid().to_string();
+                // Streamed to disk through a temporary file (see
+                // download_asset_to_file); the client handles renewal and transient
+                // retries itself. Assemblies go through the same path as `asset
+                // download`, which unpacks a dependency bundle and keeps a raw
+                // assembly file as it is.
+                let downloaded: Result<(), CliError> = if asset.is_assembly() {
+                    crate::actions::assets::download::download_assembly(
+                        &mut api,
+                        &tenant_id,
+                        &asset_id,
+                        &asset_name,
+                        &asset_file_path,
+                    )
+                    .await
+                    .map(|_| ())
+                } else {
+                    api.download_asset_to_file(
+                        &tenant_id,
+                        &asset_id,
+                        Some(&asset_name),
+                        &asset_file_path,
+                    )
+                    .await
+                    .map(|_| ())
+                    .map_err(CliError::PhysnaExtendedApiError)
+                };
+                downloaded
+                    .map(|()| ItemOutcome::Done)
+                    .map_err(|error| ItemFailure {
+                        message: format!(
+                            "⚠️  Failed to download asset '{}' (Physna path: {}): {}",
+                            asset_name,
+                            physna_path,
+                            download_error_text(&error)
+                        ),
+                        error,
+                    })
+            }
+        },
+    )
+    .await;
+
+    print_download_summary(
+        report.done,
+        report.skipped,
+        report.failed(),
+        report.not_attempted,
+        not_downloadable.len(),
+        report.total,
+        &dest_dir,
+    );
+    // After the summary, so they stay on screen.
+    report.print_failures();
+    if !not_downloadable.is_empty() {
+        eprintln!();
+        eprintln!("⏭️  Not downloaded (not processed yet, or processing failed):");
+        for (path, state) in &not_downloadable {
+            eprintln!("   {} ({})", path, state);
+        }
+        eprintln!("   'pcli2 asset diagnose --path <path>' explains a failed asset.");
+    }
+
+    report.into_result(options.continue_on_error, "download(s)")
+}
+
+/// The run options every folder bulk command shares.
+fn bulk_options(sub_matches: &ArgMatches, verb: &'static str) -> crate::actions::bulk::BulkOptions {
+    crate::actions::bulk::BulkOptions {
+        concurrency: sub_matches
+            .get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT)
+            .copied()
+            .unwrap_or(1),
+        delay: Duration::from_secs(
+            sub_matches
+                .get_one::<usize>(crate::commands::params::PARAMETER_DELAY)
+                .copied()
+                .unwrap_or(0) as u64,
+        ),
+        continue_on_error: sub_matches
+            .get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR),
+        show_progress: crate::terminal::show_progress(sub_matches),
+        verb,
+    }
+}
+
+/// Every asset under `target`, with the directory (relative to `target`) each
+/// one belongs in, ordered by that directory and then by name.
+///
+/// The subtree comes from the folder tree (one request per thousand folders,
+/// usually already cached) and the folders' assets are listed several at a time.
+/// `folder download` and `folder thumbnail` used to walk the tree one folder at a
+/// time with two requests per folder, so a large tree took minutes before the
+/// first file arrived.
+async fn collect_folder_assets(
+    api: &mut PhysnaApiClient,
+    tenant: &Tenant,
+    target: FolderTarget,
+) -> Result<Vec<(crate::model::Asset, String)>, CliError> {
+    use futures::stream::{self, StreamExt};
+
+    let hierarchy = crate::folder_cache::FolderCache::get_or_fetch(api, &tenant.uuid).await?;
+    let path_of = |uuid: &Uuid| hierarchy.get_path_for_folder(uuid).unwrap_or_default();
+    let (base, mut folders): (String, Vec<(Option<Uuid>, String)>) = match target {
+        FolderTarget::Root => (
+            String::new(),
+            std::iter::once((None, String::new()))
+                .chain(
+                    hierarchy
+                        .all_subtree_uuids()
+                        .into_iter()
+                        .map(|uuid| (Some(uuid), path_of(&uuid))),
+                )
+                .collect(),
+        ),
+        FolderTarget::Folder(root) => {
+            let subtree = hierarchy.subtree_uuids(&root);
+            if subtree.is_empty() {
+                return Err(CliError::PhysnaExtendedApiError(
+                    ApiError::FolderHierarchyUnavailable(format!(
+                        "folder {} is not in the tenant's folder tree",
+                        root
+                    )),
+                ));
+            }
+            (
+                path_of(&root),
+                subtree
+                    .into_iter()
+                    .map(|uuid| (Some(uuid), path_of(&uuid)))
+                    .collect(),
+            )
+        }
+    };
+    for (_, path) in &mut folders {
+        *path = path
+            .strip_prefix(base.as_str())
+            .unwrap_or(path)
+            .trim_matches('/')
+            .to_string();
+    }
+
+    let tenant_uuid = tenant.uuid;
+    let listings: Vec<Result<(String, crate::model::AssetList), ApiError>> = stream::iter(folders)
+        .map(|(uuid, relative)| {
+            let mut api = api.clone();
+            async move {
+                api.list_assets_by_parent_folder_uuid(&tenant_uuid, uuid.as_ref())
+                    .await
+                    .map(|listing| (relative, listing))
+            }
+        })
+        .buffer_unordered(8)
+        .collect()
+        .await;
+
+    let mut assets = Vec::new();
+    for listing in listings {
+        let (relative, listing) = listing?;
+        for asset in listing.get_all_assets() {
+            assets.push((asset.clone(), relative.clone()));
+        }
+    }
+    assets.sort_by(|a, b| (&a.1, a.0.name()).cmp(&(&b.1, b.0.name())));
+    Ok(assets)
+}
+
+/// Join a directory relative to the download root and a file name.
+fn join_relative(directory: &str, name: &str) -> String {
+    if directory.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}/{}", directory, name)
+    }
+}
+
+/// The text of a failed download for the error list: the API's own message for an
+/// API error, as before, rather than the "API error: ..." wrapper.
+fn download_error_text(error: &CliError) -> String {
+    match error {
+        CliError::PhysnaExtendedApiError(e) => e.to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// Print download statistics summary
@@ -1017,6 +889,7 @@ fn print_download_summary(
     skipped_count: usize,
     error_count: usize,
     not_attempted: usize,
+    not_downloadable: usize,
     total_assets: usize,
     dest_dir: &std::path::PathBuf,
 ) {
@@ -1030,6 +903,12 @@ fn print_download_summary(
         eprintln!(
             "⏹️  Not attempted (stopped after the first failure): {}",
             not_attempted
+        );
+    }
+    if not_downloadable > 0 {
+        eprintln!(
+            "⏭️  Not downloaded (not processed yet, or processing failed): {}",
+            not_downloadable
         );
     }
     eprintln!("📁 Total assets processed: {}", total_assets);
@@ -1064,24 +943,21 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
+    // The subtree is read from the folder tree; a cached one could miss a folder
+    // created since, so it is fetched fresh, as `folder download` does.
+    crate::folder_cache::FolderCache::invalidate(&tenant.uuid.to_string()).unwrap_or_else(|e| {
+        tracing::debug!("Failed to invalidate folder cache: {}", e);
+    });
+
     // Get folder UUID or path from command line
     let folder_uuid_param =
         sub_matches.get_one::<Uuid>(crate::commands::params::PARAMETER_FOLDER_UUID);
     let folder_path_param =
         sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        // Resolve folder UUID by path
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
+    // `/` (or `/Home`) is the tenant's root: every asset in the tenant.
+    let target =
+        resolve_folder_target(&mut api, &tenant, folder_uuid_param, folder_path_param).await?;
 
     // Get the output file path
     let output_file_path = if let Some(output_path) =
@@ -1091,189 +967,78 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
     } else {
         // Use the folder name as the default output file name
         // Determine the folder name from the provided path or get it from the folder details
-        let folder_name = if let Some(path) = folder_path_param {
-            // If the folder was specified by path, extract the folder name from the path
-            // Special handling for root folder "/"
-            if path.trim() == "/" {
-                // Use tenant name for root folder
-                tenant.name.clone()
-            } else {
-                let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-                if path_segments.is_empty() {
-                    "untitled".to_string()
+        let folder_name = match (target, folder_path_param) {
+            // The root has no folder record; it is named after the tenant.
+            (FolderTarget::Root, _) => tenant.name.clone(),
+            (FolderTarget::Folder(_), Some(path)) => path
+                .split('/')
+                .rfind(|s| !s.is_empty())
+                .unwrap_or("untitled")
+                .to_string(),
+            (FolderTarget::Folder(folder_uuid), None) => {
+                // The folder record carries its name; its `path` field is always
+                // empty here, which is why this used to produce a directory called
+                // "untitled".
+                let name = api.get_folder(&tenant.uuid, &folder_uuid).await?.name();
+                if name.trim().is_empty() {
+                    tenant.name.clone()
                 } else {
-                    path_segments.last().unwrap().to_string()
+                    name
                 }
-            }
-        } else {
-            // If the folder was specified by UUID, get the folder details to determine the name
-            let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-
-            // The folder record carries its name; its `path` field is always empty
-            // here, which is why this used to produce a directory called "untitled".
-            let name = folder.name();
-            if name.trim().is_empty() {
-                tenant.name.clone()
-            } else {
-                name
             }
         };
 
-        let mut path = std::path::PathBuf::new();
-        path.push(folder_name);
-        path
+        // The folder's name comes from the server; it must be one plain name before
+        // it becomes the default output directory.
+        crate::actions::utils::safe_file_name(&folder_name).ok_or_else(|| {
+            CliError::from(crate::actions::CliActionError::BusinessLogicError(format!(
+                "The folder's name '{}' is not a safe local directory name; choose one with -o/--output",
+                folder_name
+            )))
+        })?
     };
 
     // Use the destination directory directly
     let dest_dir = output_file_path.clone();
-    std::fs::create_dir_all(&dest_dir)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    std::fs::create_dir_all(&dest_dir)?;
 
-    // Use BFS to collect all folders in the hierarchy and their assets
+    let root_folder_path = match target {
+        FolderTarget::Root => "/".to_string(),
+        // Also confirms the folder exists before anything else is fetched.
+        FolderTarget::Folder(folder_uuid) => {
+            api.get_folder(&tenant.uuid, &folder_uuid).await?.path()
+        }
+    };
+
+    // One thumbnail per asset: `<directory>/<asset name without extension>.png`.
     let mut all_assets_with_paths = Vec::new();
-    let mut folder_queue = std::collections::VecDeque::new();
-
-    // Get the root folder details to determine its path
-    let root_folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let root_folder_path = root_folder.path();
-
-    // Start BFS with the specified folder
-    folder_queue.push_back((folder_uuid, root_folder_path.clone()));
-
-    while let Some((current_folder_uuid, current_folder_path)) = folder_queue.pop_front() {
-        // Get all assets in the current folder
-        let assets_response = api
-            .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid))
-            .await?;
-        let asset_list = assets_response;
-
-        // Add assets with their relative paths
-        for asset in asset_list.get_all_assets() {
-            // Calculate the relative path from the root folder
-            let asset_name = asset.name().to_string();
-            let asset_name_no_ext = std::path::Path::new(&asset_name)
-                .file_stem()
-                .unwrap_or(std::ffi::OsStr::new(&asset_name))
-                .to_string_lossy()
-                .to_string();
-
-            let relative_path = if current_folder_path == root_folder_path {
-                // If it's the root folder, just use the asset name with .png extension
-                format!("{}.png", asset_name_no_ext)
-            } else {
-                // Otherwise, create a subfolder path by removing the root folder path prefix
-                let relative_folder_path = current_folder_path
-                    .strip_prefix(&root_folder_path)
-                    .unwrap_or(&current_folder_path) // fallback if strip_prefix fails
-                    .trim_start_matches('/') // remove leading slash
-                    .trim_end_matches('/'); // remove trailing slash
-
-                if relative_folder_path.is_empty() {
-                    format!("{}.png", asset_name_no_ext)
-                } else {
-                    format!("{}/{}.png", relative_folder_path, asset_name_no_ext)
-                }
-            };
-
-            // Use the asset's original path as the physna_path
-            let physna_path = asset.path().clone();
-
-            all_assets_with_paths.push((asset.clone(), relative_path, physna_path));
-        }
-
-        // Get subfolders of current folder to process next. Walks every page
-        // so folders with more direct subfolders than one page still have
-        // their full subtree processed.
-        let subfolders_response = api
-            .list_all_subfolders(&tenant.uuid, Some(&current_folder_uuid))
-            .await?;
-        for folder in subfolders_response.folders() {
-            // The listing already carries the name (see download_folder).
-            let folder_path = if current_folder_path.ends_with('/') {
-                format!("{}{}", current_folder_path, folder.name())
-            } else {
-                format!("{}/{}", current_folder_path, folder.name())
-            };
-
-            // Add to queue to process this subfolder
-            folder_queue.push_back((*folder.uuid(), folder_path));
-        }
+    for (asset, directory) in collect_folder_assets(&mut api, &tenant, target).await? {
+        let name = asset.name();
+        let stem = std::path::Path::new(&name)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| name.clone());
+        let relative_path = join_relative(&directory, &format!("{}.png", stem));
+        let physna_path = asset.path().clone();
+        all_assets_with_paths.push((asset, relative_path, physna_path));
     }
 
     if all_assets_with_paths.is_empty() {
-        crate::error_utils::report_error_with_remediation(
-            &format!(
-                "No assets found in folder with UUID: {} or its subfolders",
-                folder_uuid
-            ),
-            &[
-                "Verify the folder UUID or path is correct",
-                "Check that the folder or its subfolders contain assets",
-                "Ensure you have permissions to access the folder",
-            ],
-        );
+        // An empty folder is not a failure (the command exits 0), so it is a
+        // warning, as for `folder download`, not an error message.
+        crate::error_utils::report_warning(&format!(
+            "No assets found in folder {} or its subfolders; nothing to download",
+            root_folder_path
+        ));
         return Ok(());
     }
 
-    // Get the new parameters
-    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
-    let concurrent_param = sub_matches
-        .get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT)
-        .copied()
-        .unwrap_or(1);
-    let continue_on_error =
-        sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
-    let delay_param = sub_matches
-        .get_one::<usize>(crate::commands::params::PARAMETER_DELAY)
-        .copied()
-        .unwrap_or(0);
+    let options = bulk_options(sub_matches, "Downloading thumbnail");
 
-    // Validate concurrent parameter
-    if !(1..=10).contains(&concurrent_param) {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-            concurrent_param
-        )));
-    }
-
-    // Validate delay parameter
-    if delay_param > 180 {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--delay': must be between 0 and 180, got {}",
-            delay_param
-        )));
-    }
-
-    // Use a semaphore to limit concurrent operations
-    let semaphore = Arc::new(Semaphore::new(concurrent_param));
-
-    // Create progress bars if requested
-    let (progress_bar, multi_progress) = if show_progress {
-        let mp = MultiProgress::new();
-        let pb = mp.add(ProgressBar::new(all_assets_with_paths.len() as u64));
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
-            .unwrap()
-            .progress_chars("#>-"));
-        (Some(pb), Some(mp))
-    } else {
-        (None, None)
-    };
-
-    // Track errors if continue-on-error is enabled
-    let mut error_count = 0;
-    let mut success_count = 0;
-    let total_assets = all_assets_with_paths.len(); // Store the length before moving the vector
-
-    // Download each asset's thumbnail to the appropriate subdirectory in the destination directory
-    let mut tasks = Vec::new();
-
+    // Every destination is checked before anything is downloaded.
+    let mut items = Vec::with_capacity(all_assets_with_paths.len());
     for (asset, relative_path, physna_path) in all_assets_with_paths {
-        let tenant_id = tenant.uuid.to_string();
-        let asset_id = asset.uuid().to_string();
-        let asset_name = asset.name().to_string();
-        let asset_thumbnail_path = match crate::actions::utils::safe_relative_path(&relative_path)
-        {
+        let thumbnail_path = match crate::actions::utils::safe_relative_path(&relative_path) {
             Some(safe) => dest_dir.join(safe),
             None => {
                 return Err(CliError::ActionError(
@@ -1284,239 +1049,84 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
                 ))
             }
         };
-        let mut api_task = api.clone();
-        let semaphore = semaphore.clone();
-        let progress_bar_clone = progress_bar.clone();
-        let multi_progress_clone = multi_progress.clone();
-        let delay_duration = Duration::from_secs(delay_param as u64);
-        let continue_on_error_clone = continue_on_error;
-        let concurrent_param_clone = concurrent_param;
-
-        // Spawn a task for each thumbnail download
-        let task = tokio::spawn(async move {
-            // Acquire a permit from the semaphore to limit concurrency
-            let _permit = semaphore.acquire().await.unwrap();
-
-            // Create individual progress bar for this download if concurrent > 1 and progress is enabled
-            let individual_pb = if concurrent_param_clone > 1 && progress_bar_clone.is_some() {
-                if let Some(ref mp) = multi_progress_clone {
-                    let individual_pb = mp.add(ProgressBar::new_spinner()); // We'll update this later with actual size if known
-                    individual_pb.set_style(
-                        ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
-                            .unwrap(),
-                    );
-                    individual_pb.set_message(format!("Downloading thumbnail: {}", asset_name));
-                    Some(individual_pb)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            // Add delay if specified
-            if delay_param > 0 {
-                sleep(delay_duration).await;
-            }
-
-            // Download the asset thumbnail with retry logic
-            let thumbnail_content = download_asset_thumbnail_with_retry(
-                &mut api_task,
-                &tenant_id,
-                &asset_id,
-                &asset_name,
-            )
-            .await;
-
-            match thumbnail_content {
-                Ok(thumbnail_content) => {
-                    // Update individual progress bar
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Downloaded thumbnail: {}", asset_name));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual download
-                    }
-
-                    // Create parent directories if they don't exist
-                    if let Some(parent) = asset_thumbnail_path.parent() {
-                        if let Err(e) = std::fs::create_dir_all(parent) {
-                            if continue_on_error_clone {
-                                return Ok(Err((
-                                    asset_name,
-                                    physna_path,
-                                    ApiError::IoError(e),
-                                    true,
-                                )));
-                            } else {
-                                return Err(CliError::ActionError(
-                                    crate::actions::CliActionError::IoError(e),
-                                ));
-                            }
-                        }
-                    }
-
-                    let file_result = File::create(&asset_thumbnail_path);
-                    match file_result {
-                        Ok(mut file) => match file.write_all(&thumbnail_content) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                if continue_on_error_clone {
-                                    return Ok(Err((
-                                        asset_name,
-                                        physna_path,
-                                        ApiError::IoError(e),
-                                        true,
-                                    )));
-                                } else {
-                                    return Err(CliError::ActionError(
-                                        crate::actions::CliActionError::IoError(e),
-                                    ));
-                                }
-                            }
-                        },
-                        Err(e) => {
-                            if continue_on_error_clone {
-                                return Ok(Err((
-                                    asset_name,
-                                    physna_path,
-                                    ApiError::IoError(e),
-                                    true,
-                                )));
-                            } else {
-                                return Err(CliError::ActionError(
-                                    crate::actions::CliActionError::IoError(e),
-                                ));
-                            }
-                        }
-                    }
-
-                    // Update overall progress bar if present
-                    if let Some(ref pb) = progress_bar_clone {
-                        pb.inc(1);
-                    }
-
-                    Ok(Ok(ThumbnailOutcome::Downloaded))
-                }
-                Err(ApiError::NotFoundError(msg)) if msg.contains("Asset thumbnail not found") => {
-                    // Update individual progress bar for skipped asset
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Skipped thumbnail (not found): {}", asset_name));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual download
-                    }
-
-                    // Log that the thumbnail was not found but continue processing
-                    tracing::debug!(
-                        "Thumbnail not found for asset '{}' (Asset UUID: {}, Physna path: {}): {}",
-                        asset_name,
-                        asset_id,
-                        physna_path,
-                        msg
-                    );
-
-                    if let Some(ref pb) = progress_bar_clone {
-                        pb.inc(1);
-                    }
-
-                    // Not a success: nothing was written. Reported separately so the
-                    // summary does not claim a thumbnail that does not exist.
-                    Ok(Ok(ThumbnailOutcome::NoThumbnail))
-                }
-                Err(e) => {
-                    // Update individual progress bar for error
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Failed thumbnail: {} - {}", asset_name, e));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual download
-                    }
-
-                    // Log the detailed error for debugging with asset UUID and Physna path
-                    tracing::error!(
-                        "Failed to download thumbnail for asset '{}' (Asset UUID: {}, Physna path: {}): {}",
-                        asset_name,
-                        asset_id,
-                        physna_path,
-                        e
-                    );
-                    tracing::debug!(
-                        "Error details for asset '{}': error type = {:?}",
-                        asset_name,
-                        e
-                    );
-
-                    // If continue-on-error is enabled, return the error as a warning instead of failing
-                    if continue_on_error_clone {
-                        Ok(Err((asset_name, physna_path, e, true))) // true indicates it's a recoverable error
-                    } else {
-                        Err(CliError::PhysnaExtendedApiError(e))
-                    }
-                }
-            }
-        });
-
-        tasks.push(task);
+        items.push((
+            asset.name().to_string(),
+            (asset, thumbnail_path, physna_path),
+        ));
     }
 
-    let mut missing_count = 0;
-    // Wait for all tasks to complete
-    for task in tasks {
-        match task.await {
-            Ok(task_result) => match task_result {
-                Ok(asset_result) => match asset_result {
-                    Ok(ThumbnailOutcome::Downloaded) => {
-                        success_count += 1;
-                    }
-                    Ok(ThumbnailOutcome::NoThumbnail) => {
-                        missing_count += 1;
-                    }
-                    Err((asset_name, physna_path, error, is_recoverable)) => {
-                        if is_recoverable {
-                            error_count += 1;
-                            crate::error_utils::report_warning(&format!(
-                                "Failed to download thumbnail for asset '{}' (Physna path: {}): {}",
-                                asset_name, physna_path, error
-                            ));
-                        } else {
-                            return Err(CliError::PhysnaExtendedApiError(error));
+    let tenant_id = tenant.uuid.to_string();
+    let report = crate::actions::bulk::run_bulk(
+        items,
+        &options,
+        move |(asset, thumbnail_path, physna_path), context| {
+            let mut api = api.clone();
+            let tenant_id = tenant_id.clone();
+            async move {
+                context.pace().await;
+                let asset_name = asset.name().to_string();
+                let asset_id = asset.uuid().to_string();
+                let fail = |error: CliError| ItemFailure {
+                    message: format!(
+                        "⚠️  Failed to download thumbnail for asset '{}' (Physna path: {}): {}",
+                        asset_name,
+                        physna_path,
+                        download_error_text(&error)
+                    ),
+                    error,
+                };
+                match download_asset_thumbnail_with_retry(
+                    &mut api,
+                    &tenant_id,
+                    &asset_id,
+                    &asset_name,
+                )
+                .await
+                {
+                    Ok(content) => {
+                        if let Some(parent) = thumbnail_path.parent() {
+                            std::fs::create_dir_all(parent).map_err(|e| fail(e.into()))?;
                         }
+                        // Written whole or not at all: an interrupted write used to
+                        // leave a truncated PNG under the final name.
+                        crate::fs_utils::write_atomically(&thumbnail_path, &content)
+                            .map_err(|e| fail(e.into()))?;
+                        Ok(ItemOutcome::Done)
                     }
-                },
-                Err(cli_error) => {
-                    if continue_on_error {
-                        error_count += 1;
-                        crate::error_utils::report_warning(&format!(
-                            "Failed to download thumbnail due to CLI error: {}",
-                            cli_error
-                        ));
-                    } else {
-                        return Err(cli_error);
+                    // Not a failure and not a success: nothing was written, and the
+                    // summary says so rather than claiming a thumbnail.
+                    Err(ApiError::NotFoundError(msg))
+                        if msg.contains("Asset thumbnail not found") =>
+                    {
+                        tracing::debug!(
+                            "Thumbnail not found for asset '{}' (Physna path: {}): {}",
+                            asset_name,
+                            physna_path,
+                            msg
+                        );
+                        Ok(ItemOutcome::Unavailable)
                     }
-                }
-            },
-            Err(join_error) => {
-                if continue_on_error {
-                    error_count += 1;
-                    crate::error_utils::report_warning(&format!(
-                        "Task failed to execute: {}",
-                        join_error
-                    ));
-                } else {
-                    return Err(CliError::ActionError(
-                        crate::actions::CliActionError::IoError(std::io::Error::other(
-                            join_error.to_string(),
-                        )),
-                    ));
+                    Err(e) => Err(fail(CliError::PhysnaExtendedApiError(e))),
                 }
             }
-        }
-    }
+        },
+    )
+    .await;
 
     // Report summary with nice statistics
     eprintln!("\n📊 Thumbnail Download Statistics Report");
     eprintln!("=====================================");
-    eprintln!("✅ Successfully downloaded: {}", success_count);
-    eprintln!("⏭️  No thumbnail available: {}", missing_count);
-    eprintln!("❌ Failed downloads: {}", error_count);
-    eprintln!("📁 Total assets processed: {}", total_assets);
-    if error_count > 0 {
+    eprintln!("✅ Successfully downloaded: {}", report.done);
+    eprintln!("⏭️  No thumbnail available: {}", report.unavailable);
+    eprintln!("❌ Failed downloads: {}", report.failed());
+    if report.not_attempted > 0 {
+        eprintln!(
+            "⏹️  Not attempted (stopped after the first failure): {}",
+            report.not_attempted
+        );
+    }
+    eprintln!("📁 Total assets processed: {}", report.total);
+    if report.failed() > 0 || report.not_attempted > 0 {
         eprintln!("⏳ Operation completed with errors!");
     } else {
         eprintln!("⏳ Operation completed successfully!");
@@ -1525,25 +1135,9 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         "\n📁 Thumbnails downloaded to destination directory: {:?}",
         dest_dir
     );
+    report.print_failures();
 
-    if error_count > 0 {
-        return Err(CliError::ActionError(
-            crate::actions::CliActionError::PartialFailure {
-                failed: error_count,
-                total: total_assets,
-                what: "thumbnail download(s)".to_string(),
-            },
-        ));
-    }
-
-    Ok(())
-}
-
-/// What one thumbnail task achieved.
-enum ThumbnailOutcome {
-    Downloaded,
-    /// The asset has no thumbnail; nothing was written.
-    NoThumbnail,
+    report.into_result(options.continue_on_error, "thumbnail download(s)")
 }
 
 /// Download an asset thumbnail.
@@ -1638,8 +1232,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // given: resolution may create the target folder, which a dry run must
     // never do.
     if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
-        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(local_dir_path)
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?
+        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(local_dir_path)?
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
             .filter(|path| !path.is_dir())
@@ -1774,390 +1367,142 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         crate::actions::utils::canonical_folder_path(&mut api, &tenant.uuid, &folder_uuid).await?
     };
 
-    // Get the command-line parameters
     let skip_existing = sub_matches.get_flag(crate::commands::params::PARAMETER_SKIP_EXISTING);
-    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
-    let concurrent_param = sub_matches
-        .get_one::<usize>(crate::commands::params::PARAMETER_CONCURRENT)
-        .copied()
-        .unwrap_or(1);
-    let continue_on_error =
-        sub_matches.get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR);
-    let delay_param = sub_matches
-        .get_one::<usize>(crate::commands::params::PARAMETER_DELAY)
-        .copied()
-        .unwrap_or(0);
+    let options = bulk_options(sub_matches, "Uploading");
 
-    // Validate concurrent parameter
-    if !(1..=10).contains(&concurrent_param) {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-            concurrent_param
-        )));
-    }
-
-    // Validate delay parameter
-    if delay_param > 180 {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--delay': must be between 0 and 180, got {}",
-            delay_param
-        )));
-    }
-
-    // Read all files in the local directory
-    let entries: Vec<_> = std::fs::read_dir(local_dir_path)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-    // Only files are uploaded; excluding directories up front keeps the
-    // total (and therefore the skipped/failed accounting) accurate.
-    let entries: Vec<_> = entries
-        .into_iter()
-        .filter(|entry| !entry.path().is_dir())
-        .collect();
-
-    // Store the total count before moving entries
-    let total_entries_count = entries.len();
-
-    // Use a semaphore to limit concurrent operations
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent_param));
-
-    // Create progress bars if requested
-    let (progress_bar, multi_progress) = if show_progress {
-        let mp = indicatif::MultiProgress::new();
-        let pb = mp.add(indicatif::ProgressBar::new(total_entries_count as u64));
-        pb.set_style(indicatif::ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
-            .unwrap()
-            .progress_chars("#>-"));
-        (Some(pb), Some(mp))
-    } else {
-        (None, None)
-    };
-
-    // Create a delay duration if delay is specified
-    let delay_duration = std::time::Duration::from_secs(delay_param as u64);
-
-    // Which of the files already exist in the destination, asked once. Each task
-    // used to list the whole folder for itself - N files times every page of the
-    // listing - and treated a failed listing as "does not exist", so
-    // --skip-existing could re-upload on a transient error. The server is now
-    // asked about the exact target paths (one request per 1000 files) and a
-    // failed check fails the run. The set holds the paths as they were asked
-    // about; each task rebuilds its own path the same way to test membership.
-    let existing_paths: std::sync::Arc<std::collections::HashSet<String>> = {
-        let requested: Vec<String> = entries
-            .iter()
-            .filter(|entry| entry.path().is_file())
-            .filter_map(|entry| {
-                entry
-                    .path()
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-            })
-            .map(|name| crate::actions::utils::asset_path_for(&original_folder_path, &name))
-            .collect();
-        std::sync::Arc::new(
-            api.find_existing_asset_paths(&tenant.uuid, &requested)
-                .await?,
-        )
-    };
-
-    // Upload each file in the directory
-    let mut tasks = Vec::new();
-
-    for entry in entries {
-        let file_path = entry.path();
-
-        // Skip if it's a directory
-        if file_path.is_dir() {
+    // Only files are uploaded; directories are left out up front so the totals
+    // count what is actually attempted.
+    let mut files: Vec<(String, std::path::PathBuf)> = Vec::new();
+    for entry in std::fs::read_dir(local_dir_path)? {
+        let path = entry?.path();
+        if path.is_dir() {
             continue;
         }
-
-        let file_name = entry.file_name();
-        let file_name_str = file_name
-            .to_str()
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
             .ok_or_else(|| {
-                CliError::ActionError(crate::actions::CliActionError::IoError(
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "Invalid file name encoding",
-                    ),
+                CliError::from(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Invalid file name encoding: {:?}", path),
                 ))
             })?
-            .to_string(); // Clone to move into async closure
-
-        let tenant_clone = tenant.clone();
-        // The upload variant shares the token and renewal state with `api`.
-        let mut api_task = api.for_upload_operations();
-        let existing_paths = existing_paths.clone();
-        let semaphore = semaphore.clone();
-        let progress_bar_clone = progress_bar.clone();
-        let multi_progress_clone = multi_progress.clone();
-        let original_folder_path_clone = original_folder_path.clone(); // Clone the original folder path
-        let folder_uuid_clone = folder_uuid;
-        let skip_existing_clone = skip_existing;
-        let delay_duration_clone = delay_duration;
-        let delay_param_clone = delay_param;
-        let concurrent_param_clone = concurrent_param;
-
-        // Spawn a task for each upload
-        let task = tokio::spawn(async move {
-            // Acquire a permit from the semaphore to limit concurrency
-            let _permit = semaphore.acquire().await.unwrap();
-
-            // Create individual progress bar for this upload if concurrent > 1 and progress is enabled
-            let individual_pb = if concurrent_param_clone > 1 && progress_bar_clone.is_some() {
-                if let Some(ref mp) = multi_progress_clone {
-                    let individual_pb = mp.add(indicatif::ProgressBar::new_spinner());
-                    individual_pb.set_style(
-                        indicatif::ProgressStyle::default_bar()
-                            .template("{spinner:.yellow} [{elapsed_precise}] {msg}")
-                            .unwrap(),
-                    );
-                    individual_pb.set_message(format!("Uploading: {}", file_name_str));
-                    Some(individual_pb)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            // Add delay if specified
-            if delay_param_clone > 0 {
-                tokio::time::sleep(delay_duration_clone).await;
-            }
-
-            let asset_exists = existing_paths.contains(&crate::actions::utils::asset_path_for(
-                &original_folder_path_clone,
-                &file_name_str,
-            ));
-
-            if asset_exists {
-                if skip_existing_clone {
-                    // Update individual progress bar for skipped asset
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Skipped (exists): {}", file_name_str));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
-                    }
-
-                    eprintln!("Skipping existing asset: {}", file_name_str);
-                    // Update overall progress bar if present
-                    if let Some(ref pb) = progress_bar_clone {
-                        pb.inc(1);
-                    }
-                    return Ok(Ok((file_name_str, true)));
-                } else {
-                    return Err(CliError::ActionError(crate::actions::CliActionError::BusinessLogicError(
-                        format!("Asset already exists: {}. Use --skip-existing to skip existing assets.", file_name_str)
-                    )));
-                }
-            }
-
-            // Upload the file
-            tracing::trace!(
-                "Uploading asset: {} to folder UUID: {}",
-                file_name_str,
-                folder_uuid_clone
-            );
-
-            // Construct the asset path using the original folder path and file name
-            // Remove leading slash if present to avoid path conflicts
-            let asset_path = match original_folder_path_clone.trim_matches('/') {
-                "" => file_name_str.clone(),
-                parent => format!("{}/{}", parent, file_name_str),
-            };
-
-            // Upload the asset to the specified folder using the full path
-            let upload_result = api_task
-                .create_asset(
-                    &tenant_clone.uuid,
-                    &file_path,
-                    &asset_path,
-                    &folder_uuid_clone,
-                )
-                .await;
-
-            // Clean up the temporary file
-
-            match upload_result {
-                Ok(_) => {
-                    // Update individual progress bar
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Uploaded: {}", file_name_str));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
-                    }
-
-                    // Update overall progress bar if present
-                    if let Some(ref pb) = progress_bar_clone {
-                        pb.inc(1);
-                    }
-
-                    Ok(Ok((file_name_str, false)))
-                }
-                Err(e) => {
-                    // Update individual progress bar for error
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Failed: {} - {}", file_name_str, e));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual upload
-                    }
-
-                    // Log the detailed error for debugging
-                    tracing::error!(
-                        "Failed to upload asset '{}' (Asset path: {}): {}",
-                        file_name_str,
-                        asset_path,
-                        e
-                    );
-                    tracing::debug!(
-                        "Error details for asset '{}': error type = {:?}",
-                        file_name_str,
-                        e
-                    );
-
-                    Err(CliError::PhysnaExtendedApiError(e))
-                }
-            }
-        });
-
-        tasks.push(task);
+            .to_string();
+        files.push((name, path));
     }
+    files.sort();
 
-    // Wait for all tasks to complete
-    let mut success_count = 0;
-    let mut error_count = 0;
-    let mut skipped_count = 0;
+    // Which of the files already exist in the destination, asked once (one
+    // request per 1000 files) rather than by listing the folder per file.
+    let requested: Vec<String> = files
+        .iter()
+        .map(|(name, _)| crate::actions::utils::asset_path_for(&original_folder_path, name))
+        .collect();
+    let existing = api
+        .find_existing_asset_paths(&tenant.uuid, &requested)
+        .await?;
 
-    for task in tasks {
-        match task.await {
-            Ok(task_result) => {
-                match task_result {
-                    Ok(asset_result) => {
-                        match asset_result {
-                            Ok((asset_name, was_skipped)) => {
-                                if was_skipped {
-                                    skipped_count += 1;
-                                } else {
-                                    success_count += 1;
-                                    // Only print individual success messages if progress is not shown
-                                    // Otherwise, the progress bar already shows the status
-                                    if !show_progress {
-                                        eprintln!("Successfully uploaded: {}", asset_name);
-                                    }
-                                }
-                            }
-                            Err(cli_error) => {
-                                error_count += 1;
-                                // If continue_on_error is true, we continue processing other assets
-                                if !continue_on_error {
-                                    return Err(cli_error);
-                                }
-                                // Log the error but continue processing
-                                eprintln!("Error uploading asset: {}", cli_error);
-                            }
-                        }
-                    }
-                    Err(cli_error) => {
-                        error_count += 1;
-                        // If continue_on_error is true, we continue processing other assets
-                        if !continue_on_error {
-                            return Err(cli_error);
-                        }
-                        // Log the error but continue processing
-                        eprintln!("Error in task: {}", cli_error);
-                    }
-                }
-            }
-            Err(join_error) => {
-                error_count += 1;
-                // If continue_on_error is true, we continue processing other assets
-                if !continue_on_error {
-                    return Err(CliError::ActionError(
-                        crate::actions::CliActionError::IoError(std::io::Error::other(
-                            join_error.to_string(),
-                        )),
-                    ));
-                }
-                // Log the error but continue processing
-                eprintln!("Join error: {}", join_error);
-            }
+    // Without --skip-existing an existing file is an error. It is raised before
+    // anything is uploaded: it used to surface only when that file's turn came,
+    // after the files ahead of it had already been uploaded.
+    if !skip_existing {
+        let clashes: Vec<&str> = files
+            .iter()
+            .zip(&requested)
+            .filter(|(_, target)| existing.contains(*target))
+            .map(|((name, _), _)| name.as_str())
+            .collect();
+        if !clashes.is_empty() {
+            return Err(CliError::ActionError(
+                crate::actions::CliActionError::BusinessLogicError(format!(
+                    "Asset already exists: {}. Use --skip-existing to skip existing assets.",
+                    clashes.join(", ")
+                )),
+            ));
         }
     }
 
-    // Calculate total assets processed
-    let total_assets = total_entries_count;
+    let items: Vec<(String, (String, std::path::PathBuf, bool))> = files
+        .into_iter()
+        .zip(requested)
+        .map(|((name, path), target)| {
+            let exists = existing.contains(&target);
+            (name.clone(), (name, path, exists))
+        })
+        .collect();
 
-    // Finish progress bar before the summary so it does not paint over it
-    if let Some(pb) = progress_bar {
-        pb.finish_and_clear();
-    }
+    let upload_api = api.for_upload_operations();
+    let tenant_uuid = tenant.uuid;
+    let destination = original_folder_path.clone();
+    let show_progress = options.show_progress;
+    let report = crate::actions::bulk::run_bulk(
+        items,
+        &options,
+        move |(file_name, file_path, exists), context| {
+            // The upload variant shares the token and renewal state with `api`.
+            let mut api = upload_api.clone();
+            let destination = destination.clone();
+            async move {
+                if exists {
+                    context.note(&format!("Skipping existing asset: {}", file_name));
+                    return Ok(ItemOutcome::Skipped);
+                }
+                context.pace().await;
+
+                let asset_path = match destination.trim_matches('/') {
+                    "" => file_name.clone(),
+                    parent => format!("{}/{}", parent, file_name),
+                };
+                tracing::trace!(
+                    "Uploading asset: {} to folder UUID: {}",
+                    file_name,
+                    folder_uuid
+                );
+                match api
+                    .create_asset(&tenant_uuid, &file_path, &asset_path, &folder_uuid)
+                    .await
+                {
+                    Ok(_) => {
+                        // The progress bar shows this already.
+                        if !show_progress {
+                            context.note(&format!("Successfully uploaded: {}", file_name));
+                        }
+                        Ok(ItemOutcome::Done)
+                    }
+                    Err(e) => Err(ItemFailure {
+                        message: format!(
+                            "⚠️  Failed to upload '{}' (as {}): {}",
+                            file_name, asset_path, e
+                        ),
+                        error: CliError::PhysnaExtendedApiError(e),
+                    }),
+                }
+            }
+        },
+    )
+    .await;
 
     // Print detailed statistics report (stderr: stdout is for data)
     eprintln!("\n📊 Upload Statistics Report");
     eprintln!("===========================");
-    eprintln!("✅ Successfully uploaded: {}", success_count);
-    eprintln!("⏭️  Skipped (already existed): {}", skipped_count);
-    eprintln!("❌ Failed uploads: {}", error_count);
-    eprintln!("📁 Total assets processed: {}", total_assets);
-    if error_count > 0 {
+    eprintln!("✅ Successfully uploaded: {}", report.done);
+    eprintln!("⏭️  Skipped (already existed): {}", report.skipped);
+    eprintln!("❌ Failed uploads: {}", report.failed());
+    if report.not_attempted > 0 {
+        eprintln!(
+            "⏹️  Not attempted (stopped after the first failure): {}",
+            report.not_attempted
+        );
+    }
+    eprintln!("📁 Total assets processed: {}", report.total);
+    if report.failed() > 0 || report.not_attempted > 0 {
         eprintln!("⏳ Operation completed with errors!");
     } else {
         eprintln!("⏳ Operation completed successfully!");
     }
     eprintln!("\n📁 Source directory: {:?}", local_dir_path);
     eprintln!("📁 Destination folder: {}", original_folder_path);
+    report.print_failures();
 
-    if error_count > 0 {
-        return Err(CliError::ActionError(
-            crate::actions::CliActionError::PartialFailure {
-                failed: error_count,
-                total: total_assets,
-                what: "upload(s)".to_string(),
-            },
-        ));
-    }
-
-    Ok(())
-}
-fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Error> {
-    use std::io::Cursor;
-
-    // Read the ZIP file content
-    let zip_content = std::fs::read(zip_path)?;
-
-    // Create a cursor from the content
-    let cursor = Cursor::new(zip_content);
-
-    // Create a ZipArchive from the cursor
-    let mut archive = zip::ZipArchive::new(cursor)?;
-
-    // Extract all files to the same directory as the ZIP file
-    let parent_dir = zip_path
-        .parent()
-        .ok_or_else(|| std::io::Error::other("Could not get parent directory"))?;
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-
-        let file_path = parent_dir.join(file.mangled_name());
-
-        if file.is_dir() {
-            std::fs::create_dir_all(&file_path)?;
-        } else {
-            // Create parent directories if they don't exist
-            if let Some(parent) = file_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-
-            let mut output_file = std::fs::File::create(&file_path)?;
-            std::io::copy(&mut file, &mut output_file)?;
-        }
-    }
-
-    // Remove the original ZIP file after successful extraction
-    std::fs::remove_file(zip_path)?;
-
-    Ok(())
+    report.into_result(options.continue_on_error, "upload(s)")
 }

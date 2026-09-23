@@ -43,6 +43,7 @@ pub fn environment_command() -> Command {
         .subcommand(
             Command::new(COMMAND_REMOVE)
                 .about("Remove an environment")
+                .visible_alias("rm")
                 .arg(
                     name_parameter()
                         .required(true)
@@ -52,7 +53,8 @@ pub fn environment_command() -> Command {
         .subcommand(
             Command::new(COMMAND_ENVIRONMENT_LIST)
                 .about("List all environments")
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .visible_alias("ls")
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -66,7 +68,7 @@ pub fn environment_command() -> Command {
                 .arg(name_parameter().required(false).help(
                     "Name of the environment to get details for (defaults to active environment)",
                 ))
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -318,7 +320,7 @@ pub async fn execute_environment_command(
                         serde_json::to_string(&env_details)
                     };
                     match json_output {
-                        Ok(json) => println!("{}", json),
+                        Ok(json) => crate::format::print_output(&json),
                         Err(e) => {
                             return Err(crate::error::CliError::FormattingError(
                                 crate::format::FormattingError::JsonSerializationError(e),
@@ -374,7 +376,7 @@ pub async fn execute_environment_command(
                             ))
                         }
                     };
-                    println!("{}", csv_output);
+                    crate::format::print_output(&csv_output);
                 }
                 OutputFormat::Tree(_) => {
                     // For tree format, show detailed information
@@ -514,7 +516,7 @@ pub async fn execute_environment_command(
                             serde_json::to_string(&env_details)
                         };
                         match json_output {
-                            Ok(json) => println!("{}", json),
+                            Ok(json) => crate::format::print_output(&json),
                             Err(e) => {
                                 return Err(crate::error::CliError::FormattingError(
                                     crate::format::FormattingError::JsonSerializationError(e),
@@ -568,13 +570,13 @@ pub async fn execute_environment_command(
                                 ))
                             }
                         };
-                        println!("{}", csv_output);
+                        crate::format::print_output(&csv_output);
                     }
                     OutputFormat::Tree(_) => {
                         // For tree format, output as JSON (since tree doesn't make sense for single environment)
                         let json_output = serde_json::to_string_pretty(&env_details);
                         match json_output {
-                            Ok(json) => println!("{}", json),
+                            Ok(json) => crate::format::print_output(&json),
                             Err(e) => {
                                 return Err(crate::error::CliError::FormattingError(
                                     crate::format::FormattingError::JsonSerializationError(e),
@@ -631,7 +633,22 @@ fn confirm_or_abort(
 /// and only surface later as an opaque request error.
 fn validate_url(flag: &str, value: &str) -> Result<(), crate::error::CliError> {
     match reqwest::Url::parse(value) {
-        Ok(url) if url.scheme() == "http" || url.scheme() == "https" => Ok(()),
+        Ok(url) if url.scheme() == "http" => {
+            // Accepted, because an existing setup may rely on it, but the client
+            // secret and every access token would cross the network in clear text.
+            let loopback = matches!(
+                url.host_str(),
+                Some("localhost") | Some("127.0.0.1") | Some("[::1]") | Some("::1")
+            );
+            if !loopback {
+                crate::error_utils::report_warning(&format!(
+                    "{} '{}' is plain http: credentials and tokens sent to it are not encrypted. Use https unless this is a local test server.",
+                    flag, value
+                ));
+            }
+            Ok(())
+        }
+        Ok(url) if url.scheme() == "https" => Ok(()),
         Ok(url) => Err(crate::error::CliError::MissingRequiredArgument(format!(
             "{} '{}' must use http or https, not '{}'",
             flag,

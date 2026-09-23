@@ -5,12 +5,7 @@ use crate::{
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    io::Write,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs, io::Write, path::PathBuf};
 use tracing::debug;
 use uuid::Uuid;
 
@@ -91,10 +86,29 @@ pub struct Configuration {
     environments: HashMap<String, EnvironmentConfig>,
 }
 
+/// The environment named with `--env` / `PCLI2_ENV` for this run.
+///
+/// It replaces the saved active environment for everything this process does
+/// (URLs, the active tenant, the credentials entry, the caches) without being
+/// written to `config.yml`, so scripts can target different environments in
+/// parallel instead of racing on `pcli2 env use`.
+static ENVIRONMENT_OVERRIDE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Use `name` as the active environment for the rest of this run.
+pub fn set_environment_override(name: String) {
+    let _ = ENVIRONMENT_OVERRIDE.set(name);
+}
+
 impl Configuration {
+    /// The environment this run uses: `--env` when given, else the saved one.
+    fn effective_environment(&self) -> Option<&String> {
+        ENVIRONMENT_OVERRIDE
+            .get()
+            .or(self.active_environment.as_ref())
+    }
+
     pub fn active_tenant_uuid(&self) -> Option<&Uuid> {
-        self.active_environment
-            .as_ref()
+        self.effective_environment()
             .and_then(|env| self.environments.get(env))
             .and_then(|env| env.active_tenant_uuid.as_ref())
             .or(self.active_tenant_uuid.as_ref())
@@ -219,7 +233,7 @@ impl Configuration {
         }
     }
 
-    pub fn save(&self, path: &PathBuf) -> Result<(), ConfigurationError> {
+    pub fn save(&self, path: &std::path::Path) -> Result<(), ConfigurationError> {
         // first check if the parent directory exists and try to create it if not
         let configuration_directory = path.parent();
         match configuration_directory {
@@ -233,14 +247,12 @@ impl Configuration {
             None => return Err(ConfigurationError::FailedToFindConfigurationDirectory),
         }
 
-        let file = File::create(path);
-        match file {
-            Ok(file) => {
-                let writer: Box<dyn Write> = Box::new(file);
-                Ok(self.write(writer)?)
-            }
-            Err(e) => Err(ConfigurationError::FailedToWriteData { cause: Box::new(e) }),
-        }
+        // Serialised first and renamed into place, so a crash or a concurrent pcli2
+        // process never leaves a truncated config.yml behind.
+        let data = serde_yaml::to_string(self)
+            .map_err(|e| ConfigurationError::FailedToWriteData { cause: Box::new(e) })?;
+        crate::fs_utils::write_atomically(path, data.as_bytes())
+            .map_err(|e| ConfigurationError::FailedToWriteData { cause: Box::new(e) })
     }
 
     pub fn save_to_default(&self) -> Result<(), ConfigurationError> {
@@ -256,8 +268,8 @@ impl Configuration {
     /// read by older versions, at the top level too).
     pub fn set_active_tenant(&mut self, tenant: &Tenant) {
         if let Some(env) = self
-            .active_environment
-            .clone()
+            .effective_environment()
+            .cloned()
             .and_then(|name| self.environments.get_mut(&name))
         {
             env.active_tenant_uuid = Some(tenant.uuid);
@@ -267,8 +279,8 @@ impl Configuration {
 
     pub fn clear_active_tenant(&mut self) {
         if let Some(env) = self
-            .active_environment
-            .clone()
+            .effective_environment()
+            .cloned()
             .and_then(|name| self.environments.get_mut(&name))
         {
             env.active_tenant_uuid = None;
@@ -279,7 +291,7 @@ impl Configuration {
     // Methods to get URLs with fallback hierarchy
     pub fn get_api_base_url(&self) -> String {
         // Priority: environment-specific -> config-specific -> default
-        if let Some(ref env_name) = self.active_environment {
+        if let Some(env_name) = self.effective_environment() {
             if let Some(env_config) = self.environments.get(env_name) {
                 return env_config.api_base_url.clone();
             }
@@ -294,7 +306,7 @@ impl Configuration {
 
     pub fn get_ui_base_url(&self) -> String {
         // Priority: environment-specific -> config-specific -> default
-        if let Some(ref env_name) = self.active_environment {
+        if let Some(env_name) = self.effective_environment() {
             if let Some(env_config) = self.environments.get(env_name) {
                 return env_config.ui_base_url.clone();
             }
@@ -309,7 +321,7 @@ impl Configuration {
 
     pub fn get_auth_base_url(&self) -> String {
         // Priority: environment-specific -> config-specific -> default
-        if let Some(ref env_name) = self.active_environment {
+        if let Some(env_name) = self.effective_environment() {
             if let Some(env_config) = self.environments.get(env_name) {
                 return env_config.auth_base_url.clone();
             }
@@ -352,12 +364,16 @@ impl Configuration {
         }
     }
 
+    /// Environment names in alphabetical order (they are stored unordered).
     pub fn list_environments(&self) -> Vec<String> {
-        self.environments.keys().cloned().collect()
+        let mut names: Vec<String> = self.environments.keys().cloned().collect();
+        names.sort();
+        names
     }
 
+    /// The environment this run uses (`--env` when given, else the saved one).
     pub fn get_active_environment(&self) -> Option<String> {
-        self.active_environment.clone()
+        self.effective_environment().cloned()
     }
 
     /// Reset all environment configurations to a blank state

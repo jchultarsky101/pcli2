@@ -14,6 +14,9 @@ use strum::EnumIter;
 pub const JSON: &str = "json";
 pub const CSV: &str = "csv";
 pub const TREE: &str = "tree";
+/// Aligned columns for reading in a terminal. Produced from the CSV output
+/// (with headers), so every command that can print CSV can print a table.
+pub const TABLE: &str = "table";
 
 /// Error types that can occur during formatting operations
 #[derive(Debug, thiserror::Error)]
@@ -59,9 +62,155 @@ impl From<csv::IntoInnerError<csv::Writer<Vec<u8>>>> for FormattingError {
 /// CSV without headers used to print one blank line, which `wc -l` counted
 /// and a spreadsheet import turned into an empty row.
 pub fn print_output(text: &str) {
+    let text = reshape_csv_output(text);
     if !text.is_empty() {
         println!("{}", text);
     }
+}
+
+/// How CSV output is reshaped on its way out: as a table, and/or narrowed to
+/// the columns named with `--columns`. Set while the output format is resolved;
+/// one command prints one format, so process-wide state is enough.
+#[derive(Default)]
+struct CsvShape {
+    /// The format resolved to CSV or table, so the text is CSV with headers.
+    active: bool,
+    table: bool,
+    /// Whether the user asked for a header row (tables always have one).
+    user_headers: bool,
+    columns: Vec<String>,
+}
+
+static CSV_SHAPE: std::sync::Mutex<CsvShape> = std::sync::Mutex::new(CsvShape {
+    active: false,
+    table: false,
+    user_headers: false,
+    columns: Vec::new(),
+});
+
+/// `--columns`: keep only these CSV/table columns, matched by header name
+/// (case-insensitively), in the order given.
+pub fn set_columns(columns: Vec<String>) {
+    CSV_SHAPE.lock().expect("not poisoned").columns = columns;
+}
+
+/// Record a resolved format; CSV and table output always carry headers internally
+/// when they will be reshaped, since columns are selected by header name.
+fn note_csv_format(table: bool, options: &mut OutputFormatOptions) {
+    let mut shape = CSV_SHAPE.lock().expect("not poisoned");
+    shape.table = table;
+    shape.user_headers = options.with_headers;
+    shape.active = table || !shape.columns.is_empty();
+    if shape.active {
+        options.with_headers = true;
+    }
+}
+
+/// Apply `--columns` and the table layout to CSV text; anything else passes
+/// through untouched.
+fn reshape_csv_output(text: &str) -> String {
+    let shape = CSV_SHAPE.lock().expect("not poisoned");
+    if !shape.active || text.is_empty() {
+        return text.to_string();
+    }
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(text.as_bytes());
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for record in reader.records() {
+        match record {
+            Ok(record) => rows.push(record.iter().map(str::to_string).collect()),
+            // Not CSV after all: print it as it is.
+            Err(_) => return text.to_string(),
+        }
+    }
+    if rows.is_empty() {
+        return String::new();
+    }
+
+    if !shape.columns.is_empty() {
+        let header = rows[0].clone();
+        let mut picked = Vec::new();
+        for wanted in &shape.columns {
+            match header.iter().position(|h| h.eq_ignore_ascii_case(wanted)) {
+                Some(index) => picked.push(index),
+                None => {
+                    // A typo must not quietly hand a script every column instead.
+                    crate::error_utils::report_cli_error(
+                        &crate::error::CliError::MissingRequiredArgument(format!(
+                            "--columns: there is no column '{}'; this output has {}",
+                            wanted,
+                            header.join(", ")
+                        )),
+                    );
+                    std::process::exit(crate::exit_codes::PcliExitCode::UsageError.code());
+                }
+            }
+        }
+        if !picked.is_empty() {
+            rows = rows
+                .into_iter()
+                .map(|row| {
+                    picked
+                        .iter()
+                        .map(|&i| row.get(i).cloned().unwrap_or_default())
+                        .collect()
+                })
+                .collect();
+        }
+    }
+
+    if shape.table {
+        return render_table(&rows);
+    }
+    let start = usize::from(!shape.user_headers);
+    let mut writer = csv::Writer::from_writer(Vec::new());
+    for row in &rows[start..] {
+        if writer.write_record(row).is_err() {
+            return text.to_string();
+        }
+    }
+    writer
+        .into_inner()
+        .ok()
+        .and_then(|data| String::from_utf8(data).ok())
+        .map(|out| out.trim_end_matches(['\r', '\n']).to_string())
+        .unwrap_or_else(|| text.to_string())
+}
+
+/// Rows (the first is the header) as aligned columns with a rule under the header.
+fn render_table(rows: &[Vec<String>]) -> String {
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let width = |cell: &str| cell.chars().count();
+    let mut widths = vec![0; columns];
+    for row in rows {
+        for (i, cell) in row.iter().enumerate() {
+            // Line breaks inside a cell would break the layout.
+            widths[i] = widths[i].max(width(&cell.replace('\n', " ")));
+        }
+    }
+    let mut out = String::new();
+    for (index, row) in rows.iter().enumerate() {
+        let mut line = String::new();
+        for (i, width_i) in widths.iter().enumerate() {
+            let cell = row.get(i).map(|c| c.replace('\n', " ")).unwrap_or_default();
+            if i + 1 == columns {
+                line.push_str(&cell);
+            } else {
+                line.push_str(&cell);
+                line.push_str(&" ".repeat(width_i - width(&cell) + 2));
+            }
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+        if index == 0 {
+            let rule: usize = widths.iter().sum::<usize>() + 2 * columns.saturating_sub(1);
+            out.push_str(&"─".repeat(rule));
+            out.push('\n');
+        }
+    }
+    out.trim_end().to_string()
 }
 
 static SAFE_CSV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -244,7 +393,7 @@ pub enum OutputFormat {
 impl OutputFormat {
     /// Returns a vector of all supported format names as strings
     pub fn names() -> Vec<&'static str> {
-        vec![JSON, CSV, TREE]
+        vec![JSON, CSV, TREE, TABLE]
     }
 
     #[allow(clippy::result_large_err)]
@@ -252,11 +401,15 @@ impl OutputFormat {
         format_str: &str,
         options: OutputFormatOptions,
     ) -> Result<OutputFormat, FormattingError> {
+        let mut options = options;
         let normalized_format = format_str.to_lowercase();
         let normalized_format = normalized_format.as_str();
         match normalized_format {
             JSON => Ok(OutputFormat::Json(options)),
-            CSV => Ok(OutputFormat::Csv(options)),
+            CSV | TABLE => {
+                note_csv_format(normalized_format == TABLE, &mut options);
+                Ok(OutputFormat::Csv(options))
+            }
             TREE => Ok(OutputFormat::Tree(options)),
             _ => Err(FormattingError::UnsupportedOutputFormat(
                 normalized_format.to_string(),
@@ -279,9 +432,13 @@ impl OutputFormat {
             ));
         }
 
+        let mut options = options;
         match normalized_format.as_str() {
             JSON => Ok(OutputFormat::Json(options)),
-            CSV => Ok(OutputFormat::Csv(options)),
+            CSV | TABLE => {
+                note_csv_format(normalized_format == TABLE, &mut options);
+                Ok(OutputFormat::Csv(options))
+            }
             TREE => Ok(OutputFormat::Tree(options)),
             _ => Err(FormattingError::UnsupportedOutputFormat(
                 format_str.to_string(),
@@ -290,7 +447,7 @@ impl OutputFormat {
     }
 
     fn is_valid_format(format: &str) -> bool {
-        matches!(format, "json" | "csv" | "tree")
+        matches!(format, "json" | "csv" | "tree" | "table")
     }
 
     /// Get all supported format names

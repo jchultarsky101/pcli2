@@ -30,6 +30,10 @@ pub fn asset_command() -> Command {
         .subcommand(
             Command::new(COMMAND_GET)
                 .about("Get asset details")
+                .after_help(crate::commands::examples(&[
+                    ("One asset by its path", "pcli2 asset get --path /Home/Parts/bracket.stl"),
+                    ("Several assets by UUID, as CSV with headers", "pcli2 asset get --uuid 11111111-1111-1111-1111-111111111111 --uuid 22222222-2222-2222-2222-222222222222 --format csv --headers"),
+                ]))
                 .visible_alias("cat")
                 .arg(tenant_parameter())
                 .arg(
@@ -41,13 +45,17 @@ pub fn asset_command() -> Command {
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
                 .group(asset_identifier_multiple_group()),
         )
         .subcommand(
             Command::new(COMMAND_CREATE)
                 .visible_alias("upload")
                 .about("Create a new asset by uploading a file")
+                .after_help(crate::commands::examples(&[
+                    ("Upload a file into a folder", "pcli2 asset create --input bracket.stl --folder-path /Home/Parts"),
+                    ("Replace an existing asset's file", "pcli2 asset create --input bracket.stl --folder-path /Home/Parts --override"),
+                ]))
                 .arg(tenant_parameter())
                 .arg(input_parameter("File to upload"))
                 .arg(crate::commands::params::removed_parameter("file", "--input"))
@@ -57,7 +65,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
                 .arg(override_parameter())
                 .arg(restore_metadata_parameter())
                 .arg(dry_run_parameter()),
@@ -79,7 +87,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
                 .arg(
                     crate::commands::params::concurrent_parameter("5", "Maximum number of concurrent uploads"),
                 )
@@ -112,6 +120,10 @@ pub fn asset_command() -> Command {
         .subcommand(
             Command::new(COMMAND_LIST)
                 .about("List all assets in a folder")
+                .after_help(crate::commands::examples(&[
+                    ("A folder's assets as CSV", "pcli2 asset list --folder-path /Home/Parts --format csv --headers"),
+                    ("Include every subfolder", "pcli2 asset list --folder-path /Home/Parts --recursive"),
+                ]))
                 .visible_alias("ls")
                 .arg(tenant_parameter())
                 .arg(folder_path_parameter())
@@ -141,12 +153,15 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])),
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"])),
         )
         .subcommand(metadata_command()) // Add the metadata subcommands
         .subcommand(
             Command::new(COMMAND_DEPENDENCIES)
                 .about("Get dependencies for an asset")
+                .after_help(crate::commands::examples(&[
+                    ("An assembly's parts as a tree", "pcli2 asset dependencies --path /Home/Assemblies/pump.asm --format tree"),
+                ]))
                 .visible_alias("deps")
                 .arg(tenant_parameter())
                 .arg(uuid_parameter())
@@ -154,7 +169,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE, "table"]))
                 .group(asset_identifier_group()),
         )
         .subcommand(
@@ -169,13 +184,17 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE, "table"]))
                 .group(reference_identifier_group())
                 .group(candidate_identifier_group()),
         )
         .subcommand(
             Command::new(COMMAND_DOWNLOAD)
                 .about("Download asset file")
+                .after_help(crate::commands::examples(&[
+                    ("Download next to you, under the asset's name", "pcli2 asset download --path /Home/Parts/bracket.stl"),
+                    ("Choose where it goes", "pcli2 asset download --uuid 11111111-1111-1111-1111-111111111111 -o ./downloads/bracket.stl"),
+                ]))
                 .visible_alias("dl")
                 .arg(tenant_parameter())
                 .arg(uuid_parameter())
@@ -193,8 +212,12 @@ pub fn asset_command() -> Command {
         )
     .subcommand(
         Command::new(COMMAND_MATCH)
-            .visible_alias("geometric-search") // Add alias for geometric-search
+            .visible_aliases(["geometric-search", "gm"])
             .about("Find geometrically similar assets")
+            .after_help(crate::commands::examples(&[
+                ("Matches of 90% or better", "pcli2 asset geometric-match --path /Home/Parts/bracket.stl --threshold 90"),
+                ("As CSV with the metadata of both sides", "pcli2 asset geometric-match --path /Home/Parts/bracket.stl --format csv --headers --metadata"),
+            ]))
             .arg(tenant_parameter())
             .arg(uuid_parameter())
             .arg(path_parameter())
@@ -204,12 +227,12 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
             .group(asset_identifier_group()),
     )
     .subcommand(
         Command::new(COMMAND_PART_MATCH)
-            .visible_alias("part-search") // Add alias for part-search
+            .visible_aliases(["part-search", "pm"])
             .about("Find geometrically similar assets using part search algorithm")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
@@ -220,12 +243,12 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
             .group(asset_identifier_group()),
     )
     .subcommand(
         Command::new(COMMAND_VISUAL_MATCH)
-            .visible_alias("visual-search") // Add alias for visual-search
+            .visible_aliases(["visual-search", "vm"])
             .about("Find visually similar assets for a specific reference asset")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
@@ -237,13 +260,17 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
             .group(asset_identifier_group())
     )
     .subcommand(
         Command::new(COMMAND_TEXT_MATCH)
-            .visible_alias("text-search") // Add alias for text-search
+            .visible_aliases(["text-search", "tm"])
             .about("Find assets using text search")
+            .after_help(crate::commands::examples(&[
+                ("Search names and metadata", "pcli2 asset text-match --text bracket"),
+                ("The first 20 hits as CSV", "pcli2 asset text-match --text \"mounting bracket\" --limit 20 --format csv --headers"),
+            ]))
             .arg(tenant_parameter())
             .arg(
                 Arg::new("text")
@@ -266,7 +293,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())  // Add metadata flag to be consistent with other match commands
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])) // Only support JSON and CSV as requested
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"])) // Only support JSON and CSV as requested
     )
     .subcommand(
         Command::new(COMMAND_SIMILARITY)
@@ -278,9 +305,13 @@ pub fn asset_command() -> Command {
             .arg(candidate_uuid_parameter())
             .arg(candidate_path_parameter())
             .arg(format_with_headers_parameter())
-            .arg(format_with_metadata_parameter()) // Required by FormatParams::from_args; no effect on this output
+            .arg(
+                // Still accepted so existing scripts keep working; it never
+                // changed this output, so it is not advertised.
+                format_with_metadata_parameter().hide(true),
+            )
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
             .group(reference_identifier_group())
             .group(candidate_identifier_group()),
     )
@@ -306,7 +337,7 @@ pub fn asset_command() -> Command {
             )
             .arg(tenant_parameter())
             .arg(uuid_parameter().help("UUID of the assembly"))
-            .arg(path_parameter().help("Path of the assembly (e.g., /Root/Child/top.asm)"))
+            .arg(path_parameter().help("Path of the assembly (e.g., /Home/Child/top.asm)"))
             .group(asset_identifier_group())
             .arg(dependency_parameter())
             .arg(target_uuid_parameter())
@@ -351,9 +382,13 @@ pub fn asset_command() -> Command {
             .arg(path_parameter())
             .group(asset_identifier_group())
             .arg(format_with_headers_parameter())
-            .arg(format_with_metadata_parameter()) // Required by FormatParams::from_args; no effect on this output
+            .arg(
+                // Still accepted so existing scripts keep working; it never
+                // changed this output, so it is not advertised.
+                format_with_metadata_parameter().hide(true),
+            )
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])),
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"])),
     )
     .subcommand(
         Command::new(COMMAND_COUNTS)
@@ -362,7 +397,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_metadata_parameter())
             .arg(format_with_headers_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
     )
     .subcommand(
         Command::new(COMMAND_FULL_INVENTORY)
@@ -371,7 +406,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_metadata_parameter())
             .arg(format_with_headers_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
     )
     .subcommand(
         Command::new(COMMAND_THUMBNAIL)

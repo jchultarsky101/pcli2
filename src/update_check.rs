@@ -41,15 +41,6 @@ struct GitHubRelease {
     tag_name: String,
 }
 
-/// Print a one-line hint on stderr when a newer release is available.
-///
-/// All failures (network, parse, filesystem) are logged at debug level
-/// and otherwise ignored: this is a convenience, not a feature the user
-/// should ever see fail.
-pub async fn maybe_print_update_hint() {
-    finish_update_check(start_update_check()).await;
-}
-
 /// A check in flight, started with [`start_update_check`].
 pub type UpdateCheck = Option<tokio::task::JoinHandle<Option<String>>>;
 
@@ -135,7 +126,7 @@ async fn latest_version() -> Option<String> {
         let _ = std::fs::create_dir_all(parent);
     }
     if let Ok(serialized) = serde_json::to_string(&cache) {
-        if let Err(e) = std::fs::write(&cache_path, serialized) {
+        if let Err(e) = crate::fs_utils::write_atomically(&cache_path, serialized.as_bytes()) {
             debug!("Failed to write update-check cache: {}", e);
         }
     }

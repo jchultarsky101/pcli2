@@ -35,7 +35,8 @@ impl Formattable for AssetHealthReport {
 
                 let file_types_str = {
                     let mut entries: Vec<_> = self.file_types.iter().collect();
-                    entries.sort_by(|a, b| b.1.cmp(a.1));
+                    // Most common first; equal counts by name, so ties do not reshuffle.
+                    entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
                     entries
                         .iter()
                         .map(|(k, v)| format!("{}:{}", k, v))
@@ -55,6 +56,9 @@ impl Formattable for AssetHealthReport {
                     self.assemblies,
                     self.parts,
                     &file_types_str,
+                    // `other` is in the JSON and tree output. It is not a CSV column:
+                    // a script reading the row into fixed variables (`IFS=, read
+                    // total ... types`) would find it glued onto the last one.
                 ))?;
 
                 let data = wtr.into_inner()?;
@@ -76,6 +80,9 @@ impl Formattable for AssetHealthReport {
                     self.missing_dependencies
                 )
                 .unwrap();
+                if self.other > 0 {
+                    writeln!(out, "  Other state:           {}", self.other).unwrap();
+                }
                 writeln!(out, "  Errors (total):        {}", self.error_total()).unwrap();
                 writeln!(out, "  Assemblies:            {}", self.assemblies).unwrap();
                 writeln!(out, "  Parts:                 {}", self.parts).unwrap();
@@ -83,7 +90,8 @@ impl Formattable for AssetHealthReport {
                 if !self.file_types.is_empty() {
                     writeln!(out, "  File types:").unwrap();
                     let mut entries: Vec<_> = self.file_types.iter().collect();
-                    entries.sort_by(|a, b| b.1.cmp(a.1));
+                    // Most common first; equal counts by name, so ties do not reshuffle.
+                    entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
                     for (ft, count) in entries {
                         writeln!(out, "    {:<20} {}", ft, count).unwrap();
                     }

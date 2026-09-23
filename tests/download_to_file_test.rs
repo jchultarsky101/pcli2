@@ -118,3 +118,63 @@ async fn delete_asset_targets_the_api_base_url() {
         .unwrap();
     m.assert_async().await;
 }
+
+/// A server that promises a body and drops the connection halfway through it on
+/// the first request, then serves the whole file.
+async fn flaky_file_server(
+    body: Vec<u8>,
+) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let requests = std::sync::Arc::new(AtomicUsize::new(0));
+    let counter = requests.clone();
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let n = counter.fetch_add(1, Ordering::SeqCst);
+            let body = body.clone();
+            tokio::spawn(async move {
+                let mut request = [0u8; 4096];
+                let _ = socket.read(&mut request).await;
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = socket.write_all(head.as_bytes()).await;
+                let cut = if n == 0 { body.len() / 3 } else { body.len() };
+                let _ = socket.write_all(&body[..cut]).await;
+                let _ = socket.shutdown().await;
+            });
+        }
+    });
+    (url, requests)
+}
+
+#[tokio::test]
+async fn a_connection_dropped_mid_body_is_downloaded_again() {
+    let body: Vec<u8> = (0..300_000u32).map(|i| (i % 253) as u8).collect();
+    let (url, requests) = flaky_file_server(body.clone()).await;
+    let tenant = Uuid::new_v4();
+    let asset = Uuid::new_v4();
+
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("big.stl");
+    let mut client = PhysnaApiClient::new().with_base_url(url);
+    let written = client
+        .download_asset_to_file(
+            &tenant.to_string(),
+            &asset.to_string(),
+            Some("big.stl"),
+            &dest,
+        )
+        .await
+        .expect("the second attempt delivers the whole file");
+
+    assert_eq!(written, body.len() as u64);
+    assert_eq!(std::fs::read(&dest).unwrap(), body);
+    assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(!dir.path().join("big.stl.part").exists());
+}

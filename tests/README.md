@@ -28,6 +28,22 @@ of them contacts Physna. Run them all with `cargo test`, or one file with
 | `replace_asset_file_test.rs` | Replacing an asset's file (`asset create --override`) against a mock API: the file goes out as a multipart PUT and the asset comes back with its UUID and `indexing` state, a 409 keeps the server's wording instead of "already exists", and a missing local file is refused before any request. |
 | `failure_diagnostics_test.rs` | The failure-diagnostics endpoints against a mock API: a `found` answer carries every field of the spec's example, a status-only answer is accepted, `unavailable` maps to exit 68 with a message naming the cause, availability is a plain boolean, and the recent-failures listing walks every page, keeps the tenant-wide totals, sends the `kinds` filter and stops at `--limit`. |
 | `no_input_and_json_errors_test.rs` | The built binary with `--no-input` and `--error-format json`: prompts refused with exit 64 and a named flag, usage errors and the final error as JSON objects, `--stats` as JSON. |
+| `assembly_download_test.rs` | An assembly download against a mock API: a dependency bundle (ZIP) is extracted next to the download and removed, a raw assembly file without a bundle is kept under the asset's own name, a damaged ZIP still fails. |
+| `broken_pipe_test.rs` | A reader that stops early (`pcli2 ... \| head`) ends the run with exit 0 and no panic. |
+| `pagination_test.rs` | Paginated listings: `--limit` keeps one page size for the whole walk (no repeated or skipped records), and a folder listing that repeats a page number stops. |
+| `tree_output_test.rs` | The `--format tree` rendering is pinned and does not depend on the user's ptree settings. |
+| `help_examples_test.rs` | Every example in every command's `--help` parses against the command tree. |
+
+End-to-end tests run the built binary against a mock API through the harness in
+`common/mod.rs` (a throwaway configuration, a long-lived token, the tenant lookup):
+
+| File | What it verifies |
+|------|------------------|
+| `folder_commands_e2e_test.rs` | `asset list --recursive` lists exactly a nested folder's subtree and includes root-level assets for `/`; `folder download` of the root keeps raw assemblies, names the assets it skipped, keeps the subfolder layout, and `--resume` skips a complete assembly bundle whose escaping entry was never written. |
+| `bulk_commands_e2e_test.rs` | `folder upload` refuses existing files before sending anything, stops after a failed upload and reports the rest as not attempted; `folder thumbnail` counts assets without a thumbnail separately. |
+| `tenant_commands_e2e_test.rs` | `tenant use` accepts a tenant UUID; an unknown name exits 67. |
+| `format_env_test.rs` | `PCLI2_FORMAT` sets the default format for `tenant list`; an explicit `--format` wins. |
+
 
 Unit tests live next to the code they test (`#[cfg(test)]` modules), including the
 HTTP retry path in `src/http_utils.rs`, the checkpoint file format in

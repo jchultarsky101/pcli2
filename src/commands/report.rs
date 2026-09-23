@@ -48,7 +48,7 @@ fn open_limit_parameter() -> Arg {
 }
 
 fn output_format_args(cmd: Command) -> Command {
-    cmd.arg(format_parameter().value_parser(["json", "csv"]))
+    cmd.arg(format_parameter().value_parser(["json", "csv", "table"]))
         .arg(format_pretty_parameter())
         .arg(format_with_headers_parameter())
 }
@@ -62,6 +62,9 @@ pub fn report_command() -> Command {
         .subcommand(output_format_args(
             Command::new(COMMAND_LIST)
                 .about("List the tenant's reports, newest first")
+                .after_help(crate::commands::examples(&[
+                    ("Completed duplication reports", "pcli2 report list --type DUPLICATION --status COMPLETED"),
+                ]))
                 .visible_alias("ls")
                 .arg(tenant_parameter())
                 .arg(
@@ -69,6 +72,7 @@ pub fn report_command() -> Command {
                         .long(PARAMETER_TYPE)
                         .num_args(1)
                         .value_parser(crate::model::ReportType::ALL)
+                        .ignore_case(true)
                         .help("Only reports of this type"),
                 )
                 .arg(
@@ -76,6 +80,7 @@ pub fn report_command() -> Command {
                         .long(PARAMETER_STATUS)
                         .num_args(1)
                         .value_parser(crate::model::JobStatus::ALL)
+                        .ignore_case(true)
                         .help("Only reports in this status"),
                 )
                 .arg(open_limit_parameter()),
@@ -98,7 +103,7 @@ pub fn report_command() -> Command {
                         .long(PARAMETER_FILE_FORMAT)
                         .num_args(1)
                         .required(true)
-                        .value_parser(["csv", "xlsx"])
+                        .value_parser(["csv", "xlsx", "table"])
                         .help("The file format to download"),
                 )
                 .arg(output_file_parameter().help(

@@ -399,6 +399,20 @@ pub fn write_match_report(
     output: &Path,
     progress: &ReportProgress,
 ) -> Result<ConversionStats, XlsxReportError> {
+    write_match_report_with_summary(headers, rows, output, progress, &[])
+}
+
+/// Like [`write_match_report`], plus a "Summary" worksheet after the matches:
+/// `summary` (how the report was produced) followed by what the rows show - the
+/// number of pairs and a distribution of the match percentages. A workbook sent
+/// on to someone else used to carry no record of its threshold, folders or date.
+pub fn write_match_report_with_summary(
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
+    output: &Path,
+    progress: &ReportProgress,
+    summary: &[(String, String)],
+) -> Result<ConversionStats, XlsxReportError> {
     let mut report = Report::new(headers, rows);
 
     let missing = report.schema.missing_required_columns();
@@ -419,7 +433,7 @@ pub fn write_match_report(
     // the invariant belongs here too - nothing below can represent an oversized sheet.
     ensure_rows_fit(report.rows.len())?;
 
-    write_workbook(&report, output, progress)
+    write_workbook(&report, output, progress, summary)
 }
 
 /// Writes `report` to an `.xlsx` workbook at `output`, reporting each phase to
@@ -428,6 +442,7 @@ fn write_workbook(
     report: &Report,
     output: &Path,
     progress: &ReportProgress,
+    summary: &[(String, String)],
 ) -> Result<ConversionStats, XlsxReportError> {
     let band_format = Format::new()
         .set_bold()
@@ -462,6 +477,7 @@ fn write_workbook(
     let match_col = schema.column_index(MATCH_PERCENTAGE_COLUMN);
     let url_col = schema.column_index(COMPARISON_URL_COLUMN);
     let mut hyperlinks_written: usize = 0;
+    let mut truncated_cells: usize = 0;
     let mut stats = ConversionStats {
         pairs: schema.pair_count(),
         ..Default::default()
@@ -523,6 +539,8 @@ fn write_workbook(
         let is_last_row = row_idx == last_data_index;
         for col in 0..schema.column_count() {
             let value = record.get(col).map(String::as_str).unwrap_or("");
+            let value = excel_cell_text(value, &mut truncated_cells);
+            let value: &str = &value;
 
             // The match-percentage column is written as a real number so the
             // heat-map gradient and numeric sort work, with a fixed precision.
@@ -591,6 +609,12 @@ fn write_workbook(
         }
     }
     stats.rows = report.rows.len();
+    if truncated_cells > 0 {
+        crate::error_utils::report_warning(&format!(
+            "{} cell(s) exceeded Excel's limit of {} characters and were cut short (marked '{}'); the CSV or JSON output has the full values",
+            truncated_cells, MAX_CELL_CHARS, TRUNCATION_MARKER
+        ));
+    }
 
     // Size every column to its content (capped) for legibility. Another full pass
     // over every cell, so it is worth naming rather than leaving the cell counter
@@ -632,6 +656,10 @@ fn write_workbook(
         }
     }
 
+    if !summary.is_empty() {
+        write_summary_sheet(&mut workbook, report, match_col, summary)?;
+    }
+
     debug!(?output, "saving workbook");
     // Serializing and zipping the workbook happens entirely inside `save`, with no
     // way to report from within, so the message has to stand for the whole step.
@@ -647,6 +675,88 @@ fn write_workbook(
     );
 
     Ok(stats)
+}
+
+/// The "Summary" worksheet: the caller's lines, then the pair count and how the
+/// match percentages are distributed.
+fn write_summary_sheet(
+    workbook: &mut Workbook,
+    report: &Report,
+    match_col: Option<usize>,
+    summary: &[(String, String)],
+) -> Result<(), XlsxReportError> {
+    let bold = Format::new().set_bold();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Summary")?;
+    let mut row: u32 = 0;
+    for (label, value) in summary {
+        sheet.write_with_format(row, 0, label.as_str(), &bold)?;
+        sheet.write(row, 1, value.as_str())?;
+        row += 1;
+    }
+    row += 1;
+    sheet.write_with_format(row, 0, "Pairs", &bold)?;
+    sheet.write(row, 1, report.rows.len() as f64)?;
+    row += 1;
+
+    if let Some(col) = match_col {
+        let scores: Vec<f64> = report
+            .rows
+            .iter()
+            .filter_map(|r| r.get(col).and_then(|v| v.trim().parse::<f64>().ok()))
+            .collect();
+        let bands: [(&str, f64, f64); 5] = [
+            ("100% (identical)", 100.0, f64::INFINITY),
+            ("99% to under 100%", 99.0, 100.0),
+            ("95% to under 99%", 95.0, 99.0),
+            ("90% to under 95%", 90.0, 95.0),
+            ("Under 90%", f64::NEG_INFINITY, 90.0),
+        ];
+        row += 1;
+        sheet.write_with_format(row, 0, "Match percentage", &bold)?;
+        sheet.write_with_format(row, 1, "Pairs", &bold)?;
+        row += 1;
+        for (label, low, high) in bands {
+            let count = scores.iter().filter(|&&s| s >= low && s < high).count();
+            sheet.write(row, 0, label)?;
+            sheet.write(row, 1, count as f64)?;
+            row += 1;
+        }
+    }
+    sheet.set_column_width(0, 28)?;
+    sheet.set_column_width(1, 60)?;
+    Ok(())
+}
+
+/// Excel refuses a cell holding more than this many characters.
+const MAX_CELL_CHARS: usize = 32_767;
+
+/// Appended to a value that had to be cut short to fit in a cell.
+const TRUNCATION_MARKER: &str = "…[truncated]";
+
+/// A value as it can be stored in one cell.
+///
+/// One metadata value over Excel's limit used to fail the whole workbook with
+/// `MaxStringLengthExceeded`, after a match that may have taken hours. It is cut
+/// short instead, at a character boundary, and marked.
+fn excel_cell_text<'a>(value: &'a str, truncated: &mut usize) -> std::borrow::Cow<'a, str> {
+    // Excel counts UTF-16 code units; a char never needs more than two, so only
+    // strings that might be over the limit are counted precisely.
+    if value.len() <= MAX_CELL_CHARS || value.encode_utf16().count() <= MAX_CELL_CHARS {
+        return std::borrow::Cow::Borrowed(value);
+    }
+    *truncated += 1;
+    let budget = MAX_CELL_CHARS - TRUNCATION_MARKER.encode_utf16().count();
+    let mut used = 0;
+    let mut end = 0;
+    for (index, ch) in value.char_indices() {
+        if used + ch.len_utf16() > budget {
+            break;
+        }
+        used += ch.len_utf16();
+        end = index + ch.len_utf8();
+    }
+    std::borrow::Cow::Owned(format!("{}{}", &value[..end], TRUNCATION_MARKER))
 }
 
 /// The short side label (`REF` or `CAN`) for a paired column's header.
@@ -755,6 +865,44 @@ mod tests {
         list.into_iter()
             .map(|r| r.into_iter().map(String::from).collect())
             .collect()
+    }
+
+    #[test]
+    fn an_over_long_cell_is_cut_short_instead_of_failing_the_workbook() {
+        let mut truncated = 0;
+        assert_eq!(excel_cell_text("short", &mut truncated), "short");
+        assert_eq!(truncated, 0);
+
+        let long = "é".repeat(40_000);
+        let cut = excel_cell_text(&long, &mut truncated);
+        assert_eq!(truncated, 1);
+        assert!(cut.ends_with(TRUNCATION_MARKER));
+        assert!(cut.encode_utf16().count() <= MAX_CELL_CHARS);
+
+        // End to end: this used to fail with MaxStringLengthExceeded.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report.xlsx");
+        let huge = "x".repeat(50_000);
+        write_match_report(
+            headers(&[
+                "REFERENCE_ASSET_PATH",
+                "CANDIDATE_ASSET_PATH",
+                "MATCH_PERCENTAGE",
+                "REF_NOTES",
+                "CAN_NOTES",
+            ]),
+            rows(vec![vec![
+                "/a.stl",
+                "/b.stl",
+                "99.5",
+                huge.as_str(),
+                "short",
+            ]]),
+            &path,
+            &ReportProgress::disabled(),
+        )
+        .expect("an over-long value must not fail the workbook");
+        assert!(path.exists());
     }
 
     #[test]
@@ -903,8 +1051,8 @@ mod tests {
             ]),
         );
         let path = std::env::temp_dir().join("pcli2_xlsx_report_test.xlsx");
-        let stats =
-            write_workbook(&r, &path, &ReportProgress::disabled()).expect("write should succeed");
+        let stats = write_workbook(&r, &path, &ReportProgress::disabled(), &[])
+            .expect("write should succeed");
         assert_eq!(stats.rows, 3);
         assert_eq!(stats.pairs, 1);
         assert_eq!(stats.matching, 2); // mm/mm, both cells

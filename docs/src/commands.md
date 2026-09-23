@@ -490,6 +490,10 @@ pcli2 env get --name <name>     # Get environment details
 pcli2 env get -n <name>         # Short form of get with name
 ```
 
+Each environment remembers the tenant last selected in it. `env use` makes that
+tenant active again; an environment where no tenant was selected yet starts with
+none, so a tenant from another environment is never used by mistake.
+
 ### Other Commands
 
 Additional utility commands.

@@ -345,6 +345,25 @@ impl Configuration {
         }
     }
 
+    /// Make `env_name` the active environment, with the tenant last selected in
+    /// it active again (none if it never had one).
+    ///
+    /// The top-level tenant, which older versions read and which serves as the
+    /// fallback for an environment without one, is set to the same value, so the
+    /// previous environment's tenant can never carry over to this one.
+    pub fn switch_environment(
+        &mut self,
+        env_name: &str,
+    ) -> Result<Option<Uuid>, ConfigurationError> {
+        self.set_active_environment(env_name)?;
+        let remembered = self
+            .environments
+            .get(env_name)
+            .and_then(|env| env.active_tenant_uuid);
+        self.active_tenant_uuid = remembered;
+        Ok(remembered)
+    }
+
     pub fn add_environment(&mut self, name: String, config: EnvironmentConfig) {
         self.environments.insert(name, config);
     }
@@ -547,5 +566,63 @@ mod yaml_format_tests {
             )
         );
         assert_eq!(read(&text), configuration);
+    }
+}
+
+#[cfg(test)]
+mod switch_environment_tests {
+    use super::*;
+
+    fn configuration() -> (Configuration, Uuid, Uuid) {
+        let staging_tenant = Uuid::from_bytes([1; 16]);
+        let production_tenant = Uuid::from_bytes([2; 16]);
+        let mut configuration = Configuration::default();
+        for (name, tenant) in [
+            ("staging", Some(staging_tenant)),
+            ("production", Some(production_tenant)),
+            ("fresh", None),
+        ] {
+            configuration.add_environment(
+                name.to_string(),
+                EnvironmentConfig {
+                    api_base_url: default_api_base_url(),
+                    ui_base_url: default_ui_base_url(),
+                    auth_base_url: default_auth_base_url(),
+                    active_tenant_uuid: tenant,
+                },
+            );
+        }
+        configuration.set_active_environment("staging").unwrap();
+        configuration.active_tenant_uuid = Some(staging_tenant);
+        (configuration, staging_tenant, production_tenant)
+    }
+
+    #[test]
+    fn switching_back_brings_the_tenant_last_used_there() {
+        let (mut configuration, staging, production) = configuration();
+        assert_eq!(
+            configuration.switch_environment("production").unwrap(),
+            Some(production)
+        );
+        assert_eq!(configuration.active_tenant_uuid(), Some(&production));
+        assert_eq!(
+            configuration.switch_environment("staging").unwrap(),
+            Some(staging)
+        );
+        assert_eq!(configuration.active_tenant_uuid(), Some(&staging));
+        // Re-selecting the active environment keeps its tenant too.
+        assert_eq!(
+            configuration.switch_environment("staging").unwrap(),
+            Some(staging)
+        );
+    }
+
+    #[test]
+    fn a_tenant_never_carries_over_to_an_environment_without_one() {
+        let (mut configuration, _, _) = configuration();
+        assert_eq!(configuration.switch_environment("fresh").unwrap(), None);
+        // Not the staging tenant through the top-level fallback.
+        assert_eq!(configuration.active_tenant_uuid(), None);
+        assert!(configuration.switch_environment("nope").is_err());
     }
 }

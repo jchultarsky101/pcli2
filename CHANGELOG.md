@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`env use` brings back the tenant last used in that environment** - Switching environments used to clear the tenant every time, even when re-selecting the active environment, so each switch had to be followed by `tenant use`. Each environment now keeps its own tenant: switching back to one makes its tenant active again (the message names it), and an environment where no tenant was selected yet still starts with none, so a tenant from another environment is never carried over.
 - **`config.yml` is read and written with serde_norway** - serde_yaml, which pcli2 used for its configuration file, is deprecated upstream. serde_norway is its maintained drop-in fork: the same files load, and a saved file is byte-for-byte what pcli2 wrote before (checked against real and hand-edited configurations; the format is now pinned by tests).
 
 ## [2.4.2] - 2026-09-23

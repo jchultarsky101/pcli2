@@ -265,3 +265,55 @@ fn tenant_usage_rejects_a_bad_period_before_calling_the_api() {
     }
     activity.assert();
 }
+
+#[test]
+fn env_use_brings_back_the_tenant_last_used_in_that_environment() {
+    let cli = MockCli::new();
+    let other_tenant = "33333333-3333-3333-3333-333333333333";
+    let config_path = cli.dir.path().join("config.yml");
+    let mut config = std::fs::read_to_string(&config_path).unwrap();
+    config.push_str(&format!(
+        "  second:\n    api_base_url: https://second.example.test\n    active_tenant_uuid: {other_tenant}\n  fresh:\n    api_base_url: https://fresh.example.test\n"
+    ));
+    std::fs::write(&config_path, &config).unwrap();
+
+    let env_use = |name: &str| {
+        let output = cli
+            .cmd()
+            .args(["env", "use", "--name", name])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let saved: serde_json::Value =
+            serde_norway::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        (String::from_utf8(output.stdout).unwrap(), saved)
+    };
+
+    let (stdout, saved) = env_use("second");
+    assert!(
+        stdout.contains(&format!("with tenant '{other_tenant}'")),
+        "{stdout}"
+    );
+    assert_eq!(saved["active_tenant_uuid"], other_tenant);
+
+    // Back to the first environment: its tenant is still there.
+    let (_, saved) = env_use("mock");
+    assert_eq!(saved["environments"]["mock"]["active_tenant_uuid"], TENANT);
+    assert_eq!(saved["active_tenant_uuid"], TENANT);
+    assert_eq!(
+        saved["environments"]["second"]["active_tenant_uuid"],
+        other_tenant
+    );
+
+    // An environment never given a tenant has none, not the previous one's.
+    let (stdout, saved) = env_use("fresh");
+    assert!(
+        stdout.contains("Select a tenant with 'pcli2 tenant use'"),
+        "{stdout}"
+    );
+    assert!(saved.get("active_tenant_uuid").is_none(), "{saved}");
+}

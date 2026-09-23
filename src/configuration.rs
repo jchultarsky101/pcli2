@@ -4,7 +4,7 @@ use crate::{
 };
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, io::Write, path::PathBuf};
+use std::{collections::BTreeMap, fs, io::Write, path::PathBuf};
 use tracing::debug;
 use uuid::Uuid;
 
@@ -80,9 +80,10 @@ pub struct Configuration {
     #[serde(skip_serializing_if = "Option::is_none")]
     active_environment: Option<String>,
 
-    // Named environments
+    // Named environments, kept in name order so config.yml is written the same
+    // way every time (a HashMap wrote them in a different order on each save).
     #[serde(default)]
-    environments: HashMap<String, EnvironmentConfig>,
+    environments: BTreeMap<String, EnvironmentConfig>,
 }
 
 /// The environment named with `--env` / `PCLI2_ENV` for this run.
@@ -382,11 +383,9 @@ impl Configuration {
         }
     }
 
-    /// Environment names in alphabetical order (they are stored unordered).
+    /// Environment names in alphabetical order.
     pub fn list_environments(&self) -> Vec<String> {
-        let mut names: Vec<String> = self.environments.keys().cloned().collect();
-        names.sort();
-        names
+        self.environments.keys().cloned().collect()
     }
 
     /// The environment this run uses (`--env` when given, else the saved one).
@@ -535,6 +534,28 @@ mod yaml_format_tests {
         ] {
             read(text);
         }
+    }
+
+    #[test]
+    fn environments_are_saved_in_name_order_every_time() {
+        // A hand-edited file in any order...
+        let text = "environments:\n  staging: {}\n  Production: {}\n  dev: {}\n  alpha: {}\n";
+        let configuration = read(text);
+        let saved = serde_norway::to_string(&configuration).unwrap();
+        let order: Vec<&str> = saved
+            .lines()
+            .filter(|line| line.starts_with("  ") && !line.starts_with("    "))
+            .collect();
+        // ...is written sorted (byte order: capitals first), and the same way
+        // on every save.
+        assert_eq!(order, ["  Production:", "  alpha:", "  dev:", "  staging:"]);
+        for _ in 0..5 {
+            assert_eq!(serde_norway::to_string(&read(&saved)).unwrap(), saved);
+        }
+        assert_eq!(
+            configuration.list_environments(),
+            ["Production", "alpha", "dev", "staging"]
+        );
     }
 
     #[test]

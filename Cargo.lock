@@ -2009,7 +2009,7 @@ dependencies = [
 
 [[package]]
 name = "pcli2"
-version = "2.4.2"
+version = "2.5.0"
 dependencies = [
  "assert_cmd",
  "base64 0.23.1",

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-09-23
+
 ### Fixed
 - **`folder visual-match --exclusive` works** - It failed on every asset with `HTTP 400 - Validation Failed` and exited 69 without a report: the folder filter it sent the visual search endpoint lacked the `metadata` field the API requires.
 

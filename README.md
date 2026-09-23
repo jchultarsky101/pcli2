@@ -142,7 +142,7 @@ pcli2-docker folder list --format tree
 pcli2 --version
 ```
 
-To update an existing installation, or to upgrade from 1.x, see the [Installation guide](https://jchultarsky101.github.io/pcli2/installation.html#updating).
+To update an existing installation, or to upgrade from 1.x, see the [Installation guide](https://jchultarsky101.github.io/pcli2/book/installation.html#updating).
 
 ## 🔐 Authentication
 
@@ -173,18 +173,18 @@ stored in `dev_credentials.json` inside the configuration directory shown by
 The file is plain text, not encrypted. Treat it like any other secret file: do
 not commit it. `pcli2 auth logout` removes only the access token; to remove the
 client secret from a shared machine, delete the file. See
-[Credentials and Security](https://jchultarsky101.github.io/pcli2/security.html).
+[Credentials and Security](https://jchultarsky101.github.io/pcli2/book/security.html).
 
 ## 📚 Documentation
 
 The user guide at [https://jchultarsky101.github.io/pcli2/](https://jchultarsky101.github.io/pcli2/) covers everything in depth:
 
-- **Getting started**: [Installation](https://jchultarsky101.github.io/pcli2/installation.html) (including updating and upgrading to 2.0), [Quick Start](https://jchultarsky101.github.io/pcli2/quickstart.html)
-- **Guides**: [Geometric Matching](https://jchultarsky101.github.io/pcli2/geometric-matching.html), [Metadata Operations](https://jchultarsky101.github.io/pcli2/metadata-operations.html), [Metadata Inference](https://jchultarsky101.github.io/pcli2/metadata-inference.html), [Reports](https://jchultarsky101.github.io/pcli2/reports.html), [Downloading and Uploading Folders](https://jchultarsky101.github.io/pcli2/bulk-operations.html), [Scripting and Automation](https://jchultarsky101.github.io/pcli2/scripting.html) (output formats, exit codes, CI, `pcli2 api`)
-- **Reference**: [Command Reference](https://jchultarsky101.github.io/pcli2/commands.html) (every command and alias), [Configuration and Environment Variables](https://jchultarsky101.github.io/pcli2/cross_platform.html), [Credentials and Security](https://jchultarsky101.github.io/pcli2/security.html), [Proxies, Certificates and Timeouts](https://jchultarsky101.github.io/pcli2/network.html)
-- **Help**: [Troubleshooting](https://jchultarsky101.github.io/pcli2/troubleshooting.html); `pcli2 doctor` checks a setup in one screen, and every command has `--help` with examples
+- **Getting started**: [Installation](https://jchultarsky101.github.io/pcli2/book/installation.html) (including updating and upgrading to 2.0), [Quick Start](https://jchultarsky101.github.io/pcli2/book/quickstart.html)
+- **Guides**: [Geometric Matching](https://jchultarsky101.github.io/pcli2/book/geometric-matching.html), [Metadata Operations](https://jchultarsky101.github.io/pcli2/book/metadata-operations.html), [Metadata Inference](https://jchultarsky101.github.io/pcli2/book/metadata-inference.html), [Reports](https://jchultarsky101.github.io/pcli2/book/reports.html), [Downloading and Uploading Folders](https://jchultarsky101.github.io/pcli2/book/bulk-operations.html), [Scripting and Automation](https://jchultarsky101.github.io/pcli2/book/scripting.html) (output formats, exit codes, CI, `pcli2 api`)
+- **Reference**: [Command Reference](https://jchultarsky101.github.io/pcli2/book/commands.html) (every command and alias), [Configuration and Environment Variables](https://jchultarsky101.github.io/pcli2/book/cross_platform.html), [Credentials and Security](https://jchultarsky101.github.io/pcli2/book/security.html), [Proxies, Certificates and Timeouts](https://jchultarsky101.github.io/pcli2/book/network.html)
+- **Help**: [Troubleshooting](https://jchultarsky101.github.io/pcli2/book/troubleshooting.html); `pcli2 doctor` checks a setup in one screen, and every command has `--help` with examples
 
-Contributing: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributing: see [CONTRIBUTING.md](https://github.com/jchultarsky101/pcli2/blob/main/CONTRIBUTING.md).
 
 ## 🤝 Support
 
@@ -200,4 +200,4 @@ Need help?
 
 ## 📄 License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](https://github.com/jchultarsky101/pcli2/blob/main/LICENSE) file for details.

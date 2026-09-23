@@ -208,12 +208,34 @@ pub async fn execute_environment_command(
                 }
             };
 
-            configuration.set_active_environment(&selected_env_name)?;
-            // Clear the active tenant when switching environments to avoid confusion
-            configuration.clear_active_tenant();
+            // The tenant last used in that environment comes back with it.
+            let remembered = configuration.switch_environment(&selected_env_name)?;
             configuration.save_to_default()?;
 
-            println!("Switched to environment '{}'. Select a tenant with 'pcli2 tenant use' before running commands.", selected_env_name);
+            match remembered {
+                Some(tenant_uuid) => {
+                    // The tenant cache is per environment, and now this one's.
+                    let tenant = crate::tenant_cache::TenantCache::load()
+                        .ok()
+                        .and_then(|cache| {
+                            cache
+                                .tenants
+                                .into_iter()
+                                .find(|t| t.tenant_uuid == tenant_uuid)
+                        })
+                        .map(|t| t.tenant_short_name)
+                        .filter(|name| !name.is_empty())
+                        .unwrap_or_else(|| tenant_uuid.to_string());
+                    println!(
+                        "Switched to environment '{}' with tenant '{}', the one last used there. Change it with 'pcli2 tenant use'.",
+                        selected_env_name, tenant
+                    );
+                }
+                None => println!(
+                    "Switched to environment '{}'. Select a tenant with 'pcli2 tenant use' before running commands.",
+                    selected_env_name
+                ),
+            }
             Ok(())
         }
         Some(("remove", sub_matches)) => {

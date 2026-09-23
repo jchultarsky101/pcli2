@@ -1051,8 +1051,8 @@ mod tests {
             ]),
         );
         let path = std::env::temp_dir().join("pcli2_xlsx_report_test.xlsx");
-        let stats =
-            write_workbook(&r, &path, &ReportProgress::disabled(), &[]).expect("write should succeed");
+        let stats = write_workbook(&r, &path, &ReportProgress::disabled(), &[])
+            .expect("write should succeed");
         assert_eq!(stats.rows, 3);
         assert_eq!(stats.pairs, 1);
         assert_eq!(stats.matching, 2); // mm/mm, both cells

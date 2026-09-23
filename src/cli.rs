@@ -1136,6 +1136,10 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                 ))),
             }
         }
+        Some(("api", sub_matches)) => {
+            trace!("Command: api");
+            pcli2::actions::api::run(sub_matches).await
+        }
         Some(("doctor", sub_matches)) => {
             trace!("Command: doctor");
             pcli2::actions::doctor::run(sub_matches).await

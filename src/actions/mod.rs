@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+pub mod api;
 pub mod assets;
 pub mod bulk;
 pub mod cache;

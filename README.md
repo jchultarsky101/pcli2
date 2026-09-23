@@ -73,6 +73,7 @@ pcli2 config validate --verbose
 - **Progress Tracking** - Enhanced progress bars with throughput and ETA
 - **Dry Run Mode** - Preview changes with `--dry-run`: deletes (asset, folder, report, metadata field), uploads, `asset move`, `asset resolve-dependency` and `tenant metadata rename`
 - **Built for Scripts** - `--no-input` turns any prompt into an error, `--error-format json` makes every error on stderr a JSON object with the exit code, `--safe-csv` guards CSV cells against spreadsheet formulas
+- **Any API Endpoint** - `pcli2 api /tenants/{tenantId}/...` calls endpoints no command covers yet, with pcli2's login, retries and tenant
 - **Diagnostics** - `pcli2 doctor` checks the whole setup in one screen; `--stats` reports API requests, retries and token renewals at exit
 - **Automatic Retries** - Transient network and server errors retried with exponential backoff
 - **Man Pages** - Generate Unix man pages for every command with `pcli2 man`

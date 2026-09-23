@@ -5,7 +5,6 @@
 //! with backoff. Every request the API client makes goes through it, so a 503 or a
 //! `Retry-After` is handled the same way for a search, an upload and a download.
 
-use rand::Rng;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -96,7 +95,7 @@ fn retry_delay(response: Option<&reqwest::Response>, attempt: u32) -> Duration {
     }
 
     let base_ms = 500u64.saturating_mul(1u64 << attempt.min(5));
-    let jitter_ms = rand::thread_rng().gen_range(0..=250);
+    let jitter_ms = rand::random_range(0..=250);
     Duration::from_millis(base_ms.min(10_000) + jitter_ms)
 }
 

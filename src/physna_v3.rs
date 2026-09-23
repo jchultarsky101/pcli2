@@ -3756,6 +3756,50 @@ impl PhysnaApiClient {
         Ok(())
     }
 
+    /// Send any request to the API and return the status and body (`pcli2 api`).
+    ///
+    /// `path` is relative to the API base URL (`/tenants/.../folders?page=2`). The
+    /// request goes through the same path as every other call: token renewal on a
+    /// 401, retries of transient failures (a GET, PUT or DELETE may be resent; a
+    /// POST or PATCH only when the server did not act on it), and a non-2xx answer
+    /// comes back as the usual classified error.
+    pub async fn raw_request(
+        &mut self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<(reqwest::StatusCode, String), ApiError> {
+        let url = format!(
+            "{}/{}",
+            self.base_url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        );
+        let idempotent = matches!(
+            method,
+            reqwest::Method::GET
+                | reqwest::Method::HEAD
+                | reqwest::Method::PUT
+                | reqwest::Method::DELETE
+                | reqwest::Method::OPTIONS
+        );
+        debug!("API passthrough: {} {}", method, url);
+        let response = self
+            .request_with_auth(
+                |client| {
+                    let request = client.request(method.clone(), &url);
+                    Ok(match body {
+                        Some(body) => request.json(body),
+                        None => request,
+                    })
+                },
+                idempotent,
+            )
+            .await?;
+        let status = response.status();
+        let text = response.text().await?;
+        Ok((status, text))
+    }
+
     /// Get asset dependencies by UUID
     ///
     /// This method retrieves the dependencies of an asset using its UUID directly,

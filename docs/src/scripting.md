@@ -142,6 +142,30 @@ PCLI2_ENV=staging pcli2 asset list --folder-path /Home/Parts --format csv
 pcli2 --env production asset list --folder-path /Home/Parts --tenant acme --format csv
 ```
 
+## Calling Any API Endpoint
+
+`pcli2 api` sends a request to any endpoint of the Physna API, including the
+ones no pcli2 command covers yet, with pcli2's login, token renewal, retries and
+tenant. `{tenantId}` in the path is replaced with the active tenant (or the one
+named with `--tenant`):
+
+```bash
+# The first page of the active tenant's folders
+pcli2 api /tenants/{tenantId}/folders
+
+# Every page, merged into one list
+pcli2 api /tenants/{tenantId}/folders --paginate
+
+# A POST: -F adds a JSON field (read as JSON when it parses), -f a string field
+pcli2 api /tenants/{tenantId}/assets/existing-paths -F paths='["/Home/a.stl"]'
+
+# A body from a file (or - for standard input), with an explicit method
+pcli2 api /tenants/{tenantId}/reports/duplication -X POST --input request.json
+```
+
+The response body is printed as it came (pretty-printed in a terminal). A
+non-2xx answer is an error with the server's message and the usual exit code.
+
 ## Dry Run Mode
 
 Preview destructive or bulk operations without changing anything on the

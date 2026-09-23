@@ -7,6 +7,7 @@
 use clap::{ArgMatches, Command};
 
 // Import all submodules
+pub mod api;
 pub mod assets;
 pub mod auth;
 pub mod cache;
@@ -387,6 +388,7 @@ pub fn create_full_command() -> Command {
         .subcommand(completions::completions_command())
         .subcommand(man::man_command())
         .subcommand(cache::cache_command())
+        .subcommand(api::api_command())
         .subcommand(
             Command::new("doctor")
                 .about("Check the local setup: binary, configuration, credentials, token, tenant, caches, and connectivity")

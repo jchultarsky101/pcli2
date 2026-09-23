@@ -399,6 +399,20 @@ pub fn write_match_report(
     output: &Path,
     progress: &ReportProgress,
 ) -> Result<ConversionStats, XlsxReportError> {
+    write_match_report_with_summary(headers, rows, output, progress, &[])
+}
+
+/// Like [`write_match_report`], plus a "Summary" worksheet after the matches:
+/// `summary` (how the report was produced) followed by what the rows show - the
+/// number of pairs and a distribution of the match percentages. A workbook sent
+/// on to someone else used to carry no record of its threshold, folders or date.
+pub fn write_match_report_with_summary(
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
+    output: &Path,
+    progress: &ReportProgress,
+    summary: &[(String, String)],
+) -> Result<ConversionStats, XlsxReportError> {
     let mut report = Report::new(headers, rows);
 
     let missing = report.schema.missing_required_columns();
@@ -419,7 +433,7 @@ pub fn write_match_report(
     // the invariant belongs here too - nothing below can represent an oversized sheet.
     ensure_rows_fit(report.rows.len())?;
 
-    write_workbook(&report, output, progress)
+    write_workbook(&report, output, progress, summary)
 }
 
 /// Writes `report` to an `.xlsx` workbook at `output`, reporting each phase to
@@ -428,6 +442,7 @@ fn write_workbook(
     report: &Report,
     output: &Path,
     progress: &ReportProgress,
+    summary: &[(String, String)],
 ) -> Result<ConversionStats, XlsxReportError> {
     let band_format = Format::new()
         .set_bold()
@@ -641,6 +656,10 @@ fn write_workbook(
         }
     }
 
+    if !summary.is_empty() {
+        write_summary_sheet(&mut workbook, report, match_col, summary)?;
+    }
+
     debug!(?output, "saving workbook");
     // Serializing and zipping the workbook happens entirely inside `save`, with no
     // way to report from within, so the message has to stand for the whole step.
@@ -656,6 +675,57 @@ fn write_workbook(
     );
 
     Ok(stats)
+}
+
+/// The "Summary" worksheet: the caller's lines, then the pair count and how the
+/// match percentages are distributed.
+fn write_summary_sheet(
+    workbook: &mut Workbook,
+    report: &Report,
+    match_col: Option<usize>,
+    summary: &[(String, String)],
+) -> Result<(), XlsxReportError> {
+    let bold = Format::new().set_bold();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Summary")?;
+    let mut row: u32 = 0;
+    for (label, value) in summary {
+        sheet.write_with_format(row, 0, label.as_str(), &bold)?;
+        sheet.write(row, 1, value.as_str())?;
+        row += 1;
+    }
+    row += 1;
+    sheet.write_with_format(row, 0, "Pairs", &bold)?;
+    sheet.write(row, 1, report.rows.len() as f64)?;
+    row += 1;
+
+    if let Some(col) = match_col {
+        let scores: Vec<f64> = report
+            .rows
+            .iter()
+            .filter_map(|r| r.get(col).and_then(|v| v.trim().parse::<f64>().ok()))
+            .collect();
+        let bands: [(&str, f64, f64); 5] = [
+            ("100% (identical)", 100.0, f64::INFINITY),
+            ("99% to under 100%", 99.0, 100.0),
+            ("95% to under 99%", 95.0, 99.0),
+            ("90% to under 95%", 90.0, 95.0),
+            ("Under 90%", f64::NEG_INFINITY, 90.0),
+        ];
+        row += 1;
+        sheet.write_with_format(row, 0, "Match percentage", &bold)?;
+        sheet.write_with_format(row, 1, "Pairs", &bold)?;
+        row += 1;
+        for (label, low, high) in bands {
+            let count = scores.iter().filter(|&&s| s >= low && s < high).count();
+            sheet.write(row, 0, label)?;
+            sheet.write(row, 1, count as f64)?;
+            row += 1;
+        }
+    }
+    sheet.set_column_width(0, 28)?;
+    sheet.set_column_width(1, 60)?;
+    Ok(())
 }
 
 /// Excel refuses a cell holding more than this many characters.
@@ -981,8 +1051,8 @@ mod tests {
             ]),
         );
         let path = std::env::temp_dir().join("pcli2_xlsx_report_test.xlsx");
-        let stats =
-            write_workbook(&r, &path, &ReportProgress::disabled()).expect("write should succeed");
+        let stats = write_workbook(&r, &path, &ReportProgress::disabled(), &[])
+            .expect("write should succeed");
         assert_eq!(stats.rows, 3);
         assert_eq!(stats.pairs, 1);
         assert_eq!(stats.matching, 2); // mm/mm, both cells

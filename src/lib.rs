@@ -51,6 +51,7 @@ pub mod format_utils;
 pub mod fs_utils;
 pub mod http_utils;
 pub mod keyring;
+pub mod match_groups;
 pub mod metadata;
 pub mod model;
 pub mod paging;

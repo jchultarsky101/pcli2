@@ -6,14 +6,26 @@ built for scripts (JSON, CSV, Excel) as much as for people.
 
 ## Chapters
 
-- [Installation Guide](installation.md) - Installers for every platform, updating, building from source
-- [Quick Start Guide](quickstart.md) - Logging in, choosing a tenant, the everyday commands
-- [Geometric Matching](geometric-matching.md) - Finding similar assets, for one asset or a whole folder
+**Getting started**
+- [Installation](installation.md) - Installers for every platform, updating, upgrading to 2.0, building from source
+- [Quick Start](quickstart.md) - Logging in, choosing a tenant, the everyday commands
+
+**Guides**
+- [Geometric Matching](geometric-matching.md) - Finding similar assets, for one asset or a whole folder, and groups of duplicates
 - [Metadata Operations](metadata-operations.md) - Reading, writing and bulk-loading metadata
 - [Metadata Inference](metadata-inference.md) - Propagating metadata to geometrically similar assets
 - [Reports](reports.md) - Listing, downloading, explaining and starting the server-side reports
-- [Scripting and Automation](scripting.md) - Machine-friendly output, JSON errors, exit codes, prompts, resumable runs, retries, CI
-- [Cross-Platform Configuration](cross_platform.md) - Environment variables and file locations
+- [Downloading and Uploading Folders](bulk-operations.md) - Bulk transfers, speed, resuming
+- [Scripting and Automation](scripting.md) - Output formats, JSON errors, exit codes, prompts, retries, CI, `pcli2 api`
+
+**Reference**
+- [Command Reference](commands.md) - Every command and alias
+- [Configuration and Environment Variables](cross_platform.md) - Environment variables and file locations
+- [Credentials and Security](security.md) - Where the login is kept and what leaves your machine
+- [Proxies, Certificates and Timeouts](network.md) - Corporate networks and firewalls
+
+**Help**
+- [Troubleshooting](troubleshooting.md) - By exit code, and the common situations
 
 ## Features
 

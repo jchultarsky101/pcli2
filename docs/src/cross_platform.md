@@ -1,4 +1,4 @@
-## Cross-Platform Configuration
+# Configuration and Environment Variables
 
 PCLI2 reads a small set of environment variables. They are useful for WSL users
 running a Windows executable, for CI jobs, and for anyone who wants configuration

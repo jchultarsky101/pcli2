@@ -79,6 +79,24 @@ pcli2 man --output-dir ./man
 PCLI2 prints a one-line hint on stderr when a newer release exists (at most once a
 day, in terminal sessions only). Set `PCLI2_NO_UPDATE_CHECK=1` to turn it off.
 
+## Upgrading to 2.0
+
+Version 2.0 drops the old spellings of the input and output flags that 1.27
+kept as hidden aliases. A script that still uses one stops with exit 64 and a
+message naming the replacement:
+
+| Old | New |
+|-----|-----|
+| `asset create --file` | `asset create --input` |
+| `asset create-batch --files` | `asset create-batch --input` |
+| `asset metadata create-batch --csv-file` | `asset metadata create-batch --input` |
+| `folder upload --local-path` | `folder upload --input` |
+| `config import --file` | `config import --input` |
+| `asset thumbnail --file` | `asset thumbnail --output` |
+| `asset download <path>` (positional) | `asset download --output <path>` |
+
+Nothing else changed between 1.29 and 2.0.
+
 ## Building from Source
 
 Requires a Rust toolchain (1.88 or newer) and, on Linux, `pkg-config`,

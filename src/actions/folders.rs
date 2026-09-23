@@ -343,6 +343,11 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .clone();
     let parent_folder_uuid_param = sub_matches.get_one::<Uuid>(PARAMETER_PARENT_FOLDER_UUID);
     let parent_folder_path_param = sub_matches.get_one::<String>(PARAMETER_PARENT_FOLDER_PATH);
+    // Optional; checked before anything is created.
+    let description = sub_matches
+        .get_one::<String>("description")
+        .map(|text| folder_description(text))
+        .transpose()?;
 
     // Validate that only one parent parameter is provided (mutual exclusivity handled by clap group)
     if parent_folder_uuid_param.is_some() && parent_folder_path_param.is_some() {
@@ -372,7 +377,12 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     };
 
     let created = api
-        .create_folder(&tenant.uuid, name.as_str(), parent_folder_uuid)
+        .create_folder(
+            &tenant.uuid,
+            name.as_str(),
+            parent_folder_uuid,
+            description.as_deref(),
+        )
         .await?;
     // The UUID is what a script needs next; it used to be discarded.
     println!("{}", created.folder.uuid);
@@ -384,6 +394,97 @@ pub async fn create_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     });
 
     Ok(())
+}
+
+/// The longest description the API accepts, in characters.
+const MAX_FOLDER_DESCRIPTION_CHARS: usize = 255;
+
+/// Check a folder description the way the API does, so a mistake is a usage
+/// error (exit 64) before any request: the server drops surrounding spaces and
+/// then wants 1 to 255 characters.
+fn folder_description(text: &str) -> Result<String, CliError> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(CliError::InvalidArgument(
+            "The description is empty; 'pcli2 folder description clear' removes one".to_string(),
+        ));
+    }
+    let length = text.chars().count();
+    if length > MAX_FOLDER_DESCRIPTION_CHARS {
+        return Err(CliError::InvalidArgument(format!(
+            "The description is {} characters long; at most {} are allowed",
+            length, MAX_FOLDER_DESCRIPTION_CHARS
+        )));
+    }
+    Ok(text.to_string())
+}
+
+/// `folder description get`: the description alone on stdout, or nothing
+/// when the folder has none.
+pub async fn get_folder_description(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant = ctx.tenant().clone();
+    let folder = crate::actions::utils::resolve_folder(
+        ctx.api(),
+        &tenant,
+        sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID),
+        sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH),
+    )
+    .await?;
+    if let Some(description) = folder.description() {
+        println!("{}", description);
+    }
+    Ok(())
+}
+
+/// `folder description set --text TEXT`. Silent on success.
+pub async fn set_folder_description(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    let text = folder_description(
+        sub_matches
+            .get_one::<String>("text")
+            .map(String::as_str)
+            .unwrap_or_default(),
+    )?;
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant = ctx.tenant().clone();
+    let folder = crate::actions::utils::resolve_folder(
+        ctx.api(),
+        &tenant,
+        sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID),
+        sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH),
+    )
+    .await?;
+    ctx.api()
+        .set_folder_description(&tenant.uuid, folder.uuid(), &text)
+        .await?;
+    invalidate_folder_cache(&tenant.uuid);
+    Ok(())
+}
+
+/// `folder description clear`. Silent on success, including when the folder
+/// had no description.
+pub async fn clear_folder_description(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
+    let tenant = ctx.tenant().clone();
+    let folder = crate::actions::utils::resolve_folder(
+        ctx.api(),
+        &tenant,
+        sub_matches.get_one::<Uuid>(PARAMETER_FOLDER_UUID),
+        sub_matches.get_one::<String>(PARAMETER_FOLDER_PATH),
+    )
+    .await?;
+    ctx.api()
+        .clear_folder_description(&tenant.uuid, folder.uuid())
+        .await?;
+    invalidate_folder_cache(&tenant.uuid);
+    Ok(())
+}
+
+/// The cached folder listing still shows the old description; drop it.
+fn invalidate_folder_cache(tenant_uuid: &Uuid) {
+    crate::folder_cache::FolderCache::invalidate(&tenant_uuid.to_string()).unwrap_or_else(|e| {
+        tracing::debug!("Failed to invalidate folder cache: {}", e);
+    });
 }
 
 pub async fn delete_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
@@ -1330,7 +1431,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
 
                 // Create the new folder or get existing folder UUID
                 let folder_uuid = match api
-                    .create_folder(&tenant.uuid, &folder_name, parent_folder_uuid)
+                    .create_folder(&tenant.uuid, &folder_name, parent_folder_uuid, None)
                     .await
                 {
                     Ok(response) => {
@@ -1505,4 +1606,42 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     report.print_failures();
 
     report.into_result(options.continue_on_error, "upload(s)")
+}
+
+#[cfg(test)]
+mod folder_description_tests {
+    use super::folder_description;
+
+    #[test]
+    fn surrounding_spaces_go_and_the_limit_counts_characters() {
+        assert_eq!(folder_description("  Rail parts  ").unwrap(), "Rail parts");
+        // 255 two-byte characters are 510 bytes, and allowed.
+        assert_eq!(
+            folder_description(&"é".repeat(255))
+                .unwrap()
+                .chars()
+                .count(),
+            255
+        );
+        let too_long = folder_description(&"x".repeat(256)).unwrap_err();
+        assert!(
+            too_long.to_string().contains("256 characters"),
+            "{too_long}"
+        );
+        assert_eq!(
+            too_long.exit_code(),
+            crate::exit_codes::PcliExitCode::UsageError
+        );
+    }
+
+    #[test]
+    fn an_empty_description_points_at_clear() {
+        for text in ["", "   ", "\t\n"] {
+            let error = folder_description(text).unwrap_err();
+            assert!(
+                error.to_string().contains("folder description clear"),
+                "{error}"
+            );
+        }
+    }
 }

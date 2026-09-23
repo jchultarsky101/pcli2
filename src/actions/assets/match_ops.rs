@@ -1223,21 +1223,251 @@ fn build_geometric_match_table(
     (headers, rows)
 }
 
-/// Perform geometric matching on assets in one or more folders.
+/// Which folder match a run is: the search it makes, and how it links a pair
+/// in the web app.
+#[derive(Debug, Clone, Copy)]
+enum FolderMatchKind {
+    Geometric,
+    Part,
+    /// Visual search returns at most `limit` matches per asset.
+    Visual {
+        limit: usize,
+    },
+}
+
+impl FolderMatchKind {
+    fn name(self) -> &'static str {
+        match self {
+            FolderMatchKind::Geometric => "geometric",
+            FolderMatchKind::Part => "part",
+            FolderMatchKind::Visual { .. } => "visual",
+        }
+    }
+
+    /// The visual `--limit`; part of the checkpoint fingerprint.
+    fn limit(self) -> Option<usize> {
+        match self {
+            FolderMatchKind::Visual { limit } => Some(limit),
+            _ => None,
+        }
+    }
+}
+
+/// A match as a folder search returns it (geometric, or part and visual), and
+/// the per-asset record the folder loop collects for it.
+trait FolderMatch: Clone + Send + Sync + 'static {
+    /// A reference asset with one of its matches. Its JSON form is what a
+    /// `--checkpoint` file holds, so it must not change.
+    type Record: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + 'static;
+
+    /// Search for one asset's matches.
+    fn search(
+        kind: FolderMatchKind,
+        api: PhysnaApiClient,
+        tenant: Uuid,
+        asset: Uuid,
+        threshold: f64,
+        folder_ids: Vec<Uuid>,
+    ) -> futures::future::BoxFuture<'static, Result<Vec<Self>, crate::physna_v3::ApiError>>;
+
+    fn candidate(&self) -> &crate::model::AssetResponse;
+
+    /// What the comparison link shows for this match.
+    fn comparison(&self, kind: FolderMatchKind) -> crate::ui_url::Comparison;
+
+    fn set_comparison_url(&mut self, url: String);
+
+    fn into_record(self, reference: crate::model::AssetResponse) -> Self::Record;
+
+    /// Every (reference, candidate) pair in a record, for de-duplication.
+    fn record_pairs(record: &Self::Record) -> Vec<(Uuid, Uuid)>;
+}
+
+impl FolderMatch for crate::model::GeometricMatch {
+    type Record = crate::model::EnhancedGeometricSearchResponse;
+
+    fn search(
+        _kind: FolderMatchKind,
+        mut api: PhysnaApiClient,
+        tenant: Uuid,
+        asset: Uuid,
+        threshold: f64,
+        folder_ids: Vec<Uuid>,
+    ) -> futures::future::BoxFuture<'static, Result<Vec<Self>, crate::physna_v3::ApiError>> {
+        Box::pin(async move {
+            api.geometric_search(&tenant, &asset, threshold, &folder_ids)
+                .await
+                .map(|response| response.matches)
+        })
+    }
+
+    fn candidate(&self) -> &crate::model::AssetResponse {
+        &self.asset
+    }
+
+    fn comparison(&self, _kind: FolderMatchKind) -> crate::ui_url::Comparison {
+        crate::ui_url::Comparison::Geometric {
+            match_percentage: self.match_percentage,
+        }
+    }
+
+    fn set_comparison_url(&mut self, url: String) {
+        self.comparison_url = Some(url);
+    }
+
+    fn into_record(self, reference: crate::model::AssetResponse) -> Self::Record {
+        crate::model::EnhancedGeometricSearchResponse {
+            reference_asset: reference,
+            matches: vec![self],
+        }
+    }
+
+    fn record_pairs(record: &Self::Record) -> Vec<(Uuid, Uuid)> {
+        record
+            .matches
+            .iter()
+            .map(|m| (record.reference_asset.uuid, m.asset.uuid))
+            .collect()
+    }
+}
+
+/// Part and visual search share this result shape.
+impl FolderMatch for crate::model::PartMatch {
+    type Record = crate::model::EnhancedPartSearchResponse;
+
+    fn search(
+        kind: FolderMatchKind,
+        mut api: PhysnaApiClient,
+        tenant: Uuid,
+        asset: Uuid,
+        threshold: f64,
+        folder_ids: Vec<Uuid>,
+    ) -> futures::future::BoxFuture<'static, Result<Vec<Self>, crate::physna_v3::ApiError>> {
+        Box::pin(async move {
+            let response = match kind {
+                FolderMatchKind::Visual { limit } => {
+                    api.visual_search(&tenant, &asset, limit, threshold, &folder_ids)
+                        .await
+                }
+                _ => {
+                    api.part_search(&tenant, &asset, threshold, &folder_ids)
+                        .await
+                }
+            };
+            response.map(|response| response.matches)
+        })
+    }
+
+    fn candidate(&self) -> &crate::model::AssetResponse {
+        &self.asset
+    }
+
+    fn comparison(&self, kind: FolderMatchKind) -> crate::ui_url::Comparison {
+        match kind {
+            FolderMatchKind::Visual { .. } => crate::ui_url::Comparison::Visual,
+            _ => crate::ui_url::Comparison::Part {
+                forward: self.forward_match_percentage.unwrap_or(0.0),
+                reverse: self.reverse_match_percentage.unwrap_or(0.0),
+            },
+        }
+    }
+
+    fn set_comparison_url(&mut self, url: String) {
+        self.comparison_url = Some(url);
+    }
+
+    fn into_record(self, reference: crate::model::AssetResponse) -> Self::Record {
+        crate::model::EnhancedPartSearchResponse {
+            reference_asset: reference,
+            matches: vec![self],
+        }
+    }
+
+    fn record_pairs(record: &Self::Record) -> Vec<(Uuid, Uuid)> {
+        record
+            .matches
+            .iter()
+            .map(|m| (record.reference_asset.uuid, m.asset.uuid))
+            .collect()
+    }
+}
+
+/// The reference side of every record an asset's search produces.
+fn reference_asset_response(
+    asset: &crate::model::Asset,
+    asset_uuid: Uuid,
+    tenant_uuid: Uuid,
+) -> crate::model::AssetResponse {
+    let metadata = asset
+        .metadata()
+        .map(|metadata| {
+            metadata
+                .keys()
+                .filter_map(|key| {
+                    metadata
+                        .get(key)
+                        .map(|value| (key.clone(), serde_json::Value::String(value.clone())))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::model::AssetResponse {
+        uuid: asset_uuid,
+        tenant_id: tenant_uuid,
+        path: asset.path(),
+        folder_id: None,
+        asset_type: asset.file_type().cloned().unwrap_or_default(),
+        created_at: asset.created_at().cloned().unwrap_or_default(),
+        updated_at: asset.updated_at().cloned().unwrap_or_default(),
+        state: asset.normalized_processing_status(),
+        is_assembly: asset.is_assembly(),
+        metadata,
+        parent_folder_id: None,
+        owner_id: None,
+    }
+}
+
+/// Whether `path` is inside one of the folders named on the command line.
+fn within_any_folder(folder_paths: &[String], path: &str) -> bool {
+    let path = crate::model::normalize_path(path);
+    folder_paths.iter().any(|folder_path| {
+        crate::model::path_is_within_folder(&path, crate::model::normalize_path(folder_path))
+    })
+}
+
+/// What a folder match run found, ready for its report.
+struct FolderSearchRun<R: serde::Serialize + serde::de::DeserializeOwned> {
+    tenant: crate::model::Tenant,
+    folder_paths: Vec<String>,
+    threshold: f64,
+    exclusive: bool,
+    /// Every unique pair, ordered by the unordered pair key.
+    records: Vec<R>,
+    checkpoint: Option<std::sync::Arc<crate::checkpoint::Checkpoint<R>>>,
+    report_progress: ReportProgress,
+}
+
+impl<R: serde::Serialize + serde::de::DeserializeOwned> FolderSearchRun<R> {
+    /// The report is written; there is nothing left to resume.
+    fn finish(&self) {
+        if let Some(cp) = &self.checkpoint {
+            cp.finish();
+        }
+    }
+}
+
+/// Search every asset in the folders named on the command line and collect the
+/// unique matching pairs: the part of `folder geometric-match`, `part-match` and
+/// `visual-match` that comes before the report.
 ///
-/// This function handles the "folder match geometric" command, finding geometrically
-/// similar assets among all assets in the specified folders.
-///
-/// # Arguments
-///
-/// * `sub_matches` - The command-line argument matches containing the command parameters
-///
-/// # Returns
-///
-/// * `Ok(())` - If the match operation was successful
-/// * `Err(CliError)` - If an error occurred during the match
-pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
-    trace!("Executing geometric match folder command...");
+/// `Ok(None)` when the folders hold no assets (the reason has been printed).
+/// Fails, after saying why, when too many searches failed for the report to be
+/// trusted; see [`finish_search_outcomes`].
+async fn search_folders<M: FolderMatch>(
+    sub_matches: &ArgMatches,
+    kind: FolderMatchKind,
+) -> Result<Option<FolderSearchRun<M::Record>>, CliError> {
+    trace!("Executing {} match folder command...", kind.name());
 
     let configuration = Configuration::load_or_create_default()?;
     // Read once here; it used to be loaded from disk again for every match row.
@@ -1245,55 +1475,26 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     let mut api = PhysnaApiClient::try_default()?;
     let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
 
-    // Get folder paths
     let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
         sub_matches
             .get_many::<String>(PARAMETER_FOLDER_PATH)
             .ok_or(CliError::MissingRequiredArgument(
                 PARAMETER_FOLDER_PATH.to_string(),
             ))?
-            .map(|s| s.to_string())
+            .cloned()
             .collect::<Vec<String>>(),
     );
 
-    // Get threshold parameter
     let threshold = crate::actions::utils::threshold_from_args(sub_matches);
-
-    // Use FormatParams for consistent format parameter handling
-    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
-    let format = format_params.format;
-    let with_headers = format_params.format_options.with_headers;
-
-    // The `xls` (Excel) format is a binary file output, not a stdout format, and
-    // is intentionally not part of the `OutputFormat` enum — `FormatParams` would
-    // silently fall back to JSON for it. Detect it from the raw format string
-    // instead, and handle it separately below. Excel reports always include
-    // metadata (the metadata diff is the whole point), so force it on for xls.
-    // Read from the resolved format, so `PCLI2_FORMAT=xls` works as `--format xls`
-    // does (it used to fall back to JSON).
-    // `xlsx` is accepted too: it is what the file is, and what `report download`
-    // calls it.
-    let is_xls = format_params
-        .format_str
-        .eq_ignore_ascii_case(crate::commands::params::FORMAT_XLS)
-        || format_params.format_str.eq_ignore_ascii_case("xlsx");
-    let with_metadata = format_params.format_options.with_metadata || is_xls;
-
-    let with_groups = sub_matches.get_flag("groups");
-    // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
-
-    // Get concurrent and progress parameters
-    let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
     // clap's parser already holds --concurrent to 1-10.
-    let concurrent = concurrent_param.unwrap_or(1);
-
+    let concurrent = sub_matches
+        .get_one::<usize>("concurrent")
+        .copied()
+        .unwrap_or(1);
     let show_progress = crate::terminal::show_progress(sub_matches);
-
     let recursive = sub_matches.get_flag(crate::commands::params::PARAMETER_RECURSIVE);
 
-    // Collect all assets from the specified folders, descending into subfolders only
-    // when --recursive was requested
     // With --exclusive the server pre-filters to these folders and their subfolders,
     // so tenant-wide result pages are no longer downloaded only to be discarded.
     // The client-side path check on each match still decides the exact set.
@@ -1312,17 +1513,16 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     let (checkpoint, mut recorded_matches) = match &checkpoint_path {
         Some(path) => {
             let fingerprint = crate::checkpoint::Fingerprint::new(
-                "geometric",
+                kind.name(),
                 tenant.uuid,
                 &folder_paths,
                 recursive,
                 exclusive,
                 threshold,
-                None,
+                kind.limit(),
             );
-            let (checkpoint, done) = crate::checkpoint::Checkpoint::<
-                crate::model::EnhancedGeometricSearchResponse,
-            >::open(path, fingerprint)?;
+            let (checkpoint, done) =
+                crate::checkpoint::Checkpoint::<M::Record>::open(path, fingerprint)?;
             (Some(std::sync::Arc::new(checkpoint)), done)
         }
         None => (None, std::collections::HashMap::new()),
@@ -1343,7 +1543,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             if let Some(cp) = &checkpoint {
                 cp.finish();
             }
-            return Ok(());
+            return Ok(None);
         }
     };
 
@@ -1362,11 +1562,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         }
     }
 
-    // Create multi-progress bar if show_progress is true
+    // An overall bar, plus a spinner per search in flight.
     let multi_progress = if show_progress {
         let mp = MultiProgress::new();
-
-        // Add an overall progress bar
         let overall_pb = mp.add(ProgressBar::new(all_assets.len() as u64));
         overall_pb.set_style(
             ProgressStyle::default_bar()
@@ -1379,51 +1577,36 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         None
     };
 
-    // Use a semaphore to limit concurrent operations
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent));
     // Shared stop signal, so one terminal failure does not have to be rediscovered
     // by every remaining asset.
     let abort = std::sync::Arc::new(SearchAbort::default());
+    let folder_paths_shared = std::sync::Arc::new(folder_paths.clone());
 
-    // Prepare for concurrent processing.
-    //
-    // Symmetric pairs are deduplicated into a BTreeMap keyed on the *unordered* pair,
-    // so neither the surviving row nor the output order depends on which concurrent
-    // search happened to finish first. A HashSet plus a Vec made both depend on it:
-    // two identical runs produced byte-different reports.
-    let mut deduped = std::collections::BTreeMap::new();
-
-    // Create tasks for concurrent processing
-    // The matches an asset contributed, plus why it contributed none if it failed -
-    // so the caller can tell an asset with no matches from one that was never
-    // successfully searched.
-    type TaskResult = Result<
-        (
-            Vec<crate::model::EnhancedGeometricSearchResponse>,
-            Option<SearchFailure>,
-        ),
-        Box<dyn std::error::Error + Send + Sync>,
-    >;
-    let mut tasks: Vec<tokio::task::JoinHandle<TaskResult>> = Vec::new();
+    // Each task yields the records its asset contributed, plus why it contributed
+    // none if it failed - so an asset with no matches can be told apart from one
+    // that was never successfully searched.
+    type SearchTask<R> = tokio::task::JoinHandle<(Vec<R>, Option<SearchFailure>)>;
+    let mut tasks: Vec<SearchTask<M::Record>> = Vec::new();
     for (asset_uuid, asset) in &all_assets {
         let semaphore = semaphore.clone();
-        let mut api_clone = api.clone(); // Clone the API client
+        let api = api.clone();
         let tenant_uuid = tenant.uuid;
+        let tenant_name = tenant.name.clone();
         let asset_uuid = *asset_uuid;
-        let asset_clone = asset.clone();
-        let folder_paths_clone = folder_paths.clone();
-        let tenant_clone = tenant.clone();
-        let multi_progress_clone = multi_progress.clone();
+        let asset = asset.clone();
+        let folder_paths = folder_paths_shared.clone();
+        let multi_progress = multi_progress.clone();
         let abort = abort.clone();
-        let ui_base_url_for_task = ui_base_url.clone();
+        let ui_base_url = ui_base_url.clone();
         let exclusive_folder_ids = exclusive_folder_ids.clone();
         let checkpoint = checkpoint.clone();
         let recorded = recorded_matches.remove(&asset_uuid);
 
-        let task = tokio::spawn(async move {
+        tasks.push(tokio::spawn(async move {
             // Already searched by the run this one resumes.
-            if let Some(matches) = recorded {
-                return Ok((matches, None));
+            if let Some(records) = recorded {
+                return (records, None);
             }
 
             let _permit = semaphore.acquire().await.unwrap();
@@ -1431,150 +1614,89 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             // An earlier task hit something that makes every remaining search
             // pointless. Return without touching the network.
             if abort.is_stopped() {
-                return Ok((Vec::new(), Some(SearchFailure::Aborted)));
+                return (Vec::new(), Some(SearchFailure::Aborted));
             }
 
-            // Create individual progress bar for this task if multi-progress is enabled
-            let individual_pb = if let Some((ref mp, _)) = multi_progress_clone {
+            let individual_pb = multi_progress.as_ref().map(|(mp, _)| {
                 let pb = mp.add(ProgressBar::new_spinner());
                 pb.set_style(
                     ProgressStyle::default_spinner()
                         .template(&format!(
                             "{{spinner:.green}} Processing: {} {{msg}}",
-                            asset_clone.name()
+                            asset.name()
                         ))
                         .unwrap(),
                 );
-                Some(pb)
-            } else {
-                None
-            };
-
-            // Update the progress bar to show that we're starting the search
-            if let Some(ref pb) = individual_pb {
-                pb.set_message("Starting geometric search...");
+                pb
+            });
+            if let Some(pb) = &individual_pb {
+                pb.set_message(format!("Starting {} search...", kind.name()));
             }
 
-            let result = match api_clone
-                .geometric_search(&tenant_uuid, &asset_uuid, threshold, &exclusive_folder_ids)
-                .await
-            {
-                Ok(search_results) => {
-                    // Update progress bar to show processing matches
-                    if let Some(ref pb) = individual_pb {
-                        pb.set_message(format!(
-                            "Processing {} matches...",
-                            search_results.matches.len()
-                        ));
+            let searched = M::search(
+                kind,
+                api,
+                tenant_uuid,
+                asset_uuid,
+                threshold,
+                exclusive_folder_ids,
+            )
+            .await;
+            let result = match searched {
+                Ok(matches) => {
+                    if let Some(limit) = kind.limit() {
+                        if matches.len() >= limit {
+                            under_progress(multi_progress.as_ref().map(|(mp, _)| mp), || {
+                                error_utils::report_warning(&format!(
+                                    "Visual search for asset {} returned the --limit of {} matches; further matches were not fetched",
+                                    asset.name(),
+                                    limit
+                                ))
+                            });
+                        }
+                    }
+                    if let Some(pb) = &individual_pb {
+                        pb.set_message(format!("Processing {} matches...", matches.len()));
                     }
 
-                    let mut asset_matches = Vec::new();
-
-                    for mut match_result in search_results.matches {
-                        // Skip if the match is with the same asset (self-match)
-                        if match_result.asset.uuid == asset_uuid {
+                    let reference = reference_asset_response(&asset, asset_uuid, tenant_uuid);
+                    let base_url = ui_base_url.trim_end_matches('/');
+                    let reference_in_folders = within_any_folder(&folder_paths, &asset.path());
+                    let mut records = Vec::new();
+                    for mut found in matches {
+                        let candidate_uuid = found.candidate().uuid;
+                        // An asset always matches itself.
+                        if candidate_uuid == asset_uuid {
                             continue;
                         }
-
-                        let ui_base_url = ui_base_url_for_task.clone();
-
-                        // Populate comparison URL for this match
-                        let base_url = ui_base_url.trim_end_matches('/');
                         let comparison_url = crate::ui_url::compare_url(
                             base_url,
-                            &tenant_clone.name,
+                            &tenant_name,
                             &tenant_uuid,
                             &asset_uuid,
-                            &match_result.asset.uuid,
-                            crate::ui_url::Comparison::Geometric {
-                                match_percentage: match_result.match_percentage,
-                            },
+                            &candidate_uuid,
+                            found.comparison(kind),
                         );
-                        match_result.comparison_url = Some(comparison_url);
-
-                        // Check if we want to include matches based on exclusive flag
-                        // For exclusive mode, both reference and candidate assets must be in specified folders
-                        let candidate_in_specified_folders =
-                            folder_paths_clone.iter().any(|folder_path| {
-                                let normalized_folder_path =
-                                    crate::model::normalize_path(folder_path);
-                                let normalized_candidate_path =
-                                    crate::model::normalize_path(&match_result.asset.path);
-                                crate::model::path_is_within_folder(
-                                    &normalized_candidate_path,
-                                    &normalized_folder_path,
-                                )
-                            });
-
-                        let reference_in_specified_folders =
-                            folder_paths_clone.iter().any(|folder_path| {
-                                let normalized_folder_path =
-                                    crate::model::normalize_path(folder_path);
-                                let normalized_reference_path =
-                                    crate::model::normalize_path(asset_clone.path());
-                                crate::model::path_is_within_folder(
-                                    &normalized_reference_path,
-                                    &normalized_folder_path,
-                                )
-                            });
-
+                        found.set_comparison_url(comparison_url);
+                        // --exclusive: both assets must be in the named folders.
                         if exclusive
-                            && (!candidate_in_specified_folders || !reference_in_specified_folders)
+                            && !(reference_in_folders
+                                && within_any_folder(&folder_paths, &found.candidate().path))
                         {
                             continue;
                         }
-
-                        // Create the enhanced response structure for this match
-                        let metadata_map = if let Some(asset_metadata) = asset_clone.metadata() {
-                            // Convert AssetMetadata to HashMap<String, serde_json::Value>
-                            let mut map = std::collections::HashMap::new();
-                            for key in asset_metadata.keys() {
-                                if let Some(value) = asset_metadata.get(key) {
-                                    map.insert(
-                                        key.clone(),
-                                        serde_json::Value::String(value.clone()),
-                                    );
-                                }
-                            }
-                            map
-                        } else {
-                            std::collections::HashMap::new()
-                        };
-
-                        let reference_asset_response = crate::model::AssetResponse {
-                            uuid: asset_uuid,
-                            tenant_id: tenant_uuid,
-                            path: asset_clone.path(),
-                            folder_id: None,
-                            asset_type: asset_clone.file_type().cloned().unwrap_or_default(),
-                            created_at: asset_clone.created_at().cloned().unwrap_or_default(),
-                            updated_at: asset_clone.updated_at().cloned().unwrap_or_default(),
-                            state: asset_clone.normalized_processing_status(),
-                            is_assembly: asset_clone.is_assembly(),
-                            metadata: metadata_map,
-                            parent_folder_id: None, // No parent folder ID
-                            owner_id: None,         // No owner ID
-                        };
-
-                        let enhanced_match = crate::model::EnhancedGeometricSearchResponse {
-                            reference_asset: reference_asset_response,
-                            matches: vec![match_result.clone()],
-                        };
-
-                        asset_matches.push(enhanced_match);
+                        records.push(found.into_record(reference.clone()));
                     }
 
-                    // Update progress bar to show completion
-                    if let Some(ref pb) = individual_pb {
-                        pb.set_message(format!("Found {} matches", asset_matches.len()));
+                    if let Some(pb) = &individual_pb {
+                        pb.set_message(format!("Found {} matches", records.len()));
                     }
-
                     // Renewal is evidently working; forget any earlier blip.
                     abort.record_success();
                     if let Some(cp) = &checkpoint {
-                        cp.record(asset_uuid, &asset_matches);
+                        cp.record(asset_uuid, &records);
                     }
-                    Ok((asset_matches, None))
+                    (records, None)
                 }
                 Err(e) => {
                     let failure = SearchFailure::classify(&e);
@@ -1585,77 +1707,61 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                     // are genuinely gone - then the run stops, and explains once.
                     let stopping = e.is_authentication_failure() && abort.record_auth_failure();
                     if stopping {
-                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                        under_progress(multi_progress.as_ref().map(|(mp, _)| mp), || {
                             error_utils::report_error_with_remediation(
-                            &format!(
-                                "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
-                                CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
-                            ),
-                            &[
-                                "Log in again with 'pcli2 auth login'",
-                                "Then re-run this command",
-                            ],
-                        );
+                                &format!(
+                                    "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
+                                    CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
+                                ),
+                                &[
+                                    "Log in again with 'pcli2 auth login'",
+                                    "Then re-run this command",
+                                ],
+                            );
                         });
                     } else if !abort.is_stopped() {
-                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
+                        under_progress(multi_progress.as_ref().map(|(mp, _)| mp), || {
                             error_utils::report_warning(&format!(
-                                "🔍 Failed to perform geometric search for asset {}: {}",
-                                asset_clone.name(),
+                                "🔍 Failed to perform {} search for asset {}: {}",
+                                kind.name(),
+                                asset.name(),
                                 e
                             ))
                         });
                     }
-                    if let Some(ref pb) = individual_pb {
+                    if let Some(pb) = &individual_pb {
                         pb.set_message("Failed");
                     }
                     // The asset contributes no matches either way; the classification
                     // is what lets the caller tell "nothing to find" from "could not
                     // look" once every task has been collected.
-                    Ok((Vec::new(), Some(failure)))
+                    (Vec::new(), Some(failure))
                 }
             };
 
-            // Remove the individual progress bar when done
             if let Some(pb) = individual_pb {
                 pb.finish_and_clear();
             }
-
             result
-        });
-
-        tasks.push(task);
+        }));
     }
 
-    // Process tasks and collect results
+    // Symmetric pairs are deduplicated into a BTreeMap keyed on the *unordered* pair,
+    // so neither the surviving row nor the output order depends on which concurrent
+    // search happened to finish first. A HashSet plus a Vec made both depend on it:
+    // two identical runs produced byte-different reports.
+    let mut deduped = std::collections::BTreeMap::new();
     let mut outcomes = SearchOutcomes::default();
     for task in tasks {
         match task.await {
-            Ok(Ok((asset_matches, failure))) => {
+            Ok((records, failure)) => {
                 outcomes.record(failure);
-                for enhanced_match in asset_matches {
-                    // Apply duplicate filtering to each match. (A,B) and (B,A) are the
-                    // same pair, so they share a key.
-                    for match_result in &enhanced_match.matches {
-                        record_unique_pair(
-                            &mut deduped,
-                            enhanced_match.reference_asset.uuid,
-                            match_result.asset.uuid,
-                            enhanced_match.clone(),
-                        );
+                for record in records {
+                    // (A,B) and (B,A) are the same pair, so they share a key.
+                    for (reference, candidate) in M::record_pairs(&record) {
+                        record_unique_pair(&mut deduped, reference, candidate, record.clone());
                     }
                 }
-            }
-            Ok(Err(e)) => {
-                outcomes.record(Some(SearchFailure::Operational));
-                error_utils::report_error_with_remediation(
-                    &format!("Error processing asset: {:?}", e),
-                    &[
-                        "Check your network connection",
-                        "Verify the asset exists and is accessible",
-                        "Retry the operation",
-                    ],
-                );
             }
             Err(e) => {
                 outcomes.record(Some(SearchFailure::Operational));
@@ -1670,21 +1776,21 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             }
         }
 
-        if let Some((_, ref overall_pb)) = multi_progress {
+        if let Some((_, overall_pb)) = &multi_progress {
             overall_pb.inc(1);
         }
     }
 
     // BTreeMap iteration is ordered by the unordered pair key, so row order is a
     // property of the data rather than of this run's scheduling. Two runs over
-    // unchanged data now produce identical output.
-    let all_matches: Vec<_> = deduped.into_values().map(|(_, record)| record).collect();
+    // unchanged data produce identical output.
+    let records: Vec<M::Record> = deduped.into_values().map(|(_, record)| record).collect();
 
-    if let Some((_, ref overall_pb)) = multi_progress {
+    if let Some((_, overall_pb)) = &multi_progress {
         overall_pb.finish_with_message(format!(
             "Processed {} assets. Found {} unique matches.",
             all_assets.len(),
-            all_matches.len()
+            records.len()
         ));
     }
 
@@ -1700,9 +1806,51 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         show_progress,
         &format!(
             "Building report from {} matches...",
-            HumanCount(all_matches.len() as u64)
+            HumanCount(records.len() as u64)
         ),
     );
+
+    Ok(Some(FolderSearchRun {
+        tenant,
+        folder_paths,
+        threshold,
+        exclusive,
+        records,
+        checkpoint,
+        report_progress,
+    }))
+}
+
+/// Perform geometric matching on assets in one or more folders
+/// (`folder geometric-match`).
+pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let format = format_params.format;
+    let with_headers = format_params.format_options.with_headers;
+
+    // The `xls` (Excel) format is a binary file output, not a stdout format, and
+    // is intentionally not part of the `OutputFormat` enum — `FormatParams` would
+    // silently fall back to JSON for it. Detect it from the raw format string
+    // instead, and handle it separately below. Excel reports always include
+    // metadata (the metadata diff is the whole point), so force it on for xls.
+    // Read from the resolved format, so `PCLI2_FORMAT=xls` works as `--format xls`
+    // does (it used to fall back to JSON).
+    // `xlsx` is accepted too: it is what the file is, and what `report download`
+    // calls it.
+    let is_xls = format_params
+        .format_str
+        .eq_ignore_ascii_case(crate::commands::params::FORMAT_XLS)
+        || format_params.format_str.eq_ignore_ascii_case("xlsx");
+    let with_metadata = format_params.format_options.with_metadata || is_xls;
+    let with_groups = sub_matches.get_flag("groups");
+
+    let Some(mut run) =
+        search_folders::<crate::model::GeometricMatch>(sub_matches, FolderMatchKind::Geometric)
+            .await?
+    else {
+        return Ok(());
+    };
+    let records = std::mem::take(&mut run.records);
 
     // Excel (`xls`) output: write a styled .xlsx workbook to a file instead of
     // printing. Handled here because `xls` is not an `OutputFormat` enum variant.
@@ -1714,14 +1862,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         // matching finishes - so a report too tall for a worksheet fails here in
         // milliseconds rather than after minutes of row building and cell formatting.
         crate::xlsx_report::ensure_rows_fit(
-            all_matches
-                .iter()
-                .map(|response| response.matches.len())
-                .sum(),
+            records.iter().map(|response| response.matches.len()).sum(),
         )?;
 
         let (mut headers, mut rows) =
-            build_geometric_match_table(&all_matches, with_metadata, &report_progress);
+            build_geometric_match_table(&records, with_metadata, &run.report_progress);
         // The summary sheet counts the groups whether or not --groups adds the columns.
         let groups = if with_groups {
             crate::match_groups::add_group_columns(&mut headers, &mut rows)
@@ -1745,12 +1890,12 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         }
         let mut summary = vec![
             ("Report".to_string(), "Folder geometric match".to_string()),
-            ("Tenant".to_string(), tenant.name.clone()),
-            ("Folders".to_string(), folder_paths.join(", ")),
-            ("Threshold".to_string(), format!("{:.2}%", threshold)),
+            ("Tenant".to_string(), run.tenant.name.clone()),
+            ("Folders".to_string(), run.folder_paths.join(", ")),
+            ("Threshold".to_string(), format!("{:.2}%", run.threshold)),
             (
                 "Both assets in these folders (--exclusive)".to_string(),
-                if exclusive { "yes" } else { "no" }.to_string(),
+                if run.exclusive { "yes" } else { "no" }.to_string(),
             ),
             (
                 "Generated (UTC)".to_string(),
@@ -1772,17 +1917,15 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             headers,
             rows,
             &output_path,
-            &report_progress,
+            &run.report_progress,
             &summary,
         )?;
-        report_progress.finish_with_summary(&format!(
+        run.report_progress.finish_with_summary(&format!(
             "Wrote {} row(s) to {}",
             HumanCount(row_count as u64),
             output_path.display()
         ));
-        if let Some(cp) = &checkpoint {
-            cp.finish();
-        }
+        run.finish();
         // UNIX-style: on success there is no data to print, so print nothing.
         return Ok(());
     }
@@ -1791,21 +1934,22 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     match format {
         crate::format::OutputFormat::Json(_) => {
             // For JSON, we need to flatten all matches into a single array
-            let flattened_matches = flatten_geometric_matches(all_matches, &report_progress);
+            let flattened_matches = flatten_geometric_matches(records, &run.report_progress);
             if with_groups {
                 let grouped = with_group_fields(&flattened_matches);
-                stream_json_report(&grouped, &report_progress).map_err(json_stream_error)?;
+                stream_json_report(&grouped, &run.report_progress).map_err(json_stream_error)?;
             } else {
-                stream_json_report(&flattened_matches, &report_progress)
+                stream_json_report(&flattened_matches, &run.report_progress)
                     .map_err(json_stream_error)?;
             }
-            report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
+            run.report_progress
+                .finish_with_summary(&report_summary(flattened_matches.len()));
         }
         crate::format::OutputFormat::Csv(_) => {
             // Build the shared table so CSV and Excel stay column-for-column
             // identical; only the presentation differs between the two formats.
             let (mut headers, mut rows) =
-                build_geometric_match_table(&all_matches, with_metadata, &report_progress);
+                build_geometric_match_table(&records, with_metadata, &run.report_progress);
             if with_groups {
                 crate::match_groups::add_group_columns(&mut headers, &mut rows);
             }
@@ -1820,9 +1964,9 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 }
             }
 
-            report_progress.start_rows("Writing CSV", rows.len());
+            run.report_progress.start_rows("Writing CSV", rows.len());
             for (index, row) in rows.iter().enumerate() {
-                report_progress.set_row(index);
+                run.report_progress.set_row(index);
                 if let Err(e) = wtr.serialize(crate::format::guard_csv_row(row).as_ref()) {
                     return Err(CliError::from(CliActionError::FormattingError(
                         crate::format::FormattingError::CsvError(e),
@@ -1831,55 +1975,46 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
             }
 
             wtr.flush().map_err(csv_stream_error)?;
-            report_progress.finish_with_summary(&report_summary(rows.len()));
+            run.report_progress
+                .finish_with_summary(&report_summary(rows.len()));
         }
         _ => {
             // Default to JSON
-            let flattened_matches = flatten_geometric_matches(all_matches, &report_progress);
+            let flattened_matches = flatten_geometric_matches(records, &run.report_progress);
             if with_groups {
                 let grouped = with_group_fields(&flattened_matches);
-                stream_json_report(&grouped, &report_progress).map_err(json_stream_error)?;
+                stream_json_report(&grouped, &run.report_progress).map_err(json_stream_error)?;
             } else {
-                stream_json_report(&flattened_matches, &report_progress)
+                stream_json_report(&flattened_matches, &run.report_progress)
                     .map_err(json_stream_error)?;
             }
-            report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
+            run.report_progress
+                .finish_with_summary(&report_summary(flattened_matches.len()));
         }
     }
 
-    // The report is written; there is nothing left to resume.
-    if let Some(cp) = &checkpoint {
-        cp.finish();
-    }
-
+    run.finish();
     Ok(())
-}
-
-/// The two folder match commands that search with the part-search result shape.
-#[derive(Debug, Clone, Copy)]
-enum SimilarityKind {
-    Part,
-    Visual,
-}
-
-impl SimilarityKind {
-    fn name(self) -> &'static str {
-        match self {
-            SimilarityKind::Part => "part",
-            SimilarityKind::Visual => "visual",
-        }
-    }
 }
 
 /// Find part matches for all assets in one or more folders (`folder part-match`).
 pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
-    similarity_match_folder(sub_matches, SimilarityKind::Part).await
+    pair_match_folder(sub_matches, FolderMatchKind::Part, flatten_part_matches).await
 }
 
 /// Find visually similar assets for all assets in one or more folders
 /// (`folder visual-match`).
 pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
-    similarity_match_folder(sub_matches, SimilarityKind::Visual).await
+    let limit = sub_matches
+        .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
+        .copied()
+        .unwrap_or(100);
+    pair_match_folder(
+        sub_matches,
+        FolderMatchKind::Visual { limit },
+        flatten_visual_matches,
+    )
+    .await
 }
 
 /// What a folder match report needs from one pair, so the part and visual
@@ -2015,527 +2150,29 @@ fn write_pair_report<P: ReportPair>(
     Ok(())
 }
 
-async fn similarity_match_folder(
+/// A part or visual folder match: the shared search, then one row per pair.
+async fn pair_match_folder<P: ReportPair>(
     sub_matches: &ArgMatches,
-    kind: SimilarityKind,
+    kind: FolderMatchKind,
+    flatten: fn(Vec<crate::model::EnhancedPartSearchResponse>, &ReportProgress) -> Vec<P>,
 ) -> Result<(), CliError> {
-    trace!("Executing {} match folder command...", kind.name());
-
-    let configuration = Configuration::load_or_create_default()?;
-    // Read once here; it used to be loaded from disk again for every match row.
-    let ui_base_url = configuration.get_ui_base_url();
-    let mut api = PhysnaApiClient::try_default()?;
-    let tenant = get_tenant(&mut api, sub_matches, &configuration).await?;
-
-    // Get folder paths
-    let folder_paths: Vec<String> = crate::actions::utils::split_list_values(
-        sub_matches
-            .get_many::<String>(PARAMETER_FOLDER_PATH)
-            .ok_or(CliError::MissingRequiredArgument(
-                PARAMETER_FOLDER_PATH.to_string(),
-            ))?
-            .cloned()
-            .collect::<Vec<String>>(),
-    );
-
-    // Get threshold parameter
-    let threshold = crate::actions::utils::threshold_from_args(sub_matches);
-
-    // --format, then PCLI2_FORMAT, then json. The PCLI2_FORMAT fallback written
-    // out here before could never run: clap's `json` default always answered first.
+    // --format, then PCLI2_FORMAT, then json.
     let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
     let with_metadata = format_params.format_options.with_metadata;
     let with_headers = format_params.format_options.with_headers;
-    let format = format_params.format;
 
-    // Visual search returns at most --limit matches per asset.
-    let limit = match kind {
-        SimilarityKind::Part => None,
-        SimilarityKind::Visual => Some(
-            sub_matches
-                .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
-                .copied()
-                .unwrap_or(100),
-        ),
+    let Some(mut run) = search_folders::<crate::model::PartMatch>(sub_matches, kind).await? else {
+        return Ok(());
     };
-
-    // Get exclusive flag
-    let exclusive = sub_matches.get_flag("exclusive");
-
-    // Get concurrent and progress parameters
-    let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
-    // clap's parser already holds --concurrent to 1-10.
-    let concurrent = concurrent_param.unwrap_or(1);
-
-    let show_progress = crate::terminal::show_progress(sub_matches);
-
-    let recursive = sub_matches.get_flag(crate::commands::params::PARAMETER_RECURSIVE);
-
-    // Collect all assets from the specified folders, descending into subfolders only
-    // when --recursive was requested
-    // With --exclusive the server pre-filters to these folders and their subfolders,
-    // so tenant-wide result pages are no longer downloaded only to be discarded.
-    // The client-side path check on each match still decides the exact set.
-    let exclusive_folder_ids: Vec<Uuid> = if exclusive {
-        resolve_exclusive_folder_ids(&mut api, &tenant, &folder_paths).await?
-    } else {
-        Vec::new()
-    };
-
-    // With --checkpoint, results recorded by an interrupted run are reused and
-    // only the remaining assets are searched. Opened before the folder scan so a
-    // file from a different run is refused before minutes are spent scanning.
-    let checkpoint_path = sub_matches
-        .get_one::<std::path::PathBuf>(crate::commands::params::PARAMETER_CHECKPOINT)
-        .cloned();
-    let (checkpoint, mut recorded_matches) = match &checkpoint_path {
-        Some(path) => {
-            let fingerprint = crate::checkpoint::Fingerprint::new(
-                kind.name(),
-                tenant.uuid,
-                &folder_paths,
-                recursive,
-                exclusive,
-                threshold,
-                limit,
-            );
-            let (checkpoint, done) = crate::checkpoint::Checkpoint::<
-                crate::model::EnhancedPartSearchResponse,
-            >::open(path, fingerprint)?;
-            (Some(std::sync::Arc::new(checkpoint)), done)
-        }
-        None => (None, std::collections::HashMap::new()),
-    };
-
-    let all_assets = match collect_assets_in_folders(
-        &mut api,
-        &tenant.uuid,
-        &folder_paths,
-        recursive,
-        show_progress,
-    )
-    .await?
-    {
-        Some(assets) => assets,
-        None => {
-            // Nothing to search, so nothing to resume.
-            if let Some(cp) = &checkpoint {
-                cp.finish();
-            }
-            return Ok(());
-        }
-    };
-
-    if let Some(cp) = &checkpoint {
-        let reusable = all_assets
-            .keys()
-            .filter(|uuid| recorded_matches.contains_key(uuid))
-            .count();
-        if reusable > 0 {
-            eprintln!(
-                "Resuming from checkpoint '{}': {} of {} asset(s) already searched",
-                cp.path().display(),
-                reusable,
-                all_assets.len()
-            );
-        }
-    }
-
-    // Create multi-progress bar if show_progress is true
-    let multi_progress = if show_progress {
-        let mp = MultiProgress::new();
-
-        // Add an overall progress bar
-        let overall_pb = mp.add(ProgressBar::new(all_assets.len() as u64));
-        overall_pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {per_sec}")
-                .unwrap()
-                .progress_chars("#>-")
-        );
-        Some((mp, overall_pb))
-    } else {
-        None
-    };
-
-    // Use a semaphore to limit concurrent operations
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrent));
-    // Shared stop signal, so one terminal failure does not have to be rediscovered
-    // by every remaining asset.
-    let abort = std::sync::Arc::new(SearchAbort::default());
-
-    // Prepare for concurrent processing.
-    //
-    // Symmetric pairs are deduplicated into a BTreeMap keyed on the *unordered* pair,
-    // so neither the surviving row nor the output order depends on which concurrent
-    // search happened to finish first. A HashSet plus a Vec made both depend on it:
-    // two identical runs produced byte-different reports.
-    let mut deduped = std::collections::BTreeMap::new();
-
-    // Create tasks for concurrent processing
-    // The matches an asset contributed, plus why it contributed none if it failed -
-    // so the caller can tell an asset with no matches from one that was never
-    // successfully searched.
-    type TaskResult = Result<
-        (
-            Vec<crate::model::EnhancedPartSearchResponse>,
-            Option<SearchFailure>,
-        ),
-        Box<dyn std::error::Error + Send + Sync>,
-    >;
-    let mut tasks: Vec<tokio::task::JoinHandle<TaskResult>> = Vec::new();
-    for (asset_uuid, asset) in &all_assets {
-        let semaphore = semaphore.clone();
-        let mut api_clone = api.clone(); // Clone the API client
-        let tenant_uuid = tenant.uuid;
-        let asset_uuid = *asset_uuid;
-        let asset_clone = asset.clone();
-        let folder_paths_clone = folder_paths.clone();
-        let tenant_clone = tenant.clone();
-        let multi_progress_clone = multi_progress.clone();
-        let abort = abort.clone();
-        let ui_base_url_for_task = ui_base_url.clone();
-        let exclusive_folder_ids = exclusive_folder_ids.clone();
-        let checkpoint = checkpoint.clone();
-        let recorded = recorded_matches.remove(&asset_uuid);
-
-        let task = tokio::spawn(async move {
-            // Already searched by the run this one resumes.
-            if let Some(matches) = recorded {
-                return Ok((matches, None));
-            }
-
-            let _permit = semaphore.acquire().await.unwrap();
-
-            // An earlier task hit something that makes every remaining search
-            // pointless. Return without touching the network.
-            if abort.is_stopped() {
-                return Ok((Vec::new(), Some(SearchFailure::Aborted)));
-            }
-
-            // Create individual progress bar for this task if multi-progress is enabled
-            let individual_pb = if let Some((ref mp, _)) = multi_progress_clone {
-                let pb = mp.add(ProgressBar::new_spinner());
-                pb.set_style(
-                    ProgressStyle::default_spinner()
-                        .template(&format!(
-                            "{{spinner:.green}} Processing: {} {{msg}}",
-                            asset_clone.name()
-                        ))
-                        .unwrap(),
-                );
-                Some(pb)
-            } else {
-                None
-            };
-
-            // Update the progress bar to show that we're starting the search
-            if let Some(ref pb) = individual_pb {
-                pb.set_message(format!("Starting {} search...", kind.name()));
-            }
-
-            let searched = match (kind, limit) {
-                (SimilarityKind::Visual, Some(limit)) => {
-                    api_clone
-                        .visual_search(
-                            &tenant_uuid,
-                            &asset_uuid,
-                            limit,
-                            threshold,
-                            &exclusive_folder_ids,
-                        )
-                        .await
-                }
-                _ => {
-                    api_clone
-                        .part_search(&tenant_uuid, &asset_uuid, threshold, &exclusive_folder_ids)
-                        .await
-                }
-            };
-            let result = match searched {
-                Ok(search_results) => {
-                    if let Some(limit) = limit {
-                        if search_results.matches.len() >= limit {
-                            under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
-                                error_utils::report_warning(&format!(
-                                    "Visual search for asset {} returned the --limit of {} matches; further matches were not fetched",
-                                    asset_clone.name(),
-                                    limit
-                                ))
-                            });
-                        }
-                    }
-                    // Update progress bar to show processing matches
-                    if let Some(ref pb) = individual_pb {
-                        pb.set_message(format!(
-                            "Processing {} matches...",
-                            search_results.matches.len()
-                        ));
-                    }
-
-                    let mut asset_matches = Vec::new();
-
-                    for mut match_result in search_results.matches {
-                        // Skip if the match is with the same asset (self-match)
-                        if match_result.asset.uuid == asset_uuid {
-                            continue;
-                        }
-
-                        let ui_base_url = ui_base_url_for_task.clone();
-
-                        // Populate comparison URL for this match
-                        let base_url = ui_base_url.trim_end_matches('/');
-                        let comparison_url = crate::ui_url::compare_url(
-                            base_url,
-                            &tenant_clone.name,
-                            &tenant_uuid,
-                            &asset_uuid,
-                            &match_result.asset.uuid,
-                            match kind {
-                                SimilarityKind::Part => crate::ui_url::Comparison::Part {
-                                    forward: match_result.forward_match_percentage.unwrap_or(0.0),
-                                    reverse: match_result.reverse_match_percentage.unwrap_or(0.0),
-                                },
-                                SimilarityKind::Visual => crate::ui_url::Comparison::Visual,
-                            },
-                        );
-                        match_result.comparison_url = Some(comparison_url);
-
-                        // Check if we want to include matches based on exclusive flag
-                        // For exclusive mode, both reference and candidate assets must be in specified folders
-                        let candidate_in_specified_folders =
-                            folder_paths_clone.iter().any(|folder_path| {
-                                let normalized_folder_path =
-                                    crate::model::normalize_path(folder_path);
-                                let normalized_candidate_path =
-                                    crate::model::normalize_path(&match_result.asset.path);
-                                crate::model::path_is_within_folder(
-                                    &normalized_candidate_path,
-                                    &normalized_folder_path,
-                                )
-                            });
-
-                        let reference_in_specified_folders =
-                            folder_paths_clone.iter().any(|folder_path| {
-                                let normalized_folder_path =
-                                    crate::model::normalize_path(folder_path);
-                                let normalized_reference_path =
-                                    crate::model::normalize_path(asset_clone.path());
-                                crate::model::path_is_within_folder(
-                                    &normalized_reference_path,
-                                    &normalized_folder_path,
-                                )
-                            });
-
-                        if exclusive
-                            && (!candidate_in_specified_folders || !reference_in_specified_folders)
-                        {
-                            continue;
-                        }
-
-                        // Create the enhanced response structure for this match
-                        let metadata_map = if let Some(asset_metadata) = asset_clone.metadata() {
-                            // Convert AssetMetadata to HashMap<String, serde_json::Value>
-                            let mut map = std::collections::HashMap::new();
-                            for key in asset_metadata.keys() {
-                                if let Some(value) = asset_metadata.get(key) {
-                                    map.insert(
-                                        key.clone(),
-                                        serde_json::Value::String(value.clone()),
-                                    );
-                                }
-                            }
-                            map
-                        } else {
-                            std::collections::HashMap::new()
-                        };
-
-                        let reference_asset_response = crate::model::AssetResponse {
-                            uuid: asset_uuid,
-                            tenant_id: tenant_uuid,
-                            path: asset_clone.path(),
-                            folder_id: None,
-                            asset_type: asset_clone.file_type().cloned().unwrap_or_default(),
-                            created_at: asset_clone.created_at().cloned().unwrap_or_default(),
-                            updated_at: asset_clone.updated_at().cloned().unwrap_or_default(),
-                            state: asset_clone.normalized_processing_status(),
-                            is_assembly: asset_clone.is_assembly(),
-                            metadata: metadata_map,
-                            parent_folder_id: None, // No parent folder ID
-                            owner_id: None,         // No owner ID
-                        };
-
-                        let enhanced_match = crate::model::EnhancedPartSearchResponse {
-                            reference_asset: reference_asset_response,
-                            matches: vec![match_result.clone()],
-                        };
-
-                        asset_matches.push(enhanced_match);
-                    }
-
-                    // Update progress bar to show completion
-                    if let Some(ref pb) = individual_pb {
-                        pb.set_message(format!("Found {} matches", asset_matches.len()));
-                    }
-
-                    // Renewal is evidently working; forget any earlier blip.
-                    abort.record_success();
-                    if let Some(cp) = &checkpoint {
-                        cp.record(asset_uuid, &asset_matches);
-                    }
-                    Ok((asset_matches, None))
-                }
-                Err(e) => {
-                    let failure = SearchFailure::classify(&e);
-                    // Authentication failures are counted rather than acted on
-                    // immediately: the client renews the token and retries by itself,
-                    // and one failed renewal may be nothing more than a blip at the
-                    // auth endpoint. Only an unbroken run of them means the credentials
-                    // are genuinely gone - then the run stops, and explains once.
-                    let stopping = e.is_authentication_failure() && abort.record_auth_failure();
-                    if stopping {
-                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
-                            error_utils::report_error_with_remediation(
-                            &format!(
-                                "Stopping after {} consecutive authentication failures: {}. Remaining assets were not searched.",
-                                CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP, e
-                            ),
-                            &[
-                                "Log in again with 'pcli2 auth login'",
-                                "Then re-run this command",
-                            ],
-                        );
-                        });
-                    } else if !abort.is_stopped() {
-                        under_progress(multi_progress_clone.as_ref().map(|(mp, _)| mp), || {
-                            error_utils::report_warning(&format!(
-                                "🔍 Failed to perform {} search for asset {}: {}",
-                                kind.name(),
-                                asset_clone.name(),
-                                e
-                            ))
-                        });
-                    }
-                    if let Some(ref pb) = individual_pb {
-                        pb.set_message("Failed");
-                    }
-                    // The asset contributes no matches either way; the
-                    // classification is what lets the caller tell "nothing to
-                    // find" from "could not look" once tasks are collected.
-                    Ok((Vec::new(), Some(failure)))
-                }
-            };
-
-            // Remove the individual progress bar when done
-            if let Some(pb) = individual_pb {
-                pb.finish_and_clear();
-            }
-
-            result
-        });
-
-        tasks.push(task);
-    }
-
-    // Process tasks and collect results
-    let mut outcomes = SearchOutcomes::default();
-    for task in tasks {
-        match task.await {
-            Ok(Ok((asset_matches, failure))) => {
-                outcomes.record(failure);
-                for enhanced_match in asset_matches {
-                    // Apply duplicate filtering to each match. (A,B) and (B,A) are the
-                    // same pair, so they share a key.
-                    for match_result in &enhanced_match.matches {
-                        record_unique_pair(
-                            &mut deduped,
-                            enhanced_match.reference_asset.uuid,
-                            match_result.asset.uuid,
-                            enhanced_match.clone(),
-                        );
-                    }
-                }
-            }
-            Ok(Err(e)) => {
-                outcomes.record(Some(SearchFailure::Operational));
-                error_utils::report_error_with_remediation(
-                    &format!("Error processing asset: {:?}", e),
-                    &[
-                        "Check your network connection",
-                        "Verify the asset exists and is accessible",
-                        "Retry the operation",
-                    ],
-                );
-            }
-            Err(e) => {
-                outcomes.record(Some(SearchFailure::Operational));
-                error_utils::report_error_with_remediation(
-                    &format!("Task failed: {:?}", e),
-                    &[
-                        "Check your network connection",
-                        "Verify your authentication credentials are valid",
-                        "Retry the operation",
-                    ],
-                );
-            }
-        }
-
-        if let Some((_, ref overall_pb)) = multi_progress {
-            overall_pb.inc(1);
-        }
-    }
-
-    // BTreeMap iteration is ordered by the unordered pair key, so row order is a
-    // property of the data rather than of this run's scheduling. Two runs over
-    // unchanged data now produce identical output.
-    let all_matches: Vec<_> = deduped.into_values().map(|(_, record)| record).collect();
-
-    if let Some((_, ref overall_pb)) = multi_progress {
-        overall_pb.finish_with_message(format!(
-            "Processed {} assets. Found {} unique matches.",
-            all_assets.len(),
-            all_matches.len()
-        ));
-    }
-
-    // Account for the searches that failed before presenting a report built from the
-    // ones that did not. Runs here rather than at the end so a materially incomplete
-    // run stops before spending minutes building a report nobody should trust.
-    finish_search_outcomes(&outcomes)?;
-
-    // Everything from here on is CPU- and memory-bound rather than network-bound, and
-    // on a large result set it runs for minutes after the match bar has already
-    // finished. Report it so the command does not look wedged.
-    let report_progress = ReportProgress::new(
-        show_progress,
-        &format!(
-            "Building report from {} matches...",
-            HumanCount(all_matches.len() as u64)
-        ),
-    );
-
-    match kind {
-        SimilarityKind::Part => write_pair_report(
-            flatten_part_matches(all_matches, &report_progress),
-            &format,
-            with_metadata,
-            with_headers,
-            &report_progress,
-        )?,
-        SimilarityKind::Visual => write_pair_report(
-            flatten_visual_matches(all_matches, &report_progress),
-            &format,
-            with_metadata,
-            with_headers,
-            &report_progress,
-        )?,
-    }
-
-    // The report is written; there is nothing left to resume.
-    if let Some(cp) = &checkpoint {
-        cp.finish();
-    }
-
+    let records = std::mem::take(&mut run.records);
+    write_pair_report(
+        flatten(records, &run.report_progress),
+        &format_params.format,
+        with_metadata,
+        with_headers,
+        &run.report_progress,
+    )?;
+    run.finish();
     Ok(())
 }
 

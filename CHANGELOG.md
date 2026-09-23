@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-09-23
+
 ### Changed
 - **Dependencies, major versions** - reqwest 0.13, zip 8, thiserror 2, base64 0.23, rand 0.10, keyring 4 (optional OS-keychain build) and criterion 0.8 (benchmarks). HTTPS still uses the operating system's TLS and certificate store (reqwest 0.13 would default to rustls; pcli2 keeps native TLS). zip no longer includes AES support: Physna never serves password-protected bundles, and it needs a newer Rust than pcli2's minimum. Downloads extract to the same files, and no command's output changes.
 

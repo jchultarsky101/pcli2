@@ -45,6 +45,16 @@ time by default; lower it with `--concurrent 1` or space items out with
 `RUST_LOG=debug` opens up the HTTP stack as well. `--stats` prints the number of
 API requests, retries and token renewals at the end.
 
+## Checking the basics
+
+```bash
+pcli2 auth expiration          # logged in, and for how long
+pcli2 tenant get               # the active tenant
+pcli2 env get                  # the active environment and its URLs
+pcli2 config get path          # where the configuration lives
+pcli2 config validate --api    # configuration, credentials and a test call
+```
+
 ## Reporting a problem
 
 Include the output of `pcli2 --version` and `pcli2 doctor`, the command you

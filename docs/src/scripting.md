@@ -51,6 +51,31 @@ pcli2 asset list --folder-path /Home/Parts --format csv --columns path,uuid
 pcli2 asset list --folder-path /Home/Parts --format table --columns name,state
 ```
 
+### Pipelines: grep, jq and NuShell
+
+Chain commands with other tools. In JSON output, metadata values are strings
+(`"Weight": "12.5"`); convert them before comparing numbers.
+
+```bash
+# Filter assets with grep
+pcli2 asset list --folder-path "/Home/Models/" --format csv | grep "bearing"
+
+# Process with jq: paths of files over 10 kB
+pcli2 asset list --folder-path "/Home/Models/" --format json | jq -r '.[] | select((.file_size // 0) > 10000) | .path'
+
+# jq on metadata: assets weighing 5 or more
+pcli2 asset list --folder-path "/Home/Models/" --metadata --format json | jq -r '.[] | select((.metadata.Weight // "0" | tonumber) >= 5) | .path'
+
+# Count results
+pcli2 asset list --folder-path "/Home/Models/" --format csv | wc -l
+
+# NuShell: assets weighing between 5 and 50
+pcli2 asset list --folder-path "/Home/MyFolder" --metadata --format json | nu --stdin -c 'from json | where {|a| ($a.metadata.Weight? | default "0" | into float) >= 5.0 and ($a.metadata.Weight? | default "0" | into float) <= 50.0 } | select name path'
+
+# NuShell: count and average weight per material
+pcli2 asset list --folder-path "/Home/Inventory" --metadata --format json | nu --stdin -c 'from json | where {|a| $a.metadata.Material? != null } | insert material {|a| $a.metadata.Material } | insert weight {|a| $a.metadata.Weight? | default "0" | into float } | group-by material --to-table | each {|g| {material: $g.material, count: ($g.items | length), avg_weight: ($g.items.weight | math avg)} }'
+```
+
 ### Safe CSV for Spreadsheets
 
 A CSV cell that starts with `=`, `+`, `-` or `@` is evaluated as a formula by

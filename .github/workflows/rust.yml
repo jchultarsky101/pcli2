@@ -62,7 +62,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - name: Install Rust 1.88
-      uses: dtolnay/rust-toolchain@1.88
+      uses: dtolnay/rust-toolchain@1.120
     - name: Install dependencies
       run: |
         sudo apt-get update

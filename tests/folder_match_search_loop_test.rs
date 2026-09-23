@@ -407,3 +407,35 @@ fn visual_search_warns_when_an_asset_reaches_the_limit() {
     );
     assert!(!err.contains("asset p1.stl returned"), "{err}");
 }
+
+/// The visual endpoint rejects a `filters` object without `metadata` (HTTP 400
+/// "Validation Failed"), so `visual-match --exclusive` failed on every asset.
+#[test]
+fn visual_match_exclusive_sends_a_filter_the_api_accepts() {
+    let kind = KINDS[2];
+    let mut cli = MockCli::new();
+    let _folder = parts_folder(&mut cli, 2);
+    let filtered = |cli: &mut MockCli, n: u8, matches: &[(u8, f64)]| {
+        cli.server
+            .mock("POST", "/tenants/assets/visual-search")
+            .match_body(Matcher::PartialJson(serde_json::json!({
+                "assetId": id(n),
+                "filters": {"folderIds": [id(PARTS)], "metadata": {}}
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(page(kind, matches))
+            .expect(1)
+            .create()
+    };
+    let searches = [
+        filtered(&mut cli, 1, &[(2, 0.0)]),
+        filtered(&mut cli, 2, &[(1, 0.0)]),
+    ];
+    let output = run(&cli, kind, &["--exclusive"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(pairs(&stdout(&output)), vec![pair(1, 2)]);
+    for search in searches {
+        search.assert();
+    }
+}

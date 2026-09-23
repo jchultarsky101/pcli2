@@ -26,7 +26,7 @@ os-keyring = ["dep:keyring"]
 clap = { version = "4.5.45", features = ["derive", "env", "string", "wrap_help"] }
 color-print = "0.3.4"
 dirs = "7.0.0"
-thiserror = "1.0.69"
+thiserror = "2.0.20"
 serde_yaml = "0.9.34"
 serde = { version = "1.0.219", features = ["derive"] }
 urlencoding = "2.1.0"

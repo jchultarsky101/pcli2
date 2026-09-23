@@ -4,7 +4,6 @@ use crate::{
 };
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};
-use serde_yaml;
 use std::{collections::HashMap, fs, io::Write, path::PathBuf};
 use tracing::debug;
 use uuid::Uuid;
@@ -212,7 +211,7 @@ impl Configuration {
     pub fn load_from_file(path: PathBuf) -> Result<Configuration, ConfigurationError> {
         match fs::read_to_string(path.clone()) {
             Ok(configuration) => {
-                let configuration = serde_yaml::from_str(&configuration);
+                let configuration = serde_norway::from_str(&configuration);
                 match configuration {
                     Ok(configuration) => Ok(configuration),
                     Err(cause) => Err(ConfigurationError::FailedToLoadData {
@@ -227,7 +226,7 @@ impl Configuration {
     }
 
     pub fn write(&self, writer: Box<dyn Write>) -> Result<(), ConfigurationError> {
-        match serde_yaml::to_writer(writer, &self.clone()) {
+        match serde_norway::to_writer(writer, &self.clone()) {
             Ok(()) => Ok(()),
             Err(e) => Err(ConfigurationError::FailedToWriteData { cause: Box::new(e) }),
         }
@@ -249,7 +248,7 @@ impl Configuration {
 
         // Serialised first and renamed into place, so a crash or a concurrent pcli2
         // process never leaves a truncated config.yml behind.
-        let data = serde_yaml::to_string(self)
+        let data = serde_norway::to_string(self)
             .map_err(|e| ConfigurationError::FailedToWriteData { cause: Box::new(e) })?;
         crate::fs_utils::write_atomically(path, data.as_bytes())
             .map_err(|e| ConfigurationError::FailedToWriteData { cause: Box::new(e) })
@@ -344,6 +343,25 @@ impl Configuration {
                 env_name.to_string(),
             ))
         }
+    }
+
+    /// Make `env_name` the active environment, with the tenant last selected in
+    /// it active again (none if it never had one).
+    ///
+    /// The top-level tenant, which older versions read and which serves as the
+    /// fallback for an environment without one, is set to the same value, so the
+    /// previous environment's tenant can never carry over to this one.
+    pub fn switch_environment(
+        &mut self,
+        env_name: &str,
+    ) -> Result<Option<Uuid>, ConfigurationError> {
+        self.set_active_environment(env_name)?;
+        let remembered = self
+            .environments
+            .get(env_name)
+            .and_then(|env| env.active_tenant_uuid);
+        self.active_tenant_uuid = remembered;
+        Ok(remembered)
     }
 
     pub fn add_environment(&mut self, name: String, config: EnvironmentConfig) {
@@ -474,5 +492,137 @@ impl Formattable for Configuration {
                 Ok(result)
             }
         }
+    }
+}
+
+/// How `config.yml` is read and written, pinned so a change of YAML library
+/// cannot quietly change either (serde_yaml was replaced by serde_norway with
+/// these cases, and the user's real file, byte-identical).
+#[cfg(test)]
+mod yaml_format_tests {
+    use super::*;
+
+    const TENANT: &str = "68555ebf-f09c-4861-96b1-692d2ec10de7";
+
+    fn read(text: &str) -> Configuration {
+        serde_norway::from_str(text).unwrap_or_else(|e| panic!("{e}\n{text}"))
+    }
+
+    #[test]
+    fn hand_edited_files_are_read_as_before() {
+        let commented = read(&format!(
+            "# my config\nactive_environment: 'prod' # trailing\nenvironments:\n  prod:\n    api_base_url: \"https://api.example\"\n    active_tenant_uuid: {TENANT}\n"
+        ));
+        assert_eq!(commented.active_environment.as_deref(), Some("prod"));
+        let prod = &commented.environments["prod"];
+        assert_eq!(prod.api_base_url, "https://api.example");
+        assert_eq!(prod.ui_base_url, default_ui_base_url());
+        assert_eq!(prod.active_tenant_uuid.unwrap().to_string(), TENANT);
+
+        // Keys an older or newer pcli2 wrote are ignored, not an error.
+        let unknown = read("legacy_field: 1\nenvironments:\n  dev:\n    something_old: true\n");
+        assert_eq!(
+            unknown.environments["dev"].auth_base_url,
+            default_auth_base_url()
+        );
+
+        for text in [
+            "{}\n",
+            "environments: {}\n",
+            "active_environment: x\r\nenvironments:\r\n  x:\r\n    ui_base_url: https://u\r\n",
+            "{active_environment: x, environments: {x: {api_base_url: 'https://a'}}}\n",
+            "active_environment: prüfung\nenvironments:\n  prüfung: {}\n  \"with space\": {}\n",
+        ] {
+            read(text);
+        }
+    }
+
+    #[test]
+    fn a_saved_file_looks_as_before_and_reads_back() {
+        let mut configuration = Configuration {
+            active_environment: Some("prod".to_string()),
+            ..Default::default()
+        };
+        configuration.environments.insert(
+            "prod".to_string(),
+            EnvironmentConfig {
+                api_base_url: default_api_base_url(),
+                ui_base_url: default_ui_base_url(),
+                auth_base_url: default_auth_base_url(),
+                active_tenant_uuid: Some(TENANT.parse().unwrap()),
+            },
+        );
+        let text = serde_norway::to_string(&configuration).unwrap();
+        assert_eq!(
+            text,
+            format!(
+                "active_environment: prod\n\
+                 environments:\n  \
+                 prod:\n    \
+                 api_base_url: https://app-api.physna.com/v3\n    \
+                 ui_base_url: https://app.physna.com\n    \
+                 auth_base_url: https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token\n    \
+                 active_tenant_uuid: {TENANT}\n"
+            )
+        );
+        assert_eq!(read(&text), configuration);
+    }
+}
+
+#[cfg(test)]
+mod switch_environment_tests {
+    use super::*;
+
+    fn configuration() -> (Configuration, Uuid, Uuid) {
+        let staging_tenant = Uuid::from_bytes([1; 16]);
+        let production_tenant = Uuid::from_bytes([2; 16]);
+        let mut configuration = Configuration::default();
+        for (name, tenant) in [
+            ("staging", Some(staging_tenant)),
+            ("production", Some(production_tenant)),
+            ("fresh", None),
+        ] {
+            configuration.add_environment(
+                name.to_string(),
+                EnvironmentConfig {
+                    api_base_url: default_api_base_url(),
+                    ui_base_url: default_ui_base_url(),
+                    auth_base_url: default_auth_base_url(),
+                    active_tenant_uuid: tenant,
+                },
+            );
+        }
+        configuration.set_active_environment("staging").unwrap();
+        configuration.active_tenant_uuid = Some(staging_tenant);
+        (configuration, staging_tenant, production_tenant)
+    }
+
+    #[test]
+    fn switching_back_brings_the_tenant_last_used_there() {
+        let (mut configuration, staging, production) = configuration();
+        assert_eq!(
+            configuration.switch_environment("production").unwrap(),
+            Some(production)
+        );
+        assert_eq!(configuration.active_tenant_uuid(), Some(&production));
+        assert_eq!(
+            configuration.switch_environment("staging").unwrap(),
+            Some(staging)
+        );
+        assert_eq!(configuration.active_tenant_uuid(), Some(&staging));
+        // Re-selecting the active environment keeps its tenant too.
+        assert_eq!(
+            configuration.switch_environment("staging").unwrap(),
+            Some(staging)
+        );
+    }
+
+    #[test]
+    fn a_tenant_never_carries_over_to_an_environment_without_one() {
+        let (mut configuration, _, _) = configuration();
+        assert_eq!(configuration.switch_environment("fresh").unwrap(), None);
+        // Not the staging tenant through the top-level fallback.
+        assert_eq!(configuration.active_tenant_uuid(), None);
+        assert!(configuration.switch_environment("nope").is_err());
     }
 }

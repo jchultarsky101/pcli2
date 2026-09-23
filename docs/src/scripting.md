@@ -36,6 +36,21 @@ The same rules apply to diagnostics on stderr: warnings and `--verbose`
 logs captured with `2> warnings.log` are plain text with no ANSI escape
 codes, so they can be grepped and parsed directly.
 
+### Tables and Columns
+
+In a terminal, a command that can print CSV shows a table when you do not ask
+for a format; the moment its output goes to a pipe or a file it is JSON, exactly
+as before. Ask for either explicitly with `--format table` or `--format json`.
+
+`--columns` keeps only the named CSV or table columns, in the order given
+(matched by header name, in any letter case). An unknown name is an error
+(exit 64) that lists the available columns:
+
+```bash
+pcli2 asset list --folder-path /Home/Parts --format csv --columns path,uuid
+pcli2 asset list --folder-path /Home/Parts --format table --columns name,state
+```
+
 ### Safe CSV for Spreadsheets
 
 A CSV cell that starts with `=`, `+`, `-` or `@` is evaluated as a formula by

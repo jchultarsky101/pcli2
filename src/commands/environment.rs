@@ -54,7 +54,7 @@ pub fn environment_command() -> Command {
             Command::new(COMMAND_ENVIRONMENT_LIST)
                 .about("List all environments")
                 .visible_alias("ls")
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -68,7 +68,7 @@ pub fn environment_command() -> Command {
                 .arg(name_parameter().required(false).help(
                     "Name of the environment to get details for (defaults to active environment)",
                 ))
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -320,7 +320,7 @@ pub async fn execute_environment_command(
                         serde_json::to_string(&env_details)
                     };
                     match json_output {
-                        Ok(json) => println!("{}", json),
+                        Ok(json) => crate::format::print_output(&json),
                         Err(e) => {
                             return Err(crate::error::CliError::FormattingError(
                                 crate::format::FormattingError::JsonSerializationError(e),
@@ -376,7 +376,7 @@ pub async fn execute_environment_command(
                             ))
                         }
                     };
-                    println!("{}", csv_output);
+                    crate::format::print_output(&csv_output);
                 }
                 OutputFormat::Tree(_) => {
                     // For tree format, show detailed information
@@ -516,7 +516,7 @@ pub async fn execute_environment_command(
                             serde_json::to_string(&env_details)
                         };
                         match json_output {
-                            Ok(json) => println!("{}", json),
+                            Ok(json) => crate::format::print_output(&json),
                             Err(e) => {
                                 return Err(crate::error::CliError::FormattingError(
                                     crate::format::FormattingError::JsonSerializationError(e),
@@ -570,13 +570,13 @@ pub async fn execute_environment_command(
                                 ))
                             }
                         };
-                        println!("{}", csv_output);
+                        crate::format::print_output(&csv_output);
                     }
                     OutputFormat::Tree(_) => {
                         // For tree format, output as JSON (since tree doesn't make sense for single environment)
                         let json_output = serde_json::to_string_pretty(&env_details);
                         match json_output {
-                            Ok(json) => println!("{}", json),
+                            Ok(json) => crate::format::print_output(&json),
                             Err(e) => {
                                 return Err(crate::error::CliError::FormattingError(
                                     crate::format::FormattingError::JsonSerializationError(e),

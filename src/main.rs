@@ -181,6 +181,24 @@ async fn main() {
     pcli2::terminal::set_no_color(matches.get_flag("no-color"));
     pcli2::format::set_safe_csv(matches.get_flag("safe-csv"));
 
+    if let Some(columns) = matches.get_one::<String>("columns") {
+        pcli2::format::set_columns(
+            columns
+                .split(',')
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty())
+                .collect(),
+        );
+    }
+    // A table instead of JSON when a person is reading: stdout is a terminal and
+    // the command can print one. Piped output keeps JSON, the scripting contract.
+    {
+        use std::io::IsTerminal;
+        pcli2::format_utils::set_table_by_default(
+            std::io::stdout().is_terminal() && pcli2::commands::command_offers_table(&matches),
+        );
+    }
+
     // --env / PCLI2_ENV: this run's environment, checked before anything uses it.
     if let Some(name) = matches.get_one::<String>("env") {
         let known = configuration::Configuration::load_default()

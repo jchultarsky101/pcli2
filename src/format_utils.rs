@@ -107,6 +107,17 @@ pub fn warn_about_noop_format_flags(sub_matches: &ArgMatches, format_str: &str) 
     }
 }
 
+static TABLE_BY_DEFAULT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Print a table rather than JSON when no format was asked for.
+///
+/// Set only when stdout is a terminal and the command can print a table: a
+/// person is reading. Output that goes to a pipe or a file stays JSON, which is
+/// what scripts were written against.
+pub fn set_table_by_default(table: bool) {
+    TABLE_BY_DEFAULT.store(table, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Resolve the effective format string: an explicit `--format` always wins;
 /// otherwise the `PCLI2_FORMAT` environment variable takes precedence over
 /// the clap default. The env var is intentionally not bound via clap's
@@ -121,6 +132,9 @@ fn get_format_string_with_default(sub_matches: &ArgMatches, default_format: &str
             if !env_format.trim().is_empty() {
                 return env_format;
             }
+        }
+        if TABLE_BY_DEFAULT.load(std::sync::atomic::Ordering::SeqCst) {
+            return crate::format::TABLE.to_string();
         }
     }
     sub_matches

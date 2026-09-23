@@ -520,6 +520,9 @@ pcli2 asset list --folder-path "/Home/Models/" --recursive --format csv --header
 
 # Tree for visual hierarchy
 pcli2 folder list --format tree
+
+# Aligned columns for reading (the default in a terminal; piped output stays JSON)
+pcli2 asset list --folder-path "/Home/Models/" --format table --columns name,state
 ```
 
 ### 🔗 UNIX Pipeline Integration

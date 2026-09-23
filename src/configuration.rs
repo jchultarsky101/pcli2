@@ -364,8 +364,11 @@ impl Configuration {
         }
     }
 
+    /// Environment names in alphabetical order (they are stored unordered).
     pub fn list_environments(&self) -> Vec<String> {
-        self.environments.keys().cloned().collect()
+        let mut names: Vec<String> = self.environments.keys().cloned().collect();
+        names.sort();
+        names
     }
 
     /// The environment this run uses (`--env` when given, else the saved one).

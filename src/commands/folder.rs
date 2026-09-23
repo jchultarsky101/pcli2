@@ -179,6 +179,7 @@ pub fn folder_command() -> Command {
                     crate::commands::params::FORMAT_JSON,
                     crate::commands::params::FORMAT_CSV,
                     crate::commands::params::FORMAT_TREE,
+                    "table",
                 ]))
                 .arg(
                     clap::Arg::new(crate::commands::params::PARAMETER_PROGRESS)

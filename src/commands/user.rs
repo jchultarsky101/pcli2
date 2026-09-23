@@ -20,7 +20,7 @@ pub fn user_command() -> Command {
                 .about("List users in the current tenant")
                 .visible_alias("ls")
                 .arg(tenant_parameter())
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -35,7 +35,7 @@ pub fn user_command() -> Command {
                         .value_parser(clap::value_parser!(String)),
                 )
                 .arg(tenant_parameter())
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )

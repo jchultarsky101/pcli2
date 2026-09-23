@@ -188,6 +188,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     list_recent_failures(sub_matches).await?;
                     Ok(())
                 }
+                Some(("usage", sub_matches)) => {
+                    trace!("Command: {} usage", COMMAND_TENANT);
+
+                    pcli2::actions::tenants::tenant_usage(sub_matches).await?;
+                    Ok(())
+                }
                 Some((COMMAND_METADATA, sub_matches)) => {
                     trace!("Command: {} {}", COMMAND_TENANT, COMMAND_METADATA);
 

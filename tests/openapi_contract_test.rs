@@ -314,6 +314,12 @@ fn contracts() -> Vec<Contract> {
             MetadataCoverageResponse
         ),
         contract!(
+            "get",
+            "/tenants/{tenantId}/activity-metrics",
+            ActivityMetrics
+        ),
+        contract!("get", "/tenants/{tenantId}/assets/type-counts", Counts),
+        contract!(
             "post",
             "/tenants/{tenantId}/assets/{assetId}/geometric-search",
             GeometricSearchResponse

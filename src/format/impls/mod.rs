@@ -27,3 +27,4 @@ mod metadata_field;
 mod report;
 mod state;
 mod tenant;
+mod usage;

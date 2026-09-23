@@ -227,7 +227,7 @@ pub async fn download_assembly(
     api.download_asset_to_file(tenant_id, asset_id, Some(asset_name), &zip_file_path)
         .await?;
 
-    if is_zip_file(&zip_file_path).map_err(|e| CliError::ActionError(CliActionError::IoError(e)))? {
+    if is_zip_file(&zip_file_path)? {
         tracing::debug!("Downloaded ZIP file to: {:?}", zip_file_path);
         // Extraction is blocking file I/O; kept off the async worker threads so a
         // `folder download --concurrent 8` does not stall every other download.
@@ -252,8 +252,7 @@ pub async fn download_assembly(
             asset_id,
             output_file_path
         );
-        std::fs::rename(&zip_file_path, output_file_path)
-            .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
+        std::fs::rename(&zip_file_path, output_file_path)?;
         Ok(AssemblyDownload::RawFile {
             file: output_file_path.to_path_buf(),
         })

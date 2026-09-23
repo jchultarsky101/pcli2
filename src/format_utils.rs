@@ -20,46 +20,23 @@ pub struct FormatParams {
 impl FormatParams {
     /// Parse all format-related parameters from command arguments with consistent defaults and error handling.
     pub fn from_args(sub_matches: &ArgMatches) -> FormatParams {
-        // Get format string with environment variable precedence
-        let format_str = get_format_string(sub_matches);
-
-        // Extract all format flags consistently
-        let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
-        let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
-        let with_metadata = sub_matches.get_flag(PARAMETER_METADATA);
-
-        let format_options = OutputFormatOptions {
-            with_metadata,
-            with_headers,
-            pretty,
-        };
-
-        let format =
-            OutputFormat::from_string_with_options_safe(&format_str, format_options.clone())
-                .unwrap_or_else(|_| OutputFormat::Json(OutputFormatOptions::default()));
-
-        warn_about_noop_format_flags(sub_matches, &format_str);
-
-        FormatParams {
-            format,
-            format_options,
-            format_str,
-        }
+        Self::from_args_with_default(sub_matches, "json")
     }
 
     /// Get format with custom default when no format is specified.
+    ///
+    /// `--format` wins, then `PCLI2_FORMAT`, then `default_format`. A command
+    /// that does not define `--headers`, `--pretty` or `--metadata` reads the
+    /// missing flag as off: `get_flag` on an undefined argument panics, which made
+    /// this helper unusable for commands without `--metadata`, so nine of them
+    /// parsed `--format` by hand - and ignored `PCLI2_FORMAT` in doing so.
     pub fn from_args_with_default(sub_matches: &ArgMatches, default_format: &str) -> FormatParams {
         let format_str = get_format_string_with_default(sub_matches, default_format);
 
-        // Extract all format flags consistently
-        let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
-        let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
-        let with_metadata = sub_matches.get_flag(PARAMETER_METADATA);
-
         let format_options = OutputFormatOptions {
-            with_metadata,
-            with_headers,
-            pretty,
+            with_metadata: flag(sub_matches, PARAMETER_METADATA),
+            with_headers: flag(sub_matches, PARAMETER_HEADERS),
+            pretty: flag(sub_matches, PARAMETER_PRETTY),
         };
 
         let format =
@@ -74,6 +51,16 @@ impl FormatParams {
             format_str,
         }
     }
+}
+
+/// A boolean flag's value; `false` when the command does not define it.
+fn flag(sub_matches: &ArgMatches, id: &str) -> bool {
+    sub_matches
+        .try_get_one::<bool>(id)
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false)
 }
 
 /// Whether `id` was given on the command line (not defaulted, not from the
@@ -118,10 +105,6 @@ pub fn warn_about_noop_format_flags(sub_matches: &ArgMatches, format_str: &str) 
             "tree output has no header row",
         );
     }
-}
-
-fn get_format_string(sub_matches: &ArgMatches) -> String {
-    get_format_string_with_default(sub_matches, "json")
 }
 
 /// Resolve the effective format string: an explicit `--format` always wins;
@@ -195,9 +178,9 @@ impl FormatOptionsBuilder {
     /// Create from command line arguments
     pub fn from_args(sub_matches: &ArgMatches) -> Self {
         Self::new()
-            .with_metadata(sub_matches.get_flag(PARAMETER_METADATA))
-            .with_headers(sub_matches.get_flag(PARAMETER_HEADERS))
-            .pretty(sub_matches.get_flag(PARAMETER_PRETTY))
+            .with_metadata(flag(sub_matches, PARAMETER_METADATA))
+            .with_headers(flag(sub_matches, PARAMETER_HEADERS))
+            .pretty(flag(sub_matches, PARAMETER_PRETTY))
     }
 }
 

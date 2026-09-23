@@ -5,10 +5,7 @@
 
 use crate::{
     actions::CliActionError,
-    commands::params::{
-        PARAMETER_FOLDER_PATH, PARAMETER_FORMAT, PARAMETER_FUZZY, PARAMETER_HEADERS,
-        PARAMETER_METADATA, PARAMETER_PATH, PARAMETER_PRETTY, PARAMETER_UUID,
-    },
+    commands::params::{PARAMETER_FOLDER_PATH, PARAMETER_FUZZY, PARAMETER_PATH, PARAMETER_UUID},
     configuration::Configuration,
     error::CliError,
     error_utils,
@@ -1242,10 +1239,11 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
     // silently fall back to JSON for it. Detect it from the raw format string
     // instead, and handle it separately below. Excel reports always include
     // metadata (the metadata diff is the whole point), so force it on for xls.
-    let is_xls = sub_matches
-        .get_one::<String>(crate::commands::params::PARAMETER_FORMAT)
-        .map(|value| value.eq_ignore_ascii_case(crate::commands::params::FORMAT_XLS))
-        .unwrap_or(false);
+    // Read from the resolved format, so `PCLI2_FORMAT=xls` works as `--format xls`
+    // does (it used to fall back to JSON).
+    let is_xls = format_params
+        .format_str
+        .eq_ignore_ascii_case(crate::commands::params::FORMAT_XLS);
     let with_metadata = format_params.format_options.with_metadata || is_xls;
 
     // Get exclusive flag
@@ -1253,18 +1251,8 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
     // Get concurrent and progress parameters
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
-    let concurrent = match concurrent_param {
-        Some(val) => {
-            if !(1..=10).contains(&val) {
-                return Err(CliError::MissingRequiredArgument(format!(
-                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-                    val
-                )));
-            }
-            val
-        }
-        None => 1, // Default value
-    };
+    // clap's parser already holds --concurrent to 1-10.
+    let concurrent = concurrent_param.unwrap_or(1);
 
     let show_progress = sub_matches.get_flag("progress");
 
@@ -1817,50 +1805,20 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
     // Get threshold parameter
     let threshold = crate::actions::utils::threshold_from_args(sub_matches);
 
-    // Get format parameters
-    let format_str = if let Some(format_val) = sub_matches.get_one::<String>(PARAMETER_FORMAT) {
-        format_val.clone()
-    } else {
-        // Check environment variable first, then use default
-        if let Ok(env_format) = std::env::var("PCLI2_FORMAT") {
-            env_format
-        } else {
-            "json".to_string()
-        }
-    };
-
-    let with_headers = sub_matches.get_flag(PARAMETER_HEADERS);
-    let pretty = sub_matches.get_flag(PARAMETER_PRETTY);
-    crate::format_utils::warn_about_noop_format_flags(sub_matches, &format_str);
-    let with_metadata = sub_matches.get_flag(PARAMETER_METADATA);
-
-    let format_options = crate::format::OutputFormatOptions {
-        with_metadata,
-        with_headers,
-        pretty,
-    };
-
-    #[allow(clippy::needless_borrow)]
-    let format = crate::format::OutputFormat::from_string_with_options(&format_str, format_options)
-        .map_err(CliActionError::FormattingError)?;
+    // --format, then PCLI2_FORMAT, then json. The PCLI2_FORMAT fallback written
+    // out here before could never run: clap's `json` default always answered first.
+    let format_params = crate::format_utils::FormatParams::from_args(sub_matches);
+    let with_metadata = format_params.format_options.with_metadata;
+    let with_headers = format_params.format_options.with_headers;
+    let format = format_params.format;
 
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
 
     // Get concurrent and progress parameters
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
-    let concurrent = match concurrent_param {
-        Some(val) => {
-            if !(1..=10).contains(&val) {
-                return Err(CliError::MissingRequiredArgument(format!(
-                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-                    val
-                )));
-            }
-            val
-        }
-        None => 1, // Default value
-    };
+    // clap's parser already holds --concurrent to 1-10.
+    let concurrent = concurrent_param.unwrap_or(1);
 
     let show_progress = sub_matches.get_flag("progress");
 
@@ -2458,18 +2416,8 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
     // Get concurrent and progress parameters
     let concurrent_param = sub_matches.get_one::<usize>("concurrent").copied();
-    let concurrent = match concurrent_param {
-        Some(val) => {
-            if !(1..=10).contains(&val) {
-                return Err(CliError::MissingRequiredArgument(format!(
-                    "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-                    val
-                )));
-            }
-            val
-        }
-        None => 1, // Default value
-    };
+    // clap's parser already holds --concurrent to 1-10.
+    let concurrent = concurrent_param.unwrap_or(1);
 
     let show_progress = sub_matches.get_flag("progress");
 

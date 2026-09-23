@@ -239,18 +239,6 @@ impl FolderHierarchy {
         Some(folder_list)
     }
 
-    /// Get a folder node by its ID
-    ///
-    /// # Arguments
-    /// * `id` - The ID of the folder to retrieve
-    ///
-    /// # Returns
-    /// * `Some(&FolderNode)` - If a folder with the specified ID exists
-    /// * `None` - If no folder with the specified ID exists
-    pub fn get_folder_by_uuid(&self, uuid: &Uuid) -> Option<&FolderNode> {
-        self.nodes.get(uuid)
-    }
-
     /// Collect the UUIDs of a folder and every folder beneath it, breadth-first.
     ///
     /// The starting folder is always the first element. Folders already visited are

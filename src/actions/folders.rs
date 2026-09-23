@@ -619,8 +619,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         // If output is a directory, use it directly
         output_file_path.clone()
     };
-    std::fs::create_dir_all(&dest_dir)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    std::fs::create_dir_all(&dest_dir)?;
 
     // Use BFS to collect all folders in the hierarchy and their assets
     let mut all_assets_with_paths = Vec::new();
@@ -713,21 +712,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         .unwrap_or(0);
     let resume_flag = sub_matches.get_flag(crate::commands::params::PARAMETER_RESUME);
 
-    // Validate concurrent parameter
-    if !(1..=10).contains(&concurrent_param) {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-            concurrent_param
-        )));
-    }
-
-    // Validate delay parameter
-    if delay_param > 180 {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--delay': must be between 0 and 180, got {}",
-            delay_param
-        )));
-    }
+    // clap's parsers already hold --concurrent to 1-10 and --delay to 0-180.
 
     // Use a semaphore to limit concurrent operations
     let semaphore = Arc::new(Semaphore::new(concurrent_param));
@@ -1094,8 +1079,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
 
     // Use the destination directory directly
     let dest_dir = output_file_path.clone();
-    std::fs::create_dir_all(&dest_dir)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    std::fs::create_dir_all(&dest_dir)?;
 
     // Use BFS to collect all folders in the hierarchy and their assets
     let mut all_assets_with_paths = Vec::new();
@@ -1194,21 +1178,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         .copied()
         .unwrap_or(0);
 
-    // Validate concurrent parameter
-    if !(1..=10).contains(&concurrent_param) {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-            concurrent_param
-        )));
-    }
-
-    // Validate delay parameter
-    if delay_param > 180 {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--delay': must be between 0 and 180, got {}",
-            delay_param
-        )));
-    }
+    // clap's parsers already hold --concurrent to 1-10 and --delay to 0-180.
 
     // Use a semaphore to limit concurrent operations
     let semaphore = Arc::new(Semaphore::new(concurrent_param));
@@ -1604,8 +1574,7 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
     // given: resolution may create the target folder, which a dry run must
     // never do.
     if sub_matches.get_flag(crate::commands::params::PARAMETER_DRY_RUN) {
-        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(local_dir_path)
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?
+        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(local_dir_path)?
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
             .filter(|path| !path.is_dir())
@@ -1754,27 +1723,10 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         .copied()
         .unwrap_or(0);
 
-    // Validate concurrent parameter
-    if !(1..=10).contains(&concurrent_param) {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--concurrent': must be between 1 and 10, got {}",
-            concurrent_param
-        )));
-    }
-
-    // Validate delay parameter
-    if delay_param > 180 {
-        return Err(CliError::MissingRequiredArgument(format!(
-            "Invalid value for '--delay': must be between 0 and 180, got {}",
-            delay_param
-        )));
-    }
+    // clap's parsers already hold --concurrent to 1-10 and --delay to 0-180.
 
     // Read all files in the local directory
-    let entries: Vec<_> = std::fs::read_dir(local_dir_path)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    let entries: Vec<_> = std::fs::read_dir(local_dir_path)?.collect::<Result<Vec<_>, _>>()?;
 
     // Only files are uploaded; excluding directories up front keeps the
     // total (and therefore the skipped/failed accounting) accurate.

@@ -12,8 +12,7 @@ use std::path::Path;
 /// Returns the number of pages written.
 #[allow(clippy::result_large_err)]
 pub fn generate_man_pages(output_dir: &Path) -> Result<usize, CliError> {
-    std::fs::create_dir_all(output_dir)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    std::fs::create_dir_all(output_dir)?;
 
     let cmd = crate::commands::create_full_command();
     render_command_tree(&cmd, "", "", output_dir)
@@ -52,12 +51,10 @@ fn render_command_tree(
     )
     .title(page_name.clone());
     let mut buffer: Vec<u8> = Vec::new();
-    man.render(&mut buffer)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    man.render(&mut buffer)?;
 
     let path = output_dir.join(format!("{}.1", page_name));
-    std::fs::write(&path, buffer)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+    std::fs::write(&path, buffer)?;
 
     let mut count = 1;
     for subcommand in cmd.get_subcommands() {

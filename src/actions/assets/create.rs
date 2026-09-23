@@ -535,8 +535,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
     // Parse and validate the whole CSV file (classic vertical or UI
     // horizontal layout) before authenticating or making any API calls, so a
     // malformed file fails fast instead of half-applying.
-    let file = std::fs::File::open(csv_file_path)
-        .map_err(|e| CliError::ActionError(CliActionError::IoError(e)))?;
+    let file = std::fs::File::open(csv_file_path)?;
     let parsed =
         parse_batch_csv(file, requested_format, delete_if_empty).map_err(CliError::ActionError)?;
 

@@ -77,6 +77,13 @@ pub enum CliError {
     AlreadyReported(PcliExitCode),
 }
 
+impl From<std::io::Error> for CliError {
+    /// A local I/O failure, with the exit code `PcliExitCode::for_io_error` picks.
+    fn from(error: std::io::Error) -> Self {
+        CliError::ActionError(CliActionError::IoError(error))
+    }
+}
+
 impl CliError {
     /// Name which input asset (`reference`, `candidate`, ...) could not be found.
     ///

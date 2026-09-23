@@ -670,27 +670,6 @@ impl PhysnaApiClient {
         }
     }
 
-    /// Create a new Physna API client with a shared HTTP client
-    ///
-    /// # Arguments
-    /// * `http_client` - A shared HTTP client instance to reuse connection pools
-    /// * `base_url` - The base URL for the Physna V3 API
-    ///
-    /// # Returns
-    /// A new `PhysnaApiClient` instance that shares the HTTP client
-    pub fn new_with_shared_http_client(http_client: HttpClient, base_url: String) -> Self {
-        Self {
-            base_url,
-            access_token: SharedToken::default(),
-            renewal: std::sync::Arc::new(tokio::sync::Mutex::new(())),
-            client_credentials: None,
-            auth_url: "https://physna-app.auth.us-east-2.amazoncognito.com/oauth2/token"
-                .to_string(), // Default auth URL
-            http_client,
-            environment_name: "default".to_string(),
-        }
-    }
-
     /// Set the base URL for the API client
     ///
     /// # Arguments
@@ -1527,77 +1506,6 @@ impl PhysnaApiClient {
         Ok(assets.into())
     }
 
-    /// Stream assets from a specific folder by folder UUID without loading all pages into memory
-    ///
-    /// This function returns a stream that yields assets page by page, which is more memory-efficient
-    /// when dealing with large numbers of assets.
-    ///
-    /// # Arguments
-    /// * `tenant_uuid` - The ID of the tenant
-    /// * `parent_folder_uuid` - The ID of the folder to list assets from. If None, it will list the root folder
-    ///
-    /// # Returns
-    /// * `impl Stream<Item = Result<Asset, ApiError>>` - Stream of assets
-    pub fn stream_assets_by_parent_folder_uuid(
-        &mut self,
-        tenant_uuid: &Uuid,
-        parent_folder_uuid: Option<&Uuid>,
-    ) -> impl futures::Stream<Item = Result<Asset, ApiError>> {
-        use tokio::sync::mpsc;
-        use tokio_stream::wrappers::ReceiverStream;
-
-        // Create a channel to pass assets from the background task to the stream
-        let (tx, rx) = mpsc::channel::<Result<Asset, ApiError>>(100); // Buffer size of 100
-
-        // Clone the client to move into the async block
-        let mut client_clone = self.clone();
-        let tenant_uuid_clone = *tenant_uuid;
-        let parent_folder_uuid_clone = parent_folder_uuid.cloned();
-
-        // Spawn a task to fetch pages and send assets through the channel
-        tokio::spawn(async move {
-            let mut current_page = 1;
-            let per_page = 1000; // the API maximum for this endpoint
-
-            loop {
-                match client_clone
-                    .list_assets_by_parent_folder_uuid_with_pagination(
-                        &tenant_uuid_clone,
-                        parent_folder_uuid_clone.as_ref(),
-                        current_page,
-                        per_page,
-                    )
-                    .await
-                {
-                    Ok(response) => {
-                        // Send each asset individually to avoid loading all into memory at once
-                        for asset_response in &response.assets {
-                            let asset: Asset = asset_response.into();
-                            if tx.send(Ok(asset)).await.is_err() {
-                                // Receiver dropped, stop sending
-                                return;
-                            }
-                        }
-
-                        if response.page_data.current_page >= response.page_data.last_page {
-                            break;
-                        }
-
-                        current_page += 1;
-                    }
-                    Err(e) => {
-                        // Send the error and stop
-                        let _ = tx.send(Err(e)).await;
-                        break;
-                    }
-                }
-            }
-        });
-
-        // Wrap the receiver in a stream
-        ReceiverStream::new(rx)
-    }
-
     /// List a single page of assets in a specific folder by folder UUID
     ///
     /// This method lists assets that are contained in a specific folder using the
@@ -2016,53 +1924,6 @@ impl PhysnaApiClient {
         );
 
         Ok(assets)
-    }
-
-    /// Get all contents (both folders and assets) of a specific folder path
-    ///
-    /// This method efficiently gets both subfolders and assets within a specific folder
-    /// by first resolving the path and then making separate API calls for each.
-    ///
-    /// # Arguments
-    /// * `tenant_uuid` - The UUID of the tenant
-    /// * `folder_path` - The path of the folder to get contents from
-    ///
-    /// # Returns
-    /// * `Ok((Vec<FolderResponse>, Vec<AssetResponse>))` - Folders and assets in the folder
-    /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn list_all_contents_by_parent_folder_path(
-        &mut self,
-        tenant_uuid: &Uuid,
-        parent_folder_path: &str,
-    ) -> Result<(FolderList, AssetList), ApiError> {
-        debug!(
-            "Listing all folder contents by path: {} for tenant: {}",
-            parent_folder_path, tenant_uuid
-        );
-
-        let parent_folder_uuid = self
-            .resolve_folder_uuid_by_path(tenant_uuid, parent_folder_path)
-            .await?;
-
-        // Get subfolders in the folder using the more efficient content API
-        let subfolders_response = self
-            .get_folder_contents(
-                tenant_uuid,
-                parent_folder_uuid.clone().as_ref(),
-                "folders",
-                Some(1),
-                Some(1000),
-            )
-            .await?;
-        let subfolders = subfolders_response;
-
-        // Get assets in the folder
-        let assets_response = self
-            .list_assets_by_parent_folder_uuid(tenant_uuid, parent_folder_uuid.clone().as_ref())
-            .await?;
-        let assets = assets_response;
-
-        Ok((subfolders, assets))
     }
 
     pub(crate) fn get_parent_folder_path<S: AsRef<str>>(asset_path: S) -> Result<String, ApiError> {
@@ -3766,22 +3627,6 @@ impl PhysnaApiClient {
         }
     }
 
-    /// Public method to get asset dependencies list by path
-    /// This method returns the raw dependencies response instead of building an assembly tree
-    pub async fn get_asset_dependencies_list_by_path<S: AsRef<str>>(
-        &mut self,
-        tenant_uuid: &Uuid,
-        asset_path: S,
-    ) -> Result<AssetDependenciesResponse, ApiError> {
-        // First, resolve the asset path to UUID
-        let asset = self
-            .get_asset_by_path(tenant_uuid, asset_path.as_ref())
-            .await?;
-
-        self.get_asset_dependencies_list_by_uuid(tenant_uuid, &asset.uuid())
-            .await
-    }
-
     /// Public method to get asset dependencies list by UUID
     ///
     /// This method returns the raw dependencies response instead of building
@@ -4571,97 +4416,6 @@ impl PhysnaApiClient {
         Ok(all_assets.into())
     }
 
-    /// Download asset file from the Physna API
-    ///
-    /// This method downloads the raw file content of the specified asset from the Physna API.
-    /// The file content is returned as a vector of bytes that can be saved to disk.
-    ///
-    /// The API endpoint follows the pattern: GET /tenants/{tenantId}/assets/{assetId}/file
-    ///
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant that owns the asset
-    /// * `asset_id` - The UUID of the asset to download
-    /// * `asset_name_opt` - Optional name of the asset for better error reporting (pass None if not available)
-    ///
-    /// # Returns
-    /// * `Ok(Vec<u8>)` - Successfully downloaded file content as bytes
-    /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn download_asset(
-        &mut self,
-        tenant_id: &str,
-        asset_id: &str,
-        asset_name_opt: Option<&str>,
-    ) -> Result<Vec<u8>, ApiError> {
-        let asset_display = describe_asset(asset_id, asset_name_opt);
-        debug!(
-            "Downloading asset file for tenant_id: {}, asset: {}",
-            tenant_id, asset_display
-        );
-
-        let url = format!(
-            "{}/tenants/{}/assets/{}/file",
-            self.base_url, tenant_id, asset_id
-        );
-        debug!("Download asset file request URL: {}", url);
-
-        let response = self
-            .request_with_auth(|client| Ok(client.get(&url)), true)
-            .await
-            .map_err(|e| e.about(&format!("asset {}", asset_display)))?;
-
-        let bytes = response.bytes().await.map_err(|e| {
-            error!(
-                "Failed to read response bytes for asset {}: {}",
-                asset_display, e
-            );
-            ApiError::HttpError(e)
-        })?;
-        debug!(
-            "Successfully downloaded {} bytes for asset: {}",
-            bytes.len(),
-            asset_display
-        );
-        Ok(bytes.to_vec())
-    }
-
-    /// Download asset file as a stream to avoid loading entire file into memory
-    ///
-    /// This method downloads the raw file content of the specified asset from the Physna API
-    /// as a stream, which can be processed without loading the entire file into memory.
-    ///
-    /// # Arguments
-    /// * `tenant_id` - The ID of the tenant that owns the asset
-    /// * `asset_id` - The UUID of the asset to download
-    /// * `asset_name_opt` - Optional name of the asset for better error reporting (pass None if not available)
-    ///
-    /// # Returns
-    /// * `Ok(impl Stream<Item = Result<Bytes, reqwest::Error>>)` - Stream of file content chunks
-    /// * `Err(ApiError)` - If there was an error during API calls
-    pub async fn download_asset_stream(
-        &mut self,
-        tenant_id: &str,
-        asset_id: &str,
-        asset_name_opt: Option<&str>,
-    ) -> Result<impl futures::Stream<Item = Result<bytes::Bytes, reqwest::Error>>, ApiError> {
-        let asset_display = describe_asset(asset_id, asset_name_opt);
-        debug!(
-            "Downloading asset file stream for tenant_id: {}, asset: {}",
-            tenant_id, asset_display
-        );
-
-        let url = format!(
-            "{}/tenants/{}/assets/{}/file",
-            self.base_url, tenant_id, asset_id
-        );
-        debug!("Download asset file stream request URL: {}", url);
-
-        let response = self
-            .request_with_auth(|client| Ok(client.get(&url)), true)
-            .await
-            .map_err(|e| e.about(&format!("asset {}", asset_display)))?;
-        Ok(response.bytes_stream())
-    }
-
     /// Download an asset's file straight to disk.
     ///
     /// The body is streamed into `<dest>.part` and renamed into place only once it
@@ -4853,54 +4607,6 @@ impl PhysnaApiClient {
             client_credentials: self.client_credentials.clone(),
             auth_url: self.auth_url.clone(),
             http_client: http_client_with_upload_timeout,
-            environment_name: self.environment_name.clone(),
-        }
-    }
-
-    /// Create a specialized client for download operations with appropriate timeout
-    pub fn for_download_operations(&self) -> Self {
-        let timeout = self
-            .http_client
-            .config()
-            .download_timeout
-            .unwrap_or(self.http_client.config().timeout);
-        let http_client_with_download_timeout =
-            match crate::http_utils::HttpClient::new_with_timeout(timeout) {
-                Ok(client) => client,
-                Err(_) => self.http_client.clone(), // Fall back to original client if timeout creation fails
-            };
-
-        Self {
-            base_url: self.base_url.clone(),
-            access_token: self.access_token.clone(),
-            renewal: self.renewal.clone(),
-            client_credentials: self.client_credentials.clone(),
-            auth_url: self.auth_url.clone(),
-            http_client: http_client_with_download_timeout,
-            environment_name: self.environment_name.clone(),
-        }
-    }
-
-    /// Create a specialized client for search operations with appropriate timeout
-    pub fn for_search_operations(&self) -> Self {
-        let timeout = self
-            .http_client
-            .config()
-            .search_timeout
-            .unwrap_or(self.http_client.config().timeout);
-        let http_client_with_search_timeout =
-            match crate::http_utils::HttpClient::new_with_timeout(timeout) {
-                Ok(client) => client,
-                Err(_) => self.http_client.clone(), // Fall back to original client if timeout creation fails
-            };
-
-        Self {
-            base_url: self.base_url.clone(),
-            access_token: self.access_token.clone(),
-            renewal: self.renewal.clone(),
-            client_credentials: self.client_credentials.clone(),
-            auth_url: self.auth_url.clone(),
-            http_client: http_client_with_search_timeout,
             environment_name: self.environment_name.clone(),
         }
     }

@@ -775,9 +775,9 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                             error_utils::report_error_with_remediation(
                                 &"No access token found. Please login first.",
                                 &[
-                                    "Log in with 'pcli2 auth login --client-id <id> --client-secret <secret>'",
-                                    "Verify your credentials are correct"
-                                ]
+                                    "Log in with 'pcli2 auth login'",
+                                    "Verify your credentials are correct",
+                                ],
                             );
                             Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }
@@ -882,9 +882,9 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                             error_utils::report_error_with_remediation(
                                 &"No access token found. Please login first.",
                                 &[
-                                    "Log in with 'pcli2 auth login --client-id <id> --client-secret <secret>'",
-                                    "Verify your credentials are correct"
-                                ]
+                                    "Log in with 'pcli2 auth login'",
+                                    "Verify your credentials are correct",
+                                ],
                             );
                             Err(CliError::AlreadyReported(PcliExitCode::AuthError))
                         }

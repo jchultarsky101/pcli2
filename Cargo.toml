@@ -23,7 +23,7 @@ dev-keyring = []
 os-keyring = ["dep:keyring"]
 
 [dependencies]
-clap = { version = "4.5.45", features = ["derive", "env", "string"] }
+clap = { version = "4.5.45", features = ["derive", "env", "string", "wrap_help"] }
 color-print = "0.3.4"
 dirs = "5.0.1"
 thiserror = "1.0.69"

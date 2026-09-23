@@ -19,7 +19,7 @@ pub fn user_command() -> Command {
             Command::new("list")
                 .about("List users in the current tenant")
                 .visible_alias("ls")
-                .arg(format_parameter())
+                .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )
@@ -33,7 +33,7 @@ pub fn user_command() -> Command {
                         .num_args(1)
                         .value_parser(clap::value_parser!(String)),
                 )
-                .arg(format_parameter())
+                .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )

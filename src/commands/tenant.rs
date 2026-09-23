@@ -73,6 +73,10 @@ pub fn tenant_command() -> Command {
         .subcommand(
             Command::new(COMMAND_USE)
                 .about("Set the active tenant")
+                .after_help(crate::commands::examples(&[
+                    ("Pick from a list", "pcli2 tenant use"),
+                    ("By short name, in a script", "pcli2 tenant use --name acme"),
+                ]))
                 .visible_alias("select")
                 .arg(tenant_name_parameter()) // --name (tenant short name)
                 .arg(crate::commands::params::refresh_parameter()) // --refresh flag to force refresh tenant list

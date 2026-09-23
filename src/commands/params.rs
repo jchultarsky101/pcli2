@@ -275,7 +275,8 @@ pub fn client_id_parameter() -> Arg {
         .long(PARAMETER_CLIENT_ID)
         .num_args(1)
         .required(false)
-        .help("Client ID for OAuth2 authentication")
+        .env("PCLI2_CLIENT_ID")
+        .help("Client ID for OAuth2 authentication (prompted interactively if omitted)")
 }
 
 /// Create the client secret parameter.
@@ -284,7 +285,11 @@ pub fn client_secret_parameter() -> Arg {
         .long(PARAMETER_CLIENT_SECRET)
         .num_args(1)
         .required(false)
-        .help("Client secret for OAuth2 authentication (prompted interactively if omitted)")
+        // For CI and other non-interactive logins: a secret passed with
+        // --client-secret lands in shell history and process listings.
+        .env("PCLI2_CLIENT_SECRET")
+        .hide_env_values(true)
+        .help("Client secret for OAuth2 authentication (prompted interactively if omitted; prefer PCLI2_CLIENT_SECRET over this flag in scripts)")
 }
 
 /// Create the UUID parameter.
@@ -314,7 +319,7 @@ pub fn folder_path_parameter() -> Arg {
         .long(PARAMETER_FOLDER_PATH)
         .num_args(1)
         .required(true)
-        .help("Folder path (e.g., /Root/Child/Grandchild)")
+        .help("Folder path (e.g., /Home/Child/Grandchild)")
 }
 
 /// Create the reload parameter.
@@ -342,7 +347,7 @@ pub fn parent_folder_path_parameter() -> Arg {
         .long(PARAMETER_PARENT_FOLDER_PATH)
         .num_args(1)
         .required(true)
-        .help("Parent folder path where the new folder will be created (e.g., /Root/Child/Grandchild)")
+        .help("Parent folder path where the new folder will be created (e.g., /Home/Child/Grandchild)")
 }
 
 /// Create asset idenitfier group: it must be either --uuid or --path
@@ -376,7 +381,7 @@ pub fn reference_path_parameter() -> Arg {
         .long(PARAMETER_REFERENCE_PATH)
         .num_args(1)
         .required(false) // used in a group with --reference-uuid
-        .help("Reference (source) asset path (e.g., /Root/Child/part.stl)")
+        .help("Reference (source) asset path (e.g., /Home/Child/part.stl)")
 }
 
 /// Create the candidate asset UUID parameter.
@@ -395,7 +400,7 @@ pub fn candidate_path_parameter() -> Arg {
         .long(PARAMETER_CANDIDATE_PATH)
         .num_args(1)
         .required(false) // used in a group with --candidate-uuid
-        .help("Candidate (target) asset path (e.g., /Root/Child/part.stl)")
+        .help("Candidate (target) asset path (e.g., /Home/Child/part.stl)")
 }
 
 /// Create reference asset identifier group: it must be either --reference-uuid or --reference-path
@@ -430,7 +435,7 @@ pub fn target_path_parameter() -> Arg {
         .long(PARAMETER_TARGET_PATH)
         .num_args(1)
         .required(false) // used in a group with --target-uuid
-        .help("Path of the existing asset to stand in for the missing dependency (e.g., /Root/Child/part.stl)")
+        .help("Path of the existing asset to stand in for the missing dependency (e.g., /Home/Child/part.stl)")
 }
 
 /// Target asset identifier group: exactly one of --target-uuid or --target-path.
@@ -502,7 +507,7 @@ pub fn path_parameter() -> Arg {
         .long(PARAMETER_PATH)
         .num_args(1)
         .required(false)
-        .help("Resource path (e.g., /Root/Folder/Asset.stl)")
+        .help("Resource path (e.g., /Home/Folder/Asset.stl)")
 }
 
 /// Create the refresh parameter.

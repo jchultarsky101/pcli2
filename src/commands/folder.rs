@@ -44,6 +44,10 @@ pub fn folder_command() -> Command {
         .subcommand(
             Command::new(COMMAND_LIST)
                 .about("List all folders")
+                .after_help(crate::commands::examples(&[
+                    ("The folder tree", "pcli2 folder list --format tree"),
+                    ("One folder's subfolders as CSV", "pcli2 folder list --folder-path /Home/Parts --format csv --headers"),
+                ]))
                 .visible_alias("ls")
                 .arg(tenant_parameter())
                 .arg(format_with_metadata_parameter())
@@ -100,8 +104,10 @@ pub fn folder_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(folder_uuid_parameter())
                 .arg(folder_path_parameter())
-                .arg(parent_folder_uuid_parameter())
-                .arg(parent_folder_path_parameter())
+                .arg(parent_folder_uuid_parameter().help("UUID of the folder to move it into"))
+                .arg(parent_folder_path_parameter().help(
+                    "Path of the folder to move it into; / for the root (e.g., /Home/Projects)",
+                ))
                 .group(folder_identifier_group())
                 .group(parent_folder_identifier_group()),
         )
@@ -234,7 +240,7 @@ pub fn folder_command() -> Command {
                 .visible_alias("part-search") // Add alias for part-search
                 .about("Find part matches for all assets in one or more folders")
                 .after_help(
-                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
+                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID). Two runs over unchanged data produce identical output.",
                 )
                 .arg(tenant_parameter())
                 .arg(
@@ -278,7 +284,7 @@ pub fn folder_command() -> Command {
                 .visible_alias("visual-search") // Add alias for visual-search
                 .about("Find visually similar assets for all assets in one or more folders")
                 .after_help(
-                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID) in CSV and JSON output, and by MATCH_PERCENTAGE descending in Excel output. Two runs over unchanged data produce identical output.",
+                    "Rows are ordered by the unordered asset pair (reference UUID, then candidate UUID). Two runs over unchanged data produce identical output.",
                 )
                 .arg(tenant_parameter())
                 .arg(limit_parameter())

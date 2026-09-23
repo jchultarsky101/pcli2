@@ -104,17 +104,24 @@ command that would have to ask exits 64 and says which flag to pass instead.
 showing a menu nobody can answer. Set `PCLI2_NO_INPUT=1` in CI so a forgotten
 `--yes` fails fast rather than hanging on a prompt.
 
-Authentication credentials can be passed as flags for non-interactive use:
+For a non-interactive login, put the credentials in `PCLI2_CLIENT_ID` and
+`PCLI2_CLIENT_SECRET` (your CI system's secret store is the right source).
+`--client-id` and `--client-secret` work too, but a secret on the command line
+ends up in shell history and in process listings:
 
 ```bash
-pcli2 auth login --client-id "$PHYSNA_CLIENT_ID" --client-secret "$PHYSNA_CLIENT_SECRET"
+export PCLI2_CLIENT_ID="$PHYSNA_CLIENT_ID"
+export PCLI2_CLIENT_SECRET="$PHYSNA_CLIENT_SECRET"
+pcli2 auth login
 ```
 
 ## Dry Run Mode
 
 Preview destructive or bulk operations without changing anything on the
-server. Supported by `asset delete`, `folder delete`, `asset create`,
-`asset create-batch`, and `folder upload`:
+server. Supported by `asset delete`, `folder delete`, `report delete`,
+`tenant metadata delete`, `tenant metadata rename`, `asset create`,
+`asset create-batch`, `folder upload`, `asset move` and
+`asset resolve-dependency`:
 
 ```bash
 # List exactly which files a batch upload would send, and where
@@ -126,8 +133,8 @@ pcli2 folder delete --folder-path "/Home/Old Projects/" --force --dry-run
 
 ## Exit Codes
 
-PCLI2 uses distinct exit codes (following BSD `sysexits.h` conventions
-where possible) so scripts can react to specific failure classes:
+PCLI2 uses distinct exit codes (the 64-78 range is modelled on BSD
+`sysexits.h`) so scripts can react to specific failure classes:
 
 | Code | Meaning |
 |------|---------|
@@ -263,7 +270,10 @@ jobs:
       - name: Install pcli2
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jchultarsky101/pcli2/releases/latest/download/pcli2-installer.sh | sh
       - name: Authenticate
-        run: pcli2 auth login --client-id "${{ secrets.PHYSNA_CLIENT_ID }}" --client-secret "${{ secrets.PHYSNA_CLIENT_SECRET }}"
+        run: pcli2 auth login
+        env:
+          PCLI2_CLIENT_ID: ${{ secrets.PHYSNA_CLIENT_ID }}
+          PCLI2_CLIENT_SECRET: ${{ secrets.PHYSNA_CLIENT_SECRET }}
       - name: Upload models
         run: |
           pcli2 tenant use --name my-tenant

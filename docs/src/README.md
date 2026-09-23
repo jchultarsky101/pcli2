@@ -14,7 +14,6 @@ built for scripts (JSON, CSV, Excel) as much as for people.
 - [Reports](reports.md) - Listing, downloading, explaining and starting the server-side reports
 - [Scripting and Automation](scripting.md) - Machine-friendly output, JSON errors, exit codes, prompts, resumable runs, retries, CI
 - [Cross-Platform Configuration](cross_platform.md) - Environment variables and file locations
-- [Documentation Deployment](documentation_deployment.md) - How this site is built
 
 ## Features
 

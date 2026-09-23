@@ -2,7 +2,8 @@
 # Multi-stage build for minimal production image
 
 # Stage 1: Build
-FROM rust:1.83-slim-bookworm AS builder
+# At least rust-version in Cargo.toml (the MSRV).
+FROM rust:1.88-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -16,17 +17,23 @@ RUN apt-get update && apt-get install -y \
 # Copy manifests
 COPY Cargo.toml Cargo.lock ./
 
-# Create dummy source for dependency caching
-RUN mkdir src && echo "fn main() {}" > src/main.rs
+# Dummy sources for every target the manifest declares (the binary, the
+# library and the benchmark), so the dependencies build in their own cached
+# layer. Without the bench file Cargo refuses the manifest.
+RUN mkdir -p src benches \
+    && echo "fn main() {}" > src/main.rs \
+    && touch src/lib.rs \
+    && echo "fn main() {}" > benches/benchmarks.rs
 
 # Build dependencies (this layer caches dependencies)
-RUN cargo build --release && rm -rf src
+RUN cargo build --release --bin pcli2 && rm -rf src
 
 # Copy actual source code
 COPY src ./src
 
-# Build the application
-RUN cargo build --release
+# The copied sources can be older than the dummy build; touch them so Cargo
+# rebuilds pcli2 itself rather than keeping the dummy binary.
+RUN touch src/main.rs src/lib.rs && cargo build --release --bin pcli2
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim

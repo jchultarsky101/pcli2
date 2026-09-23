@@ -1,17 +1,9 @@
 //! Main entry point for the Physna CLI client.
 //!
-//! This module contains the main function that serves as the entry point
-//! for the CLI application. It handles initialization, configuration loading,
-//! command parsing, and error handling.
-//!
-//! The application follows a layered architecture pattern:
-//! - main.rs: Entry point and application initialization
-//! - cli.rs: Command execution logic
-//! - commands.rs: Command definitions and parsing
-//! - physna_v3.rs: API client and communication layer
-//! - model.rs: Data models and structures
-//! - auth.rs: Authentication handling
-//! - configuration.rs: Configuration management
+//! Parses the command line (`pcli2::commands`), sets up logging, runs the
+//! command (`cli::execute_command`, which calls into `pcli2::actions`), and turns
+//! the outcome into an exit code (`pcli2::exit_codes`). The crate-level docs in
+//! `lib.rs` describe the layers.
 
 use configuration::ConfigurationError;
 use pcli2::error::CliError;
@@ -98,6 +90,15 @@ fn init_logging(matches: &clap::ArgMatches) {
         .init();
 }
 
+/// Whether the help being shown is `pcli2`'s own (`pcli2 --help`, `pcli2 help`),
+/// not a subcommand's.
+fn is_top_level_help() -> bool {
+    env::args()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-'))
+        .all(|arg| arg == "help")
+}
+
 /// Main entry point for the Physna CLI client application.
 ///
 /// This function performs the following steps:
@@ -135,7 +136,9 @@ async fn main() {
             // The banner goes above help output only. It used to be printed whenever
             // any argument equalled "help", which put ASCII art on stdout ahead of the
             // JSON of `env list --name help` or `asset text-match --text help`.
-            if e.kind() == clap::error::ErrorKind::DisplayHelp {
+            // Only above the top-level help: on `pcli2 asset get --help` thirteen
+            // lines of art pushed the usage line off a small screen.
+            if e.kind() == clap::error::ErrorKind::DisplayHelp && is_top_level_help() {
                 banner::print_banner();
             }
             // A removed flag next to a now-missing required one: clap reports

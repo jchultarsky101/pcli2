@@ -1,6 +1,6 @@
 [package]
 name = "pcli2"
-version = "2.4.0"
+version = "2.4.1"
 edition = "2021"
 rust-version = "1.88"
 authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
@@ -26,16 +26,17 @@ os-keyring = ["dep:keyring"]
 clap = { version = "4.5.45", features = ["derive", "env", "string", "wrap_help"] }
 color-print = "0.3.4"
 dirs = "7.0.0"
-thiserror = "1.0.69"
+thiserror = "2.0.20"
 serde_yaml = "0.9.34"
 serde = { version = "1.0.219", features = ["derive"] }
 urlencoding = "2.1.0"
-reqwest = { version = "0.12.23", features = ["json", "multipart", "stream"] }
+# native-tls as before (0.13 defaults to rustls): the OS certificate store and TLS stack
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "charset", "http2", "system-proxy", "json", "form", "multipart", "stream"] }
 serde_urlencoded = "0.7.1"
 strum = { version = "0.28.0", features = ["strum_macros", "derive"] }
 serde_json = "1.0.143"
-keyring = { version = "2.3.3", optional = true }
-base64 = "0.22.1"
+keyring = { version = "4.2", optional = true }
+base64 = "0.23.1"
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1.37.0", features = ["full"] }
 tokio-stream = "0.1"
@@ -50,9 +51,9 @@ ptree = { version = "0.5.2", default-features = false }
 glob = "0.3"
 indicatif = "0.18"
 futures = "0.3"
-zip = "2.1"
+zip = { version = "8.6", default-features = false, features = ["bzip2", "deflate", "deflate64", "lzma", "ppmd", "time", "xz", "zstd"] }
 uuid = { version = "1.18.1", features = ["serde", "v4"] }
-rand = "0.8"
+rand = "0.10"
 mime_guess = "2.0"
 rust_xlsxwriter = "0.99.1"
 
@@ -61,7 +62,7 @@ assert_cmd = "2.0.14"
 predicates = "3.1.0"
 mockito = "1.6.1"
 tempfile = "3.10.1"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "benchmarks"

@@ -229,7 +229,20 @@ pub async fn download_assembly(
 
     if is_zip_file(&zip_file_path).map_err(|e| CliError::ActionError(CliActionError::IoError(e)))? {
         tracing::debug!("Downloaded ZIP file to: {:?}", zip_file_path);
-        extract_zip_and_cleanup(&zip_file_path)?;
+        // Extraction is blocking file I/O; kept off the async worker threads so a
+        // `folder download --concurrent 8` does not stall every other download.
+        let archive = zip_file_path.clone();
+        let last = output_file_path
+            .file_name()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(asset_name));
+        tokio::task::spawn_blocking(move || extract_bundle(&archive, &last))
+            .await
+            .map_err(|e| {
+                CliError::ActionError(CliActionError::IoError(std::io::Error::other(
+                    e.to_string(),
+                )))
+            })??;
         Ok(AssemblyDownload::Extracted {
             archive: zip_file_path,
         })
@@ -257,90 +270,81 @@ fn is_zip_file(path: &std::path::Path) -> std::io::Result<bool> {
     Ok(magic == b"PK\x03\x04" || magic == b"PK\x05\x06")
 }
 
-/// Extract a ZIP file and clean up the archive.
+/// Extract an assembly's dependency bundle next to the archive, then remove it.
 ///
-/// # Arguments
-///
-/// * `zip_path` - Path to the ZIP file to extract
-///
-/// # Returns
-///
-/// * `Ok(())` - If the extraction was successful
-/// * `Err(CliError)` - If an error occurred during extraction
+/// - The archive is read from disk as it is extracted, never loaded whole: a
+///   bundle can be gigabytes, and a folder download extracts several at once.
+/// - An entry whose name would land outside the directory (`../x`, an absolute
+///   path) is skipped, not rewritten into some other place.
+/// - Everything is extracted into a staging directory first and then moved into
+///   place, with `last` (the assembly file itself) moved last. `folder download
+///   --resume` takes that file as proof the assembly is complete, so it must not
+///   appear before its parts do; an interrupted run leaves no half-extracted
+///   bundle behind that looks finished.
 #[allow(clippy::result_large_err)]
-fn extract_zip_and_cleanup(zip_path: &std::path::PathBuf) -> Result<(), CliError> {
-    use std::io::Cursor;
+pub(crate) fn extract_bundle(
+    zip_path: &std::path::Path,
+    last: &std::path::Path,
+) -> Result<(), CliError> {
+    let io = |e: std::io::Error| CliError::ActionError(CliActionError::IoError(e));
+    let parent_dir = zip_path
+        .parent()
+        .ok_or_else(|| io(std::io::Error::other("Could not get parent directory")))?;
+    let staging = parent_dir.join(format!(".pcli2-extract-{}", uuid::Uuid::new_v4()));
+    let result: Result<(), CliError> = (|| {
+        let file = File::open(zip_path).map_err(io)?;
+        let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file))
+            .map_err(|e| CliError::ActionError(CliActionError::ZipError(e)))?;
+        tracing::debug!(
+            "Extracting {} entries from {:?} to {:?}",
+            archive.len(),
+            zip_path,
+            parent_dir
+        );
 
-    // Read the ZIP file content
-    let zip_content = std::fs::read(zip_path)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-    // Create a cursor from the content
-    let cursor = Cursor::new(zip_content);
-
-    // Create a ZipArchive from the cursor
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
-
-    // DEBUG: Log archive contents
-    tracing::debug!("ZIP archive contains {} files:", archive.len());
-    for i in 0..archive.len() {
-        let file = archive
-            .by_index(i)
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
-        tracing::debug!("  [{}] {} ({} bytes)", i, file.name(), file.size());
-    }
-
-    // Extract all files to the same directory as the ZIP file
-    let parent_dir = zip_path.parent().ok_or_else(|| {
-        CliError::ActionError(crate::actions::CliActionError::IoError(
-            std::io::Error::other("Could not get parent directory"),
-        ))
-    })?;
-
-    tracing::debug!("Extracting to: {:?}", parent_dir);
-
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| CliError::ActionError(crate::actions::CliActionError::ZipError(e)))?;
-
-        let file_name = file.name().to_string();
-        let file_path = parent_dir.join(file.mangled_name());
-
-        tracing::debug!("Extracting [{}]: {} -> {:?}", i, file_name, file_path);
-
-        if file.is_dir() {
-            tracing::debug!("  Creating directory: {:?}", file_path);
-            std::fs::create_dir_all(&file_path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-        } else {
-            // Create parent directories if they don't exist
-            if let Some(parent) = file_path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    CliError::ActionError(crate::actions::CliActionError::IoError(e))
-                })?;
+        let mut extracted: Vec<PathBuf> = Vec::new();
+        for i in 0..archive.len() {
+            let mut entry = archive
+                .by_index(i)
+                .map_err(|e| CliError::ActionError(CliActionError::ZipError(e)))?;
+            let Some(relative) = entry.enclosed_name() else {
+                tracing::warn!(
+                    "Skipping '{}' in {:?}: its path leads outside the download directory",
+                    entry.name(),
+                    zip_path
+                );
+                continue;
+            };
+            let staged = staging.join(&relative);
+            if entry.is_dir() {
+                std::fs::create_dir_all(&staged).map_err(io)?;
+                continue;
             }
-
-            tracing::debug!("  Creating file: {:?} ({} bytes)", file_path, file.size());
-            let mut output_file = std::fs::File::create(&file_path)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-            std::io::copy(&mut file, &mut output_file)
-                .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
-
-            tracing::debug!(
-                "  Extracted: {:?} ({} bytes)",
-                file_path,
-                output_file.metadata().map(|m| m.len()).unwrap_or(0)
-            );
+            if let Some(parent) = staged.parent() {
+                std::fs::create_dir_all(parent).map_err(io)?;
+            }
+            let mut out = std::io::BufWriter::new(File::create(&staged).map_err(io)?);
+            std::io::copy(&mut entry, &mut out).map_err(io)?;
+            std::io::Write::flush(&mut out).map_err(io)?;
+            tracing::debug!("  extracted {:?} ({} bytes)", relative, entry.size());
+            extracted.push(relative);
         }
-    }
 
-    // Remove the original ZIP file after successful extraction
-    std::fs::remove_file(zip_path)
-        .map_err(|e| CliError::ActionError(crate::actions::CliActionError::IoError(e)))?;
+        // The assembly file goes last, so its presence means the bundle is complete.
+        extracted.sort_by_key(|relative| relative.as_path() == last);
+        for relative in &extracted {
+            let target = parent_dir.join(relative);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(io)?;
+            }
+            std::fs::rename(staging.join(relative), &target).map_err(io)?;
+        }
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&staging);
+    result?;
 
+    std::fs::remove_file(zip_path).map_err(io)?;
     Ok(())
 }
 

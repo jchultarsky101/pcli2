@@ -25,6 +25,70 @@ use crate::{
     physna_v3::{PhysnaApiClient, TryDefault},
 };
 
+/// A folder a command works on: the tenant's root, which has no folder record and
+/// no UUID, or an ordinary folder.
+///
+/// `resolve_folder_uuid_by_path` cannot answer for the root, and several commands
+/// that called it had a "root" branch that could therefore never run: `folder
+/// download --folder-path /` failed with "folder not found". Resolving to this type
+/// makes every caller decide what the root means for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderTarget {
+    Root,
+    Folder(Uuid),
+}
+
+impl FolderTarget {
+    /// The folder's UUID, `None` for the root (which is how the listing endpoints
+    /// spell "no parent folder").
+    pub fn uuid(&self) -> Option<Uuid> {
+        match self {
+            FolderTarget::Root => None,
+            FolderTarget::Folder(uuid) => Some(*uuid),
+        }
+    }
+}
+
+/// Resolve `--folder-uuid` / `--folder-path` to a [`FolderTarget`]. `/` and `/Home`
+/// are the root.
+pub async fn resolve_folder_target(
+    api: &mut PhysnaApiClient,
+    tenant: &Tenant,
+    folder_uuid: Option<&Uuid>,
+    folder_path: Option<&String>,
+) -> Result<FolderTarget, CliError> {
+    match (folder_uuid, folder_path) {
+        (Some(uuid), _) => Ok(FolderTarget::Folder(*uuid)),
+        (None, Some(path)) if normalize_path(path) == "/" => Ok(FolderTarget::Root),
+        (None, Some(path)) => Ok(FolderTarget::Folder(
+            resolve_folder_uuid_by_path(api, tenant, path).await?,
+        )),
+        (None, None) => Err(CliError::MissingRequiredArgument(
+            "Either folder UUID or path must be provided".to_string(),
+        )),
+    }
+}
+
+/// "Folder not found", with the closest existing paths as suggestions.
+pub fn folder_not_found(
+    hierarchy: &crate::folder_hierarchy::FolderHierarchy,
+    path: &str,
+) -> CliError {
+    let suggestions = find_similar_paths(hierarchy, path);
+    let suggestion_message = match suggestions.as_slice() {
+        [] => String::new(),
+        [only] => format!("\n\nDid you mean: {}", only),
+        many => format!(
+            "\n\nDid you mean one of:\n  {}",
+            many.iter()
+                .map(|s| format!("• {}", s))
+                .collect::<Vec<_>>()
+                .join("\n  ")
+        ),
+    };
+    CliError::FolderNotFound(path.to_string(), suggestion_message)
+}
+
 pub async fn resolve_folder_uuid_by_path(
     api: &mut PhysnaApiClient,
     tenant: &Tenant,
@@ -40,27 +104,7 @@ pub async fn resolve_folder_uuid_by_path(
             // just missed refreshed the cache, so this is the current hierarchy.
             let hierarchy =
                 crate::folder_cache::FolderCache::get_or_fetch(api, &tenant.uuid).await?;
-            let suggestions = find_similar_paths(&hierarchy, path);
-
-            let suggestion_message = if suggestions.is_empty() {
-                String::new()
-            } else if suggestions.len() == 1 {
-                format!("\n\nDid you mean: {}", suggestions[0])
-            } else {
-                format!(
-                    "\n\nDid you mean one of:\n  {}",
-                    suggestions
-                        .iter()
-                        .map(|s| format!("• {}", s))
-                        .collect::<Vec<_>>()
-                        .join("\n  ")
-                )
-            };
-
-            Err(CliError::FolderNotFound(
-                path.to_string(),
-                suggestion_message,
-            ))
+            Err(folder_not_found(&hierarchy, path))
         }
         Err(api_error) => {
             // Propagate API errors (like authentication errors) instead of converting them to FolderNotFound
@@ -173,6 +217,15 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         ))?
         .clone();
 
+    // Checked before anything is resolved: the root cannot be resolved to a
+    // folder, so checked afterwards this message was never reached.
+    // Check if trying to rename the root folder
+    if folder_path_param.is_some_and(|p| crate::model::normalize_path(p) == "/") {
+        return Err(CliError::MissingRequiredArgument(
+            "Cannot rename the root folder".to_string(),
+        ));
+    }
+
     let mut ctx = crate::context::ExecutionContext::from_args(sub_matches).await?;
 
     // Extract tenant before calling resolve_folder to avoid borrowing conflicts
@@ -186,13 +239,6 @@ pub async fn rename_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         folder_path_param,
     )
     .await?;
-
-    // Check if trying to rename the root folder
-    if folder_path_param.is_some_and(|p| crate::model::normalize_path(p) == "/") {
-        return Err(CliError::MissingRequiredArgument(
-            "Cannot rename the root folder".to_string(),
-        ));
-    }
 
     // Extract tenant UUID before calling rename_folder to avoid borrowing conflicts
     let tenant_uuid = tenant.uuid;
@@ -519,18 +565,9 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     let folder_path_param =
         sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        // Resolve folder UUID by path
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
+    // `/` (or `/Home`) is the tenant's root: every asset in the tenant.
+    let target =
+        resolve_folder_target(&mut api, &tenant, folder_uuid_param, folder_path_param).await?;
 
     // Get the output file path
     let output_file_path = if let Some(output_path) =
@@ -540,32 +577,24 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     } else {
         // Use the folder name as the default output file name
         // Determine the folder name from the provided path or get it from the folder details
-        let folder_name = if let Some(path) = folder_path_param {
-            // If the folder was specified by path, extract the folder name from the path
-            // Special handling for root folder "/"
-            if path.trim() == "/" {
-                // Use tenant name for root folder
-                tenant.name.clone()
-            } else {
-                let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-                if path_segments.is_empty() {
-                    "untitled".to_string()
+        let folder_name = match (target, folder_path_param) {
+            // The root has no folder record; it is named after the tenant.
+            (FolderTarget::Root, _) => tenant.name.clone(),
+            (FolderTarget::Folder(_), Some(path)) => path
+                .split('/')
+                .rfind(|s| !s.is_empty())
+                .unwrap_or("untitled")
+                .to_string(),
+            (FolderTarget::Folder(folder_uuid), None) => {
+                // The folder record carries its name; its `path` field is always
+                // empty here, which is why this used to produce a directory called
+                // "untitled".
+                let name = api.get_folder(&tenant.uuid, &folder_uuid).await?.name();
+                if name.trim().is_empty() {
+                    tenant.name.clone()
                 } else {
-                    path_segments.last().unwrap().to_string()
+                    name
                 }
-            }
-        } else {
-            // If the folder was specified by UUID, get the folder details to determine the name
-            let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-            let folder: crate::model::Folder = folder;
-
-            // The folder record carries its name; its `path` field is always empty
-            // here, which is why this used to produce a directory called "untitled".
-            let name = folder.name();
-            if name.trim().is_empty() {
-                tenant.name.clone()
-            } else {
-                name
             }
         };
 
@@ -595,75 +624,59 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Use BFS to collect all folders in the hierarchy and their assets
     let mut all_assets_with_paths = Vec::new();
-    let mut folder_queue = std::collections::VecDeque::new();
+    // Assets left out because they have no downloadable result yet (still
+    // indexing) or processing failed: (Physna path, state). They used to be dropped
+    // without a word, missing from the totals, and the run still exited 0.
+    let mut not_downloadable: Vec<(String, String)> = Vec::new();
+    let mut folder_queue: std::collections::VecDeque<(Option<Uuid>, String)> =
+        std::collections::VecDeque::new();
 
-    // Get the root folder details to determine its path
-    let root_folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let root_folder: crate::model::Folder = root_folder;
-    let root_folder_path = root_folder.path();
-
-    // Start BFS with the specified folder
-    folder_queue.push_back((folder_uuid, root_folder_path.clone()));
+    let root_folder_path = match target {
+        FolderTarget::Root => "/".to_string(),
+        FolderTarget::Folder(folder_uuid) => {
+            api.get_folder(&tenant.uuid, &folder_uuid).await?.path()
+        }
+    };
+    folder_queue.push_back((target.uuid(), root_folder_path.clone()));
 
     while let Some((current_folder_uuid, current_folder_path)) = folder_queue.pop_front() {
-        // Get all assets in the current folder
-        let assets_response = api
-            .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid))
+        let asset_list = api
+            .list_assets_by_parent_folder_uuid(&tenant.uuid, current_folder_uuid.as_ref())
             .await?;
-        let asset_list: crate::model::AssetList = assets_response;
 
-        // Add assets with their relative paths
         for asset in asset_list.get_all_assets() {
-            // Only include assets with "finished" state in the download queue
-            if asset.normalized_processing_status() != "finished" {
+            // `finished` assets, and assemblies waiting for a missing part
+            // (`missing-dependencies`): both have a file to download, and
+            // `download_assembly` copes with an assembly that has no bundle yet.
+            let state = asset
+                .processing_status()
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string());
+            if state != "finished" && state != "missing-dependencies" {
+                not_downloadable.push((asset.path().clone(), state));
                 continue;
             }
 
-            // Calculate the relative path from the root folder
-            let mut asset_name_for_path = asset.name().to_string();
-
-            // If the asset is an assembly, change the extension to .zip since assemblies download as ZIP files
-            if asset.is_assembly() {
-                let path = std::path::Path::new(&asset_name_for_path);
-                let stem = path
-                    .file_stem()
-                    .unwrap_or(std::ffi::OsStr::new(&asset_name_for_path));
-                if let Some(stem_str) = stem.to_str() {
-                    asset_name_for_path = format!("{}.zip", stem_str);
-                }
-            }
-
-            let relative_path = if current_folder_path == root_folder_path {
-                // If it's the root folder, just use the asset name (with .zip extension if assembly)
-                asset_name_for_path
+            // Files keep the asset's own name; an assembly's bundle is unpacked
+            // next to it (see `download_assembly`).
+            let relative_folder_path = current_folder_path
+                .strip_prefix(root_folder_path.as_str())
+                .unwrap_or(&current_folder_path)
+                .trim_matches('/');
+            let relative_path = if relative_folder_path.is_empty() {
+                asset.name().to_string()
             } else {
-                // Otherwise, create a subfolder path by removing the root folder path prefix
-                // For example, if root is "/Julian/sub1" and current is "/Julian/sub1/sub2",
-                // the relative path becomes "sub2/asset_name"
-                let relative_folder_path = current_folder_path
-                    .strip_prefix(&root_folder_path)
-                    .unwrap_or(&current_folder_path) // fallback if strip_prefix fails
-                    .trim_start_matches('/') // remove leading slash
-                    .trim_end_matches('/'); // remove trailing slash
-
-                if relative_folder_path.is_empty() {
-                    asset_name_for_path
-                } else {
-                    format!("{}/{}", relative_folder_path, asset_name_for_path)
-                }
+                format!("{}/{}", relative_folder_path, asset.name())
             };
 
-            // Use the asset's original path as the physna_path
-            let physna_path = asset.path().clone();
-
-            all_assets_with_paths.push((asset.clone(), relative_path, physna_path));
+            all_assets_with_paths.push((asset.clone(), relative_path, asset.path().clone()));
         }
 
         // Get subfolders of current folder to process next. Walks every page
         // so folders with more direct subfolders than one page still have
         // their full subtree processed.
         let subfolders_response = api
-            .list_all_subfolders(&tenant.uuid, Some(&current_folder_uuid))
+            .list_all_subfolders(&tenant.uuid, current_folder_uuid.as_ref())
             .await?;
         for folder in subfolders_response.folders() {
             // The listing already carries the name; fetching each folder again cost
@@ -673,16 +686,15 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             } else {
                 format!("{}/{}", current_folder_path, folder.name())
             };
-
-            // Add to queue to process this subfolder
-            folder_queue.push_back((*folder.uuid(), folder_path));
+            folder_queue.push_back((Some(*folder.uuid()), folder_path));
         }
     }
 
     if all_assets_with_paths.is_empty() {
         crate::error_utils::report_warning(&format!(
-            "No finished assets found in folder {} or its subfolders; nothing to download",
-            folder_uuid
+            "No downloadable assets found in folder {} or its subfolders ({} not processed yet or failed processing); nothing to download",
+            root_folder_path,
+            not_downloadable.len()
         ));
         return Ok(());
     }
@@ -764,7 +776,6 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         let progress_bar_clone = progress_bar.clone();
         let multi_progress_clone = multi_progress.clone();
         let delay_duration = Duration::from_secs(delay_param as u64);
-        let continue_on_error_clone = continue_on_error;
         let concurrent_param_clone = concurrent_param;
 
         // Spawn a task for each download
@@ -790,24 +801,15 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
                 None
             };
 
-            // Check if resume flag is set and the asset already exists on disk.
-            // Assemblies download as a ZIP that is extracted and then deleted,
-            // so the on-disk marker for an assembly is the extracted assembly
-            // file (its original name), not the transient .zip path.
-            let resume_marker = if is_assembly {
-                asset_file_path.with_file_name(&asset_name)
-            } else {
-                asset_file_path.clone()
-            };
-            if resume_flag && resume_marker.exists() {
-                tracing::debug!("Skipping existing file: {}", resume_marker.display());
-
-                // Update overall progress bar if present
+            // With --resume a file already on disk is not downloaded again. For an
+            // assembly that is the assembly file itself, which `download_assembly`
+            // writes only after all of its parts.
+            if resume_flag && asset_file_path.exists() {
+                tracing::debug!("Skipping existing file: {}", asset_file_path.display());
                 if let Some(ref pb) = progress_bar_clone {
                     pb.inc(1);
                 }
-
-                return Ok(Ok((asset_name, true)));
+                return Ok((asset_name, true));
             }
 
             // Add delay if specified (only when actually downloading, not when skipping)
@@ -816,78 +818,44 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             }
 
             // Streamed to disk through a temporary file (see download_asset_to_file);
-            // the client handles renewal and transient retries itself.
-            let downloaded = api_task
-                .download_asset_to_file(&tenant_id, &asset_id, Some(&asset_name), &asset_file_path)
-                .await;
+            // the client handles renewal and transient retries itself. Assemblies go
+            // through the same path as `asset download`, which unpacks a dependency
+            // bundle and keeps a raw assembly file as it is.
+            let downloaded: Result<(), CliError> = if is_assembly {
+                crate::actions::assets::download::download_assembly(
+                    &mut api_task,
+                    &tenant_id,
+                    &asset_id,
+                    &asset_name,
+                    &asset_file_path,
+                )
+                .await
+                .map(|_| ())
+            } else {
+                api_task
+                    .download_asset_to_file(
+                        &tenant_id,
+                        &asset_id,
+                        Some(&asset_name),
+                        &asset_file_path,
+                    )
+                    .await
+                    .map(|_| ())
+                    .map_err(CliError::PhysnaExtendedApiError)
+            };
 
+            if let Some(ref ipb) = individual_pb {
+                ipb.finish_and_clear();
+            }
             match downloaded {
-                Ok(_bytes) => {
-                    // Update individual progress bar
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Downloaded: {}", asset_name));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual download
-                    }
-
-                    // If the asset is an assembly, extract the ZIP file contents and delete the original ZIP
-                    if asset.is_assembly() {
-                        match extract_zip_and_cleanup(&asset_file_path) {
-                            Ok(_) => {
-                                tracing::debug!(
-                                    "Successfully extracted assembly ZIP file: {}",
-                                    asset_file_path.display()
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "Failed to extract assembly ZIP file: {}: {}",
-                                    asset_file_path.display(),
-                                    e
-                                );
-                                if continue_on_error_clone {
-                                    return Ok(Err((
-                                        asset_name,
-                                        physna_path,
-                                        ApiError::IoError(std::io::Error::other(format!(
-                                            "Failed to extract ZIP file: {}",
-                                            e
-                                        ))),
-                                        true,
-                                    )));
-                                } else {
-                                    return Err(CliError::ActionError(
-                                        crate::actions::CliActionError::IoError(
-                                            std::io::Error::other(format!(
-                                                "Failed to extract ZIP file: {}",
-                                                e
-                                            )),
-                                        ),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-
-                    // Update overall progress bar if present
+                Ok(()) => {
                     if let Some(ref pb) = progress_bar_clone {
                         pb.inc(1);
                     }
-
-                    Ok(Ok((asset_name, false)))
+                    Ok((asset_name, false))
                 }
-                Err(e) => {
-                    // Update individual progress bar for error
-                    if let Some(ref ipb) = individual_pb {
-                        ipb.set_message(format!("Failed: {} - {}", asset_name, e));
-                        ipb.finish_and_clear(); // Clear the spinner for this individual download
-                    }
-
-                    // Don't log errors here - they will be collected and printed at the end
-                    // to avoid corrupting the progress bar display
-
-                    // Always return error through Ok path so it can be collected
-                    Ok(Err((asset_name, physna_path, e, continue_on_error_clone)))
-                }
+                // Reported after the progress bars are cleared, not here.
+                Err(e) => Err((asset_name, physna_path, e)),
             }
         });
 
@@ -910,43 +878,25 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     for task in tasks {
         match task.await {
-            Ok(task_result) => {
-                match task_result {
-                    Ok(asset_result) => match asset_result {
-                        Ok((_asset_name, was_skipped)) => {
-                            if was_skipped {
-                                skipped_count += 1;
-                            } else {
-                                success_count += 1;
-                            }
-                        }
-                        Err((asset_name, physna_path, error, _is_recoverable)) => {
-                            error_count += 1;
-                            // Collect error message to print later (after clearing progress bars)
-                            // Always show the actual API error so users understand what went wrong
-                            error_messages.push(format!(
-                                "⚠️  Failed to download asset '{}' (Physna path: {}): {}",
-                                asset_name, physna_path, error
-                            ));
-                            // Track the first error if we're not continuing on error
-                            if !continue_on_error && first_error.is_none() {
-                                first_error = Some(CliError::PhysnaExtendedApiError(error));
-                                stop_remaining();
-                            }
-                        }
-                    },
-                    Err(cli_error) => {
-                        error_count += 1;
-                        error_messages.push(format!(
-                            "⚠️  Failed to download asset due to CLI error: {}",
-                            cli_error
-                        ));
-                        // Track the first error if we're not continuing on error
-                        if !continue_on_error && first_error.is_none() {
-                            first_error = Some(cli_error);
-                            stop_remaining();
-                        }
-                    }
+            Ok(Ok((_asset_name, was_skipped))) => {
+                if was_skipped {
+                    skipped_count += 1;
+                } else {
+                    success_count += 1;
+                }
+            }
+            Ok(Err((asset_name, physna_path, error))) => {
+                error_count += 1;
+                // Collected and printed after the progress bars are cleared.
+                error_messages.push(format!(
+                    "⚠️  Failed to download asset '{}' (Physna path: {}): {}",
+                    asset_name,
+                    physna_path,
+                    download_error_text(&error)
+                ));
+                if !continue_on_error && first_error.is_none() {
+                    first_error = Some(error);
+                    stop_remaining();
                 }
             }
             Err(join_error) if join_error.is_cancelled() => {
@@ -955,7 +905,6 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
             Err(join_error) => {
                 error_count += 1;
                 error_messages.push(format!("⚠️  Task failed to execute: {}", join_error));
-                // Track the first error if we're not continuing on error
                 if !continue_on_error && first_error.is_none() {
                     first_error = Some(CliError::ActionError(
                         crate::actions::CliActionError::IoError(std::io::Error::other(
@@ -982,6 +931,7 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         skipped_count,
         error_count,
         not_attempted,
+        not_downloadable.len(),
         total_assets,
         &dest_dir,
     );
@@ -994,6 +944,14 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
         for error_msg in &error_messages {
             eprintln!("{}", error_msg);
         }
+    }
+    if !not_downloadable.is_empty() {
+        eprintln!();
+        eprintln!("⏭️  Not downloaded (not processed yet, or processing failed):");
+        for (path, state) in &not_downloadable {
+            eprintln!("   {} ({})", path, state);
+        }
+        eprintln!("   'pcli2 asset diagnose --path <path>' explains a failed asset.");
     }
 
     // A run with failures exits non-zero whether or not it was allowed to continue;
@@ -1016,12 +974,22 @@ pub async fn download_folder(sub_matches: &ArgMatches) -> Result<(), CliError> {
     Ok(())
 }
 
+/// The text of a failed download for the error list: the API's own message for an
+/// API error, as before, rather than the "API error: ..." wrapper.
+fn download_error_text(error: &CliError) -> String {
+    match error {
+        CliError::PhysnaExtendedApiError(e) => e.to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Print download statistics summary
 fn print_download_summary(
     success_count: usize,
     skipped_count: usize,
     error_count: usize,
     not_attempted: usize,
+    not_downloadable: usize,
     total_assets: usize,
     dest_dir: &std::path::PathBuf,
 ) {
@@ -1035,6 +1003,12 @@ fn print_download_summary(
         eprintln!(
             "⏹️  Not attempted (stopped after the first failure): {}",
             not_attempted
+        );
+    }
+    if not_downloadable > 0 {
+        eprintln!(
+            "⏭️  Not downloaded (not processed yet, or processing failed): {}",
+            not_downloadable
         );
     }
     eprintln!("📁 Total assets processed: {}", total_assets);
@@ -1075,18 +1049,9 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
     let folder_path_param =
         sub_matches.get_one::<String>(crate::commands::params::PARAMETER_FOLDER_PATH);
 
-    // Resolve folder UUID from either UUID parameter or path
-    let folder_uuid = if let Some(uuid) = folder_uuid_param {
-        *uuid
-    } else if let Some(path) = folder_path_param {
-        // Resolve folder UUID by path
-        resolve_folder_uuid_by_path(&mut api, &tenant, path).await?
-    } else {
-        // This shouldn't happen due to our earlier check, but just in case
-        return Err(CliError::MissingRequiredArgument(
-            "Either folder UUID or path must be provided".to_string(),
-        ));
-    };
+    // `/` (or `/Home`) is the tenant's root: every asset in the tenant.
+    let target =
+        resolve_folder_target(&mut api, &tenant, folder_uuid_param, folder_path_param).await?;
 
     // Get the output file path
     let output_file_path = if let Some(output_path) =
@@ -1096,37 +1061,35 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
     } else {
         // Use the folder name as the default output file name
         // Determine the folder name from the provided path or get it from the folder details
-        let folder_name = if let Some(path) = folder_path_param {
-            // If the folder was specified by path, extract the folder name from the path
-            // Special handling for root folder "/"
-            if path.trim() == "/" {
-                // Use tenant name for root folder
-                tenant.name.clone()
-            } else {
-                let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-                if path_segments.is_empty() {
-                    "untitled".to_string()
+        let folder_name = match (target, folder_path_param) {
+            // The root has no folder record; it is named after the tenant.
+            (FolderTarget::Root, _) => tenant.name.clone(),
+            (FolderTarget::Folder(_), Some(path)) => path
+                .split('/')
+                .rfind(|s| !s.is_empty())
+                .unwrap_or("untitled")
+                .to_string(),
+            (FolderTarget::Folder(folder_uuid), None) => {
+                // The folder record carries its name; its `path` field is always
+                // empty here, which is why this used to produce a directory called
+                // "untitled".
+                let name = api.get_folder(&tenant.uuid, &folder_uuid).await?.name();
+                if name.trim().is_empty() {
+                    tenant.name.clone()
                 } else {
-                    path_segments.last().unwrap().to_string()
+                    name
                 }
-            }
-        } else {
-            // If the folder was specified by UUID, get the folder details to determine the name
-            let folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-
-            // The folder record carries its name; its `path` field is always empty
-            // here, which is why this used to produce a directory called "untitled".
-            let name = folder.name();
-            if name.trim().is_empty() {
-                tenant.name.clone()
-            } else {
-                name
             }
         };
 
-        let mut path = std::path::PathBuf::new();
-        path.push(folder_name);
-        path
+        // The folder's name comes from the server; it must be one plain name before
+        // it becomes the default output directory.
+        crate::actions::utils::safe_file_name(&folder_name).ok_or_else(|| {
+            CliError::from(crate::actions::CliActionError::BusinessLogicError(format!(
+                "The folder's name '{}' is not a safe local directory name; choose one with -o/--output",
+                folder_name
+            )))
+        })?
     };
 
     // Use the destination directory directly
@@ -1138,17 +1101,20 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
     let mut all_assets_with_paths = Vec::new();
     let mut folder_queue = std::collections::VecDeque::new();
 
-    // Get the root folder details to determine its path
-    let root_folder = api.get_folder(&tenant.uuid, &folder_uuid).await?;
-    let root_folder_path = root_folder.path();
+    let root_folder_path = match target {
+        FolderTarget::Root => "/".to_string(),
+        FolderTarget::Folder(folder_uuid) => {
+            api.get_folder(&tenant.uuid, &folder_uuid).await?.path()
+        }
+    };
 
     // Start BFS with the specified folder
-    folder_queue.push_back((folder_uuid, root_folder_path.clone()));
+    folder_queue.push_back((target.uuid(), root_folder_path.clone()));
 
     while let Some((current_folder_uuid, current_folder_path)) = folder_queue.pop_front() {
         // Get all assets in the current folder
         let assets_response = api
-            .list_assets_by_parent_folder_uuid(&tenant.uuid, Some(&current_folder_uuid))
+            .list_assets_by_parent_folder_uuid(&tenant.uuid, current_folder_uuid.as_ref())
             .await?;
         let asset_list = assets_response;
 
@@ -1190,7 +1156,7 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
         // so folders with more direct subfolders than one page still have
         // their full subtree processed.
         let subfolders_response = api
-            .list_all_subfolders(&tenant.uuid, Some(&current_folder_uuid))
+            .list_all_subfolders(&tenant.uuid, current_folder_uuid.as_ref())
             .await?;
         for folder in subfolders_response.folders() {
             // The listing already carries the name (see download_folder).
@@ -1201,22 +1167,17 @@ pub async fn download_folder_thumbnails(sub_matches: &clap::ArgMatches) -> Resul
             };
 
             // Add to queue to process this subfolder
-            folder_queue.push_back((*folder.uuid(), folder_path));
+            folder_queue.push_back((Some(*folder.uuid()), folder_path));
         }
     }
 
     if all_assets_with_paths.is_empty() {
-        crate::error_utils::report_error_with_remediation(
-            &format!(
-                "No assets found in folder with UUID: {} or its subfolders",
-                folder_uuid
-            ),
-            &[
-                "Verify the folder UUID or path is correct",
-                "Check that the folder or its subfolders contain assets",
-                "Ensure you have permissions to access the folder",
-            ],
-        );
+        // An empty folder is not a failure (the command exits 0), so it is a
+        // warning, as for `folder download`, not an error message.
+        crate::error_utils::report_warning(&format!(
+            "No assets found in folder {} or its subfolders; nothing to download",
+            root_folder_path
+        ));
         return Ok(());
     }
 
@@ -2123,46 +2084,6 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
             },
         ));
     }
-
-    Ok(())
-}
-fn extract_zip_and_cleanup(zip_path: &std::path::Path) -> Result<(), std::io::Error> {
-    use std::io::Cursor;
-
-    // Read the ZIP file content
-    let zip_content = std::fs::read(zip_path)?;
-
-    // Create a cursor from the content
-    let cursor = Cursor::new(zip_content);
-
-    // Create a ZipArchive from the cursor
-    let mut archive = zip::ZipArchive::new(cursor)?;
-
-    // Extract all files to the same directory as the ZIP file
-    let parent_dir = zip_path
-        .parent()
-        .ok_or_else(|| std::io::Error::other("Could not get parent directory"))?;
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-
-        let file_path = parent_dir.join(file.mangled_name());
-
-        if file.is_dir() {
-            std::fs::create_dir_all(&file_path)?;
-        } else {
-            // Create parent directories if they don't exist
-            if let Some(parent) = file_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-
-            let mut output_file = std::fs::File::create(&file_path)?;
-            std::io::copy(&mut file, &mut output_file)?;
-        }
-    }
-
-    // Remove the original ZIP file after successful extraction
-    std::fs::remove_file(zip_path)?;
 
     Ok(())
 }

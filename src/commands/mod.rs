@@ -135,6 +135,28 @@ pub fn examples(items: &[(&str, &str)]) -> String {
     text.trim_end().to_string()
 }
 
+/// Whether the command that was run offers `--format table`.
+pub fn command_offers_table(matches: &ArgMatches) -> bool {
+    let mut command = create_full_command();
+    let mut current = matches;
+    while let Some((name, sub)) = current.subcommand() {
+        match command.find_subcommand(name) {
+            Some(sub_command) => command = sub_command.clone(),
+            None => return false,
+        }
+        current = sub;
+    }
+    let offers = command
+        .get_arguments()
+        .find(|arg| arg.get_id() == params::PARAMETER_FORMAT)
+        .is_some_and(|arg| {
+            arg.get_possible_values()
+                .iter()
+                .any(|value| value.get_name() == crate::format::TABLE)
+        });
+    offers
+}
+
 pub fn create_cli_commands() -> ArgMatches {
     create_full_command().get_matches()
 }
@@ -248,6 +270,14 @@ pub fn create_full_command() -> Command {
             clap::ColorChoice::Never
         })
         // Add global arguments
+        .arg(
+            clap::Arg::new("columns")
+                .long("columns")
+                .num_args(1)
+                .global(true)
+                .help_heading("Global Options")
+                .help("Only these columns in CSV and table output, by header name, comma-separated (e.g. --columns path,uuid)"),
+        )
         .arg(
             clap::Arg::new("no-progress")
                 .long("no-progress")

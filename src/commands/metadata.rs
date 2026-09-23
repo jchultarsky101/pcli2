@@ -21,7 +21,7 @@ pub fn metadata_command() -> Command {
                 .arg(tenant_parameter())
                 .arg(uuid_parameter())
                 .arg(path_parameter())
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
@@ -88,7 +88,7 @@ pub fn metadata_command() -> Command {
                         .help("Metadata property name (can be provided multiple times or as comma-separated list)")
                         .action(ArgAction::Append)
                 )
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .group(
                     ArgGroup::new("asset_identifier")
                         .args(["uuid", "path"])
@@ -201,7 +201,7 @@ pub fn metadata_command() -> Command {
                         .required(false)
                         .help("Only apply inference to assets in the same parent folder as the reference asset"),
                 )
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
                 .arg(tenant_parameter())

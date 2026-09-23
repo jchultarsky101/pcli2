@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`--format table` and `--columns`** - `table` prints aligned columns with a rule under the header, for every command that can print CSV. `--columns path,uuid` keeps only the named CSV or table columns, in that order, matched by header name; an unknown name is an error (exit 64) that lists the available columns.
 - **`--env` / `PCLI2_ENV` choose the environment for one command** - Without changing the saved default (`pcli2 env use` does that), so scripts can work against staging and production at the same time. An unknown name is refused before anything runs (exit 67).
 - **`PCLI2_TENANT` sets `--tenant` for one command**, and `user list` / `user get` accept `--tenant` (they only ever used the active tenant).
 - **Progress bars appear on their own in a terminal** - For the commands that have `--progress`, when stderr is a terminal (not in CI, not with `--quiet` or `--error-format json`). `--no-progress` turns them off; `--progress` still forces them on.
@@ -49,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`asset metadata create-batch` no longer reloads the folder tree for every row under a missing folder** - A folder that does not exist is remembered for the rest of the run.
 
 ### Changed
+- **A table by default in a terminal** - When stdout is a terminal and no format was asked for (no `--format`, no `PCLI2_FORMAT`), commands that can print CSV show a table instead of one long line of JSON. Output that goes to a pipe or a file is JSON exactly as before, so scripts are unaffected; `--format json` gives JSON in the terminal too. The streaming folder match reports keep their formats. `env list` now lists environments in alphabetical order.
 - **Exit codes** - A request the server keeps answering with 429 or a 5xx after every retry exits 69 (temporary failure, try again later) instead of 102. A connection lost mid-download exits 101 (network) instead of 102. `asset dependency-diff` and `asset resolve-dependency` exit with the real cause (100 for an expired login, 101 for the network, ...) instead of always 67 when one of their input assets could not be resolved.
 - **Folder bulk commands run four at a time by default** - `folder download`, `folder upload`, `folder thumbnail` and the three folder match commands default to `--concurrent 4` instead of 1 (the retry layer already backs off on rate limits). `--concurrent 1` restores the old pace.
 - **`folder download` and `folder thumbnail` start sooner on large trees** - The subtree is taken from the folder tree (one request per thousand folders) and the folders' assets are listed eight at a time; they used to walk the tree one folder at a time with two requests per folder.

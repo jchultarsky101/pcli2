@@ -721,7 +721,7 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                                         serde_json::to_string(&token_response)
                                     };
                                     match json_output {
-                                        Ok(json) => println!("{}", json),
+                                        Ok(json) => pcli2::format::print_output(&json),
                                         Err(e) => {
                                             return Err(CliError::FormattingError(
                                                 FormattingError::JsonSerializationError(e),

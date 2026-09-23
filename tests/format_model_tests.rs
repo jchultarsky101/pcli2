@@ -125,7 +125,8 @@ mod format_and_model_tests {
             assert!(names.contains(&"json"));
             assert!(names.contains(&"csv"));
             assert!(names.contains(&"tree"));
-            assert_eq!(names.len(), 3);
+            assert!(names.contains(&"table"));
+            assert_eq!(names.len(), 4);
         }
 
         #[test]

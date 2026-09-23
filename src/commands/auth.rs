@@ -31,7 +31,7 @@ pub fn auth_command() -> Command {
             Command::new(COMMAND_GET)
                 .about("Get current access token")
                 .visible_alias("token")
-                .arg(format_parameter().value_parser(["json", "csv"]))
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),
         )

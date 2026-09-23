@@ -442,7 +442,7 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     let succeeded = outcome.assets.len();
     let failed = outcome.failures.len();
     if succeeded > 0 {
-        println!("{}", AssetList::from(outcome.assets).format(format)?);
+        crate::format::print_output(&AssetList::from(outcome.assets).format(format)?);
     }
     if skipped > 0 {
         eprintln!(

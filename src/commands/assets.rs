@@ -45,7 +45,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
                 .group(asset_identifier_multiple_group()),
         )
         .subcommand(
@@ -65,7 +65,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
                 .arg(override_parameter())
                 .arg(restore_metadata_parameter())
                 .arg(dry_run_parameter()),
@@ -87,7 +87,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
                 .arg(
                     crate::commands::params::concurrent_parameter("5", "Maximum number of concurrent uploads"),
                 )
@@ -153,7 +153,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])),
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"])),
         )
         .subcommand(metadata_command()) // Add the metadata subcommands
         .subcommand(
@@ -169,7 +169,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE, "table"]))
                 .group(asset_identifier_group()),
         )
         .subcommand(
@@ -184,7 +184,7 @@ pub fn asset_command() -> Command {
                 .arg(format_with_metadata_parameter())
                 .arg(format_with_headers_parameter())
                 .arg(format_pretty_parameter())
-                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE]))
+                .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, FORMAT_TREE, "table"]))
                 .group(reference_identifier_group())
                 .group(candidate_identifier_group()),
         )
@@ -227,7 +227,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
             .group(asset_identifier_group()),
     )
     .subcommand(
@@ -243,7 +243,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
             .group(asset_identifier_group()),
     )
     .subcommand(
@@ -260,7 +260,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
             .group(asset_identifier_group())
     )
     .subcommand(
@@ -293,7 +293,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_headers_parameter())
             .arg(format_with_metadata_parameter())  // Add metadata flag to be consistent with other match commands
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])) // Only support JSON and CSV as requested
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"])) // Only support JSON and CSV as requested
     )
     .subcommand(
         Command::new(COMMAND_SIMILARITY)
@@ -311,7 +311,7 @@ pub fn asset_command() -> Command {
                 format_with_metadata_parameter().hide(true),
             )
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
             .group(reference_identifier_group())
             .group(candidate_identifier_group()),
     )
@@ -388,7 +388,7 @@ pub fn asset_command() -> Command {
                 format_with_metadata_parameter().hide(true),
             )
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV])),
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"])),
     )
     .subcommand(
         Command::new(COMMAND_COUNTS)
@@ -397,7 +397,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_metadata_parameter())
             .arg(format_with_headers_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
     )
     .subcommand(
         Command::new(COMMAND_FULL_INVENTORY)
@@ -406,7 +406,7 @@ pub fn asset_command() -> Command {
             .arg(format_with_metadata_parameter())
             .arg(format_with_headers_parameter())
             .arg(format_pretty_parameter())
-            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV]))
+            .arg(format_parameter().value_parser([FORMAT_JSON, FORMAT_CSV, "table"]))
     )
     .subcommand(
         Command::new(COMMAND_THUMBNAIL)

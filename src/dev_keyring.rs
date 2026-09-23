@@ -127,8 +127,27 @@ impl DevKeyring {
                 Ok(parsed_credentials) => {
                     self.credentials = Some(parsed_credentials);
                 }
-                Err(_) => {
-                    // If parsing fails, start with empty credentials
+                Err(e) => {
+                    // An unreadable file used to be treated as empty, and the next
+                    // save wrote that emptiness back: every environment's client ID
+                    // and secret gone without a word. Keep the file instead, under a
+                    // name that says what happened, so nothing is lost and the user
+                    // can recover it; this run carries on as if logged out.
+                    let aside = self.set_aside_unreadable_file();
+                    tracing::warn!(
+                        "The credentials file '{}' could not be read ({}); it was kept as '{}'. Log in again with 'pcli2 auth login'.",
+                        self.file_path.display(),
+                        e,
+                        aside
+                            .as_ref()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| "(could not be renamed)".to_string())
+                    );
+                    if aside.is_none() {
+                        // Could not move it out of the way: refuse to go on, or the
+                        // next save would overwrite it.
+                        return Err(DevKeyringError::JsonError(e));
+                    }
                     self.credentials = Some(AllCredentials {
                         environments: std::collections::HashMap::new(),
                     });
@@ -142,6 +161,18 @@ impl DevKeyring {
         Ok(())
     }
 
+    /// Rename an unparseable credentials file to `<name>.unreadable-<unix seconds>`.
+    fn set_aside_unreadable_file(&self) -> Option<PathBuf> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_default();
+        let mut name = self.file_path.as_os_str().to_owned();
+        name.push(format!(".unreadable-{}", stamp));
+        let aside = PathBuf::from(name);
+        fs::rename(&self.file_path, &aside).ok().map(|_| aside)
+    }
+
     fn save_credentials(&self) -> Result<(), DevKeyringError> {
         // Create directory if it doesn't exist
         if let Some(parent) = self.file_path.parent() {
@@ -150,10 +181,16 @@ impl DevKeyring {
 
         if let Some(credentials) = &self.credentials {
             let content = serde_json::to_string_pretty(credentials)?;
-            fs::write(&self.file_path, content)?;
-            restrict_to_owner(&self.file_path)?;
+            // Written to a temporary file and renamed into place, so a concurrent
+            // reader or a crash never sees a half-written file.
+            crate::fs_utils::write_private_atomically(&self.file_path, content.as_bytes())?;
         }
         Ok(())
+    }
+
+    /// Serialise read-modify-write cycles across pcli2 processes.
+    fn lock(&self) -> Result<crate::fs_utils::FileLock, DevKeyringError> {
+        Ok(crate::fs_utils::FileLock::acquire(&self.file_path)?)
     }
 
     pub fn get(&mut self, tenant: &str, key: String) -> Result<Option<String>, DevKeyringError> {
@@ -215,13 +252,13 @@ impl DevKeyring {
     pub fn put(&mut self, tenant: &str, key: String, value: String) -> Result<(), DevKeyringError> {
         tracing::debug!("Storing {} in dev_keyring for environment: {}", key, tenant);
 
-        // Load existing credentials, but don't fail if the file doesn't exist or is corrupted
-        let existing_credentials = match self.load_credentials() {
-            Ok(_) => self.credentials.take(),
-            Err(_) => None, // If loading fails, start with empty credentials
-        };
-
-        let mut all_credentials = existing_credentials.unwrap_or_else(|| AllCredentials {
+        // Another pcli2 process may be saving a token for a different environment
+        // right now; without the lock one of the two updates would be lost.
+        let _lock = self.lock()?;
+        // A file that exists but cannot be read must stop the save: writing over it
+        // would replace every other environment's credentials with this one entry.
+        self.load_credentials()?;
+        let mut all_credentials = self.credentials.take().unwrap_or_else(|| AllCredentials {
             environments: std::collections::HashMap::new(),
         });
 
@@ -265,13 +302,10 @@ impl DevKeyring {
     }
 
     pub fn delete(&mut self, tenant: &str, key: String) -> Result<(), DevKeyringError> {
-        // Load existing credentials, but don't fail if the file doesn't exist or is corrupted
-        let existing_credentials = match self.load_credentials() {
-            Ok(_) => self.credentials.take(),
-            Err(_) => None, // If loading fails, there's nothing to delete
-        };
+        let _lock = self.lock()?;
+        self.load_credentials()?;
 
-        if let Some(mut all_credentials) = existing_credentials {
+        if let Some(mut all_credentials) = self.credentials.take() {
             if let Some(env_credentials) = all_credentials.environments.get_mut(tenant) {
                 match key.as_str() {
                     "access-token" => env_credentials.access_token = None,
@@ -354,6 +388,49 @@ mod tests {
         assert_eq!(mode_of(&path), 0o600, "reading must repair the mode");
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn saving_one_environment_keeps_the_others() {
+        let path = scratch_path();
+        keyring_at(path.clone())
+            .put("prod", "client-secret".to_string(), "p".to_string())
+            .unwrap();
+        keyring_at(path.clone())
+            .put("dev", "access-token".to_string(), "t".to_string())
+            .unwrap();
+        let mut reader = keyring_at(path.clone());
+        assert_eq!(
+            reader.get("prod", "client-secret".to_string()).unwrap(),
+            Some("p".to_string())
+        );
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_unreadable_file_is_set_aside_not_overwritten() {
+        // A torn or hand-edited file used to be read as "no environments" and the
+        // next save wrote that back, losing every stored client secret.
+        let path = scratch_path();
+        let dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&path, r#"{"environments":{"prod":{"client_id":"id","#).unwrap();
+
+        let mut keyring = keyring_at(path.clone());
+        keyring
+            .put("dev", "access-token".to_string(), "t".to_string())
+            .unwrap();
+
+        let kept: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".unreadable-"))
+            .collect();
+        assert_eq!(kept.len(), 1, "the unreadable file is kept aside");
+        assert!(fs::read_to_string(kept[0].path())
+            .unwrap()
+            .contains("\"prod\""));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

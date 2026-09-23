@@ -78,6 +78,20 @@ pub enum CliError {
 }
 
 impl CliError {
+    /// Name which input asset (`reference`, `candidate`, ...) could not be found.
+    ///
+    /// Only a lookup that really found nothing becomes an `AssetResolutionError`
+    /// (exit 67). An expired login, a network failure or a 5xx while resolving is
+    /// returned unchanged, with its own exit code; all of them used to be turned into
+    /// text and reported as "not found".
+    pub fn resolving(role: &str, error: CliError) -> CliError {
+        if error.exit_code() == PcliExitCode::NotFound {
+            CliError::AssetResolutionError(role.to_string(), error.to_string())
+        } else {
+            error
+        }
+    }
+
     /// The exit code that describes this error to a script.
     ///
     /// Every variant is listed on purpose: a wildcard arm is how every API, network

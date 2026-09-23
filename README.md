@@ -672,7 +672,9 @@ possible) so scripts can react to specific failure classes:
 A usage error rejected by the argument parser also exits 64. A batch that
 finished with some items failed (`create-batch`, `metadata create-batch`,
 `folder upload`, `folder download`, `folder thumbnail`) and a folder match whose
-report would be incomplete exit 69.
+report would be incomplete exit 69, as does a request the server kept rejecting
+with 429 (rate limited) or a 5xx after every retry: try again later. A closed
+output pipe (`pcli2 ... | head`) is not an error and exits 0.
 
 ```bash
 pcli2 asset get --path "/Home/Models/part.stl" --format json

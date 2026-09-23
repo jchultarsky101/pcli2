@@ -111,7 +111,7 @@ impl SearchFailure {
 /// Three consecutive, with any success resetting the count. A transient failure is
 /// absorbed because successes keep interleaving; a systemic one has no successes to
 /// reset it and trips almost immediately.
-const CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP: usize = 3;
+pub(crate) const CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP: usize = 3;
 
 /// Shared stop signal for a folder match run.
 ///

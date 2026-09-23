@@ -470,6 +470,40 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
     Ok(())
 }
 
+/// Run an API call again when it fails for authentication, up to the threshold the
+/// folder match commands use.
+///
+/// The client renews the token on a 401 by itself; what reaches here is a failed
+/// renewal, and `refresh_token` reports every cause of that - a 503 or a rate limit
+/// at the token endpoint as much as a revoked credential - as the same error. One of
+/// those used to stop a ten-thousand-row batch on the spot. The call is simply made
+/// again (each attempt tries a fresh renewal); a credential that is really dead fails
+/// every attempt and the caller stops the run as before.
+macro_rules! retry_on_auth_failure {
+    ($call:expr) => {{
+        let mut attempt: usize = 1;
+        loop {
+            match $call {
+                Err(e)
+                    if e.is_credential_failure()
+                        && attempt
+                            < crate::actions::assets::match_ops::CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP =>
+                {
+                    debug!(
+                        "Authentication failed ({}); retrying (attempt {} of {})",
+                        e,
+                        attempt + 1,
+                        crate::actions::assets::match_ops::CONSECUTIVE_AUTH_FAILURES_BEFORE_STOP
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(attempt as u64)).await;
+                    attempt += 1;
+                }
+                other => break other,
+            }
+        }
+    }};
+}
+
 /// Create metadata for multiple assets from a CSV file.
 ///
 /// This function handles the "asset metadata create-batch" command, which creates or updates
@@ -612,13 +646,13 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         let asset = match asset_cache.get(&asset_display) {
             Some(cached) => cached.clone(),
             None => {
-                let lookup_result = match &entry.asset {
+                let lookup_result = retry_on_auth_failure!(match &entry.asset {
                     BatchAssetRef::Uuid(uuid) => api.get_asset_by_uuid(&tenant.uuid, uuid).await,
                     BatchAssetRef::Path(path) => {
                         asset_by_path_cached(&mut api, &tenant.uuid, path, &mut folder_listings)
                             .await
                     }
-                };
+                });
                 match lookup_result {
                     Ok(asset) => {
                         // Cache the asset for potential reuse
@@ -737,10 +771,14 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
         // Delete fields with empty values
         if !fields_to_delete.is_empty() {
             let keys: Vec<&str> = fields_to_delete.iter().map(|s| s.as_str()).collect();
-            if let Err(e) = api
-                .delete_asset_metadata(&tenant.uuid.to_string(), &asset.uuid().to_string(), keys)
+            if let Err(e) = retry_on_auth_failure!(
+                api.delete_asset_metadata(
+                    &tenant.uuid.to_string(),
+                    &asset.uuid().to_string(),
+                    keys.clone()
+                )
                 .await
-            {
+            ) {
                 // Authenticated, but not permitted. Physna has no per-asset
                 // permissions - an account may write every asset or none - so this
                 // will fail identically for everything left in the batch. Stopping
@@ -832,8 +870,8 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
 
         // Update fields with non-empty values
         if !typed_metadata.is_empty() {
-            if let Err(e) = api
-                .update_asset_metadata_with_registry(
+            if let Err(e) = retry_on_auth_failure!(
+                api.update_asset_metadata_with_registry(
                     &tenant.uuid,
                     &asset.uuid(),
                     &typed_metadata,
@@ -841,7 +879,7 @@ pub async fn create_asset_metadata_batch(sub_matches: &ArgMatches) -> Result<(),
                     &mut field_registry,
                 )
                 .await
-            {
+            ) {
                 // Authenticated, but not permitted. Physna has no per-asset
                 // permissions - an account may write every asset or none - so this
                 // will fail identically for everything left in the batch. Stopping

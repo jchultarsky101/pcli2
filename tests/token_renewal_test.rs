@@ -222,3 +222,62 @@ async fn without_credentials_a_401_is_reported_and_no_renewal_is_attempted() {
     assert!(err.is_authentication_failure(), "{err:?}");
     token.assert_async().await;
 }
+
+#[tokio::test]
+async fn a_404_on_the_retry_after_renewal_is_reported_as_not_found() {
+    // The renewal worked; the retry then failed for an ordinary reason. That used to
+    // come back as an unclassified `RetryFailed`, so a missing folder exited 102
+    // instead of 67 and a 409 no longer read as a conflict.
+    isolate();
+    let mut server = mockito::Server::new_async().await;
+    let _stale = folder_with_bearer(&mut server, "stale-token", 401).await;
+    let _gone = server
+        .mock("GET", folder_path().as_str())
+        .match_header("authorization", "Bearer fresh-token")
+        .with_status(404)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"message":"Folder not found"}"#)
+        .create_async()
+        .await;
+    let _token = token_endpoint(&mut server, 200, FRESH_TOKEN_BODY).await;
+
+    let mut client = client(&server).with_access_token("stale-token".into());
+    let err = client
+        .get_folder(
+            &Uuid::parse_str(TENANT).unwrap(),
+            &Uuid::parse_str(FOLDER).unwrap(),
+        )
+        .await
+        .expect_err("the folder is gone");
+    assert!(matches!(err, ApiError::NotFoundError(_)), "{err:?}");
+    assert!(!err.is_authentication_failure());
+    assert_eq!(err.exit_code(), pcli2::exit_codes::PcliExitCode::NotFound);
+}
+
+#[tokio::test]
+async fn a_503_from_the_token_endpoint_is_retried() {
+    // One hiccup at the auth server used to fail the renewal, and with it whatever
+    // the user was running.
+    isolate();
+    let mut server = mockito::Server::new_async().await;
+    let fresh = folder_with_bearer(&mut server, "fresh-token", 200).await;
+    let unavailable = token_endpoint(&mut server, 503, r#"{"error":"unavailable"}"#)
+        .await
+        .expect(1);
+    let ok = token_endpoint(&mut server, 200, FRESH_TOKEN_BODY)
+        .await
+        .expect(1);
+
+    let mut client = client(&server);
+    client
+        .get_folder(
+            &Uuid::parse_str(TENANT).unwrap(),
+            &Uuid::parse_str(FOLDER).unwrap(),
+        )
+        .await
+        .expect("the second token request succeeds");
+
+    unavailable.assert_async().await;
+    ok.assert_async().await;
+    fresh.assert_async().await;
+}

@@ -154,8 +154,16 @@ impl ApiError {
             | ApiError::InvalidToken
             | ApiError::MissingCredentials
             | ApiError::KeyringError(_) => PcliExitCode::AuthError,
-            ApiError::HttpError(e) if e.is_connect() || e.is_timeout() || e.is_request() => {
+            ApiError::HttpError(e)
+                if e.is_connect() || e.is_timeout() || e.is_request() || e.is_body() =>
+            {
                 PcliExitCode::NetworkError
+            }
+            // Rate limited or a server-side failure that outlasted every retry:
+            // "try again later", which is what 69 means, rather than a request the
+            // API rejected.
+            ApiError::HttpStatus { status, .. } if *status == 429 || *status >= 500 => {
+                PcliExitCode::TempFail
             }
             ApiError::HttpError(_)
             | ApiError::RetryFailed(_)
@@ -1020,7 +1028,8 @@ impl PhysnaApiClient {
     /// the beginning again.
     ///
     /// Any non-2xx outcome is returned classified: 404 as `NotFoundError`, 409 as
-    /// `ConflictError`, a 401/403 that survives renewal as `RetryFailed`, and every
+    /// `ConflictError`, a 401/403 that survives renewal as `RetryFailed` (any other
+    /// status on the retry is classified as usual), and every
     /// other status as `HttpStatus`, so callers decide on the status rather than on
     /// the text of a message.
     async fn request_with_auth<F>(
@@ -1066,6 +1075,17 @@ impl PhysnaApiClient {
             .await?;
         if retry.status().is_success() {
             return Ok(retry);
+        }
+
+        // The renewal worked and the retry failed for some other reason: a 404, a
+        // 409, a 5xx. That is an ordinary API answer and is classified like one.
+        // It used to become a `RetryFailed` carrying raw text, so a 404 exited 102
+        // instead of 67 and a 409 no longer read as a conflict to the callers that
+        // handle one (a folder that already exists during `folder upload`).
+        if retry.status() != reqwest::StatusCode::UNAUTHORIZED
+            && retry.status() != reqwest::StatusCode::FORBIDDEN
+        {
+            return classify_response(retry).await;
         }
 
         // The wording of this message is part of the contract with
@@ -1120,19 +1140,50 @@ impl PhysnaApiClient {
             .await
     }
 
-    /// Generic method to build and execute POST requests
+    /// POST a request that creates or changes something.
+    ///
+    /// Not resent after a timeout or a gateway error (502/504), because the first
+    /// attempt may already have done the work.
     async fn post<T, B>(&mut self, url: &str, body: &B) -> Result<T, ApiError>
     where
         T: serde::de::DeserializeOwned,
         B: serde::Serialize,
     {
-        // Log the request for debugging
-        let body_json = serde_json::to_string_pretty(body)
-            .unwrap_or_else(|_| "Unable to serialize body".to_string());
-        trace!("POST request to {}: {}", url, body_json);
+        self.post_with(url, body, false).await
+    }
+
+    /// POST a request that only reads: a search, a batch lookup.
+    ///
+    /// These use POST to carry a body, but repeating one changes nothing, so it is
+    /// retried like a GET.
+    async fn post_query<T, B>(&mut self, url: &str, body: &B) -> Result<T, ApiError>
+    where
+        T: serde::de::DeserializeOwned,
+        B: serde::Serialize,
+    {
+        self.post_with(url, body, true).await
+    }
+
+    async fn post_with<T, B>(
+        &mut self,
+        url: &str,
+        body: &B,
+        idempotent: bool,
+    ) -> Result<T, ApiError>
+    where
+        T: serde::de::DeserializeOwned,
+        B: serde::Serialize,
+    {
+        // Serialising the body only to log it is wasted work on every search page
+        // unless trace logging is actually on.
+        if tracing::enabled!(tracing::Level::TRACE) {
+            let body_json = serde_json::to_string_pretty(body)
+                .unwrap_or_else(|_| "Unable to serialize body".to_string());
+            trace!("POST request to {}: {}", url, body_json);
+        }
 
         let result = self
-            .execute_request(|client| Ok(client.post(url).json(body)), false)
+            .execute_request(|client| Ok(client.post(url).json(body)), idempotent)
             .await;
 
         // Log the response for debugging
@@ -2820,7 +2871,7 @@ impl PhysnaApiClient {
             debug!("Sending geometric search request to: {}", url);
             // Execute POST request
             let result: Result<crate::model::GeometricSearchResponse, ApiError> =
-                self.post(&url, &body).await;
+                self.post_query(&url, &body).await;
 
             match result {
                 Ok(response) => {
@@ -3008,7 +3059,7 @@ impl PhysnaApiClient {
             debug!("Sending part search request to: {}", url);
             // Execute POST request
             let result: Result<crate::model::PartSearchResponse, ApiError> =
-                self.post(&url, &body).await;
+                self.post_query(&url, &body).await;
 
             match result {
                 Ok(response) => {
@@ -3171,7 +3222,7 @@ impl PhysnaApiClient {
             debug!("Sending visual search request to: {}", url);
             // Execute POST request.
             let result: Result<crate::model::PartSearchResponse, ApiError> =
-                self.post(&url, &body).await;
+                self.post_query(&url, &body).await;
 
             match result {
                 Ok(response) => {
@@ -3316,7 +3367,7 @@ impl PhysnaApiClient {
 
             debug!("Sending text search request to: {}", url);
             let result: Result<crate::model::TextSearchResponse, ApiError> =
-                self.post(&url, &body).await;
+                self.post_query(&url, &body).await;
 
             match result {
                 Ok(response) => {
@@ -4242,7 +4293,7 @@ impl PhysnaApiClient {
                 tenant_uuid
             );
             let response: crate::model::ExistingPathsResponse = self
-                .post(&url, &serde_json::json!({ "paths": chunk }))
+                .post_query(&url, &serde_json::json!({ "paths": chunk }))
                 .await?;
             existing.extend(response.existing_paths);
         }
@@ -4645,9 +4696,6 @@ impl PhysnaApiClient {
         what: &str,
         dest: &std::path::Path,
     ) -> Result<u64, ApiError> {
-        use futures::StreamExt;
-        use tokio::io::AsyncWriteExt;
-
         debug!("Download request URL: {}", url);
         if let Some(parent) = dest.parent() {
             if !parent.as_os_str().is_empty() {
@@ -4662,29 +4710,37 @@ impl PhysnaApiClient {
         );
         let part_path = dest.with_file_name(part_name);
 
-        let response = self
-            .request_with_auth(|client| Ok(client.get(url)), true)
-            .await
-            .map_err(|e| e.about(what))?;
-        let mut stream = response.bytes_stream();
-        let mut file = tokio::fs::File::create(&part_path).await?;
-        let mut written: u64 = 0;
-        let write_result: Result<(), ApiError> = async {
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk?;
-                file.write_all(&chunk).await?;
-                written += chunk.len() as u64;
+        // The retry layer covers a request that fails before its headers arrive. A
+        // connection that drops while the body is streaming - a reset twenty minutes
+        // into a multi-gigabyte file - used to fail the item outright; the download
+        // is a GET, so it is started again from the beginning, up to the same number
+        // of retries.
+        let max_retries = self.http_client.config().max_retries;
+        let mut attempt: u32 = 0;
+        let written = loop {
+            let response = self
+                .request_with_auth(|client| Ok(client.get(url)), true)
+                .await
+                .map_err(|e| e.about(what))?;
+            match stream_body_to_file(response, &part_path).await {
+                Ok(written) => break written,
+                Err(BodyError::Network(e)) if attempt < max_retries => {
+                    attempt += 1;
+                    crate::stats::record_retry();
+                    warn!(
+                        "Connection lost while downloading {} ({}); starting again (attempt {}/{})",
+                        what, e, attempt, max_retries
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * u64::from(attempt)))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = tokio::fs::remove_file(&part_path).await;
+                    return Err(e.into());
+                }
             }
-            file.flush().await?;
-            Ok(())
-        }
-        .await;
-        drop(file);
+        };
 
-        if let Err(e) = write_result {
-            let _ = tokio::fs::remove_file(&part_path).await;
-            return Err(e);
-        }
         if written == 0 {
             let _ = tokio::fs::remove_file(&part_path).await;
             return Err(ApiError::IoError(std::io::Error::new(
@@ -4862,7 +4918,7 @@ impl PhysnaApiClient {
                 tenant_uuid
             );
             let response: crate::model::AssetListResponse = self
-                .post(&url, &serde_json::json!({ "assetIds": chunk }))
+                .post_query(&url, &serde_json::json!({ "assetIds": chunk }))
                 .await?;
             for asset in &response.assets {
                 let asset: Asset = asset.into();
@@ -5281,6 +5337,51 @@ fn excerpt(text: &str) -> String {
 }
 
 /// Turn a response into `Ok` for 2xx and a classified `ApiError` otherwise.
+/// Why streaming a response body to disk stopped.
+enum BodyError {
+    /// The connection failed mid-body; starting the request again may succeed.
+    Network(reqwest::Error),
+    /// Writing the local file failed; a retry would fail the same way.
+    Local(std::io::Error),
+}
+
+impl From<BodyError> for ApiError {
+    fn from(error: BodyError) -> Self {
+        match error {
+            BodyError::Network(e) => ApiError::HttpError(e),
+            BodyError::Local(e) => ApiError::IoError(e),
+        }
+    }
+}
+
+/// Stream a response body into `path` (created or truncated) through a buffer, and
+/// return how many bytes were written.
+///
+/// Network chunks are small (8-16 KiB); written straight to a `tokio::fs::File` each
+/// one is a separate trip to the blocking pool. A 1 MiB buffer turns that into a
+/// handful of large writes.
+async fn stream_body_to_file(
+    response: reqwest::Response,
+    path: &std::path::Path,
+) -> Result<u64, BodyError> {
+    use futures::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let file = tokio::fs::File::create(path)
+        .await
+        .map_err(BodyError::Local)?;
+    let mut file = tokio::io::BufWriter::with_capacity(1 << 20, file);
+    let mut stream = response.bytes_stream();
+    let mut written: u64 = 0;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(BodyError::Network)?;
+        file.write_all(&chunk).await.map_err(BodyError::Local)?;
+        written += chunk.len() as u64;
+    }
+    file.flush().await.map_err(BodyError::Local)?;
+    Ok(written)
+}
+
 async fn classify_response(response: reqwest::Response) -> Result<reqwest::Response, ApiError> {
     let status = response.status();
     if status.is_success() {

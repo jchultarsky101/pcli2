@@ -144,11 +144,21 @@ mod error_tests {
                     .code(),
                 100
             );
-            // Server-side error status -> 102
+            // A server-side failure that outlasted the retries -> 69 (try again later)
             assert_eq!(
                 CliError::PhysnaExtendedApiError(ApiError::HttpStatus {
                     status: 503,
                     message: "down".into()
+                })
+                .exit_code()
+                .code(),
+                69
+            );
+            // A request the API rejected -> 102
+            assert_eq!(
+                CliError::PhysnaExtendedApiError(ApiError::HttpStatus {
+                    status: 400,
+                    message: "bad".into()
                 })
                 .exit_code()
                 .code(),
@@ -439,4 +449,19 @@ mod error_tests {
             }
         }
     }
+}
+
+#[test]
+fn a_server_failure_that_outlasts_the_retries_is_a_temporary_failure() {
+    use pcli2::exit_codes::PcliExitCode;
+    use pcli2::physna_v3::ApiError;
+    let status = |status: u16| ApiError::HttpStatus {
+        status,
+        message: String::new(),
+    };
+    assert_eq!(status(429).exit_code(), PcliExitCode::TempFail);
+    assert_eq!(status(503).exit_code(), PcliExitCode::TempFail);
+    assert_eq!(status(500).exit_code(), PcliExitCode::TempFail);
+    assert_eq!(status(400).exit_code(), PcliExitCode::ApiError);
+    assert_eq!(status(422).exit_code(), PcliExitCode::ApiError);
 }

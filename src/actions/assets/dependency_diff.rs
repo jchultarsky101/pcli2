@@ -51,7 +51,7 @@ pub async fn compare_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), 
         reference_path,
     )
     .await
-    .map_err(|e| CliError::AssetResolutionError("reference".to_string(), e.to_string()))?;
+    .map_err(|e| CliError::resolving("reference", e))?;
 
     let candidate_asset = crate::actions::utils::resolve_asset(
         ctx.api(),
@@ -60,7 +60,7 @@ pub async fn compare_asset_dependencies(sub_matches: &ArgMatches) -> Result<(), 
         candidate_path,
     )
     .await
-    .map_err(|e| CliError::AssetResolutionError("candidate".to_string(), e.to_string()))?;
+    .map_err(|e| CliError::resolving("candidate", e))?;
 
     // Fetch the full recursive dependency trees for both assets.
     let reference_tree = ctx

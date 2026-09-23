@@ -123,6 +123,7 @@ async fn main() {
     // Started first so the (cached, usually instant) lookup overlaps with the
     // command instead of being awaited on the way out.
     pcli2::stats::start();
+    error_utils::install_panic_hook();
     // Read straight from argv/env so a usage error clap reports before parsing
     // is finished can already be JSON; the parsed flag takes over below.
     error_utils::set_json_errors(error_utils::json_errors_requested());
@@ -206,6 +207,10 @@ async fn main() {
             process::exit(0);
         }
         Err(e) => {
+            // The reader of our output went away (`| head`): that is not a failure.
+            if error_utils::is_broken_pipe(&e) {
+                process::exit(0);
+            }
             if !e.is_already_reported() {
                 error_utils::report_cli_error(&e);
             }

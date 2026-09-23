@@ -607,33 +607,36 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                         &configuration,
                     );
 
-                    // Store the client credentials so they're available for token refresh
-                    let client_id_result = keyring.put(
-                        &environment_name,
-                        "client-id".to_string(),
-                        client_id.clone(),
-                    );
-                    let client_secret_result = keyring.put(
-                        &environment_name,
-                        "client-secret".to_string(),
-                        client_secret.clone(),
-                    );
-
-                    if client_id_result.is_err() || client_secret_result.is_err() {
-                        error_utils::report_error_with_remediation(
-                            &CliError::SecurityError(String::from(
-                                "Failed to store client credentials",
-                            )),
-                            &[
-                                "Check that your system's keyring service is running",
-                                "Try logging in again with 'pcli2 auth login'",
-                            ],
-                        );
-                        return Err(CliError::AlreadyReported(PcliExitCode::AuthError));
-                    }
-
+                    // The credentials are only stored once the auth server has accepted
+                    // them. They used to be written first, so a mistyped secret replaced a
+                    // working one even though the login then failed.
                     match auth_client.get_access_token().await {
                         Ok(token) => {
+                            // Store the client credentials so they're available for token refresh
+                            let client_id_result = keyring.put(
+                                &environment_name,
+                                "client-id".to_string(),
+                                client_id.clone(),
+                            );
+                            let client_secret_result = keyring.put(
+                                &environment_name,
+                                "client-secret".to_string(),
+                                client_secret.clone(),
+                            );
+
+                            if client_id_result.is_err() || client_secret_result.is_err() {
+                                error_utils::report_error_with_remediation(
+                                    &CliError::SecurityError(String::from(
+                                        "Failed to store client credentials",
+                                    )),
+                                    &[
+                                        "Check that your system's keyring service is running",
+                                        "Try logging in again with 'pcli2 auth login'",
+                                    ],
+                                );
+                                return Err(CliError::AlreadyReported(PcliExitCode::AuthError));
+                            }
+
                             // Store the access token
                             let token_result =
                                 keyring.put(&environment_name, "access-token".to_string(), token);

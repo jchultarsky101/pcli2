@@ -48,7 +48,7 @@ pub async fn resolve_asset_dependency(sub_matches: &ArgMatches) -> Result<(), Cl
         assembly_path_param,
     )
     .await
-    .map_err(|e| CliError::AssetResolutionError("assembly".to_string(), e.to_string()));
+    .map_err(|e| CliError::resolving("assembly", e));
     let target = match &assembly {
         Ok(_) => crate::actions::utils::resolve_asset(
             ctx.api(),
@@ -57,7 +57,7 @@ pub async fn resolve_asset_dependency(sub_matches: &ArgMatches) -> Result<(), Cl
             target_path_param,
         )
         .await
-        .map_err(|e| CliError::AssetResolutionError("target".to_string(), e.to_string())),
+        .map_err(|e| CliError::resolving("target", e)),
         Err(_) => Err(CliError::MissingRequiredArgument(String::new())),
     };
     progress.finish_and_clear();

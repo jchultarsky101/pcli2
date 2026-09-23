@@ -481,7 +481,9 @@ pub fn tenant_parameter() -> Arg {
         .long(PARAMETER_TENANT)
         .num_args(1)
         .required(false)
-        .help("Tenant ID or alias")
+        // For this run only; `tenant use` changes the saved default.
+        .env("PCLI2_TENANT")
+        .help("Tenant ID or short name, for this command only (default: the active tenant)")
 }
 
 /// Create folder identifier group: it must be either --folder-uuid or --folder-path

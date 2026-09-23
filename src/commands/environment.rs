@@ -43,6 +43,7 @@ pub fn environment_command() -> Command {
         .subcommand(
             Command::new(COMMAND_REMOVE)
                 .about("Remove an environment")
+                .visible_alias("rm")
                 .arg(
                     name_parameter()
                         .required(true)
@@ -52,6 +53,7 @@ pub fn environment_command() -> Command {
         .subcommand(
             Command::new(COMMAND_ENVIRONMENT_LIST)
                 .about("List all environments")
+                .visible_alias("ls")
                 .arg(format_parameter().value_parser(["json", "csv"]))
                 .arg(format_pretty_parameter())
                 .arg(format_with_headers_parameter()),

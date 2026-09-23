@@ -3,8 +3,7 @@
 //! This module contains the core logic for user-related operations in the Physna CLI.
 //! It handles listing users, managing user permissions, and other user management tasks.
 
-use crate::actions::CliActionError;
-use crate::format::{Formattable, OutputFormat, OutputFormatOptions};
+use crate::format::{Formattable, OutputFormat};
 use crate::physna_v3::{PhysnaApiClient, TryDefault};
 use clap::ArgMatches;
 use serde::{Deserialize, Serialize};
@@ -148,106 +147,39 @@ impl Formattable for UserListResponse {
     }
 }
 
-/// List users in the current tenant
-pub async fn list_users(matches: &ArgMatches) -> Result<(), CliActionError> {
-    // Get format parameters
-    let format_str = matches
-        .get_one::<String>("format")
-        .map(|s| s.as_str())
-        .unwrap_or("json");
+/// List users in the current tenant (or the one named with `--tenant`).
+pub async fn list_users(matches: &ArgMatches) -> Result<(), crate::error::CliError> {
+    let format = crate::format_utils::FormatParams::from_args(matches).format;
 
-    let with_headers = matches.get_flag("headers");
-    let pretty = matches.get_flag("pretty");
-    crate::format_utils::warn_about_noop_format_flags(matches, format_str);
-
-    let format_options = OutputFormatOptions {
-        with_metadata: false,
-        with_headers,
-        pretty,
-    };
-
-    let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
-
-    // Create API client
     let mut client = PhysnaApiClient::try_default()?;
-
-    // Get the active tenant from configuration
     let configuration = crate::configuration::Configuration::load_or_create_default()?;
-    let active_tenant_uuid = configuration.get_active_tenant_uuid().ok_or_else(|| {
-        CliActionError::BusinessLogicError(
-            "No active tenant found. Please set an active tenant with 'pcli2 tenant use' first."
-                .to_string(),
-        )
-    })?;
+    // Honours --tenant / PCLI2_TENANT like every other tenant-scoped command; it
+    // used to read only the active tenant, and the flag was not accepted.
+    let tenant = crate::param_utils::get_tenant(&mut client, matches, &configuration).await?;
 
-    // Get the current user's tenant settings to find the active one
-    let current_user = client.get_current_user().await?;
-
-    let active_tenant = current_user
-        .user
-        .settings
-        .iter()
-        .find(|setting| setting.tenant_uuid == active_tenant_uuid)
-        .ok_or_else(|| {
-            CliActionError::BusinessLogicError(
-                "Active tenant UUID not found in user's tenant settings".to_string(),
-            )
-        })?
-        .clone();
-
-    // List users for the tenant
-    let users_response = client.list_tenant_users(&active_tenant.tenant_uuid).await?;
-
-    // Format and print the response
-    let output = users_response.format(&format)?;
-    crate::format::print_output(&output);
-
+    let users_response = client
+        .list_tenant_users(&tenant.uuid)
+        .await
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    crate::format::print_output(&users_response.format(&format)?);
     Ok(())
 }
 
-/// Get details for a specific user
-pub async fn get_user(matches: &ArgMatches) -> Result<(), CliActionError> {
-    // Get the user ID from the command line
-    let user_id = matches.get_one::<String>("user_id").ok_or_else(|| {
-        CliActionError::MissingRequiredArgument("user_id is required".to_string())
-    })?;
+/// Get details for a specific user.
+pub async fn get_user(matches: &ArgMatches) -> Result<(), crate::error::CliError> {
+    let user_id = matches
+        .get_one::<String>("user_id")
+        .ok_or_else(|| crate::error::CliError::MissingRequiredArgument("user_id".to_string()))?;
+    let format = crate::format_utils::FormatParams::from_args(matches).format;
 
-    // Get format parameters
-    let format_str = matches
-        .get_one::<String>("format")
-        .map(|s| s.as_str())
-        .unwrap_or("json");
-
-    let with_headers = matches.get_flag("headers");
-    let pretty = matches.get_flag("pretty");
-    crate::format_utils::warn_about_noop_format_flags(matches, format_str);
-
-    let format_options = OutputFormatOptions {
-        with_metadata: false,
-        with_headers,
-        pretty,
-    };
-
-    let format = OutputFormat::from_string_with_options(format_str, format_options).unwrap();
-
-    // Create API client
     let mut client = PhysnaApiClient::try_default()?;
-
-    // Get the active tenant from configuration
     let configuration = crate::configuration::Configuration::load_or_create_default()?;
-    let active_tenant_uuid = configuration.get_active_tenant_uuid().ok_or_else(|| {
-        CliActionError::BusinessLogicError(
-            "No active tenant found. Please set an active tenant with 'pcli2 tenant use' first."
-                .to_string(),
-        )
-    })?;
+    let tenant = crate::param_utils::get_tenant(&mut client, matches, &configuration).await?;
 
-    // Get the user details
-    let user = client.get_user(&active_tenant_uuid, user_id).await?;
-
-    // Format and print the response
-    let output = user.format(&format)?;
-    crate::format::print_output(&output);
-
+    let user = client
+        .get_user(&tenant.uuid, user_id)
+        .await
+        .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    crate::format::print_output(&user.format(&format)?);
     Ok(())
 }

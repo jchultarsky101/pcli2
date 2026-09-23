@@ -72,6 +72,7 @@ pub fn report_command() -> Command {
                         .long(PARAMETER_TYPE)
                         .num_args(1)
                         .value_parser(crate::model::ReportType::ALL)
+                        .ignore_case(true)
                         .help("Only reports of this type"),
                 )
                 .arg(
@@ -79,6 +80,7 @@ pub fn report_command() -> Command {
                         .long(PARAMETER_STATUS)
                         .num_args(1)
                         .value_parser(crate::model::JobStatus::ALL)
+                        .ignore_case(true)
                         .help("Only reports in this status"),
                 )
                 .arg(open_limit_parameter()),

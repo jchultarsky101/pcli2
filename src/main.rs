@@ -181,6 +181,21 @@ async fn main() {
     pcli2::terminal::set_no_color(matches.get_flag("no-color"));
     pcli2::format::set_safe_csv(matches.get_flag("safe-csv"));
 
+    // --env / PCLI2_ENV: this run's environment, checked before anything uses it.
+    if let Some(name) = matches.get_one::<String>("env") {
+        let known = configuration::Configuration::load_default()
+            .map(|c| c.has_environment(name))
+            .unwrap_or(false);
+        if !known {
+            let error = pcli2::error::CliError::ConfigurationError(
+                ConfigurationError::EnvironmentNotFound(name.clone()),
+            );
+            error_utils::report_cli_error(&error);
+            process::exit(error.exit_code().code());
+        }
+        configuration::set_environment_override(name.clone());
+    }
+
     // A flag that no longer exists is refused before anything else happens,
     // with its replacement named. Clap alone would say "unexpected argument".
     if let Some(message) = pcli2::commands::removed_argument_used(&matches) {

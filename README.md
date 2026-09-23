@@ -729,6 +729,8 @@ credentials) and 68 when the API or auth server cannot be reached.
 | `PCLI2_NO_INPUT` | Never prompt; a command that would need an answer exits 64 instead (same as `--no-input`) |
 | `PCLI2_ERROR_FORMAT` | `text` (default) or `json`: errors on stderr as one JSON object per line (same as `--error-format`) |
 | `PCLI2_NO_UPDATE_CHECK`, `CI` | Disable the new-version hint |
+| `PCLI2_TENANT` | Tenant for this command only (same as `--tenant`); `tenant use` changes the saved default |
+| `PCLI2_ENV` | Environment for this command only (same as `--env`); `env use` changes the saved default |
 | `PCLI2_CLIENT_ID`, `PCLI2_CLIENT_SECRET` | Credentials for `auth login` without flags or a prompt (for CI); a secret in a variable stays out of shell history and process listings |
 
 ### Debugging Tips
@@ -774,9 +776,9 @@ Quick reference for all available command aliases:
 | `pcli2 folder rename` | `pcli2 folder ren` |
 | `pcli2 folder resolve` | `pcli2 folder res` |
 | `pcli2 folder download` | `pcli2 folder dl` |
-| `pcli2 folder geometric-match` | `pcli2 folder geometric-search` |
-| `pcli2 folder part-match` | `pcli2 folder part-search` |
-| `pcli2 folder visual-match` | `pcli2 folder visual-search` |
+| `pcli2 folder geometric-match` | `pcli2 folder geometric-search`, `pcli2 folder gm` |
+| `pcli2 folder part-match` | `pcli2 folder part-search`, `pcli2 folder pm` |
+| `pcli2 folder visual-match` | `pcli2 folder visual-search`, `pcli2 folder vm` |
 
 ### Asset Commands
 | Full Command | Alias |
@@ -790,10 +792,10 @@ Quick reference for all available command aliases:
 | `pcli2 asset dependencies` | `pcli2 asset deps` |
 | `pcli2 asset dependency-diff` | `pcli2 asset deps-diff` |
 | `pcli2 asset thumbnail` | `pcli2 asset thumb` |
-| `pcli2 asset geometric-match` | `pcli2 asset geometric-search` |
-| `pcli2 asset part-match` | `pcli2 asset part-search` |
-| `pcli2 asset visual-match` | `pcli2 asset visual-search` |
-| `pcli2 asset text-match` | `pcli2 asset text-search` |
+| `pcli2 asset geometric-match` | `pcli2 asset geometric-search`, `pcli2 asset gm` |
+| `pcli2 asset part-match` | `pcli2 asset part-search`, `pcli2 asset pm` |
+| `pcli2 asset visual-match` | `pcli2 asset visual-search`, `pcli2 asset vm` |
+| `pcli2 asset text-match` | `pcli2 asset text-search`, `pcli2 asset tm` |
 | `pcli2 asset similarity` | `pcli2 asset match-scores` |
 | `pcli2 asset diagnose` | `pcli2 asset failure`, `pcli2 asset why` |
 | `pcli2 asset move` | `pcli2 asset mv` |
@@ -816,6 +818,8 @@ Quick reference for all available command aliases:
 | Full Command | Alias |
 |-------------|-------|
 | `pcli2 environment` | `pcli2 env` |
+| `pcli2 environment list` | `pcli2 env ls` |
+| `pcli2 environment remove` | `pcli2 env rm` |
 
 ### Report Commands
 | Full Command | Alias |

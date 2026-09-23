@@ -45,8 +45,13 @@ fn report_id(sub_matches: &ArgMatches) -> Result<Uuid, CliError> {
 pub async fn list_reports(sub_matches: &ArgMatches) -> Result<(), CliError> {
     trace!("Executing \"report list\" command...");
     let format = crate::actions::tenants::plain_format(sub_matches)?;
-    let report_type = sub_matches.get_one::<String>(PARAMETER_TYPE).cloned();
-    let status = sub_matches.get_one::<String>(PARAMETER_STATUS).cloned();
+    let report_type = sub_matches
+        .get_one::<String>(PARAMETER_TYPE)
+        .map(|s| s.to_uppercase());
+    // Accepted in any case (`--status completed`); the API wants upper case.
+    let status = sub_matches
+        .get_one::<String>(PARAMETER_STATUS)
+        .map(|s| s.to_uppercase());
     let limit = sub_matches
         .get_one::<usize>(crate::commands::params::PARAMETER_LIMIT)
         .copied();

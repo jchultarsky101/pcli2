@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--env` / `PCLI2_ENV` choose the environment for one command** - Without changing the saved default (`pcli2 env use` does that), so scripts can work against staging and production at the same time. An unknown name is refused before anything runs (exit 67).
+- **`PCLI2_TENANT` sets `--tenant` for one command**, and `user list` / `user get` accept `--tenant` (they only ever used the active tenant).
+- **Progress bars appear on their own in a terminal** - For the commands that have `--progress`, when stderr is a terminal (not in CI, not with `--quiet` or `--error-format json`). `--no-progress` turns them off; `--progress` still forces them on.
+- **Shorter aliases** - `gm`, `pm`, `vm` and `tm` for the geometric, part, visual and text match commands; `env ls` and `env rm`. `folder geometric-match --format xlsx` is accepted as well as `xls`, and `report list --type`/`--status` accept any letter case.
+
 ### Fixed
 - **The credentials file can no longer be wiped by two pcli2 runs at once** - `dev_credentials.json` was rewritten in place, and a file that could not be parsed was treated as empty. Two runs in parallel (`xargs -P`, cron, CI), one of them renewing its token, or a crash mid-write, could leave the file holding a single environment with an empty client ID and secret. It is now written to a temporary file and renamed into place, created owner-only (`0600`) from the start, and each change is a read-modify-write under a lock file, so parallel runs no longer lose each other's updates. A file that cannot be parsed is kept as `dev_credentials.json.unreadable-<time>` with a warning instead of being overwritten. `config.yml` and the update-check cache are written the same atomic way.
 - **`pcli2 ... | head` no longer exits 101** - A reader that stops early made pcli2 panic ("failed printing to stdout: Broken pipe") and exit 101, the *network error* code. A closed output pipe now ends the run quietly with exit 0. Any other internal panic is reported as one line (JSON under `--error-format json`) and exits 70.

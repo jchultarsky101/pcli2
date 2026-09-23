@@ -30,6 +30,8 @@ export PCLI2_CACHE_DIR="/home/$USER/.pcli2/cache"
 | `PCLI2_NO_INPUT` | Never prompt; a command that would need an answer exits 64 instead. Same as `--no-input`. |
 | `PCLI2_ERROR_FORMAT` | `text` (default) or `json`. With `json`, every error, hint and log line on stderr is one JSON object; the last one carries the exit code. Same as `--error-format`. |
 | `PCLI2_NO_UPDATE_CHECK`, `CI` | Disable the once-a-day new-version hint. |
+| `PCLI2_TENANT` | Tenant for this command only, like `--tenant`. `pcli2 tenant use` changes the saved default. |
+| `PCLI2_ENV` | Environment for this command only, like `--env`. Nothing is saved, so scripts can target different environments at the same time. |
 | `PCLI2_CLIENT_ID`, `PCLI2_CLIENT_SECRET` | Credentials for `auth login` without flags or a prompt, for CI. A secret in a variable stays out of shell history and process listings. |
 
 API, UI and authentication URLs are not read from the environment. They belong to

@@ -212,7 +212,7 @@ pub fn asset_command() -> Command {
         )
     .subcommand(
         Command::new(COMMAND_MATCH)
-            .visible_alias("geometric-search") // Add alias for geometric-search
+            .visible_aliases(["geometric-search", "gm"])
             .about("Find geometrically similar assets")
             .after_help(crate::commands::examples(&[
                 ("Matches of 90% or better", "pcli2 asset geometric-match --path /Home/Parts/bracket.stl --threshold 90"),
@@ -232,7 +232,7 @@ pub fn asset_command() -> Command {
     )
     .subcommand(
         Command::new(COMMAND_PART_MATCH)
-            .visible_alias("part-search") // Add alias for part-search
+            .visible_aliases(["part-search", "pm"])
             .about("Find geometrically similar assets using part search algorithm")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
@@ -248,7 +248,7 @@ pub fn asset_command() -> Command {
     )
     .subcommand(
         Command::new(COMMAND_VISUAL_MATCH)
-            .visible_alias("visual-search") // Add alias for visual-search
+            .visible_aliases(["visual-search", "vm"])
             .about("Find visually similar assets for a specific reference asset")
             .arg(tenant_parameter())
             .arg(uuid_parameter())
@@ -265,7 +265,7 @@ pub fn asset_command() -> Command {
     )
     .subcommand(
         Command::new(COMMAND_TEXT_MATCH)
-            .visible_alias("text-search") // Add alias for text-search
+            .visible_aliases(["text-search", "tm"])
             .about("Find assets using text search")
             .after_help(crate::commands::examples(&[
                 ("Search names and metadata", "pcli2 asset text-match --text bracket"),

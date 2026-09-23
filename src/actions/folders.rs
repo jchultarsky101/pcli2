@@ -779,7 +779,7 @@ fn bulk_options(sub_matches: &ArgMatches, verb: &'static str) -> crate::actions:
         ),
         continue_on_error: sub_matches
             .get_flag(crate::commands::params::PARAMETER_CONTINUE_ON_ERROR),
-        show_progress: sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS),
+        show_progress: crate::terminal::show_progress(sub_matches),
         verb,
     }
 }

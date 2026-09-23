@@ -234,7 +234,7 @@ pub async fn print_folder_dependencies(sub_matches: &ArgMatches) -> Result<(), C
     let tenant_uuid = *ctx.tenant_uuid();
 
     // Check if progress should be displayed
-    let show_progress = sub_matches.get_flag(crate::commands::params::PARAMETER_PROGRESS);
+    let show_progress = crate::terminal::show_progress(sub_matches);
 
     // Create progress bars if requested
     let multi_progress = if show_progress {

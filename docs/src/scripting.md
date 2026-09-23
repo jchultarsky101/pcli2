@@ -115,6 +115,18 @@ export PCLI2_CLIENT_SECRET="$PHYSNA_CLIENT_SECRET"
 pcli2 auth login
 ```
 
+## Choosing the Tenant and Environment per Command
+
+`--tenant` (or `PCLI2_TENANT`) and `--env` (or `PCLI2_ENV`) apply to one
+command and change nothing on disk, unlike `pcli2 tenant use` and
+`pcli2 env use`. Scripts that run side by side against different tenants or
+environments should use them instead of switching the saved defaults:
+
+```bash
+PCLI2_ENV=staging pcli2 asset list --folder-path /Home/Parts --format csv
+pcli2 --env production asset list --folder-path /Home/Parts --tenant acme --format csv
+```
+
 ## Dry Run Mode
 
 Preview destructive or bulk operations without changing anything on the

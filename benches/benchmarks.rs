@@ -2,8 +2,9 @@
 //!
 //! Run with: cargo bench
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use pcli2::model::normalize_path;
+use std::hint::black_box;
 
 fn bench_normalize_path(c: &mut Criterion) {
     c.bench_function("normalize_path_basic", |b| {

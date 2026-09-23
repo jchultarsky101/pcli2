@@ -52,7 +52,7 @@ mod implementation {
         pub fn delete(&self, tenant: &str, key: String) -> Result<(), KeyringError> {
             let key = [tenant, key.as_str()].join(":");
             let entry = Entry::new("pcli2", key.as_str())?;
-            entry.delete_password()?;
+            entry.delete_credential()?;
             Ok(())
         }
 

@@ -422,9 +422,11 @@ impl PhysnaApiClient {
                 "sizeThreshold": threshold
             });
             // The visual endpoint takes no filters object by default; only add one
-            // when --exclusive supplies folders to restrict the search to.
+            // when --exclusive supplies folders to restrict the search to. The API
+            // requires `metadata` in any filters object (without it: 400
+            // "Validation Failed" for every asset).
             if !folder_ids.is_empty() {
-                body["filters"] = serde_json::json!({ "folderIds": folder_ids });
+                body["filters"] = serde_json::json!({ "folderIds": folder_ids, "metadata": {} });
             }
 
             debug!("Sending visual search request to: {}", url);

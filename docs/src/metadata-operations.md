@@ -327,6 +327,14 @@ pcli2 asset metadata create-batch --input "metadata.csv" --continue-on-error
 
 On completion (or termination), a summary is printed to stderr showing the number of successful and failed assets.
 
+## Speed and Order
+
+Every row's asset is looked up before anything is written (UUIDs a thousand per
+request), new fields are registered once, and then the rows are written four at
+a time. `--concurrent N` changes that (1 to 10); `--concurrent 1` writes strictly
+in file order. A row whose asset cannot be found stops the batch before the first
+write (or is skipped with `--continue-on-error`).
+
 ## Progress
 
 ```bash

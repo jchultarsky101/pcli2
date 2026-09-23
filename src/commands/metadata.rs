@@ -142,6 +142,10 @@ pub fn metadata_command() -> Command {
                     - Values containing commas, quotes, or newlines must be enclosed in double quotes\n\n\
                     The command groups metadata by asset and updates all metadata \
                     for each asset in a single API call.\n\n\
+                    Every row's asset is looked up before anything is written, so an \
+                    asset that cannot be resolved stops the batch before its first write. \
+                    The writes then run --concurrent at a time (default 4; --concurrent 1 \
+                    writes strictly in order).\n\n\
                     By default, any error (such as an asset that cannot be resolved, \
                     a metadata type conflict, or a failed metadata API call) terminates \
                     the batch operation. Pass --continue-on-error to skip the offending \
@@ -156,6 +160,10 @@ pub fn metadata_command() -> Command {
                         .required(true),
                 )
                 .arg(crate::commands::params::removed_parameter("csv-file", "--input"))
+                .arg(crate::commands::params::concurrent_parameter(
+                    "4",
+                    "Maximum number of assets written at once (range: 1-10)",
+                ))
                 .arg(
                     Arg::new("csv-format")
                         .long("csv-format")

@@ -52,12 +52,40 @@ fn write_via_temporary(path: &Path, data: &[u8], private: bool) -> std::io::Resu
         file.write_all(data)?;
         file.sync_all()?;
         drop(file);
-        fs::rename(&tmp, path)
+        rename_with_retry(&tmp, path)
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
     result
+}
+
+/// Whether an I/O error is one Windows reports for a file in a passing state: being
+/// deleted (a lock file another process just released), held open for a moment
+/// by a virus scanner or the search indexer, or briefly absent while another
+/// rename replaces it. These clear within milliseconds. Elsewhere they are real
+/// errors and are never retried.
+fn transient_on_windows(error: &std::io::Error) -> bool {
+    cfg!(windows)
+        && matches!(
+            error.kind(),
+            std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+        )
+}
+
+/// `fs::rename`, retried for about a second while Windows reports the file as
+/// transiently unavailable (see [`transient_on_windows`]).
+fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut attempts = 0;
+    loop {
+        match fs::rename(from, to) {
+            Err(e) if transient_on_windows(&e) && attempts < 50 => {
+                attempts += 1;
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            result => return result,
+        }
+    }
 }
 
 /// Replace `path` with `data` atomically.
@@ -115,7 +143,12 @@ impl FileLock {
                     let _ = write!(file, "{}", std::process::id());
                     return Ok(Self { path });
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Windows answers PermissionDenied while the previous holder's lock
+                // file is still being deleted: busy, like AlreadyExists.
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::AlreadyExists
+                        || (cfg!(windows) && e.kind() == std::io::ErrorKind::PermissionDenied) =>
+                {
                     if Self::is_stale(&path) {
                         tracing::debug!("Removing stale lock file {}", path.display());
                         let _ = fs::remove_file(&path);

@@ -54,7 +54,7 @@ zip = "2.1"
 uuid = { version = "1.18.1", features = ["serde", "v4"] }
 rand = "0.8"
 mime_guess = "2.0"
-rust_xlsxwriter = "0.95.0"
+rust_xlsxwriter = "0.99.1"
 
 [dev-dependencies]
 assert_cmd = "2.0.14"

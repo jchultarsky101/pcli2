@@ -2148,14 +2148,7 @@ impl PhysnaApiClient {
                 // New field: register it with the caller-declared type when
                 // provided, otherwise infer it from the value (defaulting to
                 // text). A declared type must still be able to hold the value.
-                let register_type = declared_types
-                    .and_then(|m| m.get(key))
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| match Self::infer_json_value_type(value).as_str() {
-                        "number" => "number",
-                        "boolean" => "boolean",
-                        _ => "text",
-                    });
+                let register_type = Self::new_field_type(key, value, declared_types);
 
                 let coerced_value = match Self::coerce_value_to_type(value, register_type) {
                     Some(v) => v,
@@ -2193,6 +2186,65 @@ impl PhysnaApiClient {
         // Now update the asset metadata with the coerced values
         self.update_asset_metadata(tenant_uuid, asset_uuid, &coerced)
             .await
+    }
+
+    /// The type a new metadata field is registered with: the declared type when
+    /// the row gives one, else inferred from the value (defaulting to text).
+    fn new_field_type<'a>(
+        key: &str,
+        value: &serde_json::Value,
+        declared_types: Option<&'a std::collections::HashMap<String, String>>,
+    ) -> &'a str {
+        declared_types
+            .and_then(|m| m.get(key))
+            .map(|s| s.as_str())
+            .unwrap_or_else(|| match Self::infer_json_value_type(value).as_str() {
+                "number" => "number",
+                "boolean" => "boolean",
+                _ => "text",
+            })
+    }
+
+    /// Register the fields of `metadata` that `field_type_map` does not know yet,
+    /// exactly as [`Self::update_asset_metadata_with_registry`] would on its
+    /// first write of each: the declared type, else the inferred one. A field
+    /// whose value cannot be held by that type, or that fails to register, is
+    /// left for the write to report.
+    ///
+    /// Batch writes run concurrently; registering up front, in row order, keeps
+    /// two rows from racing to create the same field.
+    pub async fn register_missing_metadata_fields(
+        &mut self,
+        tenant_uuid: &Uuid,
+        metadata: &std::collections::HashMap<String, serde_json::Value>,
+        declared_types: Option<&std::collections::HashMap<String, String>>,
+        field_type_map: &mut std::collections::HashMap<String, String>,
+    ) {
+        let mut keys: Vec<&String> = metadata.keys().collect();
+        keys.sort();
+        for key in keys {
+            if field_type_map.contains_key(key) {
+                continue;
+            }
+            let value = &metadata[key];
+            let register_type = Self::new_field_type(key, value, declared_types);
+            if Self::coerce_value_to_type(value, register_type).is_none() {
+                continue;
+            }
+            match self
+                .create_metadata_field(&tenant_uuid.to_string(), key, Some(register_type))
+                .await
+            {
+                Ok(_) => {
+                    debug!(
+                        "Registered new metadata field '{}' as {}",
+                        key, register_type
+                    );
+                    field_type_map.insert(key.clone(), register_type.to_string());
+                }
+                Err(e) => debug!("Failed to register metadata field '{}': {}", key, e),
+            }
+        }
     }
 
     /// Infer the type of a JSON value for metadata type checking

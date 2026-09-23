@@ -129,4 +129,39 @@ impl PhysnaApiClient {
         // Return the user from the response
         Ok(response.user)
     }
+
+    /// The tenant's activity between two UTC days, inclusive, at most 366 days
+    /// apart. `GET /tenants/{tenantId}/activity-metrics?from&to`; tenant admins
+    /// only.
+    pub async fn get_activity_metrics(
+        &mut self,
+        tenant_uuid: &Uuid,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> Result<crate::model::ActivityMetrics, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/activity-metrics?{}",
+            self.base_url,
+            tenant_uuid,
+            serde_urlencoded::to_string([
+                ("from", from.format("%Y-%m-%d").to_string()),
+                ("to", to.format("%Y-%m-%d").to_string()),
+            ])
+            .unwrap()
+        );
+        self.get(&url).await
+    }
+
+    /// How many assets of each type the tenant holds, demo assets uploaded by
+    /// Physna excluded. `GET /tenants/{tenantId}/assets/type-counts`.
+    pub async fn get_asset_type_counts(
+        &mut self,
+        tenant_uuid: &Uuid,
+    ) -> Result<crate::model::Counts, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/assets/type-counts",
+            self.base_url, tenant_uuid
+        );
+        self.get(&url).await
+    }
 }

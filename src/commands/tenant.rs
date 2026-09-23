@@ -71,6 +71,59 @@ pub fn tenant_command() -> Command {
                 .arg(format_with_headers_parameter()),
         )
         .subcommand(
+            Command::new("usage")
+                .about("How much the tenant used Physna: searches, downloads, active users, assets")
+                .long_about(
+                    "How much the tenant used Physna over a period of UTC days: searches (by type), \
+                     compares, downloads, uploads, reports (by type), active users and per-feature \
+                     counts, plus how many assets of each type the tenant holds now (demo assets \
+                     uploaded by Physna are not counted).\n\n\
+                     The period is the last 30 days by default; --days, --from and --to change it, \
+                     up to 366 days. With --daily the output is one row per day instead.\n\n\
+                     CSV and table output have one CATEGORY,NAME,COUNT row per number, so a count \
+                     Physna adds later is a new row, not a new column. Requires the tenant admin role.",
+                )
+                .after_help(crate::commands::examples(&[
+                    ("The last 30 days", "pcli2 tenant usage"),
+                    ("One quarter, as JSON", "pcli2 tenant usage --from 2026-07-01 --to 2026-09-30 --format json"),
+                    ("Active users per day over the last week", "pcli2 tenant usage --days 7 --daily --columns DATE,ACTIVE_USERS"),
+                ]))
+                .arg(tenant_parameter())
+                .arg(
+                    Arg::new("from")
+                        .long("from")
+                        .num_args(1)
+                        .value_name("YYYY-MM-DD")
+                        .value_parser(parse_utc_day)
+                        .conflicts_with("days")
+                        .help("First UTC day of the period (default: 29 days before --to, 30 days in all)"),
+                )
+                .arg(
+                    Arg::new("to")
+                        .long("to")
+                        .num_args(1)
+                        .value_name("YYYY-MM-DD")
+                        .value_parser(parse_utc_day)
+                        .help("Last UTC day of the period (default: today)"),
+                )
+                .arg(
+                    Arg::new("days")
+                        .long("days")
+                        .num_args(1)
+                        .value_parser(clap::value_parser!(u32).range(1..=366))
+                        .help("The period is this many days, ending with --to (default: 30)"),
+                )
+                .arg(
+                    Arg::new("daily")
+                        .long("daily")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("One row per day: date, searches, compares, downloads, uploads, reports, active users"),
+                )
+                .arg(format_parameter().value_parser(["json", "csv", "table"]))
+                .arg(format_pretty_parameter())
+                .arg(format_with_headers_parameter()),
+        )
+        .subcommand(
             Command::new(COMMAND_USE)
                 .about("Set the active tenant")
                 .after_help(crate::commands::examples(&[
@@ -205,6 +258,12 @@ pub fn tenant_command() -> Command {
                         .arg(format_parameter().value_parser(["json", "csv", "table"])),
                 ),
         )
+}
+
+/// A `YYYY-MM-DD` date, as the activity endpoints take it.
+fn parse_utc_day(value: &str) -> Result<chrono::NaiveDate, String> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| format!("'{}' is not a date in the form YYYY-MM-DD", value))
 }
 
 /// `--name`: a metadata field, by its exact registered name.

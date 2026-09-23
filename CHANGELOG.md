@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`pcli2 tenant usage` reports how much the tenant used Physna** - Searches (by type), compares, downloads, uploads, reports (by type), distinct active users and per-feature counts over a period of UTC days, plus how many assets of each type the tenant holds. The last 30 days by default; `--days`, `--from` and `--to` choose another period of up to 366 days, and `--daily` prints one row per day. CSV and table output have one `CATEGORY,NAME,COUNT` row per number, so a count Physna adds later is a new row rather than a new column. Needs the tenant admin role.
+
 ## [2.3.0] - 2026-09-23
 
 ### Added

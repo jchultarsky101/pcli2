@@ -217,6 +217,12 @@ pub fn folder_command() -> Command {
                         .required(false)
                         .help("Only show matches where both assets belong to the specified paths"),
                 )
+                .arg(
+                    clap::Arg::new("groups")
+                        .long("groups")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Group assets that match each other (directly or through a chain of matches): adds GROUP_ID and GROUP_SIZE as the last columns (groupId and groupSize in JSON)"),
+                )
                 .arg(format_with_headers_parameter())
                 .arg(format_with_metadata_parameter())
                 .arg(format_pretty_parameter())

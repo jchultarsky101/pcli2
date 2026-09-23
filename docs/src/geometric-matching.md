@@ -198,6 +198,11 @@ that make a large report easy to scan:
 - **Clickable comparison links** — `COMPARISON_URL` is the **last column** (its
   long value is rarely read, so the metadata columns come before it), written as a
   hyperlink you can click to open the side-by-side comparison in a browser.
+- **A Summary sheet** after the matches records how the report was made (tenant,
+  folders, threshold, `--exclusive`, the time and the pcli2 version) and what it
+  found: the number of pairs, how many assets they involve, how many groups of
+  matching assets there are (see below), and how the match percentages are
+  distributed (100%, 99 to 100%, 95 to 99%, 90 to 95%, under 90%).
 
 Because Excel is a binary format, `xls` writes to a **file** rather than standard
 output. Use `--output` (or `-o`) to choose the path; if omitted, the workbook is
@@ -216,6 +221,21 @@ pcli2 folder geometric-match --folder-path /Home/FolderA/ --folder-path /Home/Fo
 
 > The `xls` format always includes metadata (the metadata diff is its whole
 > point), so the `--metadata` flag is implied and does not need to be passed.
+
+### Groups of Duplicates
+
+A report lists pairs: ten copies of one part in a folder make forty-five rows.
+`--groups` also says which assets belong together. Two assets are in the same
+group when a chain of matches connects them (A matches B and B matches C: A, B
+and C are one group), and every row gets the group's number and size as two extra
+**last** columns, `GROUP_ID` and `GROUP_SIZE` (`groupId` and `groupSize` in JSON).
+Groups are numbered in the order the rows list them, so the same data always
+numbers them the same way. Without `--groups` the report is unchanged.
+
+```bash
+# Duplicate groups as CSV: sort by GROUP_ID to review one part at a time
+pcli2 folder geometric-match --folder-path /Home/Parts/ --threshold 99 --groups --format csv --headers > duplicates.csv
+```
 
 ### Performance Options
 

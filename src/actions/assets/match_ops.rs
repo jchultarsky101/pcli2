@@ -1017,6 +1017,36 @@ fn report_summary(rows: usize) -> String {
 ///
 /// Each pair clones its reference asset, metadata included, so on a large report this
 /// is a slow pass - and it runs after the match progress bar has already finished.
+/// Match pairs as JSON objects with `groupId` and `groupSize` added (`--groups`).
+fn with_group_fields(pairs: &[crate::model::GeometricMatchPair]) -> Vec<serde_json::Value> {
+    let keys: Vec<(String, String)> = pairs
+        .iter()
+        .map(|p| {
+            (
+                p.reference_asset.uuid.to_string(),
+                p.candidate_asset.uuid.to_string(),
+            )
+        })
+        .collect();
+    let groups = crate::match_groups::MatchGroups::from_pairs(
+        keys.iter().map(|(a, b)| (a.as_str(), b.as_str())),
+    );
+    pairs
+        .iter()
+        .zip(&keys)
+        .map(|(pair, (reference, _))| {
+            let mut value = serde_json::to_value(pair).unwrap_or(serde_json::Value::Null);
+            if let (Some(object), Some((number, size))) =
+                (value.as_object_mut(), groups.group_of(reference))
+            {
+                object.insert("groupId".to_string(), number.into());
+                object.insert("groupSize".to_string(), size.into());
+            }
+            value
+        })
+        .collect()
+}
+
 fn flatten_geometric_matches(
     all_matches: Vec<crate::model::EnhancedGeometricSearchResponse>,
     progress: &ReportProgress,
@@ -1249,6 +1279,7 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         || format_params.format_str.eq_ignore_ascii_case("xlsx");
     let with_metadata = format_params.format_options.with_metadata || is_xls;
 
+    let with_groups = sub_matches.get_flag("groups");
     // Get exclusive flag
     let exclusive = sub_matches.get_flag("exclusive");
 
@@ -1689,8 +1720,14 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 .sum(),
         )?;
 
-        let (headers, rows) =
+        let (mut headers, mut rows) =
             build_geometric_match_table(&all_matches, with_metadata, &report_progress);
+        // The summary sheet counts the groups whether or not --groups adds the columns.
+        let groups = if with_groups {
+            crate::match_groups::add_group_columns(&mut headers, &mut rows)
+        } else {
+            crate::match_groups::groups_of_table(&headers, &rows)
+        };
         let row_count = rows.len();
         let requested_path = sub_matches
             .get_one::<std::path::PathBuf>(crate::commands::params::PARAMETER_OUTPUT)
@@ -1706,7 +1743,38 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
                 requested_path.display()
             ));
         }
-        crate::xlsx_report::write_match_report(headers, rows, &output_path, &report_progress)?;
+        let mut summary = vec![
+            ("Report".to_string(), "Folder geometric match".to_string()),
+            ("Tenant".to_string(), tenant.name.clone()),
+            ("Folders".to_string(), folder_paths.join(", ")),
+            ("Threshold".to_string(), format!("{:.2}%", threshold)),
+            (
+                "Both assets in these folders (--exclusive)".to_string(),
+                if exclusive { "yes" } else { "no" }.to_string(),
+            ),
+            (
+                "Generated (UTC)".to_string(),
+                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            ),
+            ("pcli2".to_string(), env!("CARGO_PKG_VERSION").to_string()),
+        ];
+        if let Some(groups) = &groups {
+            summary.push((
+                "Assets in matches".to_string(),
+                groups.asset_count().to_string(),
+            ));
+            summary.push((
+                "Groups of matching assets".to_string(),
+                groups.count().to_string(),
+            ));
+        }
+        crate::xlsx_report::write_match_report_with_summary(
+            headers,
+            rows,
+            &output_path,
+            &report_progress,
+            &summary,
+        )?;
         report_progress.finish_with_summary(&format!(
             "Wrote {} row(s) to {}",
             HumanCount(row_count as u64),
@@ -1724,14 +1792,23 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         crate::format::OutputFormat::Json(_) => {
             // For JSON, we need to flatten all matches into a single array
             let flattened_matches = flatten_geometric_matches(all_matches, &report_progress);
-            stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
+            if with_groups {
+                let grouped = with_group_fields(&flattened_matches);
+                stream_json_report(&grouped, &report_progress).map_err(json_stream_error)?;
+            } else {
+                stream_json_report(&flattened_matches, &report_progress)
+                    .map_err(json_stream_error)?;
+            }
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
         }
         crate::format::OutputFormat::Csv(_) => {
             // Build the shared table so CSV and Excel stay column-for-column
             // identical; only the presentation differs between the two formats.
-            let (headers, rows) =
+            let (mut headers, mut rows) =
                 build_geometric_match_table(&all_matches, with_metadata, &report_progress);
+            if with_groups {
+                crate::match_groups::add_group_columns(&mut headers, &mut rows);
+            }
 
             let mut wtr = csv_stdout_writer();
 
@@ -1759,7 +1836,13 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
         _ => {
             // Default to JSON
             let flattened_matches = flatten_geometric_matches(all_matches, &report_progress);
-            stream_json_report(&flattened_matches, &report_progress).map_err(json_stream_error)?;
+            if with_groups {
+                let grouped = with_group_fields(&flattened_matches);
+                stream_json_report(&grouped, &report_progress).map_err(json_stream_error)?;
+            } else {
+                stream_json_report(&flattened_matches, &report_progress)
+                    .map_err(json_stream_error)?;
+            }
             report_progress.finish_with_summary(&report_summary(flattened_matches.len()));
         }
     }

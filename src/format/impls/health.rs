@@ -30,7 +30,6 @@ impl Formattable for AssetHealthReport {
                         "ASSEMBLIES",
                         "PARTS",
                         "FILE-TYPES",
-                        "OTHER",
                     ))?;
                 }
 
@@ -57,7 +56,9 @@ impl Formattable for AssetHealthReport {
                     self.assemblies,
                     self.parts,
                     &file_types_str,
-                    self.other,
+                    // `other` is in the JSON and tree output. It is not a CSV column:
+                    // a script reading the row into fixed variables (`IFS=, read
+                    // total ... types`) would find it glued onto the last one.
                 ))?;
 
                 let data = wtr.into_inner()?;

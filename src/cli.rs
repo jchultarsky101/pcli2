@@ -291,6 +291,20 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
                     rename_folder(sub_matches).await?;
                     Ok(())
                 }
+                Some(("description", sub_matches)) => match sub_matches.subcommand() {
+                    Some((COMMAND_GET, sub_matches)) => {
+                        pcli2::actions::folders::get_folder_description(sub_matches).await
+                    }
+                    Some(("set", sub_matches)) => {
+                        pcli2::actions::folders::set_folder_description(sub_matches).await
+                    }
+                    Some(("clear", sub_matches)) => {
+                        pcli2::actions::folders::clear_folder_description(sub_matches).await
+                    }
+                    _ => Err(CliError::UnsupportedSubcommand(extract_subcommand_name(
+                        sub_matches,
+                    ))),
+                },
                 Some(("move", sub_matches)) => {
                     trace!("Command: {} move", COMMAND_FOLDER);
 

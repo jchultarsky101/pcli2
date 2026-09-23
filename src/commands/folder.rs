@@ -26,7 +26,13 @@ pub fn folder_command() -> Command {
                 .arg(name_parameter())
                 .arg(parent_folder_path_parameter())
                 .arg(parent_folder_uuid_parameter())
-                .group(parent_folder_identifier_group()),
+                .group(parent_folder_identifier_group())
+                .arg(
+                    clap::Arg::new("description")
+                        .long("description")
+                        .num_args(1)
+                        .help("An optional description for the new folder (up to 255 characters)"),
+                ),
         )
         .subcommand(
             Command::new(COMMAND_GET)
@@ -96,6 +102,53 @@ pub fn folder_command() -> Command {
                 .arg(folder_path_parameter())
                 .arg(name_parameter())
                 .group(folder_identifier_group()),
+        )
+        .subcommand(
+            Command::new("description")
+                .about("Show, set or clear a folder's description")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new(COMMAND_GET)
+                        .about("Print a folder's description (nothing when it has none)")
+                        .arg(tenant_parameter())
+                        .arg(folder_uuid_parameter())
+                        .arg(folder_path_parameter())
+                        .group(folder_identifier_group()),
+                )
+                .subcommand(
+                    Command::new("set")
+                        .about("Set or replace a folder's description")
+                        .after_help(crate::commands::examples(&[
+                            (
+                                "Describe a folder",
+                                "pcli2 folder description set --folder-path /Projects/Rail --text \"Rail car parts, 2026 program\"",
+                            ),
+                            (
+                                "Read it back",
+                                "pcli2 folder description get --folder-path /Projects/Rail",
+                            ),
+                        ]))
+                        .arg(tenant_parameter())
+                        .arg(folder_uuid_parameter())
+                        .arg(folder_path_parameter())
+                        .group(folder_identifier_group())
+                        .arg(
+                            clap::Arg::new("text")
+                                .long("text")
+                                .num_args(1)
+                                .required(true)
+                                .help("The description: 1 to 255 characters (surrounding spaces are dropped)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("clear")
+                        .visible_alias("rm")
+                        .about("Remove a folder's description (nothing to do if it has none)")
+                        .arg(tenant_parameter())
+                        .arg(folder_uuid_parameter())
+                        .arg(folder_path_parameter())
+                        .group(folder_identifier_group()),
+                ),
         )
         .subcommand(
             Command::new("move")

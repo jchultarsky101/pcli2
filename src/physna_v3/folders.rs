@@ -92,6 +92,7 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         name: &str,
         parent_folder_uuid: Option<Uuid>,
+        description: Option<&str>,
     ) -> Result<crate::model::SingleFolderResponse, ApiError> {
         let url = format!("{}/tenants/{}/folders", self.base_url, tenant_uuid);
 
@@ -99,6 +100,10 @@ impl PhysnaApiClient {
         let mut body = serde_json::json!({
             "name": name
         });
+        // Optional: without one the folder simply has no description.
+        if let Some(description) = description {
+            body["description"] = serde_json::Value::String(description.to_string());
+        }
 
         // Add parent folder ID if provided to create a subfolder
         if let Some(parent_uuid) = parent_folder_uuid {
@@ -146,6 +151,38 @@ impl PhysnaApiClient {
         // The API returns a SingleFolderResponse with a "folder" field
         let response: crate::model::SingleFolderResponse = self.patch(&url, &body).await?;
         Ok(response.folder)
+    }
+
+    /// Set or replace a folder's description (1 to 255 characters; the server
+    /// trims surrounding whitespace).
+    /// `PATCH /tenants/{tenantId}/folders/{folderId}/description`.
+    pub async fn set_folder_description(
+        &mut self,
+        tenant_uuid: &Uuid,
+        folder_uuid: &Uuid,
+        description: &str,
+    ) -> Result<crate::model::Folder, ApiError> {
+        let url = format!(
+            "{}/tenants/{}/folders/{}/description",
+            self.base_url, tenant_uuid, folder_uuid
+        );
+        let body = serde_json::json!({ "description": description });
+        let response: crate::model::SingleFolderResponse = self.patch(&url, &body).await?;
+        Ok(response.into())
+    }
+
+    /// Remove a folder's description. Succeeds when it has none.
+    /// `DELETE /tenants/{tenantId}/folders/{folderId}/description`.
+    pub async fn clear_folder_description(
+        &mut self,
+        tenant_uuid: &Uuid,
+        folder_uuid: &Uuid,
+    ) -> Result<(), ApiError> {
+        self.delete(&format!(
+            "/tenants/{}/folders/{}/description",
+            tenant_uuid, folder_uuid
+        ))
+        .await
     }
 
     /// Move a folder to a new parent folder

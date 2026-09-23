@@ -32,3 +32,6 @@ docs/book/
 
 # Slack release announcements are generated for copy/paste only, not stored in the repo
 SLACK_ANNOUNCEMENT*.md
+
+# Local code review notes (not committed)
+/REVIEW-*.md

@@ -30,7 +30,8 @@ thiserror = "2.0.20"
 serde_yaml = "0.9.34"
 serde = { version = "1.0.219", features = ["derive"] }
 urlencoding = "2.1.0"
-reqwest = { version = "0.12.23", features = ["json", "multipart", "stream"] }
+# native-tls as before (0.13 defaults to rustls): the OS certificate store and TLS stack
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "charset", "http2", "system-proxy", "json", "form", "multipart", "stream"] }
 serde_urlencoded = "0.7.1"
 strum = { version = "0.28.0", features = ["strum_macros", "derive"] }
 serde_json = "1.0.143"

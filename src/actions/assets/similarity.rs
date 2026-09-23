@@ -88,29 +88,16 @@ pub async fn asset_similarity(sub_matches: &ArgMatches) -> Result<(), CliError> 
         })?;
     let ui_base_url = configuration.get_ui_base_url();
     let base_url = ui_base_url.trim_end_matches('/');
-    let comparison_url = if base_url.ends_with("/tenants") {
-        format!(
-            "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
-            base_url,
-            tenant_name,
-            reference_asset.uuid(),
-            candidate_asset.uuid(),
-            tenant_uuid,
-            tenant_uuid,
-            scores.geometric.match_percentage
-        )
-    } else {
-        format!(
-            "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
-            base_url,
-            tenant_name,
-            reference_asset.uuid(),
-            candidate_asset.uuid(),
-            tenant_uuid,
-            tenant_uuid,
-            scores.geometric.match_percentage
-        )
-    };
+    let comparison_url = crate::ui_url::compare_url(
+        base_url,
+        &tenant_name,
+        &tenant_uuid,
+        &reference_asset.uuid(),
+        &candidate_asset.uuid(),
+        crate::ui_url::Comparison::Geometric {
+            match_percentage: scores.geometric.match_percentage,
+        },
+    );
 
     let similarity = crate::model::AssetSimilarity {
         reference_asset_path: reference_asset.path(),

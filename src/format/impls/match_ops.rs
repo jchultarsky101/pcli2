@@ -228,8 +228,13 @@ impl CsvRecordProducer for PartMatchPair {
         vec![vec![
             self.reference_asset.path.clone(),
             self.candidate_asset.path.clone(),
-            format!("{}", self.forward_match_percentage.unwrap_or(0.0)),
-            format!("{}", self.reverse_match_percentage.unwrap_or(0.0)),
+            // A score the API did not report is an empty cell, not a 0% match.
+            self.forward_match_percentage
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            self.reverse_match_percentage
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
             self.reference_asset.uuid.to_string(),
             self.candidate_asset.uuid.to_string(),
             self.comparison_url.clone().unwrap_or_default(),

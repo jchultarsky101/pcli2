@@ -45,5 +45,6 @@ pub mod physna_v3;
 pub mod stats;
 pub mod tenant_cache;
 pub mod terminal;
+pub mod ui_url;
 pub mod update_check;
 pub mod xlsx_report;

@@ -3838,7 +3838,19 @@ impl PhysnaApiClient {
         tenant_uuid: &Uuid,
         root: &mut AssemblyNode,
         root_uuid: &Uuid,
+        ancestors: &mut std::collections::HashSet<Uuid>,
     ) -> Result<(), ApiError> {
+        // The assemblies on the way down from the top. An assembly that (through
+        // the server's data) contains itself would otherwise be expanded forever.
+        // A sub-assembly used in two different branches is not an ancestor of
+        // itself and is expanded in both.
+        if !ancestors.insert(*root_uuid) {
+            warn!(
+                "Assembly {} contains itself; its dependencies are listed once",
+                root_uuid
+            );
+            return Ok(());
+        }
         let mut page: usize = 1;
         let per_page: usize = 1000; // the API maximum for this endpoint
 
@@ -3884,7 +3896,8 @@ impl PhysnaApiClient {
                 };
 
                 // Insert into tree and get a mutable reference to the stored node
-                let child_node: &mut AssemblyNode = root.add_child_mut(child_asset.clone()); // Clone the asset to avoid moving it
+                let child_node: &mut AssemblyNode =
+                    root.add_dependency_mut(child_asset.clone(), dependency.occurrences);
 
                 // Recurse on the stored child node if it has dependencies. A
                 // missing dependency has no asset, so there is nothing to ask
@@ -3894,6 +3907,7 @@ impl PhysnaApiClient {
                         tenant_uuid,
                         child_node,
                         &child_asset.uuid(),
+                        ancestors,
                     ))
                     .await?;
                 }
@@ -3906,6 +3920,7 @@ impl PhysnaApiClient {
             page += 1;
         }
 
+        ancestors.remove(root_uuid);
         Ok(())
     }
 
@@ -3935,6 +3950,7 @@ impl PhysnaApiClient {
             tenant_uuid,
             tree.root_mut(),
             asset_uuid,
+            &mut std::collections::HashSet::new(),
         ))
         .await?;
         Ok(tree)

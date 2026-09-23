@@ -101,9 +101,65 @@ async fn a_missing_dependency_is_listed_but_never_expanded() {
     );
     assert_eq!(ghost.children().count(), 0);
     assert_eq!(children[1].asset().uuid(), Uuid::parse_str(CHILD).unwrap());
+    // The API says the leaf is used twice; that used to be reported as 1.
+    assert_eq!(children[1].occurrences(), 2);
+    assert_eq!(ghost.occurrences(), 1);
 
     root_deps.assert_async().await;
     nil_by_id.assert_async().await;
+}
+
+#[tokio::test]
+async fn an_assembly_that_contains_itself_does_not_recurse_forever() {
+    let mut server = mockito::Server::new_async().await;
+    let _root_asset = server
+        .mock("GET", format!("/tenants/{TENANT}/assets/{ROOT}").as_str())
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(format!(
+            r#"{{"asset":{}}}"#,
+            asset(ROOT, "Parts/top.asm", true)
+        ))
+        .create_async()
+        .await;
+    // top.asm -> sub.asm -> top.asm again.
+    let _root_deps = server
+        .mock("GET", format!("/tenants/{TENANT}/assets/{ROOT}/dependencies-by-id").as_str())
+        .match_query(Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(page(&[format!(
+            r#"{{"path":"Parts/sub.asm","asset":{},"occurrences":1,"hasDependencies":true,"status":"matched"}}"#,
+            asset(CHILD, "Parts/sub.asm", true)
+        )]))
+        .create_async()
+        .await;
+    let _child_deps = server
+        .mock("GET", format!("/tenants/{TENANT}/assets/{CHILD}/dependencies-by-id").as_str())
+        .match_query(Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(page(&[format!(
+            r#"{{"path":"Parts/top.asm","asset":{},"occurrences":1,"hasDependencies":true,"status":"matched"}}"#,
+            asset(ROOT, "Parts/top.asm", true)
+        )]))
+        .create_async()
+        .await;
+
+    let mut client = PhysnaApiClient::new().with_base_url(server.url());
+    let tree = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        client.get_asset_dependencies_by_uuid(
+            &Uuid::parse_str(TENANT).unwrap(),
+            &Uuid::parse_str(ROOT).unwrap(),
+        ),
+    )
+    .await
+    .expect("a cycle must not recurse forever")
+    .unwrap();
+    let sub = tree.root().children().next().unwrap();
+    let back_to_top = sub.children().next().unwrap();
+    assert_eq!(back_to_top.children().count(), 0, "the cycle is cut here");
 }
 
 #[tokio::test]

@@ -462,6 +462,7 @@ fn write_workbook(
     let match_col = schema.column_index(MATCH_PERCENTAGE_COLUMN);
     let url_col = schema.column_index(COMPARISON_URL_COLUMN);
     let mut hyperlinks_written: usize = 0;
+    let mut truncated_cells: usize = 0;
     let mut stats = ConversionStats {
         pairs: schema.pair_count(),
         ..Default::default()
@@ -523,6 +524,8 @@ fn write_workbook(
         let is_last_row = row_idx == last_data_index;
         for col in 0..schema.column_count() {
             let value = record.get(col).map(String::as_str).unwrap_or("");
+            let value = excel_cell_text(value, &mut truncated_cells);
+            let value: &str = &value;
 
             // The match-percentage column is written as a real number so the
             // heat-map gradient and numeric sort work, with a fixed precision.
@@ -591,6 +594,12 @@ fn write_workbook(
         }
     }
     stats.rows = report.rows.len();
+    if truncated_cells > 0 {
+        crate::error_utils::report_warning(&format!(
+            "{} cell(s) exceeded Excel's limit of {} characters and were cut short (marked '{}'); the CSV or JSON output has the full values",
+            truncated_cells, MAX_CELL_CHARS, TRUNCATION_MARKER
+        ));
+    }
 
     // Size every column to its content (capped) for legibility. Another full pass
     // over every cell, so it is worth naming rather than leaving the cell counter
@@ -647,6 +656,37 @@ fn write_workbook(
     );
 
     Ok(stats)
+}
+
+/// Excel refuses a cell holding more than this many characters.
+const MAX_CELL_CHARS: usize = 32_767;
+
+/// Appended to a value that had to be cut short to fit in a cell.
+const TRUNCATION_MARKER: &str = "…[truncated]";
+
+/// A value as it can be stored in one cell.
+///
+/// One metadata value over Excel's limit used to fail the whole workbook with
+/// `MaxStringLengthExceeded`, after a match that may have taken hours. It is cut
+/// short instead, at a character boundary, and marked.
+fn excel_cell_text<'a>(value: &'a str, truncated: &mut usize) -> std::borrow::Cow<'a, str> {
+    // Excel counts UTF-16 code units; a char never needs more than two, so only
+    // strings that might be over the limit are counted precisely.
+    if value.len() <= MAX_CELL_CHARS || value.encode_utf16().count() <= MAX_CELL_CHARS {
+        return std::borrow::Cow::Borrowed(value);
+    }
+    *truncated += 1;
+    let budget = MAX_CELL_CHARS - TRUNCATION_MARKER.encode_utf16().count();
+    let mut used = 0;
+    let mut end = 0;
+    for (index, ch) in value.char_indices() {
+        if used + ch.len_utf16() > budget {
+            break;
+        }
+        used += ch.len_utf16();
+        end = index + ch.len_utf8();
+    }
+    std::borrow::Cow::Owned(format!("{}{}", &value[..end], TRUNCATION_MARKER))
 }
 
 /// The short side label (`REF` or `CAN`) for a paired column's header.
@@ -755,6 +795,44 @@ mod tests {
         list.into_iter()
             .map(|r| r.into_iter().map(String::from).collect())
             .collect()
+    }
+
+    #[test]
+    fn an_over_long_cell_is_cut_short_instead_of_failing_the_workbook() {
+        let mut truncated = 0;
+        assert_eq!(excel_cell_text("short", &mut truncated), "short");
+        assert_eq!(truncated, 0);
+
+        let long = "é".repeat(40_000);
+        let cut = excel_cell_text(&long, &mut truncated);
+        assert_eq!(truncated, 1);
+        assert!(cut.ends_with(TRUNCATION_MARKER));
+        assert!(cut.encode_utf16().count() <= MAX_CELL_CHARS);
+
+        // End to end: this used to fail with MaxStringLengthExceeded.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report.xlsx");
+        let huge = "x".repeat(50_000);
+        write_match_report(
+            headers(&[
+                "REFERENCE_ASSET_PATH",
+                "CANDIDATE_ASSET_PATH",
+                "MATCH_PERCENTAGE",
+                "REF_NOTES",
+                "CAN_NOTES",
+            ]),
+            rows(vec![vec![
+                "/a.stl",
+                "/b.stl",
+                "99.5",
+                huge.as_str(),
+                "short",
+            ]]),
+            &path,
+            &ReportProgress::disabled(),
+        )
+        .expect("an over-long value must not fail the workbook");
+        assert!(path.exists());
     }
 
     #[test]

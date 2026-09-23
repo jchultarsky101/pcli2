@@ -523,29 +523,16 @@ pub async fn geometric_match_asset(sub_matches: &ArgMatches) -> Result<(), CliEr
     // Populate comparison URLs for each match
     for match_result in &mut search_results.matches {
         let base_url = ui_base_url.trim_end_matches('/');
-        let comparison_url = if base_url.ends_with("/tenants") {
-            format!(
-                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                asset.uuid(),
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-                match_result.match_percentage
-            )
-        } else {
-            format!(
-                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                asset.uuid(),
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-                match_result.match_percentage
-            )
-        };
+        let comparison_url = crate::ui_url::compare_url(
+            base_url,
+            &tenant_name,
+            &tenant_uuid,
+            &asset.uuid(),
+            &match_result.asset.uuid,
+            crate::ui_url::Comparison::Geometric {
+                match_percentage: match_result.match_percentage,
+            },
+        );
         match_result.comparison_url = Some(comparison_url);
     }
 
@@ -650,31 +637,17 @@ pub async fn part_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError> 
     // Populate comparison URLs for each match
     for match_result in &mut search_results.matches {
         let base_url = ui_base_url.trim_end_matches('/');
-        let comparison_url = if base_url.ends_with("/tenants") {
-            format!(
-                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                asset.uuid(),
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-                match_result.forward_match_percentage.unwrap_or(0.0),
-                match_result.reverse_match_percentage.unwrap_or(0.0)
-            )
-        } else {
-            format!(
-                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                asset.uuid(),
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-                match_result.forward_match_percentage.unwrap_or(0.0),
-                match_result.reverse_match_percentage.unwrap_or(0.0)
-            )
-        };
+        let comparison_url = crate::ui_url::compare_url(
+            base_url,
+            &tenant_name,
+            &tenant_uuid,
+            &asset.uuid(),
+            &match_result.asset.uuid,
+            crate::ui_url::Comparison::Part {
+                forward: match_result.forward_match_percentage.unwrap_or(0.0),
+                reverse: match_result.reverse_match_percentage.unwrap_or(0.0),
+            },
+        );
         match_result.comparison_url = Some(comparison_url);
     }
 
@@ -790,27 +763,14 @@ pub async fn visual_match_asset(sub_matches: &ArgMatches) -> Result<(), CliError
     // Populate comparison URLs for each match
     for match_result in &mut search_results.matches {
         let base_url = ui_base_url.trim_end_matches('/');
-        let comparison_url = if base_url.ends_with("/tenants") {
-            format!(
-                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
-                base_url,    // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                asset.uuid(),
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-            )
-        } else {
-            format!(
-                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
-                base_url, // Use configurable UI base URL without trailing slash
-                tenant_name, // Use tenant short name in path
-                asset.uuid(),
-                match_result.asset.uuid,
-                tenant_uuid, // Use tenant UUID in query params
-                tenant_uuid, // Use tenant UUID in query params
-            )
-        };
+        let comparison_url = crate::ui_url::compare_url(
+            base_url,
+            &tenant_name,
+            &tenant_uuid,
+            &asset.uuid(),
+            &match_result.asset.uuid,
+            crate::ui_url::Comparison::Visual,
+        );
         match_result.comparison_url = Some(comparison_url);
     }
 
@@ -1498,29 +1458,16 @@ pub async fn geometric_match_folder(sub_matches: &ArgMatches) -> Result<(), CliE
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
-                        let comparison_url = if base_url.ends_with("/tenants") {
-                            format!(
-                                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
-                                base_url, // Use configurable UI base URL without trailing slash
-                                tenant_clone.name, // Use tenant short name in path
-                                asset_uuid,
-                                match_result.asset.uuid,
-                                tenant_uuid, // Use tenant UUID in query params
-                                tenant_uuid, // Use tenant UUID in query params
-                                match_result.match_percentage
-                            )
-                        } else {
-                            format!(
-                                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=geometric&matchPercentage={:.2}",
-                                base_url, // Use configurable UI base URL without trailing slash
-                                tenant_clone.name, // Use tenant short name in path
-                                asset_uuid,
-                                match_result.asset.uuid,
-                                tenant_uuid, // Use tenant UUID in query params
-                                tenant_uuid, // Use tenant UUID in query params
-                                match_result.match_percentage
-                            )
-                        };
+                        let comparison_url = crate::ui_url::compare_url(
+                            base_url,
+                            &tenant_clone.name,
+                            &tenant_uuid,
+                            &asset_uuid,
+                            &match_result.asset.uuid,
+                            crate::ui_url::Comparison::Geometric {
+                                match_percentage: match_result.match_percentage,
+                            },
+                        );
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
@@ -2107,31 +2054,17 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
-                        let comparison_url = if base_url.ends_with("/tenants") {
-                            format!(
-                                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
-                                base_url, // Use configurable UI base URL without trailing slash
-                                tenant_clone.name, // Use tenant short name in path
-                                asset_uuid,
-                                match_result.asset.uuid,
-                                tenant_uuid, // Use tenant UUID in query params
-                                tenant_uuid, // Use tenant UUID in query params
-                                match_result.forward_match_percentage.unwrap_or(0.0),
-                                match_result.reverse_match_percentage.unwrap_or(0.0)
-                            )
-                        } else {
-                            format!(
-                                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=part&forwardMatch={:.2}&reverseMatch={:.2}",
-                                base_url, // Use configurable UI base URL without trailing slash
-                                tenant_clone.name, // Use tenant short name in path
-                                asset_uuid,
-                                match_result.asset.uuid,
-                                tenant_uuid, // Use tenant UUID in query params
-                                tenant_uuid, // Use tenant UUID in query params
-                                match_result.forward_match_percentage.unwrap_or(0.0),
-                                match_result.reverse_match_percentage.unwrap_or(0.0)
-                            )
-                        };
+                        let comparison_url = crate::ui_url::compare_url(
+                            base_url,
+                            &tenant_clone.name,
+                            &tenant_uuid,
+                            &asset_uuid,
+                            &match_result.asset.uuid,
+                            crate::ui_url::Comparison::Part {
+                                forward: match_result.forward_match_percentage.unwrap_or(0.0),
+                                reverse: match_result.reverse_match_percentage.unwrap_or(0.0),
+                            },
+                        );
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
@@ -2409,12 +2342,15 @@ pub async fn part_match_folder(sub_matches: &ArgMatches) -> Result<(), CliError>
                 let mut base_values = vec![
                     match_pair.reference_asset.path.clone(),
                     match_pair.candidate_asset.path.clone(),
+                    // A score the API did not report is an empty cell, not a 0% match.
                     match_pair
                         .forward_match_percentage
-                        .map_or_else(|| "0.0".to_string(), |val| format!("{}", val)),
+                        .map(|val| val.to_string())
+                        .unwrap_or_default(),
                     match_pair
                         .reverse_match_percentage
-                        .map_or_else(|| "0.0".to_string(), |val| format!("{}", val)),
+                        .map(|val| val.to_string())
+                        .unwrap_or_default(),
                     match_pair.reference_asset.uuid.to_string(),
                     match_pair.candidate_asset.uuid.to_string(),
                     match_pair.comparison_url.clone().unwrap_or_default(),
@@ -2742,27 +2678,14 @@ pub async fn visual_match_folder(sub_matches: &ArgMatches) -> Result<(), CliErro
 
                         // Populate comparison URL for this match
                         let base_url = ui_base_url.trim_end_matches('/');
-                        let comparison_url = if base_url.ends_with("/tenants") {
-                            format!(
-                                "{}/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
-                                base_url, // Use configurable UI base URL without trailing slash
-                                tenant_clone.name, // Use tenant short name in path
-                                asset_uuid,
-                                match_result.asset.uuid,
-                                tenant_uuid, // Use tenant UUID in query params
-                                tenant_uuid, // Use tenant UUID in query params
-                            )
-                        } else {
-                            format!(
-                                "{}/tenants/{}/compare?asset1Id={}&asset2Id={}&tenant1Id={}&tenant2Id={}&searchType=visual",
-                                base_url, // Use configurable UI base URL without trailing slash
-                                tenant_clone.name, // Use tenant short name in path
-                                asset_uuid,
-                                match_result.asset.uuid,
-                                tenant_uuid, // Use tenant UUID in query params
-                                tenant_uuid, // Use tenant UUID in query params
-                            )
-                        };
+                        let comparison_url = crate::ui_url::compare_url(
+                            base_url,
+                            &tenant_clone.name,
+                            &tenant_uuid,
+                            &asset_uuid,
+                            &match_result.asset.uuid,
+                            crate::ui_url::Comparison::Visual,
+                        );
                         match_result.comparison_url = Some(comparison_url);
 
                         // Check if we want to include matches based on exclusive flag
@@ -3171,13 +3094,9 @@ pub async fn text_match(sub_matches: &ArgMatches) -> Result<(), CliError> {
 
     // Populate asset URLs for each match (not comparison URLs since text search doesn't compare two assets)
     for match_result in &mut search_results.matches {
-        let base_url = ui_base_url.trim_end_matches('/');
-        let asset_url = format!(
-            "{}/tenants/{}/asset/{}",
-            base_url,    // Use configurable UI base URL without trailing slash
-            tenant_name, // Use tenant short name in path
-            match_result.asset.uuid
-        );
+        // A UI base URL ending in `/tenants` used to give `/tenants/tenants/...`.
+        let asset_url =
+            crate::ui_url::asset_url(&ui_base_url, &tenant_name, &match_result.asset.uuid);
         match_result.comparison_url = Some(asset_url); // Store asset URL in comparison_url field for text search
     }
 

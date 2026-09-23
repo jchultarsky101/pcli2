@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-23
+
 ### Added
 - **`pcli2 api` calls any endpoint of the Physna API** - pcli2 wraps some of the API's endpoints in commands; `pcli2 api /tenants/{tenantId}/...` reaches the others, with pcli2's login, token renewal, retries and tenant (`{tenantId}` is filled in). `-X` sets the method, `-F key=value` and `-f key=value` build a JSON body, `--input` reads one from a file or standard input, and `--paginate` merges every page of a listing into one. Errors carry the server's message and the usual exit codes.
 - **`folder geometric-match --groups` finds groups of duplicates** - Assets connected by a chain of matches form a group; each row gets `GROUP_ID` and `GROUP_SIZE` as the last two columns (`groupId`/`groupSize` in JSON). Ten copies of one part are one group instead of forty-five unrelated-looking rows. Without the flag the report is byte-for-byte unchanged.
@@ -18,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shorter aliases** - `gm`, `pm`, `vm` and `tm` for the geometric, part, visual and text match commands; `env ls` and `env rm`. `folder geometric-match --format xlsx` is accepted as well as `xls`, and `report list --type`/`--status` accept any letter case.
 
 ### Fixed
+- **`asset download` no longer fails on an assembly that has no dependency bundle** - Physna serves an assembly as a ZIP of the assembly and its parts when it has one, or as the raw source file when it does not (for example an assembly in the `missing-dependencies` state). The command assumed every assembly was a ZIP, so a raw file was saved as `<name>.zip` and then rejected with `ZIP error: invalid Zip archive: Could not find EOCD`. It now checks what actually arrived: a bundle is extracted next to the download and removed as before, and anything else is kept unchanged under the asset's own name (or the `-o` path). A bundle that is a ZIP but damaged still fails with the ZIP error.
 - **The credentials file can no longer be wiped by two pcli2 runs at once** - `dev_credentials.json` was rewritten in place, and a file that could not be parsed was treated as empty. Two runs in parallel (`xargs -P`, cron, CI), one of them renewing its token, or a crash mid-write, could leave the file holding a single environment with an empty client ID and secret. It is now written to a temporary file and renamed into place, created owner-only (`0600`) from the start, and each change is a read-modify-write under a lock file, so parallel runs no longer lose each other's updates. A file that cannot be parsed is kept as `dev_credentials.json.unreadable-<time>` with a warning instead of being overwritten. `config.yml` and the update-check cache are written the same atomic way.
 - **`pcli2 ... | head` no longer exits 101** - A reader that stops early made pcli2 panic ("failed printing to stdout: Broken pipe") and exit 101, the *network error* code. A closed output pipe now ends the run quietly with exit 0. Any other internal panic is reported as one line (JSON under `--error-format json`) and exits 70.
 - **Token requests have timeouts and are retried** - The login and renewal request went out on a client with no timeout at all, so an auth server that accepted the connection and never answered hung the run forever, and a single 503 from it failed the run. It now uses the same connect, read and total timeouts and the same retries with backoff as every other request.
@@ -73,11 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Obsolete top-level documents** - `HOMEBREW_QUICKSTART.md` and `HOMEBREW_TAP_SETUP.md` (the Homebrew formula is published by the release workflow) and `RELEASE_NOTES_v1.0.0.md` (the CHANGELOG has it).
 - **About 1,100 lines of unreachable code** - Public functions and types that nothing in the CLI or the tests used, among them the unused metadata cache, an in-memory download method, the unused per-operation client variants and several tenant printers. The library/binary split had hidden them from the compiler's dead-code warnings.
 - **An unused folder-download function in the client library** - `actions::assets::download_folder` was never reachable from the CLI (`folder download` has its own implementation) and extracted archives into a predictable shared temporary directory.
-
-## [2.2.1] - 2026-09-22
-
-### Fixed
-- **`asset download` no longer fails on an assembly that has no dependency bundle** - Physna serves an assembly as a ZIP of the assembly and its parts when it has one, or as the raw source file when it does not (for example an assembly in the `missing-dependencies` state). The command assumed every assembly was a ZIP, so a raw file was saved as `<name>.zip` and then rejected with `ZIP error: invalid Zip archive: Could not find EOCD`. It now checks what actually arrived: a bundle is extracted next to the download and removed as before, and anything else is kept unchanged under the asset's own name (or the `-o` path). A bundle that is a ZIP but damaged still fails with the ZIP error.
 
 ## [2.2.0] - 2026-09-22
 

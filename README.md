@@ -51,6 +51,7 @@ pcli2 config validate --verbose
 - **Part Matching** - Find part matches within assemblies
 - **Visual Matching** - Find visually similar assets
 - **Text Matching** - Find assets using text search
+- **Catalog Search** - Match your assets against a catalog such as a supplier catalog (`pcli2 catalog`, enabled by Physna per customer)
 - **Metadata Operations** - Manage custom properties efficiently
 - **Bulk Operations** - Process multiple assets with batch commands
 - **Authentication** - OAuth2 client-credentials login; the token is renewed automatically before it expires
@@ -180,7 +181,7 @@ client secret from a shared machine, delete the file. See
 The user guide at [https://jchultarsky101.github.io/pcli2/](https://jchultarsky101.github.io/pcli2/) covers everything in depth:
 
 - **Getting started**: [Installation](https://jchultarsky101.github.io/pcli2/book/installation.html) (including updating and upgrading to 2.0), [Quick Start](https://jchultarsky101.github.io/pcli2/book/quickstart.html)
-- **Guides**: [Geometric Matching](https://jchultarsky101.github.io/pcli2/book/geometric-matching.html), [Metadata Operations](https://jchultarsky101.github.io/pcli2/book/metadata-operations.html), [Metadata Inference](https://jchultarsky101.github.io/pcli2/book/metadata-inference.html), [Reports](https://jchultarsky101.github.io/pcli2/book/reports.html), [Downloading and Uploading Folders](https://jchultarsky101.github.io/pcli2/book/bulk-operations.html), [Scripting and Automation](https://jchultarsky101.github.io/pcli2/book/scripting.html) (output formats, exit codes, CI, `pcli2 api`)
+- **Guides**: [Geometric Matching](https://jchultarsky101.github.io/pcli2/book/geometric-matching.html), [Catalog Search](https://jchultarsky101.github.io/pcli2/book/catalog-search.html), [Metadata Operations](https://jchultarsky101.github.io/pcli2/book/metadata-operations.html), [Metadata Inference](https://jchultarsky101.github.io/pcli2/book/metadata-inference.html), [Reports](https://jchultarsky101.github.io/pcli2/book/reports.html), [Downloading and Uploading Folders](https://jchultarsky101.github.io/pcli2/book/bulk-operations.html), [Scripting and Automation](https://jchultarsky101.github.io/pcli2/book/scripting.html) (output formats, exit codes, CI, `pcli2 api`)
 - **Reference**: [Command Reference](https://jchultarsky101.github.io/pcli2/book/commands.html) (every command and alias), [Configuration and Environment Variables](https://jchultarsky101.github.io/pcli2/book/cross_platform.html), [Credentials and Security](https://jchultarsky101.github.io/pcli2/book/security.html), [Proxies, Certificates and Timeouts](https://jchultarsky101.github.io/pcli2/book/network.html)
 - **Help**: [Troubleshooting](https://jchultarsky101.github.io/pcli2/book/troubleshooting.html); `pcli2 doctor` checks a setup in one screen, and every command has `--help` with examples
 

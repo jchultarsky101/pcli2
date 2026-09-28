@@ -10,6 +10,7 @@
 # Guides
 
 - [Geometric Matching](geometric-matching.md)
+- [Catalog Search](catalog-search.md)
 - [Metadata Operations](metadata-operations.md)
 - [Metadata Inference](metadata-inference.md)
 - [Reports](reports.md)

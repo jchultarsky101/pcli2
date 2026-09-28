@@ -202,6 +202,7 @@ mod tests {
 }
 
 mod assets;
+mod catalog;
 mod dependencies;
 mod folders;
 mod reports;
@@ -210,6 +211,7 @@ mod text_search;
 mod usage;
 
 pub use assets::*;
+pub use catalog::*;
 pub use dependencies::*;
 pub use folders::*;
 pub use reports::*;

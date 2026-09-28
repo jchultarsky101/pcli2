@@ -335,6 +335,14 @@ fn contracts() -> Vec<Contract> {
             PartSearchResponse
         ),
         contract!("post", "/tenants/assets/visual-search", PartSearchResponse),
+        // `pcli2 catalog`: one page type for all three cross-tenant searches.
+        contract!(
+            "post",
+            "/tenants/assets/geometric-search",
+            CatalogSearchPage
+        ),
+        contract!("post", "/tenants/assets/part-search", CatalogSearchPage),
+        contract!("post", "/tenants/assets/visual-search", CatalogSearchPage),
         contract!(
             "post",
             "/tenants/{tenantId}/assets/text-search",

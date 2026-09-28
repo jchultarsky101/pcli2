@@ -11,6 +11,7 @@ pub mod api;
 pub mod assets;
 pub mod auth;
 pub mod cache;
+pub mod catalog;
 pub mod completions;
 pub mod config;
 pub mod environment;
@@ -385,6 +386,7 @@ pub fn create_full_command() -> Command {
         .subcommand(environment::environment_command())
         .subcommand(user::user_command())
         .subcommand(report::report_command())
+        .subcommand(catalog::catalog_command())
         .subcommand(completions::completions_command())
         .subcommand(man::man_command())
         .subcommand(cache::cache_command())

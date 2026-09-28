@@ -13,8 +13,10 @@
 //! - `dependencies`: Asset dependency and assembly tree formatting
 //! - `state`: Asset state counts formatting
 //! - `failures`: failure diagnostics (`asset diagnose`) and recent failures (`tenant failures`)
+//! - `catalog`: catalog listing and cross-tenant match reports (`pcli2 catalog`)
 
 mod asset;
+mod catalog;
 mod dependencies;
 mod dependency_diff;
 mod failures;

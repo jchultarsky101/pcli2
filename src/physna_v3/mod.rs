@@ -17,6 +17,7 @@ use tracing::{debug, error, trace, warn};
 use uuid::Uuid;
 
 mod assets;
+mod catalog;
 mod downloads;
 mod folders;
 mod metadata;

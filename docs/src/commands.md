@@ -73,6 +73,14 @@ Quick reference for all available command aliases:
 | `pcli2 environment list` | `pcli2 env ls` |
 | `pcli2 environment remove` | `pcli2 env rm` |
 
+### Catalog Commands
+| Full Command | Alias |
+|-------------|-------|
+| `pcli2 catalog list` | `pcli2 catalog ls` |
+| `pcli2 catalog geometric-match` | `pcli2 catalog gm` |
+| `pcli2 catalog part-match` | `pcli2 catalog pm` |
+| `pcli2 catalog visual-match` | `pcli2 catalog vm` |
+
 ### Report Commands
 | Full Command | Alias |
 |-------------|-------|
@@ -475,6 +483,22 @@ pcli2 report download --id <ID> --format xlsx -o brackets.xlsx
 
 # Why did a report fail? (tenant failures lists the failed ones)
 pcli2 report diagnose --id <ID>
+```
+
+### Catalog Commands
+
+Match an asset from your tenant against a catalog, such as a supplier catalog. Physna enables catalogs per customer; `--in` accepts only the catalogs `catalog list` shows. See the [Catalog Search](docs/src/catalog-search.md) chapter for details.
+
+```
+pcli2 catalog list             # The catalogs you can search
+pcli2 catalog geometric-match  # Geometrically similar catalog assets (--path|--uuid, --in, --threshold, --limit)
+pcli2 catalog part-match       # Part search in a catalog (same options)
+pcli2 catalog visual-match     # Visually similar catalog assets (--threshold is a size tolerance)
+```
+
+```bash
+# Supplier parts that look like a bracket, as CSV
+pcli2 catalog visual-match --path /Home/Parts/bracket.stl --limit 20 --format csv --headers
 ```
 
 ### Authentication Commands

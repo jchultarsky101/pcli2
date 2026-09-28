@@ -1190,6 +1190,12 @@ pub async fn execute_command(commands: clap::ArgMatches) -> Result<(), CliError>
             println!("Wrote {} man page(s) to '{}'", count, output_dir.display());
             Ok(())
         }
+        Some(("catalog", sub_matches)) => {
+            trace!("Command: catalog");
+
+            pcli2::commands::catalog::execute_catalog_command(sub_matches).await?;
+            Ok(())
+        }
         Some(("report", sub_matches)) => {
             trace!("Command: report");
 

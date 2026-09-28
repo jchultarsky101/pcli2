@@ -1393,7 +1393,7 @@ impl FolderMatch for crate::model::PartMatch {
 }
 
 /// The reference side of every record an asset's search produces.
-fn reference_asset_response(
+pub(crate) fn reference_asset_response(
     asset: &crate::model::Asset,
     asset_uuid: Uuid,
     tenant_uuid: Uuid,

@@ -4,6 +4,7 @@ pub mod api;
 pub mod assets;
 pub mod bulk;
 pub mod cache;
+pub mod catalog;
 pub mod completions;
 pub mod doctor;
 pub mod folders;

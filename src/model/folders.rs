@@ -532,6 +532,10 @@ pub struct TenantSetting {
     /// The short name of the tenant
     #[serde(rename = "tenantShortName", default)]
     pub tenant_short_name: String,
+    /// Whether this tenant is a catalog other tenants may search into
+    /// (`pcli2 catalog`). Physna turns it on per customer; absent means no.
+    #[serde(rename = "isRemoteSearchTenant", default)]
+    pub is_remote_search_tenant: bool,
 }
 
 /// Represents a user in the Physna system

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-28
+
 ### Added
 - **Catalog search** - `pcli2 catalog list | geometric-match | part-match | visual-match` matches an asset from your tenant against a catalog, such as a supplier catalog, that Physna has enabled for your account. `--in` names the catalog and can be left out when there is only one. It accepts only catalogs: another of your tenants (a staging copy, another company) is refused before anything is searched, and a match the server returns from outside the catalog is dropped. The CSV has the columns of the matching `asset` command plus `CATALOG`; the comparison link opens both assets side by side. `catalog list` warns and the match commands exit 68 when catalog search is not enabled. Existing commands are unchanged.
 

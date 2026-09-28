@@ -635,17 +635,25 @@ fn page_sizes_the_client_uses_are_within_the_spec_maximum() {
 
 /// Fetch the swagger-ui bootstrap script.
 ///
-/// Physna's CDN intermittently answers a bare client with HTTP 200 and an
-/// empty body; a browser user agent plus a few retries gets the real script.
+/// Physna's CDN intermittently answers with HTTP 200 and an empty body, for
+/// any user agent, sometimes for half a minute at a time. A browser user
+/// agent, a cache-busting query on every attempt, and retries spread over a
+/// couple of minutes get the real script.
 async fn fetch_live_script() -> String {
+    const ATTEMPTS: u64 = 8;
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Macintosh) pcli2-spec-drift")
         .build()
         .expect("http client");
     let mut last = String::new();
-    for attempt in 1..=5 {
+    for attempt in 1..=ATTEMPTS {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default();
         last = client
-            .get(LIVE_URL)
+            .get(format!("{LIVE_URL}?nocache={nonce}"))
+            .header(reqwest::header::CACHE_CONTROL, "no-cache")
             .send()
             .await
             .expect("fetch swagger-ui-init.js")
@@ -659,10 +667,12 @@ async fn fetch_live_script() -> String {
             "attempt {attempt}: swagger-ui-init.js came back without swaggerDoc ({} bytes)",
             last.len()
         );
-        tokio::time::sleep(std::time::Duration::from_secs(2 * attempt)).await;
+        if attempt < ATTEMPTS {
+            tokio::time::sleep(std::time::Duration::from_secs(5 * attempt)).await;
+        }
     }
     panic!(
-        "swagger-ui-init.js never contained swaggerDoc after 5 attempts (last body: {} bytes)",
+        "swagger-ui-init.js never contained swaggerDoc after {ATTEMPTS} attempts (last body: {} bytes)",
         last.len()
     );
 }

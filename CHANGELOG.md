@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-09-28
+
+### Changed
+- **`config.yml` and `dev_credentials.json` list environments in name order** - They were written in a different order on every save, so a save that changed nothing still changed the file (noisy in a diff or a dotfiles repository). Both are now sorted and written the same way each time; files in any order still load.
+
+### Fixed
+- **Weekly API specification check** - The check against Physna's live OpenAPI specification had failed for three weeks: Physna added a staff-only `isInternal` flag to the current-user response (pcli2 does not use it; no behaviour changes), and its documentation server intermittently returned an empty page. The snapshot is refreshed, and the check now retries with cache-busting over about two and a half minutes.
+
 ## [2.6.0] - 2026-09-23
 
 ### Added

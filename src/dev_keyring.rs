@@ -43,7 +43,8 @@ struct EnvironmentCredentials {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct AllCredentials {
-    environments: std::collections::HashMap<String, EnvironmentCredentials>,
+    /// In name order, so the file is written the same way every time.
+    environments: std::collections::BTreeMap<String, EnvironmentCredentials>,
 }
 
 pub struct DevKeyring {
@@ -149,13 +150,13 @@ impl DevKeyring {
                         return Err(DevKeyringError::JsonError(e));
                     }
                     self.credentials = Some(AllCredentials {
-                        environments: std::collections::HashMap::new(),
+                        environments: std::collections::BTreeMap::new(),
                     });
                 }
             }
         } else {
             self.credentials = Some(AllCredentials {
-                environments: std::collections::HashMap::new(),
+                environments: std::collections::BTreeMap::new(),
             });
         }
         Ok(())
@@ -259,7 +260,7 @@ impl DevKeyring {
         // would replace every other environment's credentials with this one entry.
         self.load_credentials()?;
         let mut all_credentials = self.credentials.take().unwrap_or_else(|| AllCredentials {
-            environments: std::collections::HashMap::new(),
+            environments: std::collections::BTreeMap::new(),
         });
 
         // Get or create environment-specific credentials
@@ -439,5 +440,35 @@ mod tests {
         // of a file that is not there.
         let mut keyring = keyring_at(scratch_path());
         assert!(keyring.get("shared", "client-id".to_string()).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod file_order_tests {
+    use super::*;
+
+    fn credentials(id: &str) -> EnvironmentCredentials {
+        serde_json::from_value(serde_json::json!({
+            "client_id": id, "client_secret": "s", "access_token": null
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn environments_are_written_in_name_order_every_time() {
+        // A file written by an older pcli2, in any order, still loads...
+        let old = r#"{"environments":{"staging":{"client_id":"s","client_secret":"x","access_token":null},"dev":{"client_id":"d","client_secret":"x","access_token":null}}}"#;
+        let mut all: AllCredentials = serde_json::from_str(old).unwrap();
+        all.environments
+            .insert("alpha".to_string(), credentials("a"));
+        // ...and is written back sorted, the same way each time.
+        let written = serde_json::to_string_pretty(&all).unwrap();
+        let positions: Vec<usize> = ["\"alpha\"", "\"dev\"", "\"staging\""]
+            .iter()
+            .map(|name| written.find(name).unwrap())
+            .collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{written}");
+        let again: AllCredentials = serde_json::from_str(&written).unwrap();
+        assert_eq!(serde_json::to_string_pretty(&again).unwrap(), written);
     }
 }

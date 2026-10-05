@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-10-05
+
+### Fixed
+- **Weekly API specification check** - The check failed on 2026-10-05 because Physna's documentation server returned an empty page for longer than the check waited. Behind it, Physna had added optional fields to the recent-failures, tenant settings and volumetric match responses and reworded their descriptions. pcli2 does not use the new fields, and no behaviour changes. The snapshot is refreshed. The check now retries for up to ten minutes and reports an unavailable specification separately from a real API change.
+
+### Changed
+- **Dependencies** - thiserror 2.0.21. No command's output changes.
+
 ## [2.7.0] - 2026-09-28
 
 ### Added

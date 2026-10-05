@@ -23,9 +23,12 @@
 //! `live_spec_matches_the_snapshot` (ignored by default; the `spec-drift`
 //! workflow runs it weekly) fetches the current specification and reports any
 //! change to the schemas and endpoints these tests depend on, so drift is
-//! noticed before a user meets it. When it fails, review the diff it prints,
-//! copy `target/physna-openapi.live.json` over the fixture, and re-run this
-//! file to see whether the model still fits.
+//! noticed before a user meets it. When it reports drift, review the diff it
+//! prints, refresh the fixture with the command it prints (the fixture is the
+//! spec on one line, in Physna's key order, as Python's `json.dump` writes
+//! it), and re-run this file to see whether the model still fits. When it
+//! reports that the spec was unavailable, the docs endpoint was down: re-run
+//! the workflow later.
 
 use serde::de::DeserializeOwned;
 use serde_json::{json, Map, Value};
@@ -36,6 +39,8 @@ const FIXTURE: &str = concat!(
     "/tests/fixtures/physna-openapi.json"
 );
 const LIVE_URL: &str = "https://app-api.physna.com/v3/docs/swagger-ui-init.js";
+/// Rewrites the live spec in the fixture's format, keeping the diff to what changed.
+const REFRESH: &str = "python3 -c 'import json; json.dump(json.load(open(\"target/physna-openapi.live.json\")), open(\"tests/fixtures/physna-openapi.json\", \"w\"))'";
 
 fn spec() -> Value {
     let text = std::fs::read_to_string(FIXTURE).expect("spec fixture");
@@ -644,49 +649,67 @@ fn page_sizes_the_client_uses_are_within_the_spec_maximum() {
 /// Fetch the swagger-ui bootstrap script.
 ///
 /// Physna's CDN intermittently answers with HTTP 200 and an empty body, for
-/// any user agent, sometimes for half a minute at a time. A browser user
-/// agent, a cache-busting query on every attempt, and retries spread over a
-/// couple of minutes get the real script.
+/// any user agent, sometimes for minutes at a time (on 2026-10-05 it lasted
+/// longer than the old two-and-a-half-minute window). A browser user agent, a
+/// cache-busting query on every attempt, and retries spread over ten minutes
+/// get the real script. Network errors are retried the same way.
+///
+/// Giving up is reported as an outage, under its own annotation title, so it
+/// is not mistaken for the API having changed.
 async fn fetch_live_script() -> String {
-    const ATTEMPTS: u64 = 8;
+    const PATIENCE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Macintosh) pcli2-spec-drift")
+        .timeout(std::time::Duration::from_secs(60))
         .build()
         .expect("http client");
-    let mut last = String::new();
-    for attempt in 1..=ATTEMPTS {
+    let started = std::time::Instant::now();
+    let mut attempt = 0u64;
+    let last = loop {
+        attempt += 1;
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or_default();
-        last = client
-            .get(format!("{LIVE_URL}?nocache={nonce}"))
-            .header(reqwest::header::CACHE_CONTROL, "no-cache")
-            .send()
-            .await
-            .expect("fetch swagger-ui-init.js")
-            .text()
-            .await
-            .expect("read swagger-ui-init.js");
-        if last.contains("\"swaggerDoc\"") {
-            return last;
+        let body = async {
+            client
+                .get(format!("{LIVE_URL}?nocache={nonce}"))
+                .header(reqwest::header::CACHE_CONTROL, "no-cache")
+                .send()
+                .await?
+                .text()
+                .await
         }
-        eprintln!(
-            "attempt {attempt}: swagger-ui-init.js came back without swaggerDoc ({} bytes)",
-            last.len()
-        );
-        if attempt < ATTEMPTS {
-            tokio::time::sleep(std::time::Duration::from_secs(5 * attempt)).await;
+        .await;
+        let last = match body {
+            Ok(text) if text.contains("\"swaggerDoc\"") => return text,
+            Ok(text) => format!("no swaggerDoc ({} bytes)", text.len()),
+            Err(e) => format!("request failed: {e}"),
+        };
+        eprintln!("attempt {attempt}: swagger-ui-init.js: {last}");
+        let delay = std::time::Duration::from_secs((5 * attempt).min(60));
+        if started.elapsed() + delay > PATIENCE {
+            break last;
         }
-    }
+        tokio::time::sleep(delay).await;
+    };
+    println!(
+        "::error title=Physna spec unavailable (not API drift)::{LIVE_URL} did not return the specification in {attempt} attempts over {} s; last result: {last}. Re-run the workflow later.",
+        started.elapsed().as_secs()
+    );
     panic!(
-        "swagger-ui-init.js never contained swaggerDoc after {ATTEMPTS} attempts (last body: {} bytes)",
-        last.len()
+        "could not fetch the live specification after {attempt} attempts ({last}). \
+         This is an outage of Physna's docs endpoint, not a change to the API: re-run the workflow later."
     );
 }
 
 /// Extract the `swaggerDoc` object from the swagger-ui bootstrap script.
 fn extract_swagger_doc(js: &str) -> Value {
+    serde_json::from_str(swagger_doc_text(js)).expect("swaggerDoc is JSON")
+}
+
+/// The `swaggerDoc` object's source text, in Physna's own key order.
+fn swagger_doc_text(js: &str) -> &str {
     let start = js.find("\"swaggerDoc\"").expect("swaggerDoc in script");
     let open = start + js[start..].find('{').expect("object after swaggerDoc");
     let bytes = js.as_bytes();
@@ -701,8 +724,7 @@ fn extract_swagger_doc(js: &str) -> Value {
             (false, b'}') => {
                 depth -= 1;
                 if depth == 0 {
-                    return serde_json::from_str(&js[open..=open + offset])
-                        .expect("swaggerDoc is JSON");
+                    return &js[open..=open + offset];
                 }
             }
             _ => {}
@@ -738,12 +760,15 @@ fn referenced_schemas(spec: &Value, value: &Value, seen: &mut BTreeSet<String>) 
 #[ignore = "fetches the live specification; run by the spec-drift workflow"]
 async fn live_spec_matches_the_snapshot() {
     let snapshot = spec();
-    let live = extract_swagger_doc(&fetch_live_script().await);
+    let script = fetch_live_script().await;
+    let live = extract_swagger_doc(&script);
     let live_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/target/physna-openapi.live.json"
     );
-    std::fs::write(live_path, serde_json::to_string_pretty(&live).unwrap()).unwrap();
+    // The source text, not a re-serialization: serde_json would sort the keys
+    // and the refreshed fixture would differ from the old one on every line.
+    std::fs::write(live_path, swagger_doc_text(&script)).unwrap();
 
     let mut differences = Vec::new();
     if snapshot["info"]["version"] != live["info"]["version"] {
@@ -813,9 +838,15 @@ async fn live_spec_matches_the_snapshot() {
         }
     }
 
+    if !differences.is_empty() {
+        println!(
+            "::error title=Physna API drift::the live specification differs from the snapshot in {} place(s); see the job log",
+            differences.len()
+        );
+    }
     assert!(
         differences.is_empty(),
-        "the live specification differs from the snapshot in {} place(s):\n  {}\n\nThe live spec was written to {live_path}. Review the changes, copy it over tests/fixtures/physna-openapi.json, and re-run `cargo test --test openapi_contract_test`.",
+        "the live specification differs from the snapshot in {} place(s):\n  {}\n\nThe live spec was written to {live_path}. Review the changes, then refresh the fixture in its one-line format with\n\n  {REFRESH}\n\nand re-run `cargo test --test openapi_contract_test`.",
         differences.len(),
         differences.join("\n  ")
     );

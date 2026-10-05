@@ -2,9 +2,13 @@ name: Spec drift
 
 # Fetches Physna's current OpenAPI specification and compares the endpoints
 # and schemas the client depends on with the snapshot in
-# tests/fixtures/physna-openapi.json. A failure means the API changed under
-# us: review the diff in the job log, refresh the snapshot, and re-run the
-# contract tests to see whether the model still fits.
+# tests/fixtures/physna-openapi.json. The failure's annotation says which
+# of two things happened:
+# - "Physna API drift": the API changed under us. Review the diff in the job
+#   log, refresh the snapshot with the command it prints, and re-run the
+#   contract tests to see whether the model still fits.
+# - "Physna spec unavailable": the docs endpoint kept answering with an empty
+#   body for ten minutes. Nothing changed as far as we know; re-run later.
 
 on:
   schedule:
@@ -14,6 +18,7 @@ on:
 jobs:
   drift:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

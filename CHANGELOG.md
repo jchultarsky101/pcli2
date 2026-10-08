@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **API specification snapshot** - Refreshed for Physna's 2026-10-08 changes (still labelled 1.0.39): a server-side text search export endpoint, a `totalExact` paging field, NIIN selection for Part Finder reports, and NSN candidate schemas no endpoint uses yet. pcli2 uses none of them; no command's behaviour changes. Without the refresh the weekly specification check would fail.
+
 ## [2.8.0] - 2026-10-08
 
 ### Added

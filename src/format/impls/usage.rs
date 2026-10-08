@@ -134,6 +134,7 @@ mod tests {
             to: "2026-09-23".to_string(),
             activity: serde_json::from_str::<ActivityMetrics>(METRICS).unwrap(),
             asset_types: serde_json::from_str::<Counts>(r#"{"model":21091,"scan":1}"#).unwrap(),
+            asset_limit: None,
         }
     }
 

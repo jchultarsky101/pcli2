@@ -164,7 +164,7 @@ impl PhysnaApiClient {
     ///
     /// `kinds` narrows the listing (empty means every kind). Pages are fetched
     /// until `limit` failures are collected or the listing ends; the
-    /// tenant-wide totals come from the first page.
+    /// tenant-wide totals and newest-failure times come from the first page.
     pub async fn list_recent_failures(
         &mut self,
         tenant_uuid: &Uuid,
@@ -187,7 +187,7 @@ impl PhysnaApiClient {
         let per_page = limit.map_or(PER_PAGE, |limit| PER_PAGE.min(limit.max(1)));
         let mut pager = crate::paging::Pager::new("failure listing");
         let mut failures = Vec::new();
-        let mut counts_by_kind = None;
+        let mut totals = None;
         loop {
             let page = pager.page();
             let url = format!(
@@ -198,8 +198,8 @@ impl PhysnaApiClient {
             let response: crate::model::RecentFailuresPage = self.get(&url).await?;
             let current_page = response.page_data.current_page;
             let last_page = response.page_data.last_page;
-            if counts_by_kind.is_none() {
-                counts_by_kind = Some(response.counts_by_kind);
+            if totals.is_none() {
+                totals = Some((response.counts_by_kind, response.most_recent_by_kind));
             }
             failures.extend(response.failures);
 
@@ -211,13 +211,18 @@ impl PhysnaApiClient {
         if let Some(limit) = limit {
             failures.truncate(limit);
         }
-        Ok(crate::model::RecentFailuresList {
-            failures,
-            counts_by_kind: counts_by_kind.unwrap_or(crate::model::FailureCountsByKind {
+        let (counts_by_kind, most_recent_by_kind) = totals.unwrap_or((
+            crate::model::FailureCountsByKind {
                 asset: 0.0,
                 report: 0.0,
                 part_finder_report: 0.0,
-            }),
+            },
+            crate::model::MostRecentFailureByKind::default(),
+        ));
+        Ok(crate::model::RecentFailuresList {
+            failures,
+            counts_by_kind,
+            most_recent_by_kind,
         })
     }
 }

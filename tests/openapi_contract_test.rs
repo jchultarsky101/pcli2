@@ -607,6 +607,18 @@ fn hard_coded_enumerations_match_the_spec() {
         counts, ours,
         "countsByKind has a kind the client does not read"
     );
+    let mut most_recent: Vec<String> = spec["components"]["schemas"]["ListRecentFailuresResponse"]
+        ["properties"]["mostRecentByKind"]["properties"]
+        .as_object()
+        .expect("mostRecentByKind names its kinds")
+        .keys()
+        .cloned()
+        .collect();
+    most_recent.sort();
+    assert_eq!(
+        most_recent, ours,
+        "mostRecentByKind has a kind the client does not read"
+    );
 }
 
 #[test]

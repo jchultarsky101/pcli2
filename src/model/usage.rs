@@ -116,6 +116,10 @@ pub struct TenantUsage {
     pub activity: ActivityMetrics,
     /// `GET /tenants/{tenantId}/assets/type-counts`; not tied to the period.
     pub asset_types: Counts,
+    /// The tenant's asset limit and how many assets count against it; absent
+    /// for a tenant without one. JSON only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_limit: Option<crate::asset_limit::AssetLimitStatus>,
 }
 
 /// The `tenant usage --daily` output: one row per day.

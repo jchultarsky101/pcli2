@@ -1532,6 +1532,9 @@ pub async fn upload_folder(sub_matches: &clap::ArgMatches) -> Result<(), crate::
         })
         .collect();
 
+    let incoming = items.iter().filter(|(_, (_, _, exists))| !exists).count();
+    crate::asset_limit::warn_before_upload(&mut api, &tenant.uuid, &tenant.name, incoming).await;
+
     let upload_api = api.for_upload_operations();
     let tenant_uuid = tenant.uuid;
     let destination = original_folder_path.clone();

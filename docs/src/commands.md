@@ -410,6 +410,11 @@ The period is the last 30 days unless `--days N`, `--from` or `--to`
 `CATEGORY,NAME,COUNT` row per number, so a count Physna adds later arrives as a
 new row, not a new column; `--daily` prints one row per day instead.
 
+On a tenant with an asset limit, the JSON output also has `assetLimit`
+(`limit`, `warningThresholdPercent` and `assets`, the count that is measured
+against the limit), and a warning goes to stderr once the tenant reaches the
+threshold.
+
 ```bash
 # The last 30 days
 pcli2 tenant usage
@@ -427,7 +432,9 @@ pcli2 tenant usage --format csv | awk -F, '$1=="activity" && $2=="searches" {pri
 #### Finding Out Why an Asset Failed
 
 `tenant state` and `asset counts` say *how many* assets failed; `tenant failures`
-says *which* (newest first, with the tenant-wide totals in the JSON output), and
+says *which* (newest first; the JSON output adds the tenant-wide totals and
+newest-failure time per kind, and `lastAttempt` on a failure that failed again
+after a self-service retry), and
 `asset diagnose` asks the server *why*. The server searches its ingestion logs
 on demand, so the answer is only as durable as log retention.
 

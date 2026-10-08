@@ -513,6 +513,53 @@ pub struct RecentFailure {
     /// so this is the closest available signal.
     #[serde(rename = "failedAt")]
     pub failed_at: String,
+    /// Present when the record failed again after a self-service retry.
+    #[serde(
+        rename = "lastAttempt",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_attempt: Option<LastRemediationAttempt>,
+}
+
+/// The last self-service retry of a failure that failed again.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LastRemediationAttempt {
+    #[serde(rename = "attemptedAt")]
+    pub attempted_at: String,
+    /// Absent when that user no longer exists.
+    #[serde(
+        rename = "requestedByEmail",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub requested_by_email: Option<String>,
+    /// How many failures that request re-queued. The spec types it as a JSON
+    /// number; it is printed as a whole number.
+    #[serde(rename = "batchSize", deserialize_with = "deserialize_whole_number")]
+    pub batch_size: u64,
+}
+
+fn deserialize_whole_number<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u64, D::Error> {
+    f64::deserialize(deserializer).map(|value| value.max(0.0).round() as u64)
+}
+
+/// When the newest failure of each kind last changed, tenant-wide. The server
+/// leaves out a kind with no failures, and so does the output.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MostRecentFailureByKind {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
+    #[serde(
+        rename = "part-finder-report",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub part_finder_report: Option<String>,
 }
 
 /// Tenant-wide failure totals, not just the current page.
@@ -533,6 +580,10 @@ pub struct RecentFailuresPage {
     pub failures: Vec<RecentFailure>,
     #[serde(rename = "countsByKind")]
     pub counts_by_kind: FailureCountsByKind,
+    // Required in the spec, but older servers did not send it; a listing
+    // without it is still a listing.
+    #[serde(rename = "mostRecentByKind", default)]
+    pub most_recent_by_kind: MostRecentFailureByKind,
     #[serde(rename = "pageData")]
     pub page_data: PageData,
 }
@@ -544,6 +595,8 @@ pub struct RecentFailuresList {
     pub failures: Vec<RecentFailure>,
     #[serde(rename = "countsByKind")]
     pub counts_by_kind: FailureCountsByKind,
+    #[serde(rename = "mostRecentByKind", default)]
+    pub most_recent_by_kind: MostRecentFailureByKind,
 }
 
 /// Represents a health report computed from all assets in a tenant

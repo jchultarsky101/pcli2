@@ -2,7 +2,9 @@
 //! failures listing (`tenant failures`).
 //!
 //! Both are JSON or CSV. Optional fields the server did not send are empty
-//! CSV cells and absent JSON keys.
+//! CSV cells and absent JSON keys. The failures listing's retry details
+//! (`lastAttempt`) and newest-failure times (`mostRecentByKind`) are JSON
+//! only: a new CSV column would break scripts that read rows by position.
 
 use crate::format::{CsvRecordProducer, FormattingError, OutputFormat, OutputFormatter};
 use crate::model::{AssetFailureDiagnostics, RecentFailuresList};
@@ -103,7 +105,8 @@ mod tests {
     use super::*;
     use crate::format::OutputFormatOptions;
     use crate::model::{
-        FailureCountsByKind, FailureDiagnosticsStatus, FailureKind, FailureSource, RecentFailure,
+        FailureCountsByKind, FailureDiagnosticsStatus, FailureKind, FailureSource,
+        LastRemediationAttempt, MostRecentFailureByKind, RecentFailure,
     };
     use uuid::Uuid;
 
@@ -196,18 +199,29 @@ mod tests {
                     id: Uuid::nil(),
                     name: "bracket.stp".to_string(),
                     failed_at: "2026-09-20T10:00:00.000Z".to_string(),
+                    last_attempt: Some(LastRemediationAttempt {
+                        attempted_at: "2026-09-20T09:00:00.000Z".to_string(),
+                        requested_by_email: Some("ops@example.com".to_string()),
+                        batch_size: 12,
+                    }),
                 },
                 RecentFailure {
                     kind: FailureSource::PartFinderReport,
                     id: Uuid::nil(),
                     name: "weekly".to_string(),
                     failed_at: "2026-09-19T10:00:00.000Z".to_string(),
+                    last_attempt: None,
                 },
             ],
             counts_by_kind: FailureCountsByKind {
                 asset: 7.0,
                 report: 0.0,
                 part_finder_report: 1.0,
+            },
+            most_recent_by_kind: MostRecentFailureByKind {
+                asset: Some("2026-09-20T10:00:00.000Z".to_string()),
+                report: None,
+                part_finder_report: Some("2026-09-19T10:00:00.000Z".to_string()),
             },
         }
     }
@@ -238,5 +252,25 @@ mod tests {
         ));
         assert!(out.contains("\"kind\":\"part-finder-report\""));
         assert!(out.contains("\"failedAt\":\"2026-09-20T10:00:00.000Z\""));
+    }
+
+    #[test]
+    fn failures_json_carries_retries_and_newest_times_but_csv_does_not() {
+        let json = failures()
+            .format(OutputFormat::Json(OutputFormatOptions::default()))
+            .unwrap();
+        assert!(json.contains(
+            "\"lastAttempt\":{\"attemptedAt\":\"2026-09-20T09:00:00.000Z\",\"requestedByEmail\":\"ops@example.com\",\"batchSize\":12}"
+        ));
+        // Only the first failure was retried.
+        assert_eq!(json.matches("\"lastAttempt\"").count(), 1);
+        // A kind with no failures is left out, as the server leaves it out.
+        assert!(json.contains(
+            "\"mostRecentByKind\":{\"asset\":\"2026-09-20T10:00:00.000Z\",\"part-finder-report\":\"2026-09-19T10:00:00.000Z\"}"
+        ));
+
+        let csv = failures().format(csv(true)).unwrap();
+        assert!(csv.lines().all(|line| line.split(',').count() == 4));
+        assert!(!csv.contains("ops@example.com"));
     }
 }

@@ -536,6 +536,21 @@ pub struct TenantSetting {
     /// (`pcli2 catalog`). Physna turns it on per customer; absent means no.
     #[serde(rename = "isRemoteSearchTenant", default)]
     pub is_remote_search_tenant: bool,
+    /// How many assets the tenant may hold; absent for most tenants (no
+    /// limit). See [`crate::asset_limit`].
+    #[serde(
+        rename = "assetLimit",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub asset_limit: Option<f64>,
+    /// At what percentage of `asset_limit` the web UI starts warning.
+    #[serde(
+        rename = "assetLimitWarningThresholdPercent",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub asset_limit_warning_threshold_percent: Option<f64>,
 }
 
 /// Represents a user in the Physna system

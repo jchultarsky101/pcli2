@@ -13,6 +13,12 @@ instead). `folder download` downloads finished assets and assemblies waiting for
 a missing part, and lists the assets it left out because they were still
 processing or had failed.
 
+On a tenant with an asset limit, `folder upload` and `asset create-batch` warn
+before uploading when the files would bring the tenant to the point where the
+web UI starts warning (85% of the limit on every tenant seen so far), or past
+the limit. The warning never stops the upload. Most tenants have no limit and
+are not checked.
+
 ## Speed and Rate Limits
 
 Optimize operations for large datasets:

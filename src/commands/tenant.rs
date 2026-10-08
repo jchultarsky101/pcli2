@@ -45,7 +45,9 @@ pub fn tenant_command() -> Command {
                 .about("List recent failures (assets, reports, part-finder reports), newest first")
                 .long_about(
                     "List recent failures (assets, reports, part-finder reports), newest first.\n\n\
-                     JSON output also carries the tenant-wide totals per kind. The ID of an `asset` \
+                     JSON output also carries the tenant-wide totals and newest-failure time per \
+                     kind, and `lastAttempt` on a failure that failed again after a self-service \
+                     retry. The ID of an `asset` \
                      row is what 'asset diagnose --uuid' takes to explain the failure.",
                 )
                 .arg(tenant_parameter())
@@ -81,7 +83,9 @@ pub fn tenant_command() -> Command {
                      The period is the last 30 days by default; --days, --from and --to change it, \
                      up to 366 days. With --daily the output is one row per day instead.\n\n\
                      CSV and table output have one CATEGORY,NAME,COUNT row per number, so a count \
-                     Physna adds later is a new row, not a new column. Requires the tenant admin role.",
+                     Physna adds later is a new row, not a new column. On a tenant with an asset \
+                     limit, JSON output adds `assetLimit` and a warning goes to stderr once the \
+                     tenant nears it. Requires the tenant admin role.",
                 )
                 .after_help(crate::commands::examples(&[
                     ("The last 30 days", "pcli2 tenant usage"),

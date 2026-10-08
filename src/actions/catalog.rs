@@ -259,6 +259,8 @@ mod tests {
             tenant_display_name: name.to_string(),
             tenant_short_name: name.to_string(),
             is_remote_search_tenant: remote,
+            asset_limit: None,
+            asset_limit_warning_threshold_percent: None,
         };
         let catalogs = Catalog::from_tenant_settings(&[
             setting("zeta", A, true, true),

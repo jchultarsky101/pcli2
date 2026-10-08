@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`tenant failures` shows retries and newest-failure times** - The JSON output adds `lastAttempt` (when, by whom and in how big a batch) to a failure that failed again after a self-service retry, and `mostRecentByKind`, the time of the newest failure of each kind across the tenant. The CSV and table output are unchanged.
+- **Asset limit warning** - On a tenant with an asset limit, `tenant usage` adds `assetLimit` to its JSON output and warns on stderr once the tenant holds the share of its limit at which the web UI starts warning (85%). `folder upload` and `asset create-batch` warn before uploading files that would reach that point or go past the limit. The warning never stops a command, and tenants without a limit are not checked.
+
 ## [2.7.1] - 2026-10-05
 
 ### Fixed

@@ -121,13 +121,20 @@ fn failures_page(page: usize, last_page: usize, names: &[&str]) -> String {
     let items: Vec<String> = names
         .iter()
         .map(|n| {
+            // c.stl failed again after a self-service retry.
+            let last_attempt = if *n == "c.stl" {
+                r#","lastAttempt":{"attemptedAt":"2026-09-20T09:00:00.000Z","batchSize":4.0}"#
+            } else {
+                ""
+            };
             format!(
-                r#"{{"kind":"asset","id":"{ASSET}","name":"{n}","failedAt":"2026-09-20T10:00:00.000Z"}}"#
+                r#"{{"kind":"asset","id":"{ASSET}","name":"{n}","failedAt":"2026-09-20T10:00:00.000Z"{last_attempt}}}"#
             )
         })
         .collect();
     format!(
         r#"{{"failures":[{}],"countsByKind":{{"asset":3,"report":0,"part-finder-report":0}},
+            "mostRecentByKind":{{"asset":"2026-09-2{page}T10:00:00.000Z"}},
             "pageData":{{"total":3,"perPage":2,"currentPage":{page},"lastPage":{last_page},"startIndex":0,"endIndex":0}}}}"#,
         items.join(",")
     )
@@ -169,6 +176,17 @@ async fn the_failures_listing_walks_every_page_and_keeps_the_totals() {
     assert_eq!(names, ["a.stl", "b.stl", "c.stl"]);
     assert_eq!(list.counts_by_kind.asset, 3.0);
     assert_eq!(list.failures[0].kind, FailureSource::Asset);
+    // The tenant-wide newest times come from the first page, like the totals.
+    assert_eq!(
+        list.most_recent_by_kind.asset.as_deref(),
+        Some("2026-09-21T10:00:00.000Z")
+    );
+    assert_eq!(list.most_recent_by_kind.report, None);
+    assert!(list.failures[0].last_attempt.is_none());
+    let retry = list.failures[2].last_attempt.as_ref().unwrap();
+    assert_eq!(retry.attempted_at, "2026-09-20T09:00:00.000Z");
+    assert_eq!(retry.batch_size, 4);
+    assert_eq!(retry.requested_by_email, None);
 }
 
 #[tokio::test]

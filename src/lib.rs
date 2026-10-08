@@ -33,6 +33,7 @@ compile_error!(
 );
 
 pub mod actions;
+pub mod asset_limit;
 pub mod auth;
 pub mod cache;
 pub mod checkpoint;

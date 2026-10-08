@@ -685,11 +685,20 @@ pub async fn tenant_usage(sub_matches: &ArgMatches) -> Result<(), crate::error::
         .get_asset_type_counts(&tenant_uuid)
         .await
         .map_err(crate::error::CliError::PhysnaExtendedApiError)?;
+    let asset_limit =
+        crate::asset_limit::status_from_counts(ctx.api(), &tenant_uuid, &asset_types).await;
+    if let Some(warning) = asset_limit
+        .as_ref()
+        .and_then(|status| status.warning(&ctx.tenant.name, 0))
+    {
+        crate::error_utils::report_warning(&warning);
+    }
     let usage = crate::model::TenantUsage {
         from: from.to_string(),
         to: to.to_string(),
         activity,
         asset_types,
+        asset_limit,
     };
     crate::format::print_output(&usage.format(format)?);
     Ok(())

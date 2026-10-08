@@ -430,6 +430,8 @@ pub async fn create_asset_batch(sub_matches: &ArgMatches) -> Result<(), CliError
         });
     }
 
+    crate::asset_limit::warn_before_upload(&mut api, &tenant.uuid, &tenant.name, paths.len()).await;
+
     let outcome = api
         .create_assets_from_paths(
             &tenant.uuid,

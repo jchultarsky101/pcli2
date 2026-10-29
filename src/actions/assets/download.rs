@@ -309,7 +309,7 @@ pub(crate) fn extract_bundle(
             let Some(relative) = entry.enclosed_name() else {
                 tracing::warn!(
                     "Skipping '{}' in {:?}: its path leads outside the download directory",
-                    entry.name(),
+                    String::from_utf8_lossy(entry.name_raw()),
                     zip_path
                 );
                 continue;

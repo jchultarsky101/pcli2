@@ -2041,7 +2041,7 @@ dependencies = [
 
 [[package]]
 name = "pcli2"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "assert_cmd",
  "base64",

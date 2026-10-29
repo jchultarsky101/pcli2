@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-10-29
+
+### Security
+- **Dependencies** - zip 9.1 (with zstd 0.14.3), rust_xlsxwriter 0.101, rustls 0.23.46, rustls-webpki 0.103.16 and tokio 1.54.1, clearing RustSec advisories published since 2.8.1. The zip advisories concern its own extraction helpers, which pcli2 does not call: `asset download` unpacks archives itself and already skipped entries that lead outside the download directory. No command's output changes.
+
+### Changed
+- **API specification snapshot** - Refreshed for Physna's 1.0.40 specification. Asset upload now lists documents, 2D drawings, archives and more 3D formats among the accepted files; pcli2 leaves that check to the server, so those files upload as they are. Without the refresh the weekly specification check would fail.
+
 ## [2.8.1] - 2026-10-08
 
 ### Changed

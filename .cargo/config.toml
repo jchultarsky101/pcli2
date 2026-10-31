@@ -1,0 +1,4 @@
+# Keep `cargo update` within the rust-version declared in Cargo.toml (the CI
+# msrv job checks it): prefer the newest release that still supports it.
+[resolver]
+incompatible-rust-versions = "fallback"
